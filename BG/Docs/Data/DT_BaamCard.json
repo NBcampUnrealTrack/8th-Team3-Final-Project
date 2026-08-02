@@ -1,0 +1,606 @@
+[
+  {
+    "Name": "Card.Id.Bang",
+    "CardIdTag": "Card.Id.Bang",
+    "DisplayName": "뱅",
+    "Description": "사거리 제한 없이 대상 1명에게 피해를 준다.",
+    "TypeTag": "Card.Type.Brown",
+    "TraitTags": {
+      "GameplayTags": [
+        {
+          "TagName": "Card.Trait.NeedsTargetSeat"
+        }
+      ]
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 12,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 5,
+      "Failure": 20,
+      "Success": 65,
+      "CriticalSuccess": 10
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [
+        {
+          "Op": "DamageTarget",
+          "Amount": 1,
+          "StatusTag": "",
+          "bToTarget": false
+        }
+      ],
+      "CriticalSuccess": [
+        {
+          "Op": "DamageTarget",
+          "Amount": 2,
+          "StatusTag": "",
+          "bToTarget": false
+        }
+      ]
+    }
+  },
+  {
+    "Name": "Card.Id.Beer",
+    "CardIdTag": "Card.Id.Beer",
+    "DisplayName": "맥주",
+    "Description": "자신의 생명력을 회복한다.",
+    "TypeTag": "Card.Type.Brown",
+    "TraitTags": {
+      "GameplayTags": []
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 6,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 0,
+      "Failure": 10,
+      "Success": 80,
+      "CriticalSuccess": 10
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [
+        {
+          "Op": "HealSelf",
+          "Amount": 1,
+          "StatusTag": "",
+          "bToTarget": false
+        }
+      ],
+      "CriticalSuccess": [
+        {
+          "Op": "HealSelf",
+          "Amount": 2,
+          "StatusTag": "",
+          "bToTarget": false
+        }
+      ]
+    }
+  },
+  {
+    "Name": "Card.Id.CatBalou",
+    "CardIdTag": "Card.Id.CatBalou",
+    "DisplayName": "위협",
+    "Description": "상대의 손에서 카드 1장을 무작위로 버리게 한다.",
+    "TypeTag": "Card.Type.Brown",
+    "TraitTags": {
+      "GameplayTags": [
+        {
+          "TagName": "Card.Trait.NeedsTargetSeat"
+        }
+      ]
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 6,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 100,
+      "CriticalSuccess": 0
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [
+        {
+          "Op": "DiscardTargetRandom",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        }
+      ],
+      "CriticalSuccess": []
+    }
+  },
+  {
+    "Name": "Card.Id.QuickStrike",
+    "CardIdTag": "Card.Id.QuickStrike",
+    "DisplayName": "속공",
+    "Description": "카드를 뽑으며 공격한다. 잘 되면 행동 기회까지 남는다.",
+    "TypeTag": "Card.Type.Brown",
+    "TraitTags": {
+      "GameplayTags": [
+        {
+          "TagName": "Card.Trait.NeedsTargetSeat"
+        }
+      ]
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 8,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 5,
+      "Failure": 20,
+      "Success": 65,
+      "CriticalSuccess": 10
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [
+        {
+          "Op": "DrawSelf",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        }
+      ],
+      "Success": [
+        {
+          "Op": "DrawSelf",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        },
+        {
+          "Op": "DamageTarget",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        }
+      ],
+      "CriticalSuccess": [
+        {
+          "Op": "DrawSelf",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        },
+        {
+          "Op": "DamageTarget",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        },
+        {
+          "Op": "RestoreCardUse",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        }
+      ]
+    }
+  },
+  {
+    "Name": "Card.Id.Rest",
+    "CardIdTag": "Card.Id.Rest",
+    "DisplayName": "휴식",
+    "Description": "카드를 뽑고 행동 기회를 되찾는다.",
+    "TypeTag": "Card.Type.Brown",
+    "TraitTags": {
+      "GameplayTags": []
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 6,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 0,
+      "Failure": 20,
+      "Success": 70,
+      "CriticalSuccess": 10
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [
+        {
+          "Op": "DrawSelf",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        }
+      ],
+      "Success": [
+        {
+          "Op": "DrawSelf",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        },
+        {
+          "Op": "RestoreCardUse",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        }
+      ],
+      "CriticalSuccess": [
+        {
+          "Op": "DrawSelf",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": ""
+        },
+        {
+          "Op": "RestoreCardUse",
+          "Amount": 2,
+          "bToTarget": false,
+          "StatusTag": ""
+        }
+      ]
+    }
+  },
+  {
+    "Name": "Card.Id.ExposeWeakness",
+    "CardIdTag": "Card.Id.ExposeWeakness",
+    "DisplayName": "약점 포착",
+    "Description": "다음 공격의 피해를 늘린다.",
+    "TypeTag": "Card.Type.Brown",
+    "TraitTags": {
+      "GameplayTags": []
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 6,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 10,
+      "Failure": 0,
+      "Success": 75,
+      "CriticalSuccess": 15
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [
+        {
+          "Op": "ApplyStatus",
+          "Amount": 1,
+          "bToTarget": false,
+          "StatusTag": "Status.NextAttack.DamageBonus"
+        }
+      ],
+      "CriticalSuccess": [
+        {
+          "Op": "ApplyStatus",
+          "Amount": 2,
+          "bToTarget": false,
+          "StatusTag": "Status.NextAttack.DamageBonus"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "Card.Id.Trap",
+    "CardIdTag": "Card.Id.Trap",
+    "DisplayName": "함정",
+    "Description": "상대가 다음에 쓰는 카드를 실패하게 만든다.",
+    "TypeTag": "Card.Type.Brown",
+    "TraitTags": {
+      "GameplayTags": [
+        {
+          "TagName": "Card.Trait.NeedsTargetSeat"
+        }
+      ]
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 6,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 0,
+      "Failure": 20,
+      "Success": 65,
+      "CriticalSuccess": 15
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [
+        {
+          "Op": "ApplyStatus",
+          "Amount": 0,
+          "bToTarget": true,
+          "StatusTag": "Status.NextCard.ForceFailure"
+        }
+      ],
+      "CriticalSuccess": [
+        {
+          "Op": "ApplyStatus",
+          "Amount": 0,
+          "bToTarget": true,
+          "StatusTag": "Status.NextCard.ForceCriticalFailure"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "Card.Id.Prepare",
+    "CardIdTag": "Card.Id.Prepare",
+    "DisplayName": "준비",
+    "Description": "다음에 쓰는 카드를 반드시 성공시킨다.",
+    "TypeTag": "Card.Type.Brown",
+    "TraitTags": {
+      "GameplayTags": []
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 5,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 85,
+      "CriticalSuccess": 15
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [
+        {
+          "Op": "ApplyStatus",
+          "Amount": 0,
+          "bToTarget": false,
+          "StatusTag": "Status.NextCard.ForceSuccess"
+        }
+      ],
+      "CriticalSuccess": [
+        {
+          "Op": "ApplyStatus",
+          "Amount": 0,
+          "bToTarget": false,
+          "StatusTag": "Status.NextCard.ForceCriticalSuccess"
+        }
+      ]
+    }
+  },
+  {
+    "Name": "Card.Id.Brace",
+    "CardIdTag": "Card.Id.Brace",
+    "DisplayName": "대비",
+    "Description": "다음 카드가 실패해도 행동 기회를 잃지 않는다.",
+    "TypeTag": "Card.Type.Brown",
+    "TraitTags": {
+      "GameplayTags": []
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 5,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 100,
+      "CriticalSuccess": 0
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [
+        {
+          "Op": "ApplyStatus",
+          "Amount": 0,
+          "bToTarget": false,
+          "StatusTag": "Status.NextCard.KeepCardUse"
+        }
+      ],
+      "CriticalSuccess": []
+    }
+  },
+  {
+    "Name": "Card.Id.DwarfGloves",
+    "CardIdTag": "Card.Id.DwarfGloves",
+    "DisplayName": "드워프 장갑",
+    "Description": "장착 중 내 카드가 실패하지 않는다.",
+    "TypeTag": "Card.Type.Blue",
+    "TraitTags": {
+      "GameplayTags": []
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "/Script/Baam.GE_Equip_DwarfGloves",
+    "Magnitude": 0,
+    "QuantityOfCard": 2,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 100,
+      "CriticalSuccess": 0
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [],
+      "CriticalSuccess": []
+    }
+  },
+  {
+    "Name": "Card.Id.WitchCharm",
+    "CardIdTag": "Card.Id.WitchCharm",
+    "DisplayName": "마녀의 부적",
+    "Description": "장착 중 대성공과 대실패 확률이 두 배가 된다.",
+    "TypeTag": "Card.Type.Blue",
+    "TraitTags": {
+      "GameplayTags": []
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "/Script/Baam.GE_Equip_WitchCharm",
+    "Magnitude": 0,
+    "QuantityOfCard": 2,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 100,
+      "CriticalSuccess": 0
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [],
+      "CriticalSuccess": []
+    }
+  },
+  {
+    "Name": "Card.Id.FairyArmor",
+    "CardIdTag": "Card.Id.FairyArmor",
+    "DisplayName": "요정 갑옷",
+    "Description": "[미구현] 나에게 들어오는 공격을 일정 확률로 무효화한다.",
+    "TypeTag": "Card.Type.Blue",
+    "TraitTags": {
+      "GameplayTags": []
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 0,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 100,
+      "CriticalSuccess": 0
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [],
+      "CriticalSuccess": []
+    }
+  }
+]

@@ -1,0 +1,37 @@
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
+
+using UnrealBuildTool;
+
+public class BG : ModuleRules
+{
+	public BG(ReadOnlyTargetRules Target) : base(Target)
+	{
+		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+	
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
+			// --- GAS (Team4Project 의 GAS 시스템과 동일 구성) ---
+			"GameplayAbilities",   // UGameplayAbility / UGameplayEffect / UAttributeSet
+			"GameplayTags",        // NativeGameplayTags (UE_DEFINE_GAMEPLAY_TAG)
+			"GameplayTasks",        // UAbilityTask (응답 창 WaitForResolution 등)
+			"UMG",
+			// --- 세션(방코드 온라인, M6) ---
+			"OnlineSubsystem",      // IOnlineSessionPtr / FOnlineSessionSettings 를 헤더에서 사용
+			"DeveloperSettings"
+		});
+
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"Slate", "SlateCore",
+			"OnlineSubsystemUtils"  // Online::GetSubsystem 헬퍼 (.cpp 전용)
+		});
+
+		//	⚠️ PublicIncludePaths.Add(ModuleDirectory) 를 다시 넣지 말 것.
+		//	  그 한 줄이 있으면 Private/ 안의 헤더까지 include 가능해져 Public/Private 분리가
+		//	  컴파일러 차원에서 무의미해진다. UBT 가 Public/ 과 Private/ 를 자동으로 include
+		//	  경로에 넣으므로 "Core/BaamGameState.h" 같은 경로는 그 줄 없이도 해석된다.
+		//	  예전에 Source/Baam/UI/ 가 Public/Private 없이 평평하게 존재할 수 있었던 것이
+		//	  바로 이 줄 때문이었다.
+	}
+}
