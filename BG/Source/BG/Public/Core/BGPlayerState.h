@@ -43,7 +43,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Player")
 	int32 GetSeatIndex() const { return SeatIndex; }
 
-	// 서버 전용. 판 시작 시 게임모드가 좌석을 매긴다.
+	// 서버 전용. 좌석의 소유자는 UBGSeatComponent 다 — 다른 곳에서 부르지 말 것.
 	void SetSeatIndex(int32 InSeat);
 
 
