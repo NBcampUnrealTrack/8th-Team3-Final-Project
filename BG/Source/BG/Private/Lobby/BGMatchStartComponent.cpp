@@ -3,6 +3,7 @@
 #include "Core/BGGameMode.h"
 #include "Core/BGGameInstance.h"
 #include "Lobby/BGReadyComponent.h"
+#include "Lobby/BGSeatComponent.h"
 #include "Core/BGGameState.h"
 #include "BGGameplayTags.h"
 #include "UI/Session/BGSessionMenuController.h"
@@ -117,7 +118,19 @@ bool UBGMatchStartComponent::StartMatch()
 	TArray<APlayerController*> Players;
 	GM->CollectPlayers(Players);
 
-	UE_LOG(LogBGNet, Log, TEXT("[MatchStart] 판 시작(%d명) — 역할 배정"), Players.Num());
+	UE_LOG(LogBGNet, Log, TEXT("[MatchStart] 판 시작(%d명) — 좌석·역할 배정"), Players.Num());
+
+	// 좌석을 먼저 섞는다. 로비 좌석(입장 순)을 0..N-1 랜덤 순열로 다시 채워야
+	// 퇴장으로 생긴 빈 번호도 메워진다 — 역할 배정과 턴 진행이 이 좌석을 전제로 돈다.
+	if (UBGSeatComponent* Seats = UBGSeatComponent::Find(GetWorld()))
+	{
+		Seats->RandomizeSeats();
+	}
+	else
+	{
+		UE_LOG(LogBGNet, Error, TEXT("[MatchStart] UBGSeatComponent 가 없어 좌석을 섞지 못했습니다."));
+	}
+
 	GM->AssignRoles();
 
 	// 호스트의 로비 UI 는 여기서 내린다. 클라는 각자 페이즈가 로비를 벗어난 것을 보고 닫는다.

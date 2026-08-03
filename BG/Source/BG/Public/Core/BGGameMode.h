@@ -14,6 +14,7 @@
 #include "BGGameMode.generated.h"
 
 class UBGMatchStartComponent;
+class UBGSeatComponent;
 
 UCLASS()
 class BG_API ABGGameMode : public AGameModeBase
@@ -86,9 +87,23 @@ protected:
 	virtual void PreLogin(const FString& Options, const FString& Address,
 		const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage) override;
 
+	// 좌석은 여기서 준다 — 엔진이 이 안에서 시작 지점을 골라 컨트롤러에 캐시한다.
+	virtual FString InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId,
+		const FString& Options, const FString& Portal = FString()) override;
+
 	virtual void PostLogin(APlayerController* NewPlayer) override;
+
+	// 퇴장한 플레이어의 좌석을 반납한다.
+	virtual void Logout(AController* Exiting) override;
+
+	// 좌석 번호에 대응하는 PlayerStart 로 스폰시킨다. 없으면 엔진 기본 동작.
+	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
 private:
 	UPROPERTY(VisibleAnywhere, Category = "BG")
 	TObjectPtr<UBGMatchStartComponent> MatchStart;
+
+	// 좌석 배정 전담. 입장 시 빈 자리, 판 시작 시 랜덤 재배정.
+	UPROPERTY(VisibleAnywhere, Category = "BG")
+	TObjectPtr<UBGSeatComponent> Seats;
 };

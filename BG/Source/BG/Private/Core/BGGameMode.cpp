@@ -1,6 +1,7 @@
 ﻿#include "Core/BGGameMode.h"
 #include "BGGameplayTags.h"
 #include "Lobby/BGMatchStartComponent.h"
+#include "Lobby/BGSeatComponent.h"
 #include "Card/BGDataSubsystem.h"
 #include "Core/BGPlayerState.h"
 #include "Debug/BGNetLog.h"
@@ -17,6 +18,9 @@ ABGGameMode::ABGGameMode()
 	
 	// 판 시작 진행은 컴포넌트가 맡는다.
 	MatchStart = CreateDefaultSubobject<UBGMatchStartComponent>(TEXT("MatchStart"));
+
+	// 좌석 배정도 마찬가지 — 게임모드는 훅만 넘긴다.
+	Seats = CreateDefaultSubobject<UBGSeatComponent>(TEXT("Seats"));
 }
 
 void ABGGameMode::PreLogin(const FString& Options, const FString& Address,
@@ -35,6 +39,18 @@ void ABGGameMode::PreLogin(const FString& Options, const FString& Address,
 	}
 }
 
+FString ABGGameMode::InitNewPlayer(APlayerController* NewPlayerController, const FUniqueNetIdRepl& UniqueId,
+	const FString& Options, const FString& Portal)
+{
+	// Super 안에서 ChoosePlayerStart 가 불려 결과가 캐시되므로 좌석은 그 전에 줘야 한다.
+	if (Seats)
+	{
+		Seats->AssignSeatOnJoin(NewPlayerController);
+	}
+
+	return Super::InitNewPlayer(NewPlayerController, UniqueId, Options, Portal);
+}
+
 void ABGGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
@@ -44,6 +60,23 @@ void ABGGameMode::PostLogin(APlayerController* NewPlayer)
 	{
 		MatchStart->NotifyPlayerJoined();
 	}
+}
+
+AActor* ABGGameMode::ChoosePlayerStart_Implementation(AController* Player)
+{
+	// 자리 선택도 좌석 컴포넌트가 안다 — 여기는 엔진 훅을 넘겨주기만 한다.
+	AActor* Start = Seats ? Seats->ChooseStartFor(Player) : nullptr;
+	return Start ? Start : Super::ChoosePlayerStart_Implementation(Player);
+}
+
+void ABGGameMode::Logout(AController* Exiting)
+{
+	if (Seats)
+	{
+		Seats->ReleaseSeat(Exiting);
+	}
+
+	Super::Logout(Exiting);
 }
 
 TArray<FGameplayTag> ABGGameMode::BuildRolePool(int32 NumPlayers)
@@ -130,11 +163,7 @@ void ABGGameMode::AssignRoles()
 	{
 		APlayerController* PC = Players[i];
 
-		// 좌석은 거리 계산·대상 지정의 기준이라 역할과 함께 확정한다.
-		if (ABGPlayerState* PS = PC ? PC->GetPlayerState<ABGPlayerState>() : nullptr)
-		{
-			PS->SetSeatIndex(i);
-		}
+		// 좌석은 UBGSeatComponent 가 소유한다 — 여기서 건드리면 랜덤 배정을 덮어쓴다.
 
 		ABGCharacter* Char = PC ? Cast<ABGCharacter>(PC->GetPawn()) : nullptr;
 		if (!Char)

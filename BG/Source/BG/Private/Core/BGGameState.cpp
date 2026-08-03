@@ -346,7 +346,22 @@ void ABGGameState::StartMatch()
 		UE_LOG(LogBGCard, Log, TEXT("[Turn] 초기 손패 — 좌석 %d : %d 장"), Seat, PS->GetHandCount());
 	}
 
-	BeginTurn(Alive[0]);
+	//	뱅 규칙: 보안관이 선이다. 좌석과 역할은 따로 배정되므로 좌석 번호로 찾을 수 없다.
+	int32 FirstSeat = Alive[0];
+	for (const int32 Seat : Alive)
+	{
+		if (GetSeatRole(Seat) == BG::Role::Sheriff.GetTag())
+		{
+			FirstSeat = Seat;
+			break;
+		}
+	}
+	if (FirstSeat == Alive[0] && GetSeatRole(Alive[0]) != BG::Role::Sheriff.GetTag())
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[Turn] 보안관 좌석을 찾지 못해 좌석 %d 로 시작합니다."), FirstSeat);
+	}
+
+	BeginTurn(FirstSeat);
 }
 
 void ABGGameState::BeginTurn(int32 Seat)
