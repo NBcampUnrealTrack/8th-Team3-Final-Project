@@ -13,6 +13,9 @@
 #include "Core/BGPlayerState.h"
 #include "Core/BGCharacter.h"
 #include "GAS/BGAttributeSet.h"
+#include "Core/BGGameInstance.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
 
 ABGGameState::ABGGameState()
@@ -33,6 +36,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, CurrentSeat);
 	DOREPLIFETIME(ABGGameState, WinningRoleTag);
 	DOREPLIFETIME(ABGGameState, bMatchRunning);
+	DOREPLIFETIME(ABGGameState, MatchEndStage);
 }
 
 FGameplayTag ABGGameState::GameOverPhaseTag()
@@ -636,9 +640,146 @@ bool ABGGameState::CheckWinCondition()
 		}
 	}
 
-	UE_LOG(LogBGCard, Warning, TEXT("[Match] 판 종료 — 승리 진영 : %s (생존 %d명)"),
-		*Winner.ToString(), Alive.Num());
+	//	승패 분쟁은 QA 에서 반드시 생긴다. 승자만 찍으면 재현이 불가능하므로 근거(좌석별 진영)를 남긴다.
+	TArray<FString> AliveDesc;
+	for (const int32 Seat : Alive)
+	{
+		AliveDesc.Add(FString::Printf(TEXT("Seat%d(%s)"), Seat, *GetSeatRole(Seat).ToString()));
+	}
+	UE_LOG(LogBGCard, Warning, TEXT("[Match] 판 종료 — 승리 진영 : %s / 생존 %d명 : %s"),
+		*Winner.ToString(), Alive.Num(), *FString::Join(AliveDesc, TEXT(", ")));
+
+	//	판정이 끝났으니 종료 연출을 연다. 승리 → 크레딧 → 로비 복귀는 전부 서버가 진행시킨다.
+	SetMatchEndStage(EBGMatchEndStage::Victory);
 	return true;
+}
+
+void ABGGameState::SetMatchEndStage(EBGMatchEndStage NewStage)
+{
+	if (!HasAuthority() || MatchEndStage == NewStage)
+	{
+		return;
+	}
+
+	MatchEndStage = NewStage;
+
+	//	서버는 자기 OnRep 을 받지 못한다 — 여기서 직접 쏘지 않으면 리슨서버 호스트만 연출이 안 뜬다.
+	HandleMatchEndStage();
+
+	//	다음 단계 예약. 타이머는 서버에만 하나 돈다(클라가 각자 세면 늦게 접속한 사람이 어긋난다).
+	GetWorldTimerManager().ClearTimer(MatchEndStageTimer);
+
+	switch (NewStage)
+	{
+	case EBGMatchEndStage::Victory:
+		if (VictorySequenceSeconds > 0.f)
+		{
+			GetWorldTimerManager().SetTimer(MatchEndStageTimer, this,
+				&ABGGameState::StartEndingCredits, VictorySequenceSeconds, false);
+		}
+		else
+		{
+			StartEndingCredits();
+		}
+		break;
+
+	case EBGMatchEndStage::Credits:
+		if (!bReturnToLobbyAfterCredits)
+		{
+			UE_LOG(LogBGCard, Log, TEXT("[Match] 크레딧 — 로비 복귀 꺼짐(bReturnToLobbyAfterCredits=false)."));
+			break;
+		}
+		if (EndingCreditsSeconds > 0.f)
+		{
+			GetWorldTimerManager().SetTimer(MatchEndStageTimer, this,
+				&ABGGameState::ReturnToLobby, EndingCreditsSeconds, false);
+		}
+		else
+		{
+			ReturnToLobby();
+		}
+		break;
+
+	default:
+		break;
+	}
+}
+
+void ABGGameState::StartEndingCredits()
+{
+	if (!HasAuthority() || MatchEndStage != EBGMatchEndStage::Victory)
+	{
+		return;   // 아직 승리 연출 중이 아니거나 이미 넘어갔다.
+	}
+	SetMatchEndStage(EBGMatchEndStage::Credits);
+}
+
+void ABGGameState::OnRep_MatchEndStage()
+{
+	//	같은 번들의 프로퍼티(WinningRoleTag)는 RepNotify 가 불리기 전에 모두 적용된다 —
+	//	여기서 승리 진영을 읽어도 안전하다.
+	HandleMatchEndStage();
+}
+
+void ABGGameState::HandleMatchEndStage()
+{
+	if (BroadcastedStage == MatchEndStage)
+	{
+		return;   // 복제 재전송으로 같은 델리게이트가 두 번 나가는 것을 막는다.
+	}
+	BroadcastedStage = MatchEndStage;
+
+	switch (MatchEndStage)
+	{
+	case EBGMatchEndStage::Victory:
+		UE_LOG(LogBGCard, Log, TEXT("[Match] 승리 연출 시작 — 승리 진영 %s"), *WinningRoleTag.ToString());
+		OnMatchWon.Broadcast(WinningRoleTag);
+		break;
+
+	case EBGMatchEndStage::Credits:
+		UE_LOG(LogBGCard, Log, TEXT("[Match] 엔딩 크레딧 시작"));
+		OnEndingCredits.Broadcast();
+		break;
+
+	default:
+		break;
+	}
+}
+
+void ABGGameState::ReturnToLobby()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	//	제자리에서 상태를 하나씩 되돌리지 않는 이유:
+	//	  로비와 게임이 같은 맵이라(BGGameInstance 의 "단일 맵" 주석 참고) 판을 끝내면
+	//	  덱·손패·장비 GE·역할/직업 태그·좌석·사망 플래그·어트리뷰트가 전부 남는다.
+	//	  하나라도 빠뜨리면 "두 번째 판에서만" 나오는 버그가 되고 추적이 매우 어렵다.
+	//	  같은 맵을 다시 열면 월드가 통째로 새로 만들어져 지울 목록이라는 개념 자체가 사라진다.
+	//	  클라이언트는 서버를 따라 함께 이동하므로 접속은 유지된다.
+
+	//	⚠️ GameInstance 는 트래블을 넘어 살아남는다 — 여기만 직접 되돌려야 한다.
+	//	   빠뜨리면 새 로비가 난입 차단 상태로 열려 아무도 들어오지 못한다.
+	if (UBGGameInstance* GI = GetGameInstance<UBGGameInstance>())
+	{
+		GI->SetAllowJoinInProgress(true);
+	}
+
+	UE_LOG(LogBGCard, Warning, TEXT("[Match] 로비 복귀 — 같은 맵 재시작(ServerTravel)"));
+
+	//	"?Restart" 는 "맵 이름 없이 현재 맵을 다시 연다" 는 엔진 규약이다.
+	//	AGameMode::RestartGame() 이 쓰는 것과 같은 경로 — 다만 이 프로젝트는 AGameModeBase
+	//	상속이라 그 함수가 없어 직접 부른다. 맵 이름을 문자열로 짜 넣지 않으므로
+	//	맵을 옮기거나 이름을 바꿔도 깨지지 않는다.
+	World->ServerTravel(TEXT("?Restart"), /*bAbsolute=*/false);
 }
 
 void ABGGameState::AdvanceToNextSeat()
