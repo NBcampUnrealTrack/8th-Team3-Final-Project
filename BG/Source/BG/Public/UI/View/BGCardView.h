@@ -11,6 +11,37 @@
  * 게임 로직 쪽 카드 타입(FBGCardInstance / FBGCardRow)에 의존하지 않는다.
  * 변환은 UBGCardViewLibrary::MakeCardView 한 곳에서만 일어난다 — 그 함수가 로직/UI 경계다.
  */
+/**
+ * 4단계 판정 확률(%). GDD §4.2 의 정규화를 이미 거친 값이라 그대로 그리면 된다 — 합은 100 이다.
+ *
+ * 비율(FBGOutcomeWeights)이 아니라 확률(%)로 들고 있는 이유:
+ * 기획이 입력하는 것은 "상대 비율"(합이 100 일 필요가 없다)이고 플레이어가 봐야 하는 것은
+ * "실제 확률"이다. 그 변환을 UI 가 매번 하면 정규화 규칙이 두 곳에 생긴다.
+ */
+USTRUCT(BlueprintType)
+struct FBGCardChanceView
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Chance")
+	float CriticalFailure = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Chance")
+	float Failure = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Chance")
+	float Success = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Chance")
+	float CriticalSuccess = 0.f;
+
+	/** 표시 공간이 좁을 때 쓰는 축약값 — "성공+대성공" (GDD §10). */
+	float GetSuccessOrBetter() const { return Success + CriticalSuccess; }
+
+	/** 판정 비율이 아예 없는 카드(장비 등)면 false. */
+	bool IsSet() const { return (CriticalFailure + Failure + Success + CriticalSuccess) > 0.f; }
+};
+
 USTRUCT(BlueprintType)
 struct FBGCardView
 {
@@ -40,6 +71,30 @@ struct FBGCardView
 	/** 클라이언트 측 표시용 힌트일 뿐이다. 실제 사용 가능 판정은 항상 서버 권위. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
 	bool bPlayable = true;
+
+	// ── 4단계 확률 (GDD §4.4 / §6.1 / §8 / §10) ───────────────────────
+	//
+	// 이 값들은 표시 전용이다. 서버는 자기 데이터로 다시 굴리므로(GDD §9.2)
+	// 여기가 틀려도 판정은 흔들리지 않는다 — 대신 플레이어를 속이게 되므로 정확해야 한다.
+
+	/** 판정하는 카드인가. 파란(장비) 카드는 false — UI 는 확률 영역을 통째로 숨긴다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
+	bool bHasChances = false;
+
+	/** 카드 자체의 확률. DT_BGCard 의 OutcomeWeights 만 반영한 값이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
+	FBGCardChanceView BaseChance;
+
+	/**
+	 * 장비·캐릭터 보정까지 반영한 최종 확률 (GDD §8 "장비 효과가 적용된 최종 확률").
+	 * 보정이 없으면 BaseChance 와 같은 값이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
+	FBGCardChanceView FinalChance;
+
+	/** 보정으로 확률이 실제로 달라졌는가. UI 가 "65% → 78%" 처럼 변화를 드러낼 때 쓴다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
+	bool bChanceModified = false;
 
 	bool IsValid() const { return InstanceId != INDEX_NONE; }
 };

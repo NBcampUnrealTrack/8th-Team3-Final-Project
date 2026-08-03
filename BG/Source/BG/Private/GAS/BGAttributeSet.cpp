@@ -32,6 +32,19 @@ UBGAttributeSet::UBGAttributeSet()
 	InitLuck(0.f);
 }
 
+TArray<FGameplayAttribute> UBGAttributeSet::GetOutcomeWeightAttributes()
+{
+	//	UBGDiceComponent::ApplyModifiers 가 읽는 것과 같은 6종.
+	return {
+		GetWeightBonusCriticalFailureAttribute(),
+		GetWeightBonusFailureAttribute(),
+		GetWeightBonusSuccessAttribute(),
+		GetWeightBonusCriticalSuccessAttribute(),
+		GetWeightMultCriticalFailureAttribute(),
+		GetWeightMultCriticalSuccessAttribute()
+	};
+}
+
 void UBGAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);

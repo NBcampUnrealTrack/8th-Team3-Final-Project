@@ -18,6 +18,11 @@ class UBGHandWidget;
  *   Text_CardName        (TextBlock, 필수)
  *   Text_CardDescription (TextBlock, 필수)
  *   Border_Root          (Border, 선택 - 드래그 중 디밍에 사용)
+ *   Text_Chance          (TextBlock, 선택 - 성공+대성공 축약 확률)
+ *   Text_ChanceDetail    (TextBlock, 선택 - 4단계 상세 확률)
+ *
+ * 확률 텍스트는 둘 다 선택이다. WBP 에 없으면 그냥 표시되지 않는다 —
+ * 기존 카드 WBP 를 고치지 않아도 컴파일과 실행이 그대로 유지되어야 하기 때문이다.
  */
 UCLASS(Abstract, Blueprintable)
 class BG_API UBGCardWidget : public UUserWidget
@@ -95,8 +100,26 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> Border_Root;
 
+	/** "성공 78%" — 표시 공간이 좁을 때의 축약형 (GDD §10). */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Chance;
+
+	/** "대실패 5 · 실패 20 · 성공 65 · 대성공 10" — 4단계 전체 (GDD §10). */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_ChanceDetail;
+
+	/** 보정이 걸린 확률에 쓰는 색. 장비 효과가 붙었다는 것을 한눈에 보이게 한다. */
+	UPROPERTY(EditAnywhere, Category = "BG|Card")
+	FLinearColor ModifiedChanceColor = FLinearColor(0.45f, 0.85f, 1.f, 1.f);
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card")
+	FLinearColor NormalChanceColor = FLinearColor::White;
+
 private:
 	void RefreshVisual();
+
+	/** 확률 텍스트 두 개를 채운다. 판정하지 않는 카드면 숨긴다. */
+	void RefreshChanceText();
 
 	UPROPERTY()
 	TWeakObjectPtr<UBGHandWidget> OwningHand;

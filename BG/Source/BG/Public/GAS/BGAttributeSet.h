@@ -117,6 +117,15 @@ public:
 	FGameplayAttributeData WeightMultCriticalSuccess;
 	ATTRIBUTE_ACCESSORS(UBGAttributeSet, WeightMultCriticalSuccess)
 
+	/**
+	 * 위 6종 전부. UBGDiceComponent::ApplyModifiers 가 읽는 것과 같은 집합이다.
+	 *
+	 * 확률 UI 는 이 값이 바뀌면 손패를 다시 그려야 한다(ABGPlayerController). 목록을 손으로
+	 * 나열하면 보정을 하나 추가했을 때 UI 만 조용히 낡으므로 여기 한 곳에서만 관리한다.
+	 * ⚠️ 보정 어트리뷰트를 추가하면 ApplyModifiers 와 이 목록에 함께 넣을 것.
+	 */
+	static TArray<FGameplayAttribute> GetOutcomeWeightAttributes();
+
 	// ── [비활성] 능력치(RPG 스탯) 4종 ────────────────────────────
 	//
 	//  ⚠️ 네 스탯 모두 어떤 규칙도 읽지 않는다 (GDD §7.1 / §13.1).

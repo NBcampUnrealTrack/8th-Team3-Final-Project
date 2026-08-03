@@ -5,10 +5,12 @@
 #include "Debug/BGCardLog.h"
 #include "Card/BGCardType.h"
 #include "Card/BGDataSubsystem.h"
+#include "Card/BGDiceComponent.h"
 #include "Card/BGGameDataTypes.h"
 #include "BGGameplayTags.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerState.h"
+#include "AbilitySystemGlobals.h"
 
 namespace
 {
@@ -20,9 +22,30 @@ namespace
 		const UGameInstance* GI = World ? World->GetGameInstance() : nullptr;
 		return GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
 	}
+
+	//	비율 → 확률(%). 정규화 규칙이 두 곳에 생기지 않도록 판정 컴포넌트의 변환을 그대로 쓴다.
+	FBGCardChanceView ToChanceView(const FBGOutcomeWeights& Weights)
+	{
+		FBGCardChanceView Out;
+		UBGDiceComponent::GetOutcomeChances(Weights,
+			Out.CriticalFailure, Out.Failure, Out.Success, Out.CriticalSuccess);
+		return Out;
+	}
+
+	//	보정이 실제로 확률을 바꿨는가. 표시 단위가 % 라 0.05%p 미만은 같은 값으로 본다
+	//	(정규화 부동소수 오차로 "보정됨" 표시가 깜빡이는 것을 막는다).
+	bool ChancesDiffer(const FBGCardChanceView& A, const FBGCardChanceView& B)
+	{
+		constexpr float Epsilon = 0.05f;
+		return !FMath::IsNearlyEqual(A.CriticalFailure, B.CriticalFailure, Epsilon)
+			|| !FMath::IsNearlyEqual(A.Failure,         B.Failure,         Epsilon)
+			|| !FMath::IsNearlyEqual(A.Success,         B.Success,         Epsilon)
+			|| !FMath::IsNearlyEqual(A.CriticalSuccess, B.CriticalSuccess, Epsilon);
+	}
 }
 
-FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, const FBGCardInstance& Card)
+FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, const FBGCardInstance& Card,
+	const UAbilitySystemComponent* SourceASC)
 {
 	FBGCardView View;
 	View.InstanceId = Card.InstanceId;
@@ -49,6 +72,27 @@ FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, 
 	//            어디까지나 표시용 힌트이고, 최종 판정은 언제나 서버가 한다.
 	View.bPlayable = true;
 
+	// ── 4단계 확률 (GDD §4.4 / §6.1 / §8 / §10) ──────────────────────────
+	//	파란(장비) 카드는 판정 없이 장착 경로로 빠진다 — 판별자는 카드를 실제로 내는 쪽
+	//	(ABGPlayerController::ServerRequestPlayCard)과 같은 TypeTag 를 쓴다. 두 곳이 갈리면
+	//	확률이 표시되는데 판정은 일어나지 않는 카드가 생긴다.
+	const bool bIsEquip = (Row->TypeTag == BG::Card::Type::Blue.GetTag());
+
+	if (!bIsEquip && Row->OutcomeWeights.Sum() > 0)
+	{
+		View.bHasChances = true;
+		View.BaseChance  = ToChanceView(Row->OutcomeWeights);
+
+		//	보정 합산은 순수 계산이라 클라에서 돌려도 안전하다.
+		//	GDD §9.2 — 확률 "표시" 는 클라, 확률 "판정" 은 서버. 여기는 표시다.
+		const UBGDiceComponent* Dice = UBGDiceComponent::Get(WorldContextObject);
+		View.FinalChance = (Dice && SourceASC)
+			? ToChanceView(Dice->ApplyModifiers(Row->OutcomeWeights, SourceASC))
+			: View.BaseChance;
+
+		View.bChanceModified = ChancesDiffer(View.BaseChance, View.FinalChance);
+	}
+
 	return View;
 }
 
@@ -63,6 +107,13 @@ TArray<FBGCardView> UBGCardViewLibrary::MakeHandViews(const ABGPlayerState* Play
 	const TArray<FBGCardInstance>& Hand = PlayerState->GetHand();
 	Views.Reserve(Hand.Num());
 
+	//	내 손패이므로 시전자는 나다 — 장비·직업 보정을 반영한 최종 확률을 채울 수 있다.
+	//	ASC 는 폰에 붙어 있다(ABGGameState::GetSeatHealth 와 같은 경로).
+	//	⚠️ 보정이 바뀌면 이 뷰는 낡는다. 손패가 바뀔 때만 다시 만들어지기 때문이다.
+	//	   장착 직후 갱신은 ABGPlayerController::RefreshHandWidget 호출로 보장한다.
+	const UAbilitySystemComponent* SourceASC =
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PlayerState->GetPawn());
+
 	//	⚠️ 여기서 턴/페이즈를 반영하지 말 것.
 	//	   bPlayable 은 SetHand 시점에 뷰에 박히는 스냅샷이라, 손패 "내용" 이 바뀔 때만 갱신된다.
 	//	   턴 진행은 Draw 페이즈에서 카드를 뽑은 뒤 Play 로 넘어가므로, 마지막 갱신이 Draw 시점에
@@ -74,7 +125,7 @@ TArray<FBGCardView> UBGCardViewLibrary::MakeHandViews(const ABGPlayerState* Play
 	//	   (ABGPlayerController::UpdateHandInteractionLock)
 	for (const FBGCardInstance& Card : Hand)
 	{
-		Views.Add(MakeCardView(PlayerState, Card));
+		Views.Add(MakeCardView(PlayerState, Card, SourceASC));
 	}
 
 	return Views;

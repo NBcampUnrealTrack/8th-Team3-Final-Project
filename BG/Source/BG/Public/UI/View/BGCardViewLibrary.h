@@ -15,6 +15,7 @@
 
 struct FBGCardInstance;
 class ABGPlayerState;
+class UAbilitySystemComponent;
 
 UCLASS()
 class BG_API UBGCardViewLibrary : public UBlueprintFunctionLibrary
@@ -25,9 +26,18 @@ public:
 	/**
 	 * 카드 인스턴스 1장을 UI 뷰모델로 변환한다.
 	 * DT 에서 Row 를 못 찾으면 CardId 를 그대로 이름에 넣어 화면에서 바로 눈에 띄게 한다.
+	 *
+	 * SourceASC 를 주면 그 시전자의 보정을 반영한 최종 확률(FinalChance)까지 채운다.
+	 * 비워 두면 FinalChance 는 BaseChance 와 같아진다 — 남의 카드나 프리뷰처럼
+	 * "누가 쓸지" 가 정해지지 않은 자리에서는 보정을 붙일 근거가 없다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "BG|Card", meta = (WorldContext = "WorldContextObject"))
-	static FBGCardView MakeCardView(const UObject* WorldContextObject, const FBGCardInstance& Card);
+	static FBGCardView MakeCardView(const UObject* WorldContextObject, const FBGCardInstance& Card,
+		const UAbilitySystemComponent* SourceASC = nullptr);
+
+	/** 좁은 표시 공간용 축약값 — "성공+대성공" (GDD §10). */
+	UFUNCTION(BlueprintPure, Category = "BG|Card")
+	static float GetSuccessOrBetter(const FBGCardChanceView& Chance) { return Chance.GetSuccessOrBetter(); }
 
 	/**
 	 * 손패 전체를 변환한다.

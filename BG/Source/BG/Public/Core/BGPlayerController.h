@@ -11,6 +11,7 @@
 #include "BGPlayerController.generated.h"   // 항상 마지막
 
 class UGameplayAbility;
+class UAbilitySystemComponent;
 class UBGHandWidget;
 class UBGSeatBoardWidget;
 class UBGTurnPanelWidget;
@@ -125,6 +126,15 @@ public:
 	UFUNCTION(Exec)
 	void BG_DumpTurn();
 
+	/**
+	 * 손패 각 카드의 4단계 확률을 기본값과 보정 후로 나란히 출력한다 (GDD §10).
+	 *
+	 * 카드 위젯에 확률 칸(Text_Chance)이 없어도 값이 맞는지 확인할 수 있다 —
+	 * 표시가 안 되는 것과 계산이 틀린 것은 원인이 전혀 다르므로 분리해서 봐야 한다.
+	 */
+	UFUNCTION(Exec)
+	void BG_DumpChances();
+
 	// 손패 위젯을 현재 PlayerState 의 손패로 다시 그린다. 수동 갱신이 필요할 때 호출.
 	UFUNCTION(BlueprintCallable, Category = "BG|UI")
 	void RefreshHandWidget();
@@ -135,9 +145,23 @@ protected:
 	// PlayerState 의 OnHandChanged 에 구독한다. 위젯/PlayerState 중 늦게 오는 쪽에 맞춰 재시도된다.
 	void TryBindHandDelegate();
 
+	/**
+	 * 판정 비율 보정 어트리뷰트(WeightBonus* / WeightMult*)의 변경을 구독한다.
+	 *
+	 * 손패 뷰의 최종 확률(FBGCardView::FinalChance)은 만들어질 때 값이 박히는 스냅샷이라
+	 * 보정이 바뀌어도 저절로 갱신되지 않는다. OnHandChanged 만으로는 부족하다 —
+	 * 장비를 장착하면 RemoveCardFromHand 가 GE 적용보다 **먼저** 손패 변경을 쏘기 때문에,
+	 * 그때 다시 그린 확률은 장비가 반영되기 직전의 값이 된다.
+	 * 확률을 틀리게 보여주면 플레이어를 속이는 것이므로 보정 쪽도 직접 구독한다.
+	 */
+	void TryBindAttributeDelegates();
+
 	// 델리게이트 콜백. Dynamic 델리게이트라 UFUNCTION 이어야 한다.
 	UFUNCTION()
 	void HandleHandChanged();
+
+	/** 보정 어트리뷰트가 바뀌었다 — 손패의 최종 확률을 다시 계산한다. */
+	void HandleWeightAttributeChanged(const struct FOnAttributeChangeData& Data);
 
 	/** 손패에서 카드를 중앙에 드롭했다. 대상이 필요한 카드면 좌석 선택으로 넘어간다. */
 	UFUNCTION()
@@ -213,6 +237,10 @@ private:
 	// 중복 구독을 막기 위해 현재 구독 중인 PlayerState 를 기억한다.
 	UPROPERTY()
 	TWeakObjectPtr<ABGPlayerState> BoundPlayerState;
+
+	//	같은 이유로 구독 중인 ASC 를 기억한다. 폰이 늦게 오거나 갈아끼워지면 다시 건다.
+	UPROPERTY()
+	TWeakObjectPtr<UAbilitySystemComponent> BoundASC;
 
 	// HUD 가 넘겨준 좌석 보드. 소유는 HUD 에 있고 여기서는 참조만 한다.
 	UPROPERTY()

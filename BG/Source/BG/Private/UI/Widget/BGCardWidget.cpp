@@ -44,6 +44,52 @@ void UBGCardWidget::SetDragLocked(bool bInLocked)
 	RefreshVisual();
 }
 
+void UBGCardWidget::RefreshChanceText()
+{
+	if (!Text_Chance && !Text_ChanceDetail)
+	{
+		return;   // WBP 가 확률 칸을 두지 않았다. 선택 사항이므로 조용히 넘어간다.
+	}
+
+	//	판정하지 않는 카드(장비)에 확률을 띄우면 "장비도 실패할 수 있다" 는 오해를 준다.
+	//	Collapsed 로 자리까지 회수한다 — 장비 카드에 빈 줄이 남지 않도록.
+	const ESlateVisibility ChanceVisibility =
+		CardView.bHasChances ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+
+	//	보정이 걸렸으면 보정 후 값을 보여준다. GDD §8 이 요구하는 것은 "최종 확률" 이다.
+	const FBGCardChanceView& Shown = CardView.FinalChance;
+	const FLinearColor Tint = CardView.bChanceModified ? ModifiedChanceColor : NormalChanceColor;
+
+	if (Text_Chance)
+	{
+		Text_Chance->SetVisibility(ChanceVisibility);
+		if (CardView.bHasChances)
+		{
+			Text_Chance->SetText(FText::Format(
+				NSLOCTEXT("BG", "CardChanceShort", "성공 {0}%"),
+				FText::AsNumber(FMath::RoundToInt(Shown.GetSuccessOrBetter()))));
+			Text_Chance->SetColorAndOpacity(FSlateColor(Tint));
+		}
+	}
+
+	if (Text_ChanceDetail)
+	{
+		Text_ChanceDetail->SetVisibility(ChanceVisibility);
+		if (CardView.bHasChances)
+		{
+			//	반올림 때문에 합이 100 이 안 될 수 있다. 각 등급을 정확히 보여주는 쪽이
+			//	"합 100 맞추기" 보다 중요하다 — 플레이어가 비교하는 것은 등급별 값이다.
+			Text_ChanceDetail->SetText(FText::Format(
+				NSLOCTEXT("BG", "CardChanceDetail", "대실패 {0} · 실패 {1} · 성공 {2} · 대성공 {3}"),
+				FText::AsNumber(FMath::RoundToInt(Shown.CriticalFailure)),
+				FText::AsNumber(FMath::RoundToInt(Shown.Failure)),
+				FText::AsNumber(FMath::RoundToInt(Shown.Success)),
+				FText::AsNumber(FMath::RoundToInt(Shown.CriticalSuccess))));
+			Text_ChanceDetail->SetColorAndOpacity(FSlateColor(Tint));
+		}
+	}
+}
+
 void UBGCardWidget::RefreshVisual()
 {
 	if (Text_CardName)
@@ -54,6 +100,8 @@ void UBGCardWidget::RefreshVisual()
 	{
 		Text_CardDescription->SetText(CardView.Description);
 	}
+
+	RefreshChanceText();
 	if (Border_Root)
 	{
 		//	잠금이 가장 우선 — 잠긴 동안에는 사용 가능 여부와 무관하게 손댈 수 없다.

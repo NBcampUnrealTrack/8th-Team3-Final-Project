@@ -11,6 +11,7 @@
 #include "Card/BGDataSubsystem.h"           // GetCardRow
 #include "Card/BGGameDataTypes.h"           // FBGCardRow
 #include "Card/BGDiceComponent.h"           // 4단계 판정
+#include "GAS/BGAttributeSet.h"             // GetOutcomeWeightAttributes
 #include "BGGameplayTags.h"           // BG::Status::*
 #include "Core/BGGameState.h"               // PushToDiscard
 #include "Core/BGPlayerState.h"
@@ -52,6 +53,7 @@ void ABGPlayerController::SetHandWidget(UBGHandWidget* InHandWidget)
 	}
 
 	TryBindHandDelegate();
+	TryBindAttributeDelegates();
 	RefreshHandWidget();
 	UpdateHandInteractionLock();
 }
@@ -145,6 +147,7 @@ void ABGPlayerController::OnRep_PlayerState()
 
 	// 클라: PlayerState 가 이제야 도착했다. 여기서 구독하지 않으면 첫 손패를 놓친다.
 	TryBindHandDelegate();
+	TryBindAttributeDelegates();
 	RefreshHandWidget();
 }
 
@@ -168,8 +171,52 @@ void ABGPlayerController::TryBindHandDelegate()
 	UE_LOG(LogBGCard, Verbose, TEXT("[PC] 손패 델리게이트 구독 — 좌석 %d"), PS->GetSeatIndex());
 }
 
+void ABGPlayerController::TryBindAttributeDelegates()
+{
+	const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
+	UAbilitySystemComponent* ASC =
+		PS ? UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PS->GetPawn()) : nullptr;
+
+	if (!ASC || BoundASC.Get() == ASC)
+	{
+		return;   // 폰이 아직 없거나 이미 같은 ASC 에 구독 중
+	}
+
+	//	폰이 갈아끼워졌다(재접속·리스폰). 이전 구독을 정리하지 않으면 죽은 ASC 에 콜백이 남는다.
+	if (UAbilitySystemComponent* Previous = BoundASC.Get())
+	{
+		for (const FGameplayAttribute& Attribute : UBGAttributeSet::GetOutcomeWeightAttributes())
+		{
+			Previous->GetGameplayAttributeValueChangeDelegate(Attribute).RemoveAll(this);
+		}
+	}
+
+	for (const FGameplayAttribute& Attribute : UBGAttributeSet::GetOutcomeWeightAttributes())
+	{
+		ASC->GetGameplayAttributeValueChangeDelegate(Attribute)
+			.AddUObject(this, &ABGPlayerController::HandleWeightAttributeChanged);
+	}
+
+	BoundASC = ASC;
+
+	//	구독 직전에 이미 바뀐 값이 있을 수 있다(직업 GE 가 폰 스폰과 함께 붙는다).
+	RefreshHandWidget();
+
+	UE_LOG(LogBGCard, Verbose, TEXT("[PC] 판정 보정 어트리뷰트 구독 — 좌석 %d"), PS->GetSeatIndex());
+}
+
+void ABGPlayerController::HandleWeightAttributeChanged(const FOnAttributeChangeData& /*Data*/)
+{
+	//	어떤 보정이 바뀌었는지는 중요하지 않다 — 손패 전체의 최종 확률을 다시 계산한다.
+	RefreshHandWidget();
+}
+
 void ABGPlayerController::HandleHandChanged()
 {
+	//	장비 장착처럼 손패와 보정이 함께 바뀌는 경우, 손패 변경이 GE 적용보다 먼저 온다.
+	//	여기서 구독을 재시도해 두면 뒤이어 도착하는 보정 변경으로 확률이 정정된다.
+	TryBindAttributeDelegates();
+
 	RefreshHandWidget();
 }
 

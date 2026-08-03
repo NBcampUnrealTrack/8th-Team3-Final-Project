@@ -18,6 +18,7 @@
 #include "Core/BGPlayerState.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "UI/View/BGCardViewLibrary.h"   // BG_DumpChances — UI 와 같은 값을 찍는다
 
 // BGGameDataTypes.h 는 UGameplayEffect 를 전방 선언만 한다.
 // TSubclassOf<UGameplayEffect> 를 bool 로 평가하면 UGameplayEffect::StaticClass() 가 필요하므로
@@ -333,6 +334,63 @@ void ABGPlayerController::BG_DumpHand()
 			bLeak ? TEXT("  ← 은닉 정보 누출! COND_OwnerOnly 확인") :
 			bIsServer ? TEXT("  (서버라 정상)") : TEXT(""));
 	}
+#endif // !UE_BUILD_SHIPPING
+}
+
+void ABGPlayerController::BG_DumpChances()
+{
+#if !UE_BUILD_SHIPPING
+	const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
+	if (!PS)
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[Exec] ABGPlayerState 없음"));
+		return;
+	}
+
+	//	MakeHandViews 가 UI 에 넘기는 것과 똑같은 값을 찍는다.
+	//	여기서 계산을 따로 하면 "콘솔은 맞는데 화면은 틀린" 상황을 잡아낼 수 없다.
+	const TArray<FBGCardView> Views = UBGCardViewLibrary::MakeHandViews(PS);
+
+	const UAbilitySystemComponent* ASC =
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PS->GetPawn());
+
+	UE_LOG(LogBGCard, Log, TEXT("===== BG_DumpChances — 좌석 %d (%s) ====="),
+		PS->GetSeatIndex(), HasAuthority() ? TEXT("서버") : TEXT("클라"));
+
+	if (!ASC)
+	{
+		//	ASC 가 없으면 보정을 못 읽어 기본 확률만 나온다. 조용히 넘어가면
+		//	"장비를 꼈는데 확률이 그대로" 를 UI 버그로 오해하게 된다.
+		UE_LOG(LogBGCard, Warning,
+			TEXT("  ASC 없음(폰 미스폰?) — 보정을 읽지 못해 기본 확률만 표시됩니다."));
+	}
+
+	int32 NumWithChance = 0;
+
+	for (const FBGCardView& View : Views)
+	{
+		if (!View.bHasChances)
+		{
+			UE_LOG(LogBGCard, Log, TEXT("  #%-3d %-24s 판정 없음(장비)"),
+				View.InstanceId, *View.CardId.ToString());
+			continue;
+		}
+
+		++NumWithChance;
+
+		const FBGCardChanceView& B = View.BaseChance;
+		const FBGCardChanceView& F = View.FinalChance;
+
+		UE_LOG(LogBGCard, Log,
+			TEXT("  #%-3d %-24s 기본 [대실%5.1f 실%5.1f 성%5.1f 대성%5.1f] → 최종 [대실%5.1f 실%5.1f 성%5.1f 대성%5.1f]  성공이상 %.1f%%%s"),
+			View.InstanceId, *View.CardId.ToString(),
+			B.CriticalFailure, B.Failure, B.Success, B.CriticalSuccess,
+			F.CriticalFailure, F.Failure, F.Success, F.CriticalSuccess,
+			F.GetSuccessOrBetter(),
+			View.bChanceModified ? TEXT("  ← 보정됨") : TEXT(""));
+	}
+
+	UE_LOG(LogBGCard, Log, TEXT("판정 카드 %d 장 / 손패 %d 장"), NumWithChance, Views.Num());
 #endif // !UE_BUILD_SHIPPING
 }
 
