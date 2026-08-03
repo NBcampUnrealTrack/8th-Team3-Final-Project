@@ -81,6 +81,46 @@ struct FBGOutcomeWeights
 };
 
 /**
+ * 판정 1회의 결과 — 서버가 굴린 뒤 전원에게 알리는 내용 (GDD §4.1
+ * "판정은 서버 권한으로 실행하고 **모든 플레이어에게 동일한 결과를 표시한다**").
+ *
+ * ⚠️ 멀티캐스트로 나간다. 공개 정보만 담을 것 — 손패 같은 은닉 정보를 넣으면 전원에게 샌다.
+ */
+USTRUCT(BlueprintType)
+struct FBGCardResolution
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	FGameplayTag CardId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	EBGDiceOutcome Outcome = EBGDiceOutcome::Failure;
+
+	/** 굴린 눈 0~99. 강제된 판정이면 결과와 어긋나므로 bForced 와 함께 볼 것. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	int32 Roll = INDEX_NONE;
+
+	/** 준비·함정(Status.NextCard.Force*)이 굴림 결과를 덮어썼는가. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	bool bForced = false;
+
+	/** 카드를 쓴 좌석. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	int32 SeatIndex = INDEX_NONE;
+
+	/**
+	 * 판정에 실제로 쓰인 비율(보정 반영 후).
+	 *
+	 * 클라가 다시 계산하지 않고 이 값을 그대로 쓰게 하려고 함께 보낸다 —
+	 * 클라에서 재계산하려면 남의 어트리뷰트를 읽어야 하는데 그건 복제되지 않는다.
+	 * 그러면 남의 판정만 확률이 틀리게 표시된다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	FBGOutcomeWeights Weights;
+};
+
+/**
  * [비활성] 판정 등급별 효과 수치 — 등급당 정수 하나.
  *
  * FBGOutcomeEffects(효과 목록)로 대체됐다. 카드 데이터를 채울 필드가 둘이면

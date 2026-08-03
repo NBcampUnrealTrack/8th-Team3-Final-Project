@@ -35,6 +35,13 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, bMatchRunning);
 }
 
+void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution& Resolution)
+{
+	//	리슨서버에서는 호스트에서도 이 본문이 실행된다 — 호스트 UI 도 같은 경로로 갱신된다.
+	//	여기서 규칙을 처리하지 않는다. 판정과 효과 적용은 이미 서버에서 끝났고 이건 통지뿐이다.
+	OnCardResolved.Broadcast(Resolution);
+}
+
 FGameplayTag ABGGameState::GameOverPhaseTag()
 {
 	return BG::Phase::GameOver.GetTag();

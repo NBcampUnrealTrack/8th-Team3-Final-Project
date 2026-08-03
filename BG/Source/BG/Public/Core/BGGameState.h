@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Card/BGCardType.h"
+#include "Card/BGGameDataTypes.h"   // FBGCardResolution — 멀티캐스트 인자라 완전한 타입이 필요하다
 #include "GameplayTagContainer.h"
 #include "GameFramework/GameStateBase.h"
 #include "BGGameState.generated.h"
@@ -14,6 +15,9 @@
  */
 class UBGDiceComponent;
 
+/** 판정 결과가 도착했다. 서버·클라 양쪽에서 불린다 (GDD §4.1 — 전원이 같은 결과를 본다). */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCardResolved, const FBGCardResolution& /*Resolution*/);
+
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase
 {
@@ -21,6 +25,18 @@ class BG_API ABGGameState : public AGameStateBase
 
 public:
 	ABGGameState();
+
+	/**
+	 * 판정 결과를 전원에게 알린다 (서버에서만 호출).
+	 *
+	 * PlayerController 의 멀티캐스트는 소유 클라에만 가므로 여기가 아니면 남의 판정을 볼 수 없다.
+	 * GameState 는 모두에게 복제되므로 좌석 전원이 같은 결과를 받는다.
+	 */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_CardResolved(const FBGCardResolution& Resolution);
+
+	/** 위 멀티캐스트가 도착하면 발사된다. UI(PlayerController)가 구독한다. */
+	FOnBGCardResolved OnCardResolved;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
