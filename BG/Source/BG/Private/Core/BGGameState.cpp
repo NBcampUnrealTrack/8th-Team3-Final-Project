@@ -254,7 +254,7 @@ FGameplayTag ABGGameState::GetSeatRole(int32 Seat) const
 {
 	const ABGPlayerState* PS = GetPlayerStateBySeat(Seat);
 	const ABGCharacter* Char = PS ? Cast<ABGCharacter>(PS->GetPawn()) : nullptr;
-	return Char ? Char->GetCharacterTag() : FGameplayTag();
+	return Char ? Char->GetRoleTag() : FGameplayTag();
 }
 
 int32 ABGGameState::GetHandLimitForSeat(int32 Seat) const

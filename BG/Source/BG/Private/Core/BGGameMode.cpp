@@ -9,6 +9,19 @@
 #include "Engine/World.h"
 #include "Core/BGGameState.h"
 
+namespace
+{
+	// Fisher-Yates 셔플 (뒤에서부터 랜덤 교환). 역할 풀과 직업 풀이 같은 방식을 쓴다.
+	void ShuffleTags(TArray<FGameplayTag>& Tags)
+	{
+		for (int32 i = Tags.Num() - 1; i > 0; --i)
+		{
+			const int32 j = FMath::RandRange(0, i);
+			Tags.Swap(i, j);
+		}
+	}
+}
+
 ABGGameMode::ABGGameMode()
 {
 	// 좌석/손패 등 플레이어별 데이터의 소유자(md §1.2).
@@ -73,6 +86,76 @@ TArray<FGameplayTag> ABGGameMode::BuildRolePool(int32 NumPlayers)
 	return Pool;
 }
 
+TArray<FGameplayTag> ABGGameMode::BuildJobPool()
+{
+	using namespace BG::Character::Job;
+
+	// 8종 전부를 후보로 넣는다. 최대 인원이 7 이라 셔플 후 앞에서 잘라 쓰면 중복이 없다.
+	return {
+		Warrior.GetTag(),
+		Mage.GetTag(),
+		Rogue.GetTag(),
+		Cleric.GetTag(),
+		Ranger.GetTag(),
+		Paladin.GetTag(),
+		Berserker.GetTag(),
+		Alchemist.GetTag()
+	};
+}
+
+void ABGGameMode::AssignJobs()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	TArray<APlayerController*> Players;
+	CollectPlayers(Players);
+
+	const int32 Num = Players.Num();
+	if (Num < MinPlayers || Num > MaxPlayers)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[BG] AssignJobs: 접속 인원 %d 명은 지원 범위(%d~%d) 밖 — 배정 취소."),
+			Num, MinPlayers, MaxPlayers);
+		return;
+	}
+
+	TArray<FGameplayTag> Pool = BuildJobPool();
+	if (Pool.Num() < Num)
+	{
+		// 직업 종류보다 사람이 많으면 중복 없이 나눠줄 수 없다 — 잘못 배정하느니 멈춘다.
+		UE_LOG(LogTemp, Error, TEXT("[BG] AssignJobs: 직업 %d종 < 인원 %d명 — 중복 없는 배정 불가."),
+			Pool.Num(), Num);
+		return;
+	}
+
+	ShuffleTags(Pool);
+
+	// 셔플된 앞쪽 Num 개를 한 명씩 가져간다 → 같은 직업이 두 명 나올 수 없다.
+	for (int32 i = 0; i < Num; ++i)
+	{
+		APlayerController* PC = Players[i];
+
+		ABGCharacter* Char = PC ? Cast<ABGCharacter>(PC->GetPawn()) : nullptr;
+		if (!Char)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[BG] AssignJobs: %s 의 캐릭터 없음 — 배정 스킵."),
+				PC ? *PC->GetName() : TEXT("null"));
+			continue;
+		}
+
+		const FGameplayTag JobTag = Pool[i];
+
+		// 태그 부여 + DT Row 의 스켈레탈 메쉬 교체까지 캐릭터가 한 번에 처리한다.
+		Char->SetJobTag(JobTag);
+
+		UE_LOG(LogTemp, Log, TEXT("[BG] AssignJobs: %s → %s"),
+			*PC->GetName(), *JobTag.ToString());
+	}
+}
+
 void ABGGameMode::CollectPlayers(TArray<APlayerController*>& OutPlayers) const
 {
 	OutPlayers.Reset();
@@ -117,15 +200,15 @@ void ABGGameMode::AssignRoles()
 		return;
 	}
 
-	// Fisher-Yates 셔플 (뒤에서부터 랜덤 교환).
-	for (int32 i = Pool.Num() - 1; i > 0; --i)
-	{
-		const int32 j = FMath::RandRange(0, i);
-		Pool.Swap(i, j);
-	}
+	// 직업을 먼저 배정한다 — 스탯(Health 등)이 직업에서 나오고, 판이 열릴 때
+	// StartMatch 가 그 Health 를 보고 초기 손패를 나눠주기 때문이다.
+	// 역할은 스탯에 관여하지 않으므로 둘 사이에 다른 순서 제약은 없다.
+	AssignJobs();
+
+	ShuffleTags(Pool);
 
 	// 셔플된 풀에서 한 명씩 태그를 빼서 배정.
-	// SetCharacterTag 가 캐릭터의 ASC 에 DT Row(스탯 GE/패시브/어빌리티)를 부여한다.
+	// SetRoleTag 는 태그를 ASC 루즈 태그로 올릴 뿐이다 — 스탯은 위의 AssignJobs 가 이미 넣었다.
 	for (int32 i = 0; i < Num; ++i)
 	{
 		APlayerController* PC = Players[i];
@@ -146,10 +229,10 @@ void ABGGameMode::AssignRoles()
 		}
 
 		const FGameplayTag RoleTag = Pool[i];
-		Char->SetCharacterTag(RoleTag);
+		Char->SetRoleTag(RoleTag);
 
 		// 보안관만 공개 역할이다. 나머지는 사망하거나 판이 끝날 때까지 감춘다.
-		// (CharacterTag 자체는 COND_OwnerOnly 라 본인 외에는 복제되지 않는다)
+		// (RoleTag 자체는 COND_OwnerOnly 라 본인 외에는 복제되지 않는다)
 		if (ABGPlayerState* PS = PC->GetPlayerState<ABGPlayerState>())
 		{
 			if (RoleTag == BG::Role::Sheriff.GetTag())

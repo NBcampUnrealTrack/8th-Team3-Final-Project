@@ -1,6 +1,11 @@
-﻿// BANG! 게임모드 — 서버 권위. 접속 인원수(4~7)에 맞춰 역할 태그를 셔플 배정한다.
-// 배정은 캐릭터의 SetCharacterTag 로 전달되고, 캐릭터가 DT(FBGCharacterRow)를 읽어
-// 스탯/능력을 스스로 부여한다. (Team4Project 의 GODGameMode::AssignRoles 대응)
+﻿// BANG! 게임모드 — 서버 권위. 접속 인원수(4~7)에 맞춰 역할·직업 태그를 셔플 배정한다.
+// 배정은 캐릭터의 SetRoleTag / SetJobTag 로 전달되고, 캐릭터가 직업 DT(FBGCharacterRow)를
+// 읽어 스탯/능력/외형을 스스로 부여한다. (Team4Project 의 GODGameMode::AssignRoles 대응)
+//
+// 축이 둘이다 — 역할(Role.*, 숨김)과 직업(Character.Job.*, 공개). 한 판에서 한 명이 둘 다 받는다.
+// 역할은 인원수에 맞춰 짠 풀에서, 직업은 8종 중 중복 없이 뽑는다.
+//   역할 = 승리 조건 판정에만 쓴다. DT Row 도, 스탯도 없다.
+//   직업 = 스탯/능력/외형의 유일한 출처. DT_BGCharacterRow 의 Row 를 읽는다.
 //
 // 판 시작 진행(트래블 도착 판정 등)은 UBGMatchStartComponent 가 맡는다 —
 // 이 클래스는 "누가 무슨 역할인가"만 안다.
@@ -35,6 +40,19 @@ public:
 
 	// 인원수에 맞는 역할 태그 풀을 구성 (셔플 전). 4:S/O/O/R, 5:+D, 6:+O, 7:+D.
 	static TArray<FGameplayTag> BuildRolePool(int32 NumPlayers);
+
+	/**
+	 * 서버: 접속 인원에게 판타지 직업(Character.Job.*)을 **중복 없이** 하나씩 배정한다.
+	 * 직업 Row 가 스탯 GE/패시브/어빌리티를 부여하고, SkeletalMesh 가 있으면 외형도 바뀐다.
+	 *
+	 * ⚠️ AssignRoles 가 시작할 때 자기가 먼저 호출한다 — 보통은 따로 부를 일이 없다.
+	 *    직업이 이 게임의 유일한 스탯 출처라, 판이 열리기 전에 반드시 끝나 있어야 한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG")
+	void AssignJobs();
+
+	// 직업 태그 8종 전부 (셔플 전). 최대 인원 7 < 8 이라 중복 배정이 나올 수 없다.
+	static TArray<FGameplayTag> BuildJobPool();
 
 	// 접속한 PlayerController 를 모은다.
 	void CollectPlayers(TArray<APlayerController*>& OutPlayers) const;

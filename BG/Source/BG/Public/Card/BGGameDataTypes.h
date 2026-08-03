@@ -10,6 +10,8 @@
 
 class UGameplayAbility;
 class UGameplayEffect;
+class UAnimInstance;
+class USkeletalMesh;
 
 /**
  * 주사위 판정 결과 4단계. 낮은 눈 = 대실패, 높은 눈 = 대성공.
@@ -217,9 +219,10 @@ struct FBGOutcomeEffects
 };
 
 /**
- * 직업(또는 역할) 1종의 GAS 구성을 서술하는 DT Row.
+ * 직업 1종의 GAS 구성을 서술하는 DT Row.
  *   - Row 이름 = CharacterTag 의 태그 문자열 (예: "Character.Job.Mage").
  *     DataSubsystem 이 태그로 이 Row 를 찾아 캐릭터에 부여한다.
+ *   - 역할(Role.*) Row 는 만들지 않는다. 역할은 승리 조건 전용이라 스탯도 능력도 갖지 않는다.
  *
  * 매핑
  *   DefaultAttributeGE  : Health / CardUseLimit 등 기본 스탯을 세팅하는 GE(Instant).
@@ -228,6 +231,8 @@ struct FBGOutcomeEffects
  *                             도적   → CardUseLimit +1
  *   GrantedAbilities    : 이 직업이 쓸 수 있는 능동 어빌리티(GA). 대부분은 카드가 GA 를
  *                         구동하므로, 직업 고유 능동기가 있을 때만 채운다.
+ *   SkeletalMesh        : 직업 외형. 배정과 동시에 캐릭터 메쉬를 이 값으로 바꾼다.
+ *                         Role.* Row 에서는 비워 둔다 — 외형은 직업 축만 건드린다.
  */
 USTRUCT(BlueprintType)
 struct FBGCharacterRow : public FTableRowBase
@@ -235,7 +240,7 @@ struct FBGCharacterRow : public FTableRowBase
 	GENERATED_BODY()
 
 public:
-	// 이 Row 를 식별하는 태그 (Role.* 또는 Character.Job.*).
+	// 이 Row 를 식별하는 태그 (Character.Job.*).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FGameplayTag CharacterTag;
 
@@ -250,6 +255,22 @@ public:
 	// 이 캐릭터에게 부여할 능동 어빌리티 (GA).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TArray<TSubclassOf<UGameplayAbility>> GrantedAbilities;
+
+	// ── 외형 (직업 Row 전용) ─────────────────────────────────────
+	//
+	// 직업 태그가 배정되면 ABGCharacter 가 GetMesh() 에 이 메쉬를 꽂는다.
+	// 비워 두면 BP_BGCharacter 의 기본 메쉬를 그대로 쓴다 — 메쉬가 아직
+	// 없어도 배정과 스탯 부여는 정상 동작한다.
+	//
+	// ⚠️ 소프트 참조다. 8종을 전부 하드 참조하면 캐릭터 Row 를 읽는 순간
+	//    쓰지도 않을 직업 메쉬까지 통째로 메모리에 올라간다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	TSoftObjectPtr<USkeletalMesh> SkeletalMesh;
+
+	// 메쉬를 교체하면 AnimInstance 가 초기화된다. 직업 전용 ABP 가 있으면 여기에 넣는다.
+	// 비워 두면 BP 기본 ABP 를 다시 물린다(스켈레톤이 호환될 때만 정상 동작).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	TSubclassOf<UAnimInstance> AnimClass;
 };
 
 /**

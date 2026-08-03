@@ -180,7 +180,7 @@ TArray<FBGSeatView> UBGSeatViewLibrary::MakeSeatViews(const APlayerController* V
 		//	   공개 여부 판정은 서버가 이미 끝냈고(보안관 / 사망자 / 판 종료) UI 는 결과만 쓴다.
 		FGameplayTag VisibleRole = PS->GetPublicRole();
 
-		//	본인은 자기 역할을 안다 — CharacterTag 가 COND_OwnerOnly 로 자기에게만 온다.
+		//	본인은 자기 역할을 안다 — RoleTag 가 COND_OwnerOnly 로 자기에게만 온다.
 		if (!VisibleRole.IsValid() && View.bIsLocalPlayer && GS)
 		{
 			VisibleRole = GS->GetSeatRole(View.SeatIndex);

@@ -8,6 +8,9 @@
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerState.h"
 #include "Engine/World.h"
+#include "Engine/SkeletalMesh.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Animation/AnimInstance.h"
 #include "Net/UnrealNetwork.h"
 
 ABGCharacter::ABGCharacter()
@@ -36,7 +39,11 @@ void ABGCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	//    게임이 성립하지 않는다. 본인에게만 보낸다(폰의 Owner 는 소유 PlayerController).
 	//    공개되어야 하는 역할(보안관 / 사망자 / 판 종료)은 ABGPlayerState::PublicRoleTag 로
 	//    따로 올린다 — UI 는 반드시 그쪽을 봐야 한다.
-	DOREPLIFETIME_CONDITION(ABGCharacter, CharacterTag, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ABGCharacter, RoleTag, COND_OwnerOnly);
+
+	// 직업은 역할과 반대로 공개 정보다(GDD §7). 조건 없이 전원에게 보낸다 —
+	// 다른 클라도 이 태그를 받아야 그 캐릭터의 메쉬를 직업 메쉬로 바꿀 수 있다.
+	DOREPLIFETIME(ABGCharacter, JobTag);
 }
 
 void ABGCharacter::PossessedBy(AController* NewController)
@@ -56,6 +63,15 @@ void ABGCharacter::OnRep_Controller()
 	InitializeAbilityActorInfo();
 }
 
+void ABGCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 늦게 관련성이 생긴 클라(또는 리슨서버 호스트)는 JobTag 가 이미 채워진 채로 시작한다 —
+	// 그 경우 OnRep 이 오지 않으므로 여기서 한 번 외형을 맞춘다.
+	ApplyJobVisual();
+}
+
 void ABGCharacter::InitializeAbilityActorInfo()
 {
 	if (AbilitySystemComponent)
@@ -73,26 +89,52 @@ void ABGCharacter::ServerInitGAS()
 	}
 	bGASInitialized = true;
 
-	ApplyCharacterDataRow(CharacterTag);
-	RefreshCharacterLooseTag();
+	// 스탯/능력은 직업 축이 전담한다. 역할(RoleTag)은 DT 를 조회하지 않는다 — 승패 규칙 전용.
+	ApplyJobDataRow();
+
+	RefreshLooseTags();
+	ApplyJobVisual();
 }
 
-void ABGCharacter::SetCharacterTag(const FGameplayTag& NewTag)
+void ABGCharacter::SetRoleTag(const FGameplayTag& NewTag)
 {
-	CharacterTag = NewTag;
+	RoleTag = NewTag;
+
+	// 역할은 GAS 를 건드리지 않는다. 루즈 태그만 맞춰주면 된다 —
+	// 승패 판정과 어빌리티의 역할 조건 검사가 그 태그를 본다.
+	RefreshLooseTags();
+}
+
+void ABGCharacter::SetJobTag(const FGameplayTag& NewTag)
+{
+	JobTag = NewTag;
 
 	// 이미 초기화됐다면 즉시 재적용, 아니면 ServerInitGAS 가 최초 적용한다.
 	if (HasAuthority() && bGASInitialized)
 	{
-		ApplyCharacterDataRow(CharacterTag);
-		RefreshCharacterLooseTag();
+		ApplyJobDataRow();
+		RefreshLooseTags();
+	}
+
+	// 외형은 GAS 초기화 여부와 무관하다 — 서버에서 바로 바꾸고, 클라는 OnRep_JobTag 가 맡는다.
+	// (서버 자신은 복제를 받지 않으므로 리슨서버 호스트는 이 경로가 유일하다)
+	if (HasAuthority())
+	{
+		ApplyJobVisual();
 	}
 }
 
-void ABGCharacter::OnRep_CharacterTag()
+void ABGCharacter::OnRep_RoleTag()
 {
 	// 소유 클라: 역할 태그를 로컬 ASC 루즈 태그에 반영 (HUD/능력 조건 검사용).
-	RefreshCharacterLooseTag();
+	RefreshLooseTags();
+}
+
+void ABGCharacter::OnRep_JobTag()
+{
+	// 전 클라: 직업 태그를 로컬 ASC 루즈 태그에 반영하고 외형을 교체한다.
+	RefreshLooseTags();
+	ApplyJobVisual();
 }
 
 void ABGCharacter::NotifyHealthDepleted(AActor* Killer)
@@ -136,9 +178,9 @@ void ABGCharacter::NotifyHealthDepleted(AActor* Killer)
 	}
 }
 
-void ABGCharacter::ApplyCharacterDataRow(const FGameplayTag& RowTag)
+void ABGCharacter::ApplyJobDataRow()
 {
-	if (!HasAuthority() || !AbilitySystemComponent || !RowTag.IsValid())
+	if (!HasAuthority() || !AbilitySystemComponent || !JobTag.IsValid())
 	{
 		return;
 	}
@@ -150,18 +192,22 @@ void ABGCharacter::ApplyCharacterDataRow(const FGameplayTag& RowTag)
 		return;
 	}
 
-	const FBGCharacterRow* Row = DataSubsystem->GetCharacterRow(RowTag);
+	const FBGCharacterRow* Row = DataSubsystem->GetCharacterRow(JobTag);
 	if (!Row)
 	{
+		// 직업 Row 가 없다 = 이 캐릭터의 스탯이 통째로 비는 상태. 조용히 넘기면 안 된다.
+		// (Row 이름은 태그 문자열과 정확히 같아야 한다 — "Character.Job.Mage")
+		UE_LOG(LogTemp, Warning, TEXT("[BG] 직업 DT Row 없음 — %s (DT_BGCharacterRow 에 같은 이름의 Row 를 추가할 것)"),
+			*JobTag.ToString());
 		return;
 	}
 
 	// 유효한 Row 를 찾았을 때만 이전 부여분을 정리한다
 	// (잘못된 태그로 능력이 전부 날아가는 것 방지).
-	ClearCharacterDataRow();
+	ClearJobGrants();
 
-	UE_LOG(LogTemp, Log, TEXT("[BG] 능력 부여 시작 — %s (역할=%s, GE %d개 / 어빌리티 %d개)"),
-		*GetName(), *RowTag.ToString(),
+	UE_LOG(LogTemp, Log, TEXT("[BG] 능력 부여 시작 — %s (직업=%s, GE %d개 / 어빌리티 %d개)"),
+		*GetName(), *JobTag.ToString(),
 		(Row->DefaultAttributeGE ? 1 : 0) + Row->PassiveEffects.Num(),
 		Row->GrantedAbilities.Num());
 
@@ -195,7 +241,7 @@ void ABGCharacter::ApplyCharacterDataRow(const FGameplayTag& RowTag)
 			AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 		if (Handle.IsValid())
 		{
-			AppliedEffectHandles.Add(Handle);
+			JobEffectHandles.Add(Handle);
 		}
 		UE_LOG(LogTemp, Log, TEXT("[BG]   이펙트 적용 — %s (%s)"),
 			*EffectClass->GetName(), Handle.IsValid() ? TEXT("지속, 추적됨") : TEXT("즉시"));
@@ -207,7 +253,7 @@ void ABGCharacter::ApplyCharacterDataRow(const FGameplayTag& RowTag)
 		if (!AbilityClass)
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[BG]   능력 부여 스킵 — %s 의 GrantedAbilities 에 빈 항목."),
-				*RowTag.ToString());
+				*JobTag.ToString());
 			continue;
 		}
 
@@ -216,7 +262,7 @@ void ABGCharacter::ApplyCharacterDataRow(const FGameplayTag& RowTag)
 
 		if (Handle.IsValid())
 		{
-			GrantedAbilityHandles.Add(Handle);
+			JobAbilityHandles.Add(Handle);
 			UE_LOG(LogTemp, Log, TEXT("[BG]   능력 부여 성공 — %s"), *AbilityClass->GetName());
 		}
 		else
@@ -225,50 +271,106 @@ void ABGCharacter::ApplyCharacterDataRow(const FGameplayTag& RowTag)
 		}
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[BG] 능력 부여 완료 — %s (어빌리티 %d개 부여됨)"),
-		*GetName(), GrantedAbilityHandles.Num());
+	UE_LOG(LogTemp, Log, TEXT("[BG] 능력 부여 완료 — %s / %s (어빌리티 %d개 부여됨)"),
+		*GetName(), *JobTag.ToString(), JobAbilityHandles.Num());
 }
 
-void ABGCharacter::ClearCharacterDataRow()
+void ABGCharacter::ClearJobGrants()
 {
 	if (!AbilitySystemComponent)
 	{
 		return;
 	}
 
-	for (const FActiveGameplayEffectHandle& Handle : AppliedEffectHandles)
+	for (const FActiveGameplayEffectHandle& Handle : JobEffectHandles)
 	{
 		if (Handle.IsValid())
 		{
 			AbilitySystemComponent->RemoveActiveGameplayEffect(Handle);
 		}
 	}
-	AppliedEffectHandles.Reset();
+	JobEffectHandles.Reset();
 
-	for (const FGameplayAbilitySpecHandle& Handle : GrantedAbilityHandles)
+	for (const FGameplayAbilitySpecHandle& Handle : JobAbilityHandles)
 	{
 		if (Handle.IsValid())
 		{
 			AbilitySystemComponent->ClearAbility(Handle);
 		}
 	}
-	GrantedAbilityHandles.Reset();
+	JobAbilityHandles.Reset();
 }
 
-void ABGCharacter::RefreshCharacterLooseTag()
+void ABGCharacter::SyncLooseTag(const FGameplayTag& DesiredTag, FGameplayTag& AppliedSlot)
 {
-	if (!AbilitySystemComponent || AppliedLooseTag == CharacterTag)
+	if (!AbilitySystemComponent || AppliedSlot == DesiredTag)
 	{
 		return;
 	}
 
-	if (AppliedLooseTag.IsValid())
+	if (AppliedSlot.IsValid())
 	{
-		AbilitySystemComponent->RemoveLooseGameplayTag(AppliedLooseTag);
+		AbilitySystemComponent->RemoveLooseGameplayTag(AppliedSlot);
 	}
-	if (CharacterTag.IsValid())
+	if (DesiredTag.IsValid())
 	{
-		AbilitySystemComponent->AddLooseGameplayTag(CharacterTag);
+		AbilitySystemComponent->AddLooseGameplayTag(DesiredTag);
 	}
-	AppliedLooseTag = CharacterTag;
+	AppliedSlot = DesiredTag;
+}
+
+void ABGCharacter::RefreshLooseTags()
+{
+	// 역할과 직업은 각자 자기 슬롯을 갖는다. 한 슬롯으로 돌리면 나중 태그가 앞 태그를 떼어내
+	// "직업을 배정했더니 역할 태그가 사라지는" 상태가 된다.
+	SyncLooseTag(RoleTag, AppliedRoleLooseTag);
+	SyncLooseTag(JobTag, AppliedJobLooseTag);
+}
+
+void ABGCharacter::ApplyJobVisual()
+{
+	USkeletalMeshComponent* MeshComp = GetMesh();
+	if (!MeshComp || !JobTag.IsValid())
+	{
+		return;
+	}
+
+	const UGameInstance* GI = GetGameInstance();
+	const UBGDataSubsystem* DataSubsystem = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	if (!DataSubsystem)
+	{
+		return;
+	}
+
+	const FBGCharacterRow* Row = DataSubsystem->GetCharacterRow(JobTag);
+	if (!Row || Row->SkeletalMesh.IsNull())
+	{
+		// 아직 직업 메쉬를 안 꽂았을 뿐이다 — BP 기본 메쉬로 계속 간다.
+		return;
+	}
+
+	USkeletalMesh* NewMesh = Row->SkeletalMesh.LoadSynchronous();
+	if (!NewMesh)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BG] 직업 메쉬 로드 실패 — %s (%s)"),
+			*JobTag.ToString(), *Row->SkeletalMesh.ToString());
+		return;
+	}
+
+	if (MeshComp->GetSkeletalMeshAsset() == NewMesh)
+	{
+		return; // 이미 같은 메쉬 — 다시 꽂으면 AnimInstance 만 헛되이 재초기화된다.
+	}
+
+	MeshComp->SetSkeletalMeshAsset(NewMesh);
+
+	// 직업 전용 ABP 가 있을 때만 갈아끼운다. 비워 두면 BP_BGCharacter 의 ABP 가 그대로
+	// 재초기화된다 — 단, 새 메쉬의 스켈레톤이 그 ABP 와 호환될 때만 정상 동작한다.
+	if (Row->AnimClass)
+	{
+		MeshComp->SetAnimInstanceClass(Row->AnimClass);
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("[BG] 직업 외형 적용 — %s → %s (%s)"),
+		*GetName(), *NewMesh->GetName(), *JobTag.ToString());
 }

@@ -123,7 +123,7 @@ public:
 
 	// ── 역할 공개 ──
 	//
-	// 진짜 역할은 ABGCharacter::CharacterTag 에 있고 COND_OwnerOnly 로 본인에게만 간다.
+	// 진짜 역할은 ABGCharacter::RoleTag 에 있고 COND_OwnerOnly 로 본인에게만 간다.
 	// 여기 값은 "공개된 역할" 만 담는다 — 보안관(판 시작 시), 사망자, 판 종료 시 전원.
 	// 비공개면 무효 태그다. UI 는 반드시 이 값을 봐야 한다.
 	UFUNCTION(BlueprintPure, Category = "BG|Player")

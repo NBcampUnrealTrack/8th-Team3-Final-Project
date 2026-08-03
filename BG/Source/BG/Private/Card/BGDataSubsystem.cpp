@@ -74,8 +74,11 @@ const FBGCharacterRow* UBGDataSubsystem::GetCharacterRow(FGameplayTag CharacterT
 		return nullptr;
 	}
 
+	// bWarnIfRowMissing=false — 경고는 호출자가 맥락에 맞게 남긴다.
+	// 이 DT 는 직업(Character.Job.*) Row 만 갖는다. 역할 태그로 조회가 들어오면
+	// 못 찾는 게 정상이므로 엔진이 먼저 경고를 찍게 두지 않는다.
 	const FName RowName = CharacterTag.GetTagName();
-	return CharacterTable->FindRow<FBGCharacterRow>(RowName, TEXT("BGCharacterRow"));
+	return CharacterTable->FindRow<FBGCharacterRow>(RowName, TEXT("BGCharacterRow"), /*bWarnIfRowMissing=*/false);
 }
 
 void UBGDataSubsystem::GetAllCardProbabilities(TArray<FBGCardProbabilityRow>& OutRows) const

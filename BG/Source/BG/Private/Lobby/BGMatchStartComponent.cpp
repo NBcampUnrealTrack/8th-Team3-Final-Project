@@ -117,7 +117,8 @@ bool UBGMatchStartComponent::StartMatch()
 	TArray<APlayerController*> Players;
 	GM->CollectPlayers(Players);
 
-	UE_LOG(LogBGNet, Log, TEXT("[MatchStart] 판 시작(%d명) — 역할 배정"), Players.Num());
+	// AssignRoles 가 직업(Character.Job.*) 배정까지 함께 처리한다 — 직업 먼저, 역할 나중.
+	UE_LOG(LogBGNet, Log, TEXT("[MatchStart] 판 시작(%d명) — 직업/역할 배정"), Players.Num());
 	GM->AssignRoles();
 
 	// 호스트의 로비 UI 는 여기서 내린다. 클라는 각자 페이즈가 로비를 벗어난 것을 보고 닫는다.
