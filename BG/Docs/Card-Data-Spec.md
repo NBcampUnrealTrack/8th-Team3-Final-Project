@@ -1,24 +1,29 @@
-# 카드 데이터 명세 (DT_BaamCard)
+# 카드 데이터 명세 (DT_BGCard)
 
 작성 기준일: 2026-07-30 / 근거: `Game-Design-Document.md` v0.3, `Additional-Card-List.txt`
 
-`Docs/Data/DT_BaamCard.json` 을 임포트하면 이 표가 그대로 들어간다. 손으로 넣을 때는 아래 표를 본다.
+`Docs/Data/DT_BGCard.json` 을 임포트하면 이 표가 그대로 들어간다. 손으로 넣을 때는 아래 표를 본다.
 
 ---
 
 ## 임포트 절차
 
-1. **먼저 `DT_BaamCard` 를 복제해 백업한다.** JSON 임포트는 **기존 행을 전부 교체**한다.
-2. 콘텐츠 브라우저에서 `DT_BaamCard` 우클릭 → **Reimport / Import Data Table** → `Docs/Data/DT_BaamCard.json` 선택
+1. **먼저 `DT_BGCard` 를 복제해 백업한다.** JSON 임포트는 **기존 행을 전부 교체**한다.
+2. 콘텐츠 브라우저에서 `DT_BGCard` 우클릭 → **Reimport / Import Data Table** → `Docs/Data/DT_BGCard.json` 선택
+
+   > ⚠️ **첫 임포트는 반드시 `Reimport With New File` 을 쓴다.** 애셋 안에 저장된 소스 경로가
+   > 아직 옛 이름(`Docs/Data/DT_BaamCard.json`)이라, 그냥 `Reimport` 를 누르면 없는 파일을
+   > 찾다가 실패한다. 한 번 새 파일로 지정하고 나면 경로가 갱신되어 이후로는 `Reimport` 로 충분하다.
+
 3. 에디터 재컴파일 없이 바로 반영된다. 실패하면 Output Log 에 행 단위 경고가 남는다.
 4. 검증:
    ```
-   Bang.ExpectedDeckSize 64
-   Baam_DumpDeck      → 11 종류 / 64 장, InstanceId 중복 없음
-   Baam_PrintDeck     → 셔플된 순서
+   BG.ExpectedDeckSize 64
+   BG_DumpDeck        → 11 종류 / 64 장, InstanceId 중복 없음
+   BG_PrintDeck       → 셔플된 순서
    ```
    아래 경고가 뜨면 그 행을 확인한다:
-   - `[!! DT_BaamCard 에 Row 없음]` — CardId 태그와 Row 이름이 어긋남
+   - `[!! DT_BGCard 에 Row 없음]` — CardId 태그와 Row 이름이 어긋남
    - `[미구현: GA/GE 미지정]` — `AbilityEventTag` / `EquipEffect` 둘 다 비었음
    - `[!! 효과 데이터 없음 — OutcomeEffects 를 채우세요]` — **카드를 써도 효과가 0 이 된다**
 
@@ -26,23 +31,23 @@
 > 손으로 넣는 편이 빠르다. `FGameplayTag` 는 평문(`Card.Id.Bang`)으로 들어가고,
 > `FGameplayTagContainer` 는 `GameplayTags` 배열 안에 `TagName` 을 넣는 형식이다.
 
-## GA 매핑 (`BP_TestPlayerController` → `AbilityByCardId`)
+## GA 매핑 (`Content/Core/BP_BGPlayerController` → `AbilityByCardId`)
 
 **이걸 채우지 않으면 카드가 아무 일도 하지 않는다.** 서버 화면에 `GA 매핑 없음!` 이 뜬다.
 
-**모든 갈색 카드가 `GA_BaamCardEffects` 하나로 간다.** 카드마다 GA 를 만들지 않는다.
+**모든 갈색 카드가 `GA_BGCardEffects` 하나로 간다.** 카드마다 GA 를 만들지 않는다.
 
 | CardId | GA |
 |---|---|
-| `Card.Id.Bang` | `GA_BaamCardEffects` |
-| `Card.Id.Beer` | `GA_BaamCardEffects` |
-| `Card.Id.CatBalou` | `GA_BaamCardEffects` |
-| `Card.Id.QuickStrike` | `GA_BaamCardEffects` |
-| `Card.Id.Rest` | `GA_BaamCardEffects` |
-| `Card.Id.ExposeWeakness` | `GA_BaamCardEffects` |
-| `Card.Id.Trap` | `GA_BaamCardEffects` |
-| `Card.Id.Prepare` | `GA_BaamCardEffects` |
-| `Card.Id.Brace` | `GA_BaamCardEffects` |
+| `Card.Id.Bang` | `GA_BGCardEffects` |
+| `Card.Id.Beer` | `GA_BGCardEffects` |
+| `Card.Id.CatBalou` | `GA_BGCardEffects` |
+| `Card.Id.QuickStrike` | `GA_BGCardEffects` |
+| `Card.Id.Rest` | `GA_BGCardEffects` |
+| `Card.Id.ExposeWeakness` | `GA_BGCardEffects` |
+| `Card.Id.Trap` | `GA_BGCardEffects` |
+| `Card.Id.Prepare` | `GA_BGCardEffects` |
+| `Card.Id.Brace` | `GA_BGCardEffects` |
 
 장비 2종(`DwarfGloves` / `WitchCharm`)은 **매핑하지 않는다.** 파란 카드는 GA 를 발동하지 않고
 `HandlePlayCard` 의 장착 경로로 빠진다.
