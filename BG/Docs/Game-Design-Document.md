@@ -93,7 +93,7 @@ BAAM은 《뱅!》의 정체 은닉, 역할별 승리 조건, 손패 운용과 �
 - 한 카드의 핵심 결과는 이 **한 번의 판정**으로 결정한다(§4.4).
 - 최소·최대 확률 제한과 보정 합산 방식(가산 / 승산)은 추후 확정한다.
 
-> **구현 메모:** 현재 `UBaamDiceComponent`가 이미 "4단계 비율 정규화 + 구간 판정" 구조를 쓰고 있다.
+> **구현 메모:** 현재 `UBGDiceComponent`가 이미 "4단계 비율 정규화 + 구간 판정" 구조를 쓰고 있다.
 > 비율의 출처를 컴포넌트 기본값에서 **카드 데이터**로 옮기고, 보정 합산을 추가하면 이 설계와 일치한다.
 
 ### 4.3 카드별 결과 데이터
@@ -349,7 +349,7 @@ Modifier.CriticalRate
 
 | 대상 | 비활성 방법 | 되살리는 법 |
 |---|---|---|
-| 카드 | `DT_BaamCard` 의 `QuantityOfCard = 0` | 값만 되돌린다 |
+| 카드 | `DT_BGCard` 의 `QuantityOfCard = 0` | 값만 되돌린다 |
 | Gameplay Ability | `AbilityByCardId` 매핑에서 제외 | 매핑을 다시 넣는다 |
 | 어트리뷰트 | 참조하는 코드를 제거하고 선언은 유지 | 참조를 되살린다 |
 | 규칙 함수 | 호출처 제거 + `[비활성]` 주석 명시 | 호출을 되살린다 |
@@ -360,30 +360,30 @@ Modifier.CriticalRate
 
 - 비활성 대상에는 반드시 `[비활성]` 주석과 **사유·복구 방법**을 남긴다. 주석 없는 죽은 코드는 다음 사람이 "버그인가 의도인가" 를 판단할 수 없다.
 - 비활성 코드를 **새 코드에서 호출하지 않는다**. 살아 있는 경로와 섞이면 비활성의 의미가 없어진다.
-- 비활성 상태를 확인할 수 있어야 한다. 카드는 `Baam_DumpDeck` 이 `QuantityOfCard = 0` 인 종류를 알려준다.
+- 비활성 상태를 확인할 수 있어야 한다. 카드는 `BG_DumpDeck` 이 `QuantityOfCard = 0` 인 종류를 알려준다.
 - 비활성 항목은 아래 목록으로 관리한다. 되살리거나 완전 폐기할 때 이 표를 갱신한다.
 
 ### 13.2 현재 비활성 대상 목록
 
 | 항목 | 위치 | 상태 |
 |---|---|---|
-| `빗나감!` / `인디언!` / `개틀링` | `DT_BaamCard` | 확정 — `QuantityOfCard = 0` |
-| `GA_Missed` | `Player/Ability/GA_Missed` | 구현되어 있으나 매핑 제외 |
-| `GA_AreaBang` | `Player/Ability/GA_AreaBang` | 스텁 상태로 매핑 제외 |
+| `빗나감!` / `인디언!` / `개틀링` | `DT_BGCard` | 확정 — `QuantityOfCard = 0` |
+| `GA_Missed` | `GAS/Ability/Legacy/GA_Missed` | 구현되어 있으나 매핑 제외 |
+| `GA_AreaBang` | `GAS/Ability/Legacy/GA_AreaBang` | 스텁 상태로 매핑 제외 |
 | 응답창(Resolution) 설계 | 미구현 | 착수하지 않는다 |
-| 좌석 거리 계산 | `UBaamSeatViewLibrary::GetRingDistance` | 코드 유지, 규칙 판정·UI 표시에서 제외 |
-| `WeaponRange` / `DistanceReduction` / `DistanceIncrease` | `UBaamAttributeSet` | 선언 유지, 참조 제거 |
-| `BangLimit` / `MissedRequired` | `UBaamAttributeSet` | 선언 유지, 참조 제거 (뱅! 제한 없음 §3) |
-| `DrawWeightedCard` / `DealCards` | `ABaamGameMode` | 이미 비활성 (덱 기반 분배로 대체됨) |
-| 무기 5종의 사거리 정의 | `DT_BaamCard` 의 `Magnitude` | 재설계 전까지 `QuantityOfCard = 0` (§8) |
-| `FBaamCardRow::CheckChance` | `BaamGameDataTypes.h` | 필드 유지, 참조 제거 — `OutcomeWeights` 로 대체됨 (§4.2) |
-| 행운 판정 보정 (`ApplyLuck`) | `UBaamDiceComponent` | 선언·구현 유지, **호출처 없음** — 아래 참조 |
-| `LuckSuccessWeightPerPoint` / `LuckCriticalWeightPerPoint` | `UBaamDiceComponent` | 설정 유지, 읽는 곳 없음 (`ApplyLuck` 전용) |
-| `FBaamOutcomeWeights::ApplyBonus` (2인자) | `BaamGameDataTypes.h` | `ApplyLuck` 전용 — 4인자 `ApplyBonusAll` 이 정식 경로 |
-| 능력치 4종 (`Strength` / `Agility` / `Intelligence` / `Luck`) | `UBaamAttributeSet` | 선언·캐릭터 GE 세팅 유지, **어떤 규칙도 읽지 않음** — 아래 참조 |
-| `StrengthDamageMult` / `IntelligenceMitigation` | `UGA_BaamCardEffects` | 프로퍼티 유지, 참조 제거 |
-| `FBaamOutcomeMagnitudes` (등급별 단일 수치) | `BaamGameDataTypes.h` | 필드 유지, **전부 0 으로 비워 둠** — `OutcomeEffects` 로 통합 (아래 참조) |
-| `GA_Bang` / `GA_Heal` / `GA_StealOrDiscard` | `Player/Ability/` | 구현 유지, `AbilityByCardId` 매핑 제외 — 범용 실행기가 대체 |
+| 좌석 거리 계산 | `UBGSeatViewLibrary::GetRingDistance` | 코드 유지, 규칙 판정·UI 표시에서 제외 |
+| `WeaponRange` / `DistanceReduction` / `DistanceIncrease` | `UBGAttributeSet` | 선언 유지, 참조 제거 |
+| `BangLimit` / `MissedRequired` | `UBGAttributeSet` | 선언 유지, 참조 제거 (뱅! 제한 없음 §3) |
+| `DrawWeightedCard` / `DealCards` | `ABGGameMode` | 이미 비활성 (덱 기반 분배로 대체됨) |
+| 무기 5종의 사거리 정의 | `DT_BGCard` 의 `Magnitude` | 재설계 전까지 `QuantityOfCard = 0` (§8) |
+| `FBGCardRow::CheckChance` | `BGGameDataTypes.h` | 필드 유지, 참조 제거 — `OutcomeWeights` 로 대체됨 (§4.2) |
+| 행운 판정 보정 (`ApplyLuck`) | `UBGDiceComponent` | 선언·구현 유지, **호출처 없음** — 아래 참조 |
+| `LuckSuccessWeightPerPoint` / `LuckCriticalWeightPerPoint` | `UBGDiceComponent` | 설정 유지, 읽는 곳 없음 (`ApplyLuck` 전용) |
+| `FBGOutcomeWeights::ApplyBonus` (2인자) | `BGGameDataTypes.h` | `ApplyLuck` 전용 — 4인자 `ApplyBonusAll` 이 정식 경로 |
+| 능력치 4종 (`Strength` / `Agility` / `Intelligence` / `Luck`) | `UBGAttributeSet` | 선언·캐릭터 GE 세팅 유지, **어떤 규칙도 읽지 않음** — 아래 참조 |
+| `StrengthDamageMult` / `IntelligenceMitigation` | `UGA_BGCardEffects` | 프로퍼티 유지, 참조 제거 |
+| `FBGOutcomeMagnitudes` (등급별 단일 수치) | `BGGameDataTypes.h` | 필드 유지, **전부 0 으로 비워 둠** — `OutcomeEffects` 로 통합 (아래 참조) |
+| `GA_Bang` / `GA_Heal` / `GA_StealOrDiscard` | `GAS/Ability/Legacy/` | 구현 유지, `AbilityByCardId` 매핑 제외 — 범용 실행기가 대체 |
 
 #### 카드 효과 스키마를 하나로 통합한 이유
 
@@ -392,8 +392,8 @@ Modifier.CriticalRate
 실제로 뱅의 피해가 들어가지 않는 문제를 겪었는데 — 판정도, GA 발동도, 카드 소비도 모두
 정상이고 피해량만 0 이라 원인을 짚기 어려웠다.
 
-이제 모든 갈색 카드가 `OutcomeEffects` 하나만 채우고 `UGA_BaamCardEffects` 로 매핑된다.
-`Baam_DumpDeck` 이 빈 효과 데이터를 `[!! 효과 데이터 없음]` 으로 경고한다.
+이제 모든 갈색 카드가 `OutcomeEffects` 하나만 채우고 `UGA_BGCardEffects` 로 매핑된다.
+`BG_DumpDeck` 이 빈 효과 데이터를 `[!! 효과 데이터 없음]` 으로 경고한다.
 
 **되살리는 법**: 전용 GA 가 필요한 카드가 생기면(복잡한 연출·다단 판정 등)
 해당 카드만 `AbilityByCardId` 에서 전용 GA 로 매핑하고 `OutcomeMagnitudes` 를 채운다.
@@ -411,7 +411,7 @@ Modifier.CriticalRate
 - **민첩** — 읽던 곳이 비활성 `GA_Missed` 뿐이라 연쇄 비활성.
 
 **되살리는 법**: 확률 보정은 `WeightBonus*` / `WeightMult*` 어트리뷰트로 환산해 캐릭터 GE 로 부여하고,
-피해 보정은 `UGA_BaamCardEffects::ApplyDamage` 에서 다시 곱한다.
+피해 보정은 `UGA_BGCardEffects::ApplyDamage` 에서 다시 곱한다.
 스탯을 다시 넣을 때는 §7.2 의 경고("스탯 수가 많아지면 카드 확률을 예측하기 어려워진다")를 먼저 볼 것.
 
 #### 행운 보정을 비활성한 이유
@@ -421,7 +421,7 @@ Modifier.CriticalRate
 초기 밸런스를 잡는 동안은 DT 비율 = 실제 확률을 유지하는 편이 검증에 유리하다.
 
 **되살리는 법**: 두 가지 중 하나를 택한다.
-- `UBaamDiceComponent::ApplyModifiers` 안에서 행운 항을 다시 더한다(원래 위치에 주석이 있다), 또는
+- `UBGDiceComponent::ApplyModifiers` 안에서 행운 항을 다시 더한다(원래 위치에 주석이 있다), 또는
 - 행운을 `WeightBonus*` 어트리뷰트로 환산해 캐릭터 GE 로 부여한다 — 이쪽이 §10 확률 표시와 일관된다.
 
 > ⚠️ **`ApplyModifiers` 호출은 비활성 대상이 아니다.** 이 호출을 빼면 행운뿐 아니라
@@ -451,6 +451,7 @@ Modifier.CriticalRate
 | 버전 | 날짜 | 변경 내용 |
 |---|---|---|
 | v0.1 | 2026-07-29 | 기본판 기반 원칙, 갈색 카드 확률 판정, 응답 카드 제거, 수트·사거리 제거, 뱅! 제한 제거, 턴당 카드 2장, 자동 장비 판정, 무기 재설계 방향 정리 |
+| v0.6 | 2026-08-03 | 리포 이주에 따른 **표기 갱신 — 게임 규칙 변경 없음.** 클래스·애셋·exec 명령을 `BG` 접두사로, 비활성 GA 경로를 `GAS/Ability/Legacy/` 로 정정. 게임 개념어(`Card.Id.Bang` · `BangLimit` · `GA_Bang`)와 아래 v0.4 행의 당시 표기(`Baam_DumpDeck`)는 그대로 둔다 |
 | v0.5 | 2026-07-31 | 능력치 4종(힘·민첩·지능·행운)을 전면 비활성. 피해는 카드 데이터(`OutcomeEffects`)만으로 결정된다 — 지능 경감이 성공 피해를 0 으로 만들던 문제 해소 |
 | v0.4 | 2026-07-31 | 카드 효과 스키마를 `OutcomeEffects` 하나로 통합. `OutcomeMagnitudes` 와 전용 GA 3종을 §13.2 비활성으로 기록. `Baam_DumpDeck` 에 빈 효과 데이터 진단 추가 |
 | v0.3 | 2026-07-30 | 구현에서 확정된 사항 반영 — 보정 합산 방식(승산→가산→클램프→정규화), 장비 설치는 카드 사용 한도 소비. 행운 판정 보정과 연쇄 항목(`ApplyLuck` / Luck·Agility 어트리뷰트 등)을 §13.2 비활성으로 기록 |
