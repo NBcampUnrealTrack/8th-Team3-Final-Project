@@ -12,6 +12,7 @@
 #include "BGGameplayTags.h"
 #include "Core/BGPlayerState.h"
 #include "Core/BGCharacter.h"
+#include "Core/BGPlayerBase.h"   // SetCameraShot 로그에서 GetName() 을 부른다
 #include "GAS/BGAttributeSet.h"
 #include "Core/BGGameInstance.h"
 #include "Engine/World.h"
@@ -37,6 +38,50 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, WinningRoleTag);
 	DOREPLIFETIME(ABGGameState, bMatchRunning);
 	DOREPLIFETIME(ABGGameState, MatchEndStage);
+	DOREPLIFETIME(ABGGameState, CameraShot);
+}
+
+void ABGGameState::SetCameraShot(ABGPlayerBase* Target, float BlendSeconds, EBGShotBlend Blend)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	//	같은 대상으로 다시 걸면 무시한다 — 안 그러면 시작 시각이 갱신되어
+	//	이미 도착한 카메라가 처음부터 다시 날아온다.
+	if (CameraShot.Target == Target)
+	{
+		return;
+	}
+
+	CameraShot.Target       = Target;
+	CameraShot.BlendSeconds = BlendSeconds;
+	CameraShot.Blend        = Blend;
+
+	//	서버 시간을 기준으로 삼아야 늦게 온 클라가 진행도를 계산할 수 있다.
+	//	각자 자기 시계로 0 부터 세면 같은 순간에 서로 다른 그림을 본다.
+	CameraShot.StartServerTime = GetServerWorldTimeSeconds();
+
+	//	서버는 자기 OnRep 을 받지 못한다 — 여기서 직접 부르지 않으면 리슨서버 호스트만 연출이 안 뜬다.
+	HandleCameraShot();
+
+	UE_LOG(LogBGCard, Log, TEXT("[Camera] 샷 전환 — %s (%.2fs, %s)"),
+		Target ? *Target->GetName() : TEXT("연출 종료"),
+		BlendSeconds,
+		Blend == EBGShotBlend::Orbit ? TEXT("선회") : TEXT("직선"));
+}
+
+void ABGGameState::OnRep_CameraShot()
+{
+	HandleCameraShot();
+}
+
+void ABGGameState::HandleCameraShot()
+{
+	//	여기서 뷰타깃을 직접 건드리지 않는다 — 화면은 PlayerController 의 몫이고,
+	//	GameState 는 "무엇을 비출지" 만 안다. (UI/View 를 가른 것과 같은 이유)
+	OnCameraShotChanged.Broadcast(CameraShot);
 }
 
 void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution& Resolution)

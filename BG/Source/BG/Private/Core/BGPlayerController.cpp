@@ -21,6 +21,7 @@
 #include "UI/Widget/BGSeatBoardWidget.h"
 #include "UI/Widget/BGTurnPanelWidget.h"
 #include "UI/Widget/BGResolutionWidget.h"
+#include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
 #include "Components/InputComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -56,6 +57,7 @@ void ABGPlayerController::SetHandWidget(UBGHandWidget* InHandWidget)
 	TryBindHandDelegate();
 	TryBindAttributeDelegates();
 	TryBindResolutionDelegate();
+	TryBindCameraShotDelegate();
 	RefreshHandWidget();
 	UpdateHandInteractionLock();
 }
@@ -151,6 +153,7 @@ void ABGPlayerController::OnRep_PlayerState()
 	TryBindHandDelegate();
 	TryBindAttributeDelegates();
 	TryBindResolutionDelegate();
+	TryBindCameraShotDelegate();
 	RefreshHandWidget();
 }
 
@@ -260,6 +263,107 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 		View.Chance.Success, View.Chance.CriticalSuccess);
 
 	ResolutionWidget->ShowResolution(View);
+}
+
+// ======================================================================================
+//  연출 카메라
+//
+//  복제되는 것은 GameState 의 FBGCameraShot("무엇을 비출지") 하나뿐이다.
+//  카메라 액터는 로컬이고, 뷰타깃 전환도 각 클라가 자기 화면에 대해 수행한다.
+// ======================================================================================
+
+void ABGPlayerController::EnsureCinematicCamera()
+{
+	//	화면이 있는 쪽에서만 필요하다. 서버가 남의 몫까지 스폰하면 쓰지도 않을 액터가 인원수만큼 생긴다.
+	if (CinematicCamera || !IsLocalController())
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	//	레벨 스트리밍·세이브에 끼어들 이유가 없는 순수 표시용 액터다.
+	Params.ObjectFlags |= RF_Transient;
+
+	CinematicCamera = World->SpawnActor<ABGCinematicCamera>(
+		ABGCinematicCamera::StaticClass(), FTransform::Identity, Params);
+}
+
+void ABGPlayerController::TryBindCameraShotDelegate()
+{
+	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	if (!GS || BoundCameraGameState.Get() == GS)
+	{
+		return;
+	}
+
+	if (ABGGameState* Previous = BoundCameraGameState.Get())
+	{
+		Previous->OnCameraShotChanged.RemoveAll(this);
+	}
+
+	GS->OnCameraShotChanged.AddUObject(this, &ABGPlayerController::HandleCameraShotChanged);
+	BoundCameraGameState = GS;
+
+	//	구독보다 샷이 먼저 시작됐을 수 있다(늦게 접속). 현재 상태를 즉시 한 번 적용한다 —
+	//	이게 "이벤트가 아니라 상태" 로 둔 것의 값어치다.
+	HandleCameraShotChanged(GS->GetCameraShot());
+}
+
+void ABGPlayerController::HandleCameraShotChanged(const FBGCameraShot& Shot)
+{
+	if (!IsLocalController())
+	{
+		return;   // 화면이 없는 컨트롤러에는 뷰타깃 개념이 없다.
+	}
+
+	if (!Shot.IsActive())
+	{
+		//	연출 종료 — 자기 폰으로 돌아간다. 폰이 없으면(관전·사망 대기) 손댈 것이 없다.
+		if (APawn* MyPawn = GetPawn())
+		{
+			SetViewTargetWithBlend(MyPawn, CinematicExitBlendSeconds, VTBlend_EaseInOut, 2.f);
+		}
+		return;
+	}
+
+	EnsureCinematicCamera();
+	if (!CinematicCamera)
+	{
+		return;
+	}
+
+	//	샷이 시작된 지 얼마나 지났는지 서버 시간으로 계산한다.
+	//	늦게 접속한 클라는 이만큼 건너뛰고 시작해 남들과 같은 그림에 합류한다.
+	//	서버 시간은 GameState 가 들고 있다(클라에서는 보정된 값이 나온다).
+	const AGameStateBase* GS = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	const float Elapsed = GS
+		? FMath::Max(0.f, GS->GetServerWorldTimeSeconds() - Shot.StartServerTime)
+		: 0.f;
+
+	const bool bAlreadyInCinematic = (GetViewTarget() == CinematicCamera);
+
+	if (bAlreadyInCinematic)
+	{
+		//	이미 연출 중이다 — 뷰타깃은 그대로 두고 액터만 다음 샷으로 날린다.
+		//	여기서 SetViewTarget 을 다시 부르면 카메라 매니저 블렌드가 끼어들어 튄다.
+		CinematicCamera->BeginShot(Shot, Elapsed);
+		return;
+	}
+
+	//	연출 진입 — 카메라를 먼저 목표에 붙여 놓고 뷰타깃을 넘긴다.
+	//	순서가 반대면 카메라가 원점(0,0,0)에 있는 한 프레임이 화면에 보인다.
+	CinematicCamera->SnapToShot(Shot);
+	CinematicCamera->BeginShot(Shot, Elapsed);
+
+	SetViewTargetWithBlend(CinematicCamera, CinematicEnterBlendSeconds, VTBlend_EaseInOut, 2.f,
+		/*bLockOutgoing=*/true);
 }
 
 void ABGPlayerController::TryBindAttributeDelegates()
@@ -395,6 +499,7 @@ void ABGPlayerController::RefreshSeatBoard()
 	//	  · GameState — 클라에서는 PlayerState 보다 늦게 올 수 있다. 놓치면 판정이 영영 안 뜬다.
 	//	  · 폰의 ASC  — 손패보다 늦게 스폰되면 보정 구독이 비어, 장비를 껴도 확률이 안 바뀐다.
 	TryBindResolutionDelegate();
+	TryBindCameraShotDelegate();
 	TryBindAttributeDelegates();
 }
 

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Card/BGCardType.h"
 #include "Card/BGGameDataTypes.h"   // FBGCardResolution — 멀티캐스트 인자라 완전한 타입이 필요하다
+#include "Core/BGCinematicCamera.h" // FBGCameraShot — 복제 프로퍼티라 완전한 타입이 필요하다
 #include "GameplayTagContainer.h"
 #include "GameFramework/GameStateBase.h"
 #include "BGGameState.generated.h"
@@ -37,6 +38,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGMatchWon, FGameplayTag, Winning
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGEndingCredits);
 /** 판정 결과가 도착했다. 서버·클라 양쪽에서 불린다 (GDD §4.1 — 전원이 같은 결과를 본다). */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCardResolved, const FBGCardResolution& /*Resolution*/);
+
+/** 연출 카메라 샷이 바뀌었다. 서버·클라 양쪽에서 불린다. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCameraShotChanged, const FBGCameraShot& /*Shot*/);
 
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase
@@ -205,6 +209,28 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Match")
 	void StartEndingCredits();
 
+	// ── 연출 카메라 (GDD §10 "짧은 연출") ─────────────────────────
+	//
+	//  복제되는 것은 "지금 누구의 B 카메라를 비추는가" 라는 상태 하나뿐이다.
+	//  카메라의 실제 위치는 각 클라가 로컬에서 보간한다(ABGCinematicCamera).
+	//
+	//  ⚠️ MatchEndStage 와 같은 이유로 이벤트가 아니라 상태다 — 늦게 온 클라도
+	//     지금 어느 샷인지 그대로 받아 따라잡는다.
+
+	/**
+	 * 서버 전용. 특정 캐릭터의 B 카메라로 연출을 전환한다.
+	 * Target 이 null 이면 연출을 끝내고 전원이 자기 A 카메라로 돌아간다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Camera")
+	void SetCameraShot(class ABGPlayerBase* Target, float BlendSeconds = 1.5f,
+		EBGShotBlend Blend = EBGShotBlend::Orbit);
+
+	UFUNCTION(BlueprintPure, Category = "BG|Camera")
+	const FBGCameraShot& GetCameraShot() const { return CameraShot; }
+
+	/** 샷이 바뀌었다. PlayerController 가 구독해 뷰타깃과 카메라 액터를 갱신한다. */
+	FOnBGCameraShotChanged OnCameraShotChanged;
+
 	/** 좌석의 현재 Health. ASC 를 못 찾으면 0. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seat")
 	int32 GetSeatHealth(int32 Seat) const;
@@ -275,6 +301,17 @@ protected:
 	FGameplayTag WinningRoleTag;
 
 	//	종료 연출 단계. 이 값이 바뀌는 것이 곧 "승리했다 / 크레딧이다" 라는 통지다.
+	//	연출 카메라 상태. 트랜스폼이 아니라 "의도" 만 복제한다 — 보간은 각 클라가 로컬에서.
+	UPROPERTY(ReplicatedUsing = OnRep_CameraShot)
+	FBGCameraShot CameraShot;
+
+	UFUNCTION()
+	void OnRep_CameraShot();
+
+	//	서버·클라 공통 진입점. 서버는 SetCameraShot 에서, 클라는 OnRep 에서 여기로 모인다
+	//	(리슨서버 호스트는 자기 OnRep 을 받지 못한다).
+	void HandleCameraShot();
+
 	UPROPERTY(ReplicatedUsing = OnRep_MatchEndStage)
 	EBGMatchEndStage MatchEndStage = EBGMatchEndStage::None;
 

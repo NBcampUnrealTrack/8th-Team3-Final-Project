@@ -185,6 +185,27 @@ protected:
 	/** EBGDiceOutcome → EBGResolutionTier. 뷰 계층이 게임 enum 을 모르게 하는 경계다. */
 	static EBGResolutionTier ToResolutionTier(EBGDiceOutcome Outcome);
 
+	// ── 연출 카메라 ────────────────────────────────────────────────
+
+	/** GameState 의 샷 상태를 구독한다. GameState 가 늦게 오므로 재시도된다. */
+	void TryBindCameraShotDelegate();
+
+	/** 샷이 바뀌었다 — 뷰타깃과 로컬 카메라 액터를 갱신한다. */
+	void HandleCameraShotChanged(const struct FBGCameraShot& Shot);
+
+	/**
+	 * 연출 카메라 액터를 로컬에 스폰한다(로컬 컨트롤러 전용, 1회).
+	 * 복제하지 않는다 — 클라마다 자기 것을 갖고 자기 화면만 책임진다.
+	 */
+	void EnsureCinematicCamera();
+
+	/** 연출 진입·복귀에 쓰는 뷰타깃 블렌드 시간(초). */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Camera", meta = (ClampMin = "0.0"))
+	float CinematicEnterBlendSeconds = 0.5f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Camera", meta = (ClampMin = "0.0"))
+	float CinematicExitBlendSeconds = 0.7f;
+
 	/** 손패에서 카드를 중앙에 드롭했다. 대상이 필요한 카드면 좌석 선택으로 넘어간다. */
 	UFUNCTION()
 	void HandleCardPlayRequested(const FBGCardView& Card);
@@ -278,6 +299,14 @@ private:
 	//	중복 구독을 막기 위해 현재 구독 중인 GameState 를 기억한다.
 	UPROPERTY()
 	TWeakObjectPtr<class ABGGameState> BoundGameState;
+
+	//	카메라 샷 구독은 판정 구독과 시점이 다를 수 있어 따로 기억한다.
+	UPROPERTY()
+	TWeakObjectPtr<class ABGGameState> BoundCameraGameState;
+
+	//	로컬 연출 카메라. 복제하지 않는다 — 각 클라가 자기 것을 스폰한다.
+	UPROPERTY()
+	TObjectPtr<class ABGCinematicCamera> CinematicCamera;
 
 	FTimerHandle SeatRefreshTimer;
 };
