@@ -313,6 +313,24 @@ public:
 	/** 단계 전환 통지. 위젯·사운드 등이 구독한다. */
 	FOnBGCinematicStageChanged OnCinematicStageChanged;
 
+	// ── 연출 카메라 속도 ──────────────────────────────────────────
+	//
+	//  세 구간의 성격이 다르다. 한곳에 모아 둔 이유는 이 셋이 하나의 연속된 체감으로
+	//  묶이기 때문이다 — 따로 두면 "진입만 느린" 조합을 만들어 놓고 원인을 못 찾는다.
+	//
+	//    진입 : 평상시 시점 → 연출 카메라   (뷰타깃 전환)
+	//    단계 : 사용자 샷  → 피해자 샷      (카메라 액터가 직접 이동)
+	//    종료 : 연출 카메라 → 자기 시점     (뷰타깃 전환)
+
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	float GetCinematicEnterBlendSeconds() const { return CinematicEnterBlendSeconds; }
+
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	float GetCinematicExitBlendSeconds() const { return CinematicExitBlendSeconds; }
+
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	float GetCinematicShotBlendSeconds() const { return CinematicShotBlendSeconds; }
+
 	/** 좌석의 현재 Health. ASC 를 못 찾으면 0. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seat")
 	int32 GetSeatHealth(int32 Seat) const;
@@ -436,6 +454,28 @@ protected:
 	//	피해자 결과 연출 길이(초). 0 이하면 이 단계를 건너뛴다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0"))
 	float SecondaryCinematicSeconds = 3.f;
+
+	/**
+	 * 연출 진입 시 뷰타깃 블렌드(초). **0 이면 즉시 전환**한다.
+	 *
+	 * 0 을 기본으로 둔 이유: 연출의 첫 프레임은 "장면이 바뀌었다" 가 분명해야 한다.
+	 * 여기서 보간하면 자기 시점에서 연출 카메라로 미끄러지듯 넘어가 전환이 흐려진다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0"))
+	float CinematicEnterBlendSeconds = 0.f;
+
+	/** 연출 종료 시 뷰타깃 블렌드(초). 0 이면 즉시 자기 시점으로 돌아온다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0"))
+	float CinematicExitBlendSeconds = 0.f;
+
+	/**
+	 * 단계 사이(사용자 샷 → 피해자 샷) 카메라 이동 시간(초). 0 이하면 순간이동.
+	 *
+	 * ⚠️ 단계 길이(Primary/SecondaryCinematicSeconds)보다 짧게 둘 것.
+	 *    이동이 단계보다 길면 도착하기도 전에 다음 단계로 넘어가 샷을 제대로 못 본다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0"))
+	float CinematicShotBlendSeconds = 0.6f;
 
 	//	연출 카메라 상태. 트랜스폼이 아니라 "의도" 만 복제한다 — 보간은 각 클라가 로컬에서.
 	UPROPERTY(ReplicatedUsing = OnRep_CameraShot)

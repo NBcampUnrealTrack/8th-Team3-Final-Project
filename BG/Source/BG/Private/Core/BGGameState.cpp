@@ -173,7 +173,9 @@ void ABGGameState::HandleCinematicStage()
 	//	상태 관리는 그대로 두고 카메라만 직접 제어할 수 있다.
 	if (HasAuthority())
 	{
-		SetCameraShot(Subject);   // None 단계면 Subject 가 nullptr → 각자 A 카메라로 복귀
+		//	단계 사이 이동 속도. None 단계면 Subject 가 nullptr → 각자 A 카메라로 복귀하며,
+		//	그때는 이 값이 아니라 CinematicExitBlendSeconds(뷰타깃 전환)가 체감을 결정한다.
+		SetCameraShot(Subject, CinematicShotBlendSeconds);
 	}
 
 	OnCinematicStageChanged.Broadcast(CinematicStage, Subject);

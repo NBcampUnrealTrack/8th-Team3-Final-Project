@@ -199,12 +199,8 @@ protected:
 	 */
 	void EnsureCinematicCamera();
 
-	/** 연출 진입·복귀에 쓰는 뷰타깃 블렌드 시간(초). */
-	UPROPERTY(EditDefaultsOnly, Category = "BG|Camera", meta = (ClampMin = "0.0"))
-	float CinematicEnterBlendSeconds = 0.5f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "BG|Camera", meta = (ClampMin = "0.0"))
-	float CinematicExitBlendSeconds = 0.7f;
+	//	연출 속도 설정은 ABGGameState 에 모여 있다 (진입·단계·종료가 하나의 체감이라
+	//	한곳에서 조율해야 한다). 여기서 따로 들지 않고 그때그때 읽어 쓴다.
 
 	/** 손패에서 카드를 중앙에 드롭했다. 대상이 필요한 카드면 좌석 선택으로 넘어간다. */
 	UFUNCTION()

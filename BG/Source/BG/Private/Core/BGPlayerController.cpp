@@ -335,12 +335,18 @@ void ABGPlayerController::HandleCameraShotChanged(const FBGCameraShot& Shot)
 		return;   // 화면이 없는 컨트롤러에는 뷰타깃 개념이 없다.
 	}
 
+	//	연출 속도 설정은 GameState 가 들고 있다 — 세 구간을 한곳에서 조율하기 위해서다.
+	//	EditDefaultsOnly(CDO) 값이라 클라에서도 복제 없이 그대로 읽힌다.
+	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+
 	if (!Shot.IsActive())
 	{
 		//	연출 종료 — 자기 폰으로 돌아간다. 폰이 없으면(관전·사망 대기) 손댈 것이 없다.
 		if (APawn* MyPawn = GetPawn())
 		{
-			SetViewTargetWithBlend(MyPawn, CinematicExitBlendSeconds, VTBlend_EaseInOut, 2.f);
+			//	0 이면 SetViewTarget 이 즉시 전환 분기를 탄다(PlayerCameraManager 의 BlendTime 검사).
+			SetViewTargetWithBlend(MyPawn,
+				GS ? GS->GetCinematicExitBlendSeconds() : 0.f, VTBlend_EaseInOut, 2.f);
 		}
 		return;
 	}
@@ -354,7 +360,6 @@ void ABGPlayerController::HandleCameraShotChanged(const FBGCameraShot& Shot)
 	//	샷이 시작된 지 얼마나 지났는지 서버 시간으로 계산한다.
 	//	늦게 접속한 클라는 이만큼 건너뛰고 시작해 남들과 같은 그림에 합류한다.
 	//	서버 시간은 GameState 가 들고 있다(클라에서는 보정된 값이 나온다).
-	const AGameStateBase* GS = GetWorld() ? GetWorld()->GetGameState() : nullptr;
 	const float Elapsed = GS
 		? FMath::Max(0.f, GS->GetServerWorldTimeSeconds() - Shot.StartServerTime)
 		: 0.f;
@@ -374,7 +379,8 @@ void ABGPlayerController::HandleCameraShotChanged(const FBGCameraShot& Shot)
 	CinematicCamera->SnapToShot(Shot);
 	CinematicCamera->BeginShot(Shot, Elapsed);
 
-	SetViewTargetWithBlend(CinematicCamera, CinematicEnterBlendSeconds, VTBlend_EaseInOut, 2.f,
+	SetViewTargetWithBlend(CinematicCamera,
+		GS ? GS->GetCinematicEnterBlendSeconds() : 0.f, VTBlend_EaseInOut, 2.f,
 		/*bLockOutgoing=*/true);
 }
 
