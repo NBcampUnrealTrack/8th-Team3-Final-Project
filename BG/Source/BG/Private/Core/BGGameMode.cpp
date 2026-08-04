@@ -107,6 +107,17 @@ FString ABGGameMode::InitNewPlayer(APlayerController* NewPlayerController, const
 	return Super::InitNewPlayer(NewPlayerController, UniqueId, Options, Portal);
 }
 
+ABGCampfire* ABGGameMode::GetCampfire() const
+{
+	//	레벨 액터라 생성자에서 만들 수 없다. 한 번 찾으면 캐시하고, 없으면 매번 다시 찾는다 —
+	//	레벨 스트리밍으로 나중에 올라올 수 있으므로 "없음" 을 캐시하면 영영 못 찾는다.
+	if (!Campfire)
+	{
+		Campfire = ABGCampfire::Find(GetWorld());
+	}
+	return Campfire;
+}
+
 void ABGGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
@@ -118,9 +129,9 @@ void ABGGameMode::PostLogin(APlayerController* NewPlayer)
 	}
 
 	// 좌석 간 각도는 접속 인원수로 정해진다 — 한 명이 들어와도 전원이 다시 서야 한다.
-	if (ABGCampfire* Campfire = ABGCampfire::Find(GetWorld()))
+	if (ABGCampfire* Fire = GetCampfire())
 	{
-		Campfire->ArrangePlayers();
+		Fire->ArrangePlayers();
 	}
 }
 
@@ -142,9 +153,9 @@ void ABGGameMode::Logout(AController* Exiting)
 
 	//	Super 뒤에 부른다 — 그 전에는 나가는 플레이어가 아직 PlayerArray 에 남아 있어
 	//	인원수가 하나 많게 잡히고, 빈 자리가 생긴 원이 만들어진다.
-	if (ABGCampfire* Campfire = ABGCampfire::Find(GetWorld()))
+	if (ABGCampfire* Fire = GetCampfire())
 	{
-		Campfire->ArrangePlayers();
+		Fire->ArrangePlayers();
 	}
 }
 

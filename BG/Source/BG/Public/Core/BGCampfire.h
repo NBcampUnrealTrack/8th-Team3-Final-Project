@@ -75,9 +75,22 @@ public:
 	/**
 	 * 좌석 번호로 트랜스폼을 얻는다. 현재 접속 인원을 기준으로 순번을 계산한다.
 	 * 그 좌석이 비어 있으면 false.
+	 *
+	 * ⚠️ 돌려주는 위치는 **바닥의 한 점**이다. 폰을 놓을 때는 캡슐 반높이만큼 올려야 한다 —
+	 *    직접 쓰지 말고 PlacePawn 을 쓸 것.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Seating")
 	bool GetTransformForSeat(int32 SeatIndex, FTransform& OutTransform) const;
+
+	/**
+	 * 폰 하나를 좌석 트랜스폼에 세운다. 폰을 자리에 놓는 **유일한 경로**다.
+	 *
+	 * ⚠️ 여기에 모은 이유: 좌석 트랜스폼은 바닥 좌표라 그대로 TeleportTo 하면 캡슐 절반이
+	 *    지면에 파묻힌다. 그러면 FindTeleportSpot 이 자리를 찾지 못해 TeleportTo 가 false 를
+	 *    반환하고 **액터는 제자리에 그대로 남는다** — 아무 오류 없이 조용히 실패한다.
+	 *    캡슐 반높이 보정과 실패 로그를 이 함수 하나에만 두어 호출부마다 빠뜨리지 않게 한다.
+	 */
+	bool PlacePawn(APawn* Pawn, const FTransform& SeatTransform) const;
 
 	// ── 배치 ─────────────────────────────────────────────────────
 

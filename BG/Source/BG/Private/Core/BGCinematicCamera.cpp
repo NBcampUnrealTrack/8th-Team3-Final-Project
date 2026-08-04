@@ -1,7 +1,7 @@
 #include "Core/BGCinematicCamera.h"
 
 #include "Camera/CameraComponent.h"
-#include "Core/BGPlayerBase.h"
+#include "Core/BGCharacter.h"
 
 ABGCinematicCamera::ABGCinematicCamera()
 {

@@ -12,7 +12,6 @@
 #include "BGGameplayTags.h"
 #include "Core/BGPlayerState.h"
 #include "Core/BGCharacter.h"
-#include "Core/BGPlayerBase.h"   // SetCameraShot 로그에서 GetName() 을 부른다
 #include "GAS/BGAttributeSet.h"
 #include "Core/BGGameInstance.h"
 #include "Engine/World.h"
@@ -41,7 +40,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, CameraShot);
 }
 
-void ABGGameState::SetCameraShot(ABGPlayerBase* Target, float BlendSeconds, EBGShotBlend Blend)
+void ABGGameState::SetCameraShot(ABGCharacter* Target, float BlendSeconds, EBGShotBlend Blend)
 {
 	if (!HasAuthority())
 	{

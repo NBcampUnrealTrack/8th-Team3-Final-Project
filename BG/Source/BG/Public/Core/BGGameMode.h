@@ -18,6 +18,7 @@
 #include "Card/BGGameDataTypes.h"   // FBGCardProbabilityRow
 #include "BGGameMode.generated.h"
 
+class ABGCampfire;
 class UBGMatchStartComponent;
 class UBGSeatComponent;
 
@@ -136,6 +137,22 @@ public:
 	UFUNCTION(Exec)
 	void BG_Damage(int32 Seat, int32 Amount);
 
+	/** 레벨의 캠프파이어(좌석 "위치" 의 기준점). 없는 레벨이면 nullptr. */
+	UFUNCTION(BlueprintPure, Category = "BG|Seating")
+	ABGCampfire* GetCampfire() const;
+
+	/**
+	 * 캠프파이어 둘레에 접속한 폰을 다시 세운다 (구현: BGSeatExec.cpp).
+	 *
+	 * 평소에는 PostLogin/Logout 이 알아서 부르지만, 테스트 중에는 접속을 흉내내지 않고
+	 * 지금 있는 폰만 재배치하고 싶을 때가 있다 — 반지름을 바꿔 보는 경우가 대표적이다.
+	 *
+	 * Radius 를 주면 캠프파이어의 SeatRadius 를 그 값으로 바꾼 뒤 배치한다.
+	 * 생략하면(0) 현재 반지름을 그대로 쓴다 — exec 는 생략된 인자를 0 으로 넘긴다.
+	 */
+	UFUNCTION(Exec)
+	void BG_ArrangeSeats(float Radius);
+
 protected:
 	// 모드는 여기서 확정한다 — 첫 로그인보다 먼저라 좌석·역할 배정이 모드를 볼 수 있다.
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
@@ -172,4 +189,14 @@ private:
 	// 좌석 배정 전담. 입장 시 빈 자리, 판 시작 시 랜덤 재배정.
 	UPROPERTY(VisibleAnywhere, Category = "BG")
 	TObjectPtr<UBGSeatComponent> Seats;
+
+	/**
+	 * 레벨의 캠프파이어. 처음 찾을 때 캐시한다.
+	 *
+	 * ⚠️ 컴포넌트가 아니라 **레벨에 배치된 액터**다. 위 둘과 달리 생성자에서 만들지 않는다 —
+	 *    없는 레벨도 있고(PlayerStart 방식 레벨), 레벨 스트리밍으로 나중에 올 수도 있어
+	 *    BeginPlay 에 캐시하지 않고 요청 시점에 찾는다. 그래서 mutable 이다.
+	 */
+	UPROPERTY(Transient)
+	mutable TObjectPtr<class ABGCampfire> Campfire;
 };

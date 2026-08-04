@@ -1,6 +1,7 @@
 #include "Core/BGCampfire.h"
 
 #include "Components/StaticMeshComponent.h"
+#include "Core/BGCharacter.h"       // SetBodyFacing — 몸 회전은 캐릭터가 처리한다
 #include "Core/BGPlayerState.h"
 #include "Debug/BGCardLog.h"
 #include "EngineUtils.h"            // TActorIterator
@@ -125,6 +126,57 @@ bool ABGCampfire::GetTransformForSeat(int32 SeatIndex, FTransform& OutTransform)
 	return true;
 }
 
+bool ABGCampfire::PlacePawn(APawn* Pawn, const FTransform& SeatTransform) const
+{
+	if (!Pawn)
+	{
+		return false;
+	}
+
+	FVector        Loc = SeatTransform.GetLocation();
+	const FRotator Rot = SeatTransform.GetRotation().Rotator();
+
+	//	좌석 트랜스폼은 "바닥의 한 점" 이다. 캡슐 중심을 반높이만큼 올리지 않으면
+	//	캡슐 아래 절반이 지면에 파묻힌 상태가 되고, FindTeleportSpot 이 빠져나올 자리를
+	//	찾지 못해 TeleportTo 가 false 를 돌려준다(액터는 움직이지 않는다).
+	//	폰마다 캡슐 크기가 다를 수 있으므로 상수를 쓰지 않고 폰에게 물어본다.
+	Loc.Z += Pawn->GetSimpleCollisionHalfHeight();
+
+	//	TeleportTo 는 겹침을 밀어낸다 — SetActorLocation 은 자리에 끼일 수 있다.
+	if (!Pawn->TeleportTo(Loc, Rot))
+	{
+		//	반환값을 버리면 "배치했다" 는 로그만 남고 캐릭터는 제자리에 있는 상태가 된다.
+		//	실제로 그 상태로 한참 헤맸다 — 실패는 반드시 눈에 보여야 한다.
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[Campfire] %s 를 (%.0f, %.0f, %.0f) 로 옮기지 못했습니다 — 그 자리가 막혀 있습니다. "
+			     "캠프파이어 높이나 SeatRadius 를 확인하세요(지형 안/절벽 밖일 수 있습니다)."),
+			*Pawn->GetName(), Loc.X, Loc.Y, Loc.Z);
+		return false;
+	}
+
+	//	── 몸을 캠프파이어 쪽으로 돌린다 ──
+	//	TeleportTo 도 회전을 넣지만 그것만으로는 부족하다: 캐릭터의 액터 회전은
+	//	기본 설정에서 매 프레임 컨트롤 회전으로 덮이고, 소유 클라에는 복제되지도 않는다.
+	//	ABGCharacter 가 그 두 가지를 함께 처리한다.
+	if (ABGCharacter* Character = Cast<ABGCharacter>(Pawn))
+	{
+		Character->SetBodyFacing(Rot);
+	}
+	else
+	{
+		//	ABGCharacter 가 아닌 폰(테스트용 기본 폰 등). 액터 회전만 맞춰 둔다.
+		Pawn->SetActorRotation(Rot);
+	}
+
+	//	시선 시작 방향도 캠프파이어로 맞춘다. 몸 회전과 달리 이건 카메라 쪽 값이다.
+	if (AController* C = Pawn->GetController())
+	{
+		C->SetControlRotation(Rot);
+	}
+
+	return true;
+}
+
 void ABGCampfire::ArrangePlayers()
 {
 	if (!HasAuthority())
@@ -171,24 +223,15 @@ void ABGCampfire::ArrangePlayers()
 			continue;
 		}
 
-		const FTransform SeatTransform = GetSeatTransform(Ordinal, SeatCount);
-		const FVector    Loc = SeatTransform.GetLocation();
-		const FRotator   Rot = SeatTransform.GetRotation().Rotator();
-
-		//	TeleportTo 는 겹침을 밀어낸다 — SetActorLocation 은 자리에 끼일 수 있다.
-		//	(UBGSeatComponent::SnapPawnToSeat 과 같은 이유로 같은 함수를 쓴다)
-		Pawn->TeleportTo(Loc, Rot);
-
-		//	컨트롤 회전까지 맞춰야 시선이 캠프파이어를 향한다.
-		if (AController* C = Pawn->GetController())
+		if (PlacePawn(Pawn, GetSeatTransform(Ordinal, SeatCount)))
 		{
-			C->SetControlRotation(Rot);
+			++Placed;
 		}
-
-		++Placed;
 	}
 
+	//	성공한 수와 좌석 수를 함께 찍는다. 둘이 다르면 폰이 없거나 자리가 막힌 것이고,
+	//	성공 수만 찍으면 "배치했다는데 안 움직인다" 를 구분할 수 없다.
 	UE_LOG(LogBGCard, Log,
-		TEXT("[Campfire] %d명 배치 — 반지름 %.0f, 간격 %.1f도"),
-		Placed, SeatRadius, GetAngleStepDeg(SeatCount));
+		TEXT("[Campfire] %d/%d명 배치 — 반지름 %.0f, 간격 %.1f도"),
+		Placed, SeatCount, SeatRadius, GetAngleStepDeg(SeatCount));
 }

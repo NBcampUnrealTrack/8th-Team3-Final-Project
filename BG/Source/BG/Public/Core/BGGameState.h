@@ -222,7 +222,7 @@ public:
 	 * Target 이 null 이면 연출을 끝내고 전원이 자기 A 카메라로 돌아간다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Camera")
-	void SetCameraShot(class ABGPlayerBase* Target, float BlendSeconds = 1.5f,
+	void SetCameraShot(class ABGCharacter* Target, float BlendSeconds = 1.5f,
 		EBGShotBlend Blend = EBGShotBlend::Orbit);
 
 	UFUNCTION(BlueprintPure, Category = "BG|Camera")

@@ -22,6 +22,7 @@
 
 class UBGAbilitySystemComponent;
 class UBGAttributeSet;
+class UCameraComponent;
 class UGameplayAbility;
 class UGameplayEffect;
 
@@ -77,7 +78,61 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG")
 	bool IsDead() const { return bDead; }
 
+	// ══════════════════════════════════════════════════════════════════
+	//  카메라 (연출) — 구 ABGPlayerBase 에서 통합
+	//
+	//  A(Primary) : 평상시 각자 자기 캐릭터를 통해 보는 시점.
+	//  B(Secondary): 연출용 샷의 **위치·FOV 마커**다. 실제로 이 카메라로 보지 않는다 —
+	//                ABGCinematicCamera 가 트랜스폼만 읽어가 그 자리로 날아온다.
+	//
+	//  ⚠️ ACharacter 는 CapsuleComponent 가 루트다. 두 카메라는 그 밑에 붙으므로
+	//     캡슐이 회전하면 함께 돈다. 캡슐과 무관하게 고정하고 싶으면 해당 컴포넌트에
+	//     SetUsingAbsoluteRotation(true) 를 주면 된다.
+	// ══════════════════════════════════════════════════════════════════
+
+	UFUNCTION(BlueprintPure, Category = "BG|Camera")
+	UCameraComponent* GetPrimaryCamera() const { return PrimaryCamera; }
+
+	UFUNCTION(BlueprintPure, Category = "BG|Camera")
+	UCameraComponent* GetSecondaryCamera() const { return SecondaryCamera; }
+
+	/**
+	 * 두 카메라 중 하나만 활성 상태로 만든다.
+	 *
+	 * ⚠️ 둘 다 활성이면 AActor::CalcCamera 가 OwnedComponents(TSet)에서 **먼저 찾은 것**을 쓴다.
+	 *    순회 순서가 보장되지 않으므로 "가끔 다른 시점으로 시작하는" 재현 어려운 버그가 된다.
+	 *    전환은 반드시 이 함수를 거칠 것.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Camera")
+	void SetActiveCamera(bool bUsePrimary);
+
+	UFUNCTION(BlueprintPure, Category = "BG|Camera")
+	bool IsPrimaryCameraActive() const;
+
+	/**
+	 * 서버 전용. 캐릭터 **몸**을 이 방향으로 돌린다 (좌석 배치에서 캠프파이어를 보게 할 때).
+	 *
+	 * ⚠️ 서버에서 SetActorRotation 만 하면 **자기 캐릭터를 조종하는 클라에는 반영되지 않는다.**
+	 *    캐릭터 이동은 클라 권위(서버는 보정만)인데, 그 보정 패킷(ClientAdjustPosition)에는
+	 *    위치·속도만 들어가고 회전은 없다. 그래서 위치는 맞는데 회전만 안 따라오는 현상이 난다.
+	 *    소유 클라에는 아래 Client RPC 로 따로 알린다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Seating")
+	void SetBodyFacing(FRotator NewRotation);
+
 protected:
+	/** 소유 클라에서 몸 방향을 맞춘다. 서버의 SetBodyFacing 이 호출한다. */
+	UFUNCTION(Client, Reliable)
+	void Client_SetBodyFacing(FRotator NewRotation);
+
+	/** 평상시 시점. 스폰 시 이쪽이 활성이다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Camera")
+	TObjectPtr<UCameraComponent> PrimaryCamera;
+
+	/** 연출 샷 마커. 기본 비활성이며, 연출 중에도 활성화하지 않는다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Camera")
+	TObjectPtr<UCameraComponent> SecondaryCamera;
+
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// ── GAS ──

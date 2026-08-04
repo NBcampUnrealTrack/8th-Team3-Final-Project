@@ -126,9 +126,6 @@ void UBGSeatComponent::SnapPawnToSeat(ABGPlayerState* PS) const
 		return;
 	}
 
-	FVector Loc;
-	FRotator Rot;
-
 	//	캠프파이어가 있으면 그쪽이 우선이다. 자리 간격이 접속 인원수로 결정되므로
 	//	레벨에 고정 배치한 PlayerStart 로는 4인과 7인을 같이 만족시킬 수 없다.
 	//	⚠️ 두 경로가 모두 폰을 옮기면 나중에 부른 쪽이 이겨 자리가 튄다. 여기서 하나로 고른다.
@@ -137,19 +134,21 @@ void UBGSeatComponent::SnapPawnToSeat(ABGPlayerState* PS) const
 
 	if (Campfire && Campfire->GetTransformForSeat(PS->GetSeatIndex(), SeatTransform))
 	{
-		Loc = SeatTransform.GetLocation();
-		Rot = SeatTransform.GetRotation().Rotator();
+		//	캡슐 반높이 보정과 실패 로그가 PlacePawn 안에 있다 — 여기서 직접 TeleportTo 하지 말 것.
+		Campfire->PlacePawn(Pawn, SeatTransform);
+		return;
 	}
-	else if (const AActor* Start = FindSeatStart(PS->GetSeatIndex()))
-	{
-		//	캠프파이어가 없는 레벨(테스트맵 등)에서는 기존 PlayerStart 방식을 그대로 쓴다.
-		Loc = Start->GetActorLocation();
-		Rot = Start->GetActorRotation();
-	}
-	else
+
+	//	캠프파이어가 없는 레벨(테스트맵 등)에서는 기존 PlayerStart 방식을 그대로 쓴다.
+	//	PlayerStart 는 캡슐이 지면 위에 서도록 배치되어 있으므로 높이 보정이 필요 없다.
+	const AActor* Start = FindSeatStart(PS->GetSeatIndex());
+	if (!Start)
 	{
 		return;
 	}
+
+	const FVector  Loc = Start->GetActorLocation();
+	const FRotator Rot = Start->GetActorRotation();
 
 	// TeleportTo 는 겹침을 밀어내 준다 — SetActorLocation 은 자리에 끼일 수 있다.
 	Pawn->TeleportTo(Loc, Rot);

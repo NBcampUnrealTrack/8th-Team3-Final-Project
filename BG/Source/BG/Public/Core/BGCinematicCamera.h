@@ -24,7 +24,7 @@
 #include "Camera/CameraActor.h"
 #include "BGCinematicCamera.generated.h"
 
-class ABGPlayerBase;
+class ABGCharacter;
 
 /** 샷 사이를 어떤 경로로 이동할지. */
 UENUM(BlueprintType)
@@ -55,7 +55,7 @@ struct FBGCameraShot
 
 	/** 이 캐릭터의 B 카메라를 비춘다. null 이면 연출 종료 — 각자 자기 A 카메라로 돌아간다. */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Camera")
-	TObjectPtr<ABGPlayerBase> Target = nullptr;
+	TObjectPtr<ABGCharacter> Target = nullptr;
 
 	/**
 	 * 샷이 시작된 서버 시각(GetServerWorldTimeSeconds).
