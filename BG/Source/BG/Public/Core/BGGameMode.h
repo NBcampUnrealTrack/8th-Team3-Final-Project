@@ -21,13 +21,50 @@
 class UBGMatchStartComponent;
 class UBGSeatComponent;
 
-UCLASS()
+// 판의 진행 모드. PvP/PvE 는 규칙이 같고 빈자리를 누가 채우느냐만 다르므로
+// 게임모드 클래스를 나누지 않고 이 값으로 가른다. (메인메뉴는 ABGMainMenuGameMode 담당)
+UENUM(BlueprintType)
+enum class EBGPlayMode : uint8
+{
+	// 사람끼리 붙는 기본 모드.
+	PvP,
+	// AI 상대. 빈자리를 AI 가 채운다(AI 자체는 미구현).
+	PvE
+};
+
+// 맵 → 모드 기본값. DefaultGame.ini 에 한 줄 넣으면 레벨이 늘어도 클래스는 그대로다.
+//   +MapPlayModes=(MapName="L_PvELobby",Mode=PvE)
+USTRUCT()
+struct FBGMapPlayMode
+{
+	GENERATED_BODY()
+
+	// 맵 이름(경로 없이). 로드된 맵 이름과 정확히 비교한다.
+	UPROPERTY(Config, EditAnywhere, Category = "BG")
+	FString MapName;
+
+	UPROPERTY(Config, EditAnywhere, Category = "BG")
+	EBGPlayMode Mode = EBGPlayMode::PvP;
+};
+
+UCLASS(Config = Game)
 class BG_API ABGGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
 
 public:
 	ABGGameMode();
+
+	// 이번 판의 모드. InitGame 에서 한 번 정해지고 그 뒤로 바뀌지 않는다.
+	UFUNCTION(BlueprintPure, Category = "BG")
+	EBGPlayMode GetPlayMode() const { return PlayMode; }
+
+	// 빈자리를 AI 가 채우는 모드인가. 규칙 분기는 전부 이 한 줄을 통한다.
+	UFUNCTION(BlueprintPure, Category = "BG")
+	bool IsPvE() const { return PlayMode == EBGPlayMode::PvE; }
+
+	// 서버 게임모드를 찾아 모드를 읽는다. 게임모드가 없는 클라에서는 PvP 로 본다.
+	static EBGPlayMode GetPlayMode(const UObject* WorldContext);
 
 	// 지원 인원 범위 (BANG! 기본판).
 	static constexpr int32 MinPlayers = 4;
@@ -100,6 +137,9 @@ public:
 	void BG_Damage(int32 Seat, int32 Amount);
 
 protected:
+	// 모드는 여기서 확정한다 — 첫 로그인보다 먼저라 좌석·역할 배정이 모드를 볼 수 있다.
+	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+
 	// 판이 시작된 뒤의 접속은 여기서 막는다. 클라의 검색 결과는 캐시라
 	// 시작 직전에 검색한 클라이언트는 bAllowJoinInProgress 검사를 통과해버린다.
 	virtual void PreLogin(const FString& Options, const FString& Address,
@@ -118,6 +158,14 @@ protected:
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
 private:
+	// URL 옵션(?PlayMode=PvE) > MapPlayModes > PvP 순으로 정한다.
+	EBGPlayMode ResolvePlayMode(const FString& MapName, const FString& Options) const;
+
+	EBGPlayMode PlayMode = EBGPlayMode::PvP;
+
+	UPROPERTY(Config)
+	TArray<FBGMapPlayMode> MapPlayModes;
+
 	UPROPERTY(VisibleAnywhere, Category = "BG")
 	TObjectPtr<UBGMatchStartComponent> MatchStart;
 

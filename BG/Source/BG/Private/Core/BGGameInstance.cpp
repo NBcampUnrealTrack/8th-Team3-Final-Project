@@ -1,6 +1,7 @@
 ﻿#include "Core/BGGameInstance.h"
 #include "Session/BGOssPolicy.h"
 #include "Session/BGSessionFlow.h"
+#include "UI/Session/BGSessionMenuController.h"
 #include "Debug/BGNetLog.h"
 #include "Core/BGGameMode.h"
 #include "AbilitySystemGlobals.h"
@@ -509,17 +510,28 @@ void UBGGameInstance::HandleDestroySessionComplete(FName SessionName, bool bWasS
 
 void UBGGameInstance::HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString)
 {
-	// 클라가 튕기면 조인으로 만들어진 로컬 세션이 남아 이후 방 생성을 계속 거부시킨다.
 	const bool bIsServer = NetDriver && NetDriver->ServerConnection == nullptr;
-	IOnlineSessionPtr Sessions = GetSessionInterface();
-	if (bIsServer || !Sessions.IsValid() || Sessions->GetSessionState(NAME_GameSession) == EOnlineSessionState::NoSession)
+	if (bIsServer)
 	{
 		return;
 	}
 
-	UE_LOG(LogBGNet, Warning, TEXT("접속 끊김(%s: %s) — 남은 로컬 세션 파기"),
+	UE_LOG(LogBGNet, Warning, TEXT("접속 끊김(%s: %s) — 메인메뉴로 복귀"),
 		ENetworkFailure::ToString(FailureType), *ErrorString);
-	DestroyCurrentSession();
+
+	// 조인으로 만들어진 로컬 세션이 남으면 이후 방 생성이 계속 거부된다.
+	IOnlineSessionPtr Sessions = GetSessionInterface();
+	if (Sessions.IsValid() && Sessions->GetSessionState(NAME_GameSession) != EOnlineSessionState::NoSession)
+	{
+		DestroyCurrentSession();
+	}
+
+	// 맵 복귀는 엔진이 GameDefaultMap(메인메뉴)으로 브라우즈해 준다. 다만 세션 메뉴는
+	// 열린 상태로 살아남아 메인메뉴 위에 다시 뜨므로 여기서 닫는다.
+	if (UBGSessionMenuController* Menu = GetSubsystem<UBGSessionMenuController>())
+	{
+		Menu->Close();
+	}
 }
 
 void UBGGameInstance::SetAllowJoinInProgress(bool bAllow)
