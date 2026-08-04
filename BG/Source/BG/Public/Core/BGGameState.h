@@ -4,15 +4,39 @@
 
 #include "CoreMinimal.h"
 #include "Card/BGCardType.h"
+#include "Card/BGGameDataTypes.h"   // FBGCardResolution — 멀티캐스트 인자라 완전한 타입이 필요하다
 #include "GameplayTagContainer.h"
 #include "GameFramework/GameStateBase.h"
 #include "BGGameState.generated.h"
 
 
 /**
- * 
+ *
  */
 class UBGDiceComponent;
+
+/**
+ * 판이 끝난 뒤의 연출 단계.
+ *
+ * ⚠️ 이 값은 서버가 소유하고 복제된다 — 클라가 자기 타이머로 넘어가면 안 된다.
+ *    "이벤트" 가 아니라 "상태" 로 둔 이유: 늦게 접속한 클라도 지금 어느 단계인지
+ *    그대로 받는다. 이벤트였다면 놓친 사람은 영영 못 받는다.
+ */
+UENUM(BlueprintType)
+enum class EBGMatchEndStage : uint8
+{
+	None    UMETA(DisplayName = "진행 중"),
+	Victory UMETA(DisplayName = "승리 연출"),
+	Credits UMETA(DisplayName = "엔딩 크레딧")
+};
+
+/** 승패가 확정됐다. WinningRole 과 자기 역할을 비교해 승/패를 표시하면 된다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGMatchWon, FGameplayTag, WinningRole);
+
+/** 승리 연출이 끝나고 엔딩 크레딧으로 넘어갔다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGEndingCredits);
+/** 판정 결과가 도착했다. 서버·클라 양쪽에서 불린다 (GDD §4.1 — 전원이 같은 결과를 본다). */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCardResolved, const FBGCardResolution& /*Resolution*/);
 
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase
@@ -21,6 +45,18 @@ class BG_API ABGGameState : public AGameStateBase
 
 public:
 	ABGGameState();
+
+	/**
+	 * 판정 결과를 전원에게 알린다 (서버에서만 호출).
+	 *
+	 * PlayerController 의 멀티캐스트는 소유 클라에만 가므로 여기가 아니면 남의 판정을 볼 수 없다.
+	 * GameState 는 모두에게 복제되므로 좌석 전원이 같은 결과를 받는다.
+	 */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_CardResolved(const FBGCardResolution& Resolution);
+
+	/** 위 멀티캐스트가 도착하면 발사된다. UI(PlayerController)가 구독한다. */
+	FOnBGCardResolved OnCardResolved;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -144,6 +180,31 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	bool IsMatchOver() const { return PhaseTag == GameOverPhaseTag(); }
 
+	// ── 종료 연출 (승리 → 크레딧 → 로비 복귀) ──────────────────────
+	//
+	//  서버가 단계를 넘기고, 클라는 복제된 단계를 받아 델리게이트만 쏜다.
+	//  BP 바인딩 예) Get Game State → Cast To BGGameState → Bind Event to OnMatchWon
+	//
+	//  ⚠️ 위젯이 승리보다 늦게 만들어지면 이벤트를 놓친다. 바인딩 직후
+	//     GetMatchEndStage() 를 한 번 확인해 이미 진행 중이면 즉시 처리할 것.
+
+	UPROPERTY(BlueprintAssignable, Category = "BG|Match")
+	FOnBGMatchWon OnMatchWon;
+
+	UPROPERTY(BlueprintAssignable, Category = "BG|Match")
+	FOnBGEndingCredits OnEndingCredits;
+
+	UFUNCTION(BlueprintPure, Category = "BG|Match")
+	EBGMatchEndStage GetMatchEndStage() const { return MatchEndStage; }
+
+	/**
+	 * 서버 전용. 승리 연출을 앞당겨 끝내고 크레딧으로 넘어간다.
+	 * 연출 위젯의 애니메이션이 끝나는 시점에 부르면 VictorySequenceSeconds 를 기다리지 않는다.
+	 * Victory 단계가 아니면 아무것도 하지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Match")
+	void StartEndingCredits();
+
 	/** 좌석의 현재 Health. ASC 를 못 찾으면 0. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seat")
 	int32 GetSeatHealth(int32 Seat) const;
@@ -151,6 +212,24 @@ public:
 protected:
 	//	헤더에서 태그 상수를 직접 못 쓰므로(네이티브 태그는 .cpp 정의) 래퍼로 감싼다.
 	static FGameplayTag GameOverPhaseTag();
+
+	// ── 종료 연출 내부 ──
+	//
+	//	서버 전용. 단계 전환의 유일한 입구다 (SetPhaseTag 와 같은 원칙).
+	//	값을 바꾸고, 서버 자신의 브로드캐스트와 다음 단계 예약까지 여기서 한다.
+	void SetMatchEndStage(EBGMatchEndStage NewStage);
+
+	//	서버·클라 공통. 현재 단계에 맞는 델리게이트를 쏜다.
+	//	⚠️ 리슨서버 호스트는 자기 GameState 의 OnRep 을 받지 못한다 —
+	//	   그래서 서버는 SetMatchEndStage 에서, 클라는 OnRep 에서 이 함수로 모인다.
+	void HandleMatchEndStage();
+
+	UFUNCTION()
+	void OnRep_MatchEndStage();
+
+	//	서버 전용. 같은 맵을 다시 열어 판을 통째로 되돌린다(= 로비 복귀).
+	//	제자리에서 상태를 하나씩 지우지 않는 이유는 BGGameState.cpp 의 구현 주석 참고.
+	void ReturnToLobby();
 
 	// ── 턴 진행 내부 ──
 	void BeginTurn(int32 Seat);
@@ -194,6 +273,28 @@ protected:
 	//	승리 진영. 판이 끝나면 채워진다.
 	UPROPERTY(Replicated)
 	FGameplayTag WinningRoleTag;
+
+	//	종료 연출 단계. 이 값이 바뀌는 것이 곧 "승리했다 / 크레딧이다" 라는 통지다.
+	UPROPERTY(ReplicatedUsing = OnRep_MatchEndStage)
+	EBGMatchEndStage MatchEndStage = EBGMatchEndStage::None;
+
+	//	이미 쏜 단계. 로컬 상태라 복제하지 않는다 — 복제 변수는 재전송될 수 있어
+	//	가드가 없으면 같은 델리게이트가 두 번 나간다.
+	EBGMatchEndStage BroadcastedStage = EBGMatchEndStage::None;
+
+	FTimerHandle MatchEndStageTimer;
+
+	//	승리 연출을 보여주는 시간. 이 뒤 크레딧으로 넘어간다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Match", meta = (ClampMin = "0"))
+	float VictorySequenceSeconds = 5.f;
+
+	//	크레딧을 보여주는 시간. 이 뒤 로비로 복귀한다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Match", meta = (ClampMin = "0"))
+	float EndingCreditsSeconds = 10.f;
+
+	//	끄면 크레딧 화면에 머문다(연출 확인용). 켜면 자동으로 로비로 돌아간다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Match")
+	bool bReturnToLobbyAfterCredits = true;
 
 	//	무법자를 사살했을 때 가해자가 뽑는 장수 (뱅 원작 3장).
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Rule", meta = (ClampMin = "0"))

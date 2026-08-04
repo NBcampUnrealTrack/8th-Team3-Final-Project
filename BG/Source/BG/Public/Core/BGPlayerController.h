@@ -8,6 +8,8 @@
 #include "GameplayTagContainer.h"
 #include "UI/View/BGCardView.h"       // FBGCardView (OnCardPlayRequested 콜백 시그니처)
 #include "UI/View/BGSeatView.h"       // FOnBGSeatSelected 등 델리게이트 타입
+#include "UI/View/BGResolutionView.h" // EBGResolutionTier (ToResolutionTier 반환형)
+#include "Card/BGGameDataTypes.h"     // EBGDiceOutcome (ToResolutionTier 인자)
 #include "BGPlayerController.generated.h"   // 항상 마지막
 
 class UGameplayAbility;
@@ -15,6 +17,7 @@ class UAbilitySystemComponent;
 class UBGHandWidget;
 class UBGSeatBoardWidget;
 class UBGTurnPanelWidget;
+class UBGResolutionWidget;
 class ABGPlayerState;
 
 UCLASS()
@@ -62,6 +65,13 @@ public:
 	// HUD 가 자기 안의 턴 패널을 한 번 넘겨준다. 좌석 보드와 같은 타이머로 함께 갱신된다.
 	UFUNCTION(BlueprintCallable, Category = "BG|UI")
 	void SetTurnPanelWidget(UBGTurnPanelWidget* InTurnPanel);
+
+	/**
+	 * 판정 결과 위젯을 등록한다. HUD 가 만들면서 넘긴다.
+	 * 등록하지 않아도 게임은 그대로 돌아간다 — 결과가 화면에 안 뜰 뿐이다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|UI")
+	void SetResolutionWidget(UBGResolutionWidget* InResolutionWidget);
 
 	UFUNCTION(BlueprintCallable, Category = "BG|UI")
 	void RefreshTurnPanel();
@@ -163,6 +173,18 @@ protected:
 	/** 보정 어트리뷰트가 바뀌었다 — 손패의 최종 확률을 다시 계산한다. */
 	void HandleWeightAttributeChanged(const struct FOnAttributeChangeData& Data);
 
+	/**
+	 * GameState 의 판정 통지를 구독한다. GameState 는 클라에 늦게 도착하므로
+	 * 손패 델리게이트와 마찬가지로 여러 진입점에서 재시도한다.
+	 */
+	void TryBindResolutionDelegate();
+
+	/** 판정 결과가 도착했다. 게임 로직 타입 → UI 뷰모델 변환이 여기서 일어난다. */
+	void HandleCardResolved(const struct FBGCardResolution& Resolution);
+
+	/** EBGDiceOutcome → EBGResolutionTier. 뷰 계층이 게임 enum 을 모르게 하는 경계다. */
+	static EBGResolutionTier ToResolutionTier(EBGDiceOutcome Outcome);
+
 	/** 손패에서 카드를 중앙에 드롭했다. 대상이 필요한 카드면 좌석 선택으로 넘어간다. */
 	UFUNCTION()
 	void HandleCardPlayRequested(const FBGCardView& Card);
@@ -248,6 +270,14 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UBGTurnPanelWidget> TurnPanelWidget;
+
+	//	판정 결과 표시. 없어도 게임은 돌아간다(결과가 화면에 안 뜰 뿐).
+	UPROPERTY()
+	TObjectPtr<UBGResolutionWidget> ResolutionWidget;
+
+	//	중복 구독을 막기 위해 현재 구독 중인 GameState 를 기억한다.
+	UPROPERTY()
+	TWeakObjectPtr<class ABGGameState> BoundGameState;
 
 	FTimerHandle SeatRefreshTimer;
 };

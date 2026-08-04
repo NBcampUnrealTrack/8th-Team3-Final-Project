@@ -20,6 +20,7 @@
 #include "UI/Widget/BGHandWidget.h"
 #include "UI/Widget/BGSeatBoardWidget.h"
 #include "UI/Widget/BGTurnPanelWidget.h"
+#include "UI/Widget/BGResolutionWidget.h"
 #include "Components/InputComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -54,6 +55,7 @@ void ABGPlayerController::SetHandWidget(UBGHandWidget* InHandWidget)
 
 	TryBindHandDelegate();
 	TryBindAttributeDelegates();
+	TryBindResolutionDelegate();
 	RefreshHandWidget();
 	UpdateHandInteractionLock();
 }
@@ -148,6 +150,7 @@ void ABGPlayerController::OnRep_PlayerState()
 	// 클라: PlayerState 가 이제야 도착했다. 여기서 구독하지 않으면 첫 손패를 놓친다.
 	TryBindHandDelegate();
 	TryBindAttributeDelegates();
+	TryBindResolutionDelegate();
 	RefreshHandWidget();
 }
 
@@ -169,6 +172,94 @@ void ABGPlayerController::TryBindHandDelegate()
 	BoundPlayerState = PS;
 
 	UE_LOG(LogBGCard, Verbose, TEXT("[PC] 손패 델리게이트 구독 — 좌석 %d"), PS->GetSeatIndex());
+}
+
+void ABGPlayerController::SetResolutionWidget(UBGResolutionWidget* InResolutionWidget)
+{
+	ResolutionWidget = InResolutionWidget;
+
+	if (ResolutionWidget)
+	{
+		//	등록 직후에는 보여줄 판정이 없다. 켜진 채로 시작하면 빈 패널이 화면에 남는다.
+		ResolutionWidget->HideResolution();
+	}
+
+	TryBindResolutionDelegate();
+}
+
+void ABGPlayerController::TryBindResolutionDelegate()
+{
+	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	if (!GS || BoundGameState.Get() == GS)
+	{
+		return;   // GameState 가 아직 복제되지 않았거나 이미 구독 중
+	}
+
+	if (ABGGameState* Previous = BoundGameState.Get())
+	{
+		Previous->OnCardResolved.RemoveAll(this);
+	}
+
+	GS->OnCardResolved.AddUObject(this, &ABGPlayerController::HandleCardResolved);
+	BoundGameState = GS;
+
+	UE_LOG(LogBGCard, Verbose, TEXT("[PC] 판정 결과 통지 구독"));
+}
+
+EBGResolutionTier ABGPlayerController::ToResolutionTier(EBGDiceOutcome Outcome)
+{
+	switch (Outcome)
+	{
+	case EBGDiceOutcome::CriticalFailure: return EBGResolutionTier::CriticalFailure;
+	case EBGDiceOutcome::Failure:         return EBGResolutionTier::Failure;
+	case EBGDiceOutcome::Success:         return EBGResolutionTier::Success;
+	case EBGDiceOutcome::CriticalSuccess: return EBGResolutionTier::CriticalSuccess;
+	}
+
+	//	등급이 늘어났는데 여기를 안 고치면 화면이 UnknownTierColor(자홍색)로 뜬다 — 바로 눈에 띈다.
+	return EBGResolutionTier::None;
+}
+
+void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution)
+{
+	if (!ResolutionWidget)
+	{
+		return;   // HUD 가 위젯을 넘기지 않았다. 판정 자체는 이미 서버에서 끝났으므로 무해하다.
+	}
+
+	FBGResolutionView View;
+	View.Tier      = ToResolutionTier(Resolution.Outcome);
+	View.Roll      = Resolution.Roll;
+	View.bForced   = Resolution.bForced;
+	View.SeatIndex = Resolution.SeatIndex;
+
+	//	카드 이름은 DT 에서 가져온다. 태그 문자열을 그대로 띄우면 플레이어가 읽을 수 없다.
+	const UBGDataSubsystem* Data = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UBGDataSubsystem>()
+		: nullptr;
+	const FBGCardRow* Row = Data ? Data->GetCardRow(Resolution.CardId) : nullptr;
+
+	View.CardName = Row
+		? Row->DisplayName
+		: FText::FromName(Resolution.CardId.GetTagName());
+
+	//	좌석 이름. 좌석 뷰를 거치지 않고 PlayerState 를 직접 찾는다 —
+	//	좌석 보드가 없어도 판정 표시는 동작해야 한다.
+	if (const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+	{
+		if (const ABGPlayerState* SeatPS = GS->GetPlayerStateBySeat(Resolution.SeatIndex))
+		{
+			View.SeatName = FText::FromString(SeatPS->GetPlayerName());
+		}
+	}
+
+	//	서버가 실제로 쓴 비율을 그대로 %로 바꾼다. 여기서 다시 보정을 계산하면
+	//	남의 어트리뷰트를 읽어야 하는데 그건 복제되지 않아 남의 판정만 확률이 틀리게 나온다.
+	UBGDiceComponent::GetOutcomeChances(Resolution.Weights,
+		View.Chance.CriticalFailure, View.Chance.Failure,
+		View.Chance.Success, View.Chance.CriticalSuccess);
+
+	ResolutionWidget->ShowResolution(View);
 }
 
 void ABGPlayerController::TryBindAttributeDelegates()
@@ -299,6 +390,12 @@ void ABGPlayerController::RefreshSeatBoard()
 	//	턴/페이즈 잠금도 여기서 갱신한다. 페이즈 전환(Draw→Play)은 손패 내용을 바꾸지 않아
 	//	OnHandChanged 가 오지 않는다 — 폴링하지 않으면 자기 차례가 되어도 손패가 잠긴 채 굳는다.
 	UpdateHandInteractionLock();
+
+	//	늦게 도착하는 것들에 대한 구독 재시도. 둘 다 이미 걸려 있으면 즉시 빠져나온다.
+	//	  · GameState — 클라에서는 PlayerState 보다 늦게 올 수 있다. 놓치면 판정이 영영 안 뜬다.
+	//	  · 폰의 ASC  — 손패보다 늦게 스폰되면 보정 구독이 비어, 장비를 껴도 확률이 안 바뀐다.
+	TryBindResolutionDelegate();
+	TryBindAttributeDelegates();
 }
 
 // ======================================================================================
@@ -741,6 +838,10 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			int32 Roll = INDEX_NONE;
 			EBGDiceOutcome Outcome = Dice->RollOutcome(Weights, Roll);
 
+			//	강제되면 굴린 눈과 결과가 어긋난다. UI 가 "눈 3 → 대성공" 을 그대로 띄우면
+			//	버그로 보이므로, 강제 여부를 함께 전달해 눈 대신 "판정 강제됨" 을 보여주게 한다.
+			bool bForcedOutcome = false;
+
 			//	── "다음 1회" 판정 강제 (준비 / 함정) ──
 			//	상태를 소모해 굴린 결과를 덮어쓴다. 굴림 자체는 먼저 소비해 난수 수열을
 			//	일정하게 유지한다(강제 여부에 따라 이후 판정이 밀리지 않도록).
@@ -776,6 +877,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 					if (bTierPossible)
 					{
 						Outcome = Rule.Forced;
+						bForcedOutcome = true;
 						BGDebug::Screen(
 							FString::Printf(TEXT("[강제] %s → 판정을 %s 로 고정"),
 								*Rule.Tag.GetTagName().ToString(),
@@ -819,6 +921,23 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 				(Outcome == EBGDiceOutcome::Failure)         ? FColor(160, 160, 160) :
 				                                                 FColor::Red,
 				/*Time=*/6.f);
+
+			//	전원에게 판정 결과를 알린다 (GDD §4.1 "모든 플레이어에게 동일한 결과를 표시").
+			//	위의 BGDebug::Screen 은 서버 화면에만 찍히므로 클라는 아무것도 보지 못한다.
+			if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+			{
+				FBGCardResolution Resolution;
+				Resolution.CardId    = CardId;
+				Resolution.Outcome   = Outcome;
+				Resolution.Roll      = Roll;
+				Resolution.bForced   = bForcedOutcome;
+				Resolution.SeatIndex = GetPlayerState<ABGPlayerState>()
+					? GetPlayerState<ABGPlayerState>()->GetSeatIndex()
+					: INDEX_NONE;
+				Resolution.Weights   = Weights;
+
+				MutableGS->Multicast_CardResolved(Resolution);
+			}
 		}
 		else if (!Dice)
 		{

@@ -1,0 +1,127 @@
+// BANG! 판정 결과 표시 위젯 (GDD §10 — "대실패·실패·성공·대성공을 색상, 아이콘, 텍스트,
+// 짧은 연출로 구분한다").
+//
+// 카드를 낼 때마다 서버가 판정한 결과가 전원에게 도착하고, 이 위젯이 잠깐 띄웠다가 사라진다.
+// GDD §9.2 "자동 판정은 짧은 연출과 로그를 제공하되 별도의 확인 입력을 요구하지 않는다" 에 따라
+// 확인 버튼을 두지 않는다 — 뜨고 스스로 사라진다.
+
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Blueprint/UserWidget.h"
+#include "UI/View/BGResolutionView.h"
+#include "BGResolutionWidget.generated.h"
+
+class UTextBlock;
+class UBorder;
+
+/**
+ * WBP 서브클래스에 아래 이름의 위젯이 있으면 자동으로 채워진다. **전부 선택**이다 —
+ * 하나도 없어도 컴파일과 실행이 유지되고, 있는 것만 갱신된다.
+ *
+ *   Text_Outcome  (TextBlock) — "대성공"
+ *   Text_Roll     (TextBlock) — "눈 70 / 성공 65%"  (강제 판정이면 "강제")
+ *   Text_Card     (TextBlock) — "뱅!  · 좌석 2"
+ *   Text_Chance   (TextBlock) — "대실패 5 · 실패 20 · 성공 65 · 대성공 10"
+ *   Border_Root   (Border)    — 결과 색으로 물들일 배경
+ *
+ * ── 게임 로직과의 연결 지점 ──
+ *   들어오는 방향: ShowResolution() — PlayerController 가 판정 결과를 받아 밀어넣는다
+ *   나가는 방향:   없다. 이 위젯은 읽기 전용 표시다.
+ */
+UCLASS(Abstract, Blueprintable)
+class BG_API UBGResolutionWidget : public UUserWidget
+{
+	GENERATED_BODY()
+
+public:
+	/**
+	 * 판정 결과를 표시한다. DisplaySeconds 후 자동으로 숨긴다.
+	 * 연달아 호출되면 이전 표시를 덮어쓰고 타이머를 다시 잡는다 — 카드를 빠르게 두 장 내도
+	 * 첫 결과가 남아 두 번째를 가리지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Resolution")
+	void ShowResolution(const FBGResolutionView& InResolutionView);
+
+	/** 즉시 숨긴다. 턴이 넘어가거나 판이 끝날 때 호출한다. */
+	UFUNCTION(BlueprintCallable, Category = "BG|Resolution")
+	void HideResolution();
+
+	UFUNCTION(BlueprintPure, Category = "BG|Resolution")
+	const FBGResolutionView& GetResolutionView() const { return ResolutionView; }
+
+	/** 결과 등급에 대응하는 색. 아이콘·연출을 BP 에서 만들 때도 이걸 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Resolution")
+	FLinearColor GetTierColor(EBGResolutionTier Tier) const;
+
+	/** 결과 등급의 표시 문구 ("대성공" 등). */
+	UFUNCTION(BlueprintPure, Category = "BG|Resolution")
+	static FText GetTierText(EBGResolutionTier Tier);
+
+	/**
+	 * 색·텍스트를 C++ 이 모두 채운 **뒤에** 불린다. 애니메이션·사운드·아이콘 교체처럼
+	 * 데이터가 아니라 연출에 해당하는 것은 BP 에서 여기에 붙인다.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Resolution")
+	void OnResolutionShown(const FBGResolutionView& Shown);
+
+	/** 자동으로 숨겨지거나 HideResolution 이 불렸을 때. 퇴장 연출용. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Resolution")
+	void OnResolutionHidden();
+
+protected:
+	virtual void NativePreConstruct() override;
+	virtual void NativeDestruct() override;
+
+	// ── 결과별 색상 (GDD §10) ─────────────────────────────────────
+	//  기본값은 서버 디버그 로그(BGCardExec / BGPlayerController)가 쓰던 색과 맞췄다.
+	//  콘솔과 화면의 색이 다르면 같은 판정을 두 가지로 기억하게 된다.
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution|Color")
+	FLinearColor CriticalFailureColor = FLinearColor(0.85f, 0.15f, 0.15f, 1.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution|Color")
+	FLinearColor FailureColor = FLinearColor(0.63f, 0.63f, 0.63f, 1.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution|Color")
+	FLinearColor SuccessColor = FLinearColor(1.f, 0.92f, 0.23f, 1.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution|Color")
+	FLinearColor CriticalSuccessColor = FLinearColor(1.f, 0.55f, 0.f, 1.f);
+
+	/** 등급을 못 읽었을 때(None). 눈에 띄어야 원인을 찾는다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution|Color")
+	FLinearColor UnknownTierColor = FLinearColor(1.f, 0.f, 1.f, 1.f);
+
+	/**
+	 * 표시 유지 시간(초). 0 이하면 자동으로 숨기지 않는다 — 연출을 BP 애니메이션으로
+	 * 직접 제어하고 싶을 때 0 으로 두고 HideResolution 을 손수 부른다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution", meta = (ClampMin = "0.0"))
+	float DisplaySeconds = 2.5f;
+
+	/** 표시할 내용. 디자이너에서 값을 넣으면 프리뷰에 그대로 반영된다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution")
+	FBGResolutionView ResolutionView;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Outcome;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Roll;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Card;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Chance;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Root;
+
+private:
+	void RefreshVisual();
+
+	/** 자동 숨김 타이머. 위젯이 파괴될 때 반드시 지운다. */
+	FTimerHandle HideTimerHandle;
+};
