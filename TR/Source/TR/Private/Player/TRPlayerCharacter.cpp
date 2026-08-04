@@ -88,11 +88,26 @@ void ATRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		if (IsValid(IA_Move)) EIC->BindAction(IA_Move, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Move);
-		if (IsValid(IA_Look)) EIC->BindAction(IA_Look, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Look);
-		if (IsValid(IA_Jump)) EIC->BindAction(IA_Jump, ETriggerEvent::Started, this, &ATRPlayerCharacter::StartJump);
-		if (IsValid(IA_Interact)) EIC->BindAction(IA_Interact, ETriggerEvent::Started, this, &ATRPlayerCharacter::Interact);
-		if (IsValid(IA_Trigger)) EIC->BindAction(IA_Trigger, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Trigger);
+		if (IsValid(IA_Move))
+		{
+			EIC->BindAction(IA_Move, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Move);
+		}
+		if (IsValid(IA_Look))
+		{
+			EIC->BindAction(IA_Look, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Look);
+		}
+		if (IsValid(IA_Jump))
+		{
+			EIC->BindAction(IA_Jump, ETriggerEvent::Started, this, &ATRPlayerCharacter::StartJump);
+		}
+		if (IsValid(IA_Interact))
+		{
+			EIC->BindAction(IA_Interact, ETriggerEvent::Started, this, &ATRPlayerCharacter::Interact);
+		}
+		if (IsValid(IA_Trigger))
+		{
+			EIC->BindAction(IA_Trigger, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Trigger);
+		}
 	}
 }
 
