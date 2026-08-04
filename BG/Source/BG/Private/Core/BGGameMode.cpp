@@ -6,6 +6,7 @@
 #include "Card/BGDataSubsystem.h"
 #include "Core/BGPlayerState.h"
 #include "Debug/BGNetLog.h"
+#include "Kismet/GameplayStatics.h"
 #include "Core/BGCharacter.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
@@ -35,6 +36,47 @@ ABGGameMode::ABGGameMode()
 
 	// 좌석 배정도 마찬가지 — 게임모드는 훅만 넘긴다.
 	Seats = CreateDefaultSubobject<UBGSeatComponent>(TEXT("Seats"));
+}
+
+EBGPlayMode ABGGameMode::GetPlayMode(const UObject* WorldContext)
+{
+	const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
+	const ABGGameMode* GM = World ? World->GetAuthGameMode<ABGGameMode>() : nullptr;
+	return GM ? GM->GetPlayMode() : EBGPlayMode::PvP;
+}
+
+EBGPlayMode ABGGameMode::ResolvePlayMode(const FString& MapName, const FString& Options) const
+{
+	// URL 옵션이 최우선 — 같은 맵을 다른 모드로 열 수 있어야 한다(?PlayMode=PvE).
+	const FString Requested = UGameplayStatics::ParseOption(Options, TEXT("PlayMode"));
+	if (!Requested.IsEmpty())
+	{
+		const UEnum* Enum = StaticEnum<EBGPlayMode>();
+		const int64 Value = Enum ? Enum->GetValueByNameString(Requested) : INDEX_NONE;
+		if (Value != INDEX_NONE)
+		{
+			return static_cast<EBGPlayMode>(Value);
+		}
+		UE_LOG(LogBGNet, Warning, TEXT("[GameMode] 알 수 없는 PlayMode 옵션 '%s' — 맵 기본값을 쓴다."), *Requested);
+	}
+
+	for (const FBGMapPlayMode& Entry : MapPlayModes)
+	{
+		if (Entry.MapName == MapName)
+		{
+			return Entry.Mode;
+		}
+	}
+	return EBGPlayMode::PvP;
+}
+
+void ABGGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
+{
+	PlayMode = ResolvePlayMode(MapName, Options);
+	Super::InitGame(MapName, Options, ErrorMessage);
+
+	UE_LOG(LogBGNet, Log, TEXT("[GameMode] 맵 %s — 모드 %s"),
+		*MapName, *StaticEnum<EBGPlayMode>()->GetNameStringByValue(static_cast<int64>(PlayMode)));
 }
 
 void ABGGameMode::PreLogin(const FString& Options, const FString& Address,

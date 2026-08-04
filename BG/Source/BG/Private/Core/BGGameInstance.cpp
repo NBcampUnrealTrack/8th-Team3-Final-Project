@@ -1,6 +1,7 @@
 ﻿#include "Core/BGGameInstance.h"
 #include "Session/BGOssPolicy.h"
 #include "Session/BGSessionFlow.h"
+#include "UI/Session/BGSessionMenuController.h"
 #include "Debug/BGNetLog.h"
 #include "Core/BGGameMode.h"
 #include "AbilitySystemGlobals.h"
@@ -111,7 +112,7 @@ void UBGGameInstance::HostSession(int32 MaxPlayers, bool bLAN, const FString& Ro
 	{
 		// OSS 미초기화 시 폴백 — 광고 없이 리슨만 열어 직접 IP 접속(open <IP>)은 살린다.
 		UE_LOG(LogBGNet, Warning, TEXT("HostSession: SessionInterface 없음 — 세션 광고 없이 리슨만 시작"));
-		OnCreateSessionComplete.Broadcast(StartListenInPlace());
+		OnCreateSessionComplete.Broadcast(StartListen());
 		return;
 	}
 
@@ -145,7 +146,7 @@ void UBGGameInstance::StartHostSession(int32 MaxPlayers, bool bLAN, const FStrin
 	if (!Sessions.IsValid())
 	{
 		UE_LOG(LogBGNet, Warning, TEXT("StartHostSession: SessionInterface 없음 — 세션 광고 없이 리슨만 시작"));
-		OnCreateSessionComplete.Broadcast(StartListenInPlace());
+		OnCreateSessionComplete.Broadcast(StartListen());
 		return;
 	}
 
@@ -220,8 +221,56 @@ void UBGGameInstance::HandleCreateSessionComplete(FName SessionName, bool bWasSu
 		return;
 	}
 
-	// 단일 맵이라 ServerTravel 대신 제자리 리슨.
-	OnCreateSessionComplete.Broadcast(StartListenInPlace());
+	// 게임 맵이면 제자리 리슨, 메인메뉴면 게임 맵으로 한 번 이동한다.
+	OnCreateSessionComplete.Broadcast(StartListen());
+}
+
+bool UBGGameInstance::StartListen()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogBGNet, Warning, TEXT("StartListen: World 없음"));
+		return false;
+	}
+
+	// 메인메뉴에서 호스트하면 게임 맵으로 한 번 이동해야 한다. 이미 게임 맵이면 그대로 연다.
+	const FString CurrentMap = World->GetOutermost()->GetName();
+	if (CurrentMap == GameMapPath)
+	{
+		return StartListenInPlace();
+	}
+
+	UE_LOG(LogBGNet, Log, TEXT("StartListen: 게임 맵으로 이동 (%s → %s)"), *CurrentMap, *GameMapPath);
+	World->ServerTravel(GameMapPath + TEXT("?listen"), /*bAbsolute*/ true);
+	return true;
+}
+
+void UBGGameInstance::ReturnToMainMenu()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogBGNet, Warning, TEXT("ReturnToMainMenu: World 없음"));
+		return;
+	}
+
+	const FString CurrentMap = World->GetOutermost()->GetName();
+	if (CurrentMap == MainMenuMapPath)
+	{
+		return;
+	}
+
+	APlayerController* PC = GetFirstLocalPlayerController();
+	if (!PC)
+	{
+		UE_LOG(LogBGNet, Warning, TEXT("ReturnToMainMenu: 로컬 PlayerController 없음"));
+		return;
+	}
+
+	// 호스트도 ClientTravel 로 자기 자신만 빠진다 — 남은 접속자는 넷드라이버가 끊어 준다.
+	UE_LOG(LogBGNet, Log, TEXT("ReturnToMainMenu: 메인메뉴로 이동 (%s → %s)"), *CurrentMap, *MainMenuMapPath);
+	PC->ClientTravel(MainMenuMapPath, ETravelType::TRAVEL_Absolute);
 }
 
 bool UBGGameInstance::StartListenInPlace()
@@ -461,17 +510,28 @@ void UBGGameInstance::HandleDestroySessionComplete(FName SessionName, bool bWasS
 
 void UBGGameInstance::HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString)
 {
-	// 클라가 튕기면 조인으로 만들어진 로컬 세션이 남아 이후 방 생성을 계속 거부시킨다.
 	const bool bIsServer = NetDriver && NetDriver->ServerConnection == nullptr;
-	IOnlineSessionPtr Sessions = GetSessionInterface();
-	if (bIsServer || !Sessions.IsValid() || Sessions->GetSessionState(NAME_GameSession) == EOnlineSessionState::NoSession)
+	if (bIsServer)
 	{
 		return;
 	}
 
-	UE_LOG(LogBGNet, Warning, TEXT("접속 끊김(%s: %s) — 남은 로컬 세션 파기"),
+	UE_LOG(LogBGNet, Warning, TEXT("접속 끊김(%s: %s) — 메인메뉴로 복귀"),
 		ENetworkFailure::ToString(FailureType), *ErrorString);
-	DestroyCurrentSession();
+
+	// 조인으로 만들어진 로컬 세션이 남으면 이후 방 생성이 계속 거부된다.
+	IOnlineSessionPtr Sessions = GetSessionInterface();
+	if (Sessions.IsValid() && Sessions->GetSessionState(NAME_GameSession) != EOnlineSessionState::NoSession)
+	{
+		DestroyCurrentSession();
+	}
+
+	// 맵 복귀는 엔진이 GameDefaultMap(메인메뉴)으로 브라우즈해 준다. 다만 세션 메뉴는
+	// 열린 상태로 살아남아 메인메뉴 위에 다시 뜨므로 여기서 닫는다.
+	if (UBGSessionMenuController* Menu = GetSubsystem<UBGSessionMenuController>())
+	{
+		Menu->Close();
+	}
 }
 
 void UBGGameInstance::SetAllowJoinInProgress(bool bAllow)
