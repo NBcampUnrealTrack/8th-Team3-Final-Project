@@ -1,5 +1,6 @@
 ﻿#include "Core/BGGameMode.h"
 #include "BGGameplayTags.h"
+#include "Core/BGCampfire.h"
 #include "Lobby/BGMatchStartComponent.h"
 #include "Lobby/BGSeatComponent.h"
 #include "Card/BGDataSubsystem.h"
@@ -73,6 +74,12 @@ void ABGGameMode::PostLogin(APlayerController* NewPlayer)
 	{
 		MatchStart->NotifyPlayerJoined();
 	}
+
+	// 좌석 간 각도는 접속 인원수로 정해진다 — 한 명이 들어와도 전원이 다시 서야 한다.
+	if (ABGCampfire* Campfire = ABGCampfire::Find(GetWorld()))
+	{
+		Campfire->ArrangePlayers();
+	}
 }
 
 AActor* ABGGameMode::ChoosePlayerStart_Implementation(AController* Player)
@@ -90,6 +97,13 @@ void ABGGameMode::Logout(AController* Exiting)
 	}
 
 	Super::Logout(Exiting);
+
+	//	Super 뒤에 부른다 — 그 전에는 나가는 플레이어가 아직 PlayerArray 에 남아 있어
+	//	인원수가 하나 많게 잡히고, 빈 자리가 생긴 원이 만들어진다.
+	if (ABGCampfire* Campfire = ABGCampfire::Find(GetWorld()))
+	{
+		Campfire->ArrangePlayers();
+	}
 }
 
 TArray<FGameplayTag> ABGGameMode::BuildRolePool(int32 NumPlayers)

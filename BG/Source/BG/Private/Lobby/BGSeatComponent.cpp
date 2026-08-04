@@ -1,5 +1,6 @@
 #include "Lobby/BGSeatComponent.h"
 
+#include "Core/BGCampfire.h"      // 좌석 "위치" 는 캠프파이어가 계산한다
 #include "Core/BGGameMode.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerState.h"
@@ -120,14 +121,35 @@ AActor* UBGSeatComponent::ChooseStartFor(const AController* Player) const
 void UBGSeatComponent::SnapPawnToSeat(ABGPlayerState* PS) const
 {
 	APawn* Pawn = PS ? PS->GetPawn() : nullptr;
-	AActor* Start = PS ? FindSeatStart(PS->GetSeatIndex()) : nullptr;
-	if (!Pawn || !Start)
+	if (!Pawn)
 	{
 		return;
 	}
 
-	const FVector Loc = Start->GetActorLocation();
-	const FRotator Rot = Start->GetActorRotation();
+	FVector Loc;
+	FRotator Rot;
+
+	//	캠프파이어가 있으면 그쪽이 우선이다. 자리 간격이 접속 인원수로 결정되므로
+	//	레벨에 고정 배치한 PlayerStart 로는 4인과 7인을 같이 만족시킬 수 없다.
+	//	⚠️ 두 경로가 모두 폰을 옮기면 나중에 부른 쪽이 이겨 자리가 튄다. 여기서 하나로 고른다.
+	FTransform SeatTransform;
+	const ABGCampfire* Campfire = ABGCampfire::Find(GetWorld());
+
+	if (Campfire && Campfire->GetTransformForSeat(PS->GetSeatIndex(), SeatTransform))
+	{
+		Loc = SeatTransform.GetLocation();
+		Rot = SeatTransform.GetRotation().Rotator();
+	}
+	else if (const AActor* Start = FindSeatStart(PS->GetSeatIndex()))
+	{
+		//	캠프파이어가 없는 레벨(테스트맵 등)에서는 기존 PlayerStart 방식을 그대로 쓴다.
+		Loc = Start->GetActorLocation();
+		Rot = Start->GetActorRotation();
+	}
+	else
+	{
+		return;
+	}
 
 	// TeleportTo 는 겹침을 밀어내 준다 — SetActorLocation 은 자리에 끼일 수 있다.
 	Pawn->TeleportTo(Loc, Rot);

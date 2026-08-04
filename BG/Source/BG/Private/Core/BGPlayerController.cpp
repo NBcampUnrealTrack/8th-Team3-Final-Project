@@ -22,6 +22,7 @@
 #include "UI/Widget/BGTurnPanelWidget.h"
 #include "UI/Widget/BGResolutionWidget.h"
 #include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
+#include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
 #include "Components/InputComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -293,6 +294,16 @@ void ABGPlayerController::EnsureCinematicCamera()
 
 	CinematicCamera = World->SpawnActor<ABGCinematicCamera>(
 		ABGCinematicCamera::StaticClass(), FTransform::Identity, Params);
+
+	//	선회(Orbit)의 중심은 판의 중심 — 캠프파이어다.
+	//	비워 두면 월드 원점을 축으로 돌아 테이블을 벗어난 궤도를 그린다.
+	if (CinematicCamera)
+	{
+		if (const ABGCampfire* Campfire = ABGCampfire::Find(World))
+		{
+			CinematicCamera->LookAtLocation = Campfire->GetActorLocation();
+		}
+	}
 }
 
 void ABGPlayerController::TryBindCameraShotDelegate()
