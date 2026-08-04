@@ -505,7 +505,7 @@
       "GameplayTags": []
     },
     "AbilityEventTag": "",
-    "EquipEffect": "/Script/Baam.GE_Equip_DwarfGloves",
+    "EquipEffect": "/Script/BG.GE_Equip_DwarfGloves",
     "Magnitude": 0,
     "QuantityOfCard": 2,
     "CheckChance": 0,
@@ -541,7 +541,7 @@
       "GameplayTags": []
     },
     "AbilityEventTag": "",
-    "EquipEffect": "/Script/Baam.GE_Equip_WitchCharm",
+    "EquipEffect": "/Script/BG.GE_Equip_WitchCharm",
     "Magnitude": 0,
     "QuantityOfCard": 2,
     "CheckChance": 0,

@@ -23,6 +23,7 @@
 #include "UI/Widget/BGResolutionWidget.h"
 #include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
 #include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
+#include "Core/BGCharacter.h"                // 연출 주인공 캐스팅
 #include "Components/InputComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -1133,6 +1134,22 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		{
 			UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 카드 사용 %d / %d"),
 				GetMySeatIndex(), MyPS->GetCardsUsedThisTurn(), GS->GetCardUseLimitForSeat(GetMySeatIndex()));
+		}
+	}
+
+	// ── 연출 (아트 기획서 "전투 연출") ──────────────────────────────
+	//	맨 마지막에 시작한다. 판정·효과 적용·카드 소비가 모두 끝난 뒤라야
+	//	연출이 규칙에 관여하지 않는다는 원칙(Card.Trait.Cinematic 주석)이 지켜진다.
+	//	연출이 켜지든 말든 여기까지의 결과는 완전히 동일하다.
+	if (CardRow->TraitTags.HasTag(BG::Card::Trait::Cinematic.GetTag()))
+	{
+		if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+		{
+			//	Primary 주인공은 카드를 쓴 사람, Secondary 는 대상이다.
+			//	대상이 없는 카드(회복 등)는 GameState 가 사용자를 계속 비춘다.
+			MutableGS->BeginCardCinematic(
+				Cast<ABGCharacter>(GetPawn()),
+				Cast<ABGCharacter>(ResolveTargetActor(TargetSeat)));
 		}
 	}
 }

@@ -188,7 +188,14 @@ enum class EBGCardEffectOp : uint8
 	DiscardTargetRandom UMETA(DisplayName = "대상 손패 무작위 버리기"),
 	StealTargetRandom   UMETA(DisplayName = "대상 손패 무작위 훔치기"),
 	RestoreCardUse      UMETA(DisplayName = "카드 사용한도 회복"),
-	ApplyStatus         UMETA(DisplayName = "\"다음 1회\" 상태 부여")
+	ApplyStatus         UMETA(DisplayName = "\"다음 1회\" 상태 부여"),
+
+	//	⚠️ 새 연산은 **맨 뒤에** 붙일 것. 중간에 끼우면 DT 에 이미 채워 둔 값이 통째로 밀린다.
+
+	//	장비(파란 카드)를 무작위로 떼어낸다. 손패 연산과 대상이 다르다 —
+	//	장비가 없는 상대에게 쓰면 아무 일도 일어나지 않는다(손패는 멀쩡히 남는다).
+	DiscardTargetEquipRandom UMETA(DisplayName = "대상 장비 무작위 버리기"),
+	StealTargetEquipRandom   UMETA(DisplayName = "대상 장비 무작위 훔치기")
 };
 
 /** 효과 1개. Amount 의 의미는 Op 에 따라 다르다(피해량 / 장수 / 회복 횟수). */

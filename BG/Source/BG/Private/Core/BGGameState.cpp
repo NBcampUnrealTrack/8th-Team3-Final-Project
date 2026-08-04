@@ -38,6 +38,145 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, bMatchRunning);
 	DOREPLIFETIME(ABGGameState, MatchEndStage);
 	DOREPLIFETIME(ABGGameState, CameraShot);
+	DOREPLIFETIME(ABGGameState, CinematicStage);
+	DOREPLIFETIME(ABGGameState, CinematicInstigator);
+	DOREPLIFETIME(ABGGameState, CinematicTarget);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+//  카드 연출
+//
+//  Phase.* 와 별개의 축이다. PhaseTag 는 연출 중에도 그대로 남아 있고, 연출이 끝나면
+//  단계를 None 으로 되돌리는 것만으로 원래 상태가 복구된다.
+// ══════════════════════════════════════════════════════════════════════════════════════
+
+ABGCharacter* ABGGameState::GetCinematicSubject() const
+{
+	switch (CinematicStage)
+	{
+	case EBGCinematicStage::Primary:   return CinematicInstigator;
+	//	피해자가 없는 카드(회복 등)는 사용자를 계속 비춘다 — 빈 화면을 3초 보여주는 것보다 낫다.
+	case EBGCinematicStage::Secondary: return CinematicTarget ? CinematicTarget : CinematicInstigator;
+	default:                           return nullptr;
+	}
+}
+
+void ABGGameState::BeginCardCinematic(ABGCharacter* Caster, ABGCharacter* Victim)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	//	연출 중에 또 시작하면 단계가 꼬인다. 카드 사용은 연출 중 막혀 있지만(CanSeatPlayCards),
+	//	서버 내부에서 연쇄로 불릴 여지가 있어 여기서도 한 번 막는다.
+	if (IsCinematicPlaying())
+	{
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[Cinematic] 이미 연출 중입니다(%d 단계) — 새 연출 요청을 무시합니다."),
+			static_cast<int32>(CinematicStage));
+		return;
+	}
+
+	if (!Caster)
+	{
+		//	주인공이 없으면 비출 대상이 없다. 상태만 걸어 두면 입력만 막히고 화면은 그대로다.
+		UE_LOG(LogBGCard, Warning, TEXT("[Cinematic] 사용자 캐릭터가 없어 연출을 건너뜁니다."));
+		return;
+	}
+
+	CinematicInstigator = Caster;
+	CinematicTarget     = Victim;
+
+	SetCinematicStage(EBGCinematicStage::Primary);
+}
+
+void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
+{
+	if (!HasAuthority() || CinematicStage == NewStage)
+	{
+		return;
+	}
+
+	CinematicStage = NewStage;
+
+	//	서버는 자기 OnRep 을 받지 못한다 — 여기서 직접 부르지 않으면 리슨서버 호스트만 연출이 안 뜬다.
+	HandleCinematicStage();
+
+	GetWorldTimerManager().ClearTimer(CinematicStageTimer);
+
+	//	다음 단계 예약. 길이가 0 이하면 그 단계를 건너뛴다 — 연출을 끄고 규칙만 돌릴 때 쓴다.
+	switch (NewStage)
+	{
+	case EBGCinematicStage::Primary:
+		if (PrimaryCinematicSeconds > 0.f)
+		{
+			GetWorldTimerManager().SetTimer(CinematicStageTimer,
+				[this]() { SetCinematicStage(EBGCinematicStage::Secondary); },
+				PrimaryCinematicSeconds, /*bLoop=*/false);
+		}
+		else
+		{
+			SetCinematicStage(EBGCinematicStage::Secondary);
+		}
+		break;
+
+	case EBGCinematicStage::Secondary:
+		if (SecondaryCinematicSeconds > 0.f)
+		{
+			GetWorldTimerManager().SetTimer(CinematicStageTimer,
+				[this]() { SetCinematicStage(EBGCinematicStage::None); },
+				SecondaryCinematicSeconds, /*bLoop=*/false);
+		}
+		else
+		{
+			SetCinematicStage(EBGCinematicStage::None);
+		}
+		break;
+
+	case EBGCinematicStage::None:
+		//	연출 종료 — 주인공 참조를 놓아준다. 남겨 두면 죽은 캐릭터를 계속 붙들고 있게 된다.
+		CinematicInstigator = nullptr;
+		CinematicTarget     = nullptr;
+
+		//	⚠️ 참조를 놓은 **뒤에** 부른다. 사망 처리 안에서 승패가 나면 판이 끝나는데,
+		//	   그 전에 연출 상태가 완전히 정리돼 있어야 한다.
+		//	   또한 IsCinematicPlaying() 이 이미 false 라 여기서 처리하는 사망이
+		//	   다시 대기열로 들어가는 일이 없다 — 순서가 뒤바뀌면 영영 처리되지 않는다.
+		FlushPendingDeaths();
+		break;
+	}
+}
+
+void ABGGameState::OnRep_CinematicStage()
+{
+	//	같은 번들의 CinematicInstigator/Target 은 RepNotify 전에 모두 적용된다 — 여기서 읽어도 안전하다.
+	HandleCinematicStage();
+}
+
+void ABGGameState::HandleCinematicStage()
+{
+	if (BroadcastedCinematicStage == CinematicStage)
+	{
+		return;   // 복제 재전송으로 같은 통지가 두 번 나가는 것을 막는다.
+	}
+	BroadcastedCinematicStage = CinematicStage;
+
+	ABGCharacter* Subject = GetCinematicSubject();
+
+	UE_LOG(LogBGCard, Log, TEXT("[Cinematic] 단계 %d — 주인공 %s"),
+		static_cast<int32>(CinematicStage),
+		Subject ? *Subject->GetName() : TEXT("없음"));
+
+	//	── 카메라 연동 ──
+	//	연출 단계가 곧 "누구의 B 카메라를 비출 것인가" 다. 이 두 줄만 지우면
+	//	상태 관리는 그대로 두고 카메라만 직접 제어할 수 있다.
+	if (HasAuthority())
+	{
+		SetCameraShot(Subject);   // None 단계면 Subject 가 nullptr → 각자 A 카메라로 복귀
+	}
+
+	OnCinematicStageChanged.Broadcast(CinematicStage, Subject);
 }
 
 void ABGGameState::SetCameraShot(ABGCharacter* Target, float BlendSeconds, EBGShotBlend Blend)
@@ -491,6 +630,7 @@ void ABGGameState::EnterPlayPhase()
 bool ABGGameState::CanSeatPlayCards(int32 Seat) const
 {
 	return bMatchRunning
+		&& !IsCinematicPlaying()   // 연출 중에는 전원 조작 불가
 		&& Seat != INDEX_NONE
 		&& Seat == CurrentSeat
 		&& PhaseTag == BG::Phase::Play.GetTag();
@@ -499,6 +639,7 @@ bool ABGGameState::CanSeatPlayCards(int32 Seat) const
 bool ABGGameState::CanSeatDiscard(int32 Seat) const
 {
 	return bMatchRunning
+		&& !IsCinematicPlaying()   // 연출 중에는 전원 조작 불가
 		&& Seat != INDEX_NONE
 		&& Seat == CurrentSeat
 		&& PhaseTag == BG::Phase::Discard.GetTag();
@@ -508,6 +649,14 @@ void ABGGameState::RequestEndTurn(int32 RequestingSeat)
 {
 	if (!HasAuthority() || !bMatchRunning)
 	{
+		return;
+	}
+
+	//	연출 중에는 턴을 넘기지 않는다. 이 함수는 CanSeatPlayCards 를 거치지 않고
+	//	직접 검사하므로 거기 넣은 연출 차단이 여기에는 적용되지 않는다 — 따로 막아야 한다.
+	if (IsCinematicPlaying())
+	{
+		UE_LOG(LogBGCard, Log, TEXT("[Turn] EndTurn 보류 — 연출 재생 중"));
 		return;
 	}
 
@@ -558,6 +707,60 @@ void ABGGameState::NotifyCardDiscarded(int32 Seat)
 // ══════════════════════════════════════════════════════════════════════════════════════
 
 void ABGGameState::HandleSeatDeath(int32 DeadSeat, int32 KillerSeat)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	//	연출 중이면 규칙 처리를 미룬다.
+	//	여기서 바로 처리하면 화면에서는 아직 공격 연출이 도는 중인데 카드가 버려지고
+	//	승패까지 나 버린다 — 연출이 결과를 "보여주기 전에" 결과가 확정되는 셈이다.
+	if (IsCinematicPlaying())
+	{
+		//	같은 좌석이 두 번 들어오지 않는다 — ABGCharacter::NotifyHealthDepleted 의
+		//	bDead 플래그가 사망 통지 자체를 1회로 막는다. 그래도 방어적으로 확인한다.
+		const bool bAlreadyQueued = PendingDeaths.ContainsByPredicate(
+			[DeadSeat](const FBGPendingDeath& D) { return D.DeadSeat == DeadSeat; });
+
+		if (!bAlreadyQueued)
+		{
+			PendingDeaths.Add({ DeadSeat, KillerSeat });
+			UE_LOG(LogBGCard, Log,
+				TEXT("[Death] 좌석 %d 사망 처리를 연출 후로 미룸 (대기 %d 건)"),
+				DeadSeat, PendingDeaths.Num());
+		}
+		return;
+	}
+
+	ProcessSeatDeath(DeadSeat, KillerSeat);
+}
+
+void ABGGameState::FlushPendingDeaths()
+{
+	if (!HasAuthority() || PendingDeaths.IsEmpty())
+	{
+		return;
+	}
+
+	//	처리 도중 새 사망이 들어올 수 있다(보상 드로우가 다이너마이트를 터뜨리는 등).
+	//	원본을 비우고 사본을 돌려야 그 새 사망이 이번 순회에 섞이지 않는다.
+	TArray<FBGPendingDeath> Deaths = MoveTemp(PendingDeaths);
+	PendingDeaths.Reset();
+
+	UE_LOG(LogBGCard, Log, TEXT("[Death] 미뤄 둔 사망 %d 건 처리 시작"), Deaths.Num());
+
+	//	🔜 사망 연출은 이 자리에 들어온다. 지금은 규칙 처리로 바로 넘어가지만,
+	//	   "사망자 확인 → 사망 연출(여럿이면 순차) → 규칙 처리" 순서가 되면
+	//	   이 반복문이 연출을 하나 재생하고 끝나기를 기다린 뒤 다음으로 넘어가는 형태가 된다.
+	//	   그때 ProcessSeatDeath 호출 시점은 각 사망 연출이 끝난 직후가 된다.
+	for (const FBGPendingDeath& Death : Deaths)
+	{
+		ProcessSeatDeath(Death.DeadSeat, Death.KillerSeat);
+	}
+}
+
+void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 {
 	if (!HasAuthority())
 	{

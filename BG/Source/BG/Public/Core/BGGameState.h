@@ -31,6 +31,47 @@ enum class EBGMatchEndStage : uint8
 	Credits UMETA(DisplayName = "엔딩 크레딧")
 };
 
+/**
+ * 카드 사용 연출의 단계 (아트 기획서 "전투 연출").
+ *
+ *   Primary   — 사용자 캐릭터의 공격 연출
+ *   Secondary — 판정 결과에 따른 피해자의 결과 연출
+ *
+ * ⚠️ Phase.* 와 **별개의 축**이다. PhaseTag 를 덮어쓰지 않는 이유:
+ *    연출이 끝나면 원래 페이즈로 "돌아와야" 하는데, 덮어쓰면 무엇으로 돌아갈지를
+ *    따로 저장해야 한다. 병렬 상태로 두면 연출 중에도 PhaseTag 가 그대로 남아
+ *    복구가 곧 "연출 단계를 None 으로 되돌리는 것" 하나로 끝난다.
+ */
+UENUM(BlueprintType)
+enum class EBGCinematicStage : uint8
+{
+	None      UMETA(DisplayName = "연출 아님"),
+	Primary   UMETA(DisplayName = "사용자 연출"),
+	Secondary UMETA(DisplayName = "피해자 연출")
+};
+
+/**
+ * 연출이 끝나기를 기다리는 사망 1건 (서버 전용).
+ *
+ * 좌석 번호만 담는다 — 포인터를 들면 연출이 도는 동안 대상이 파괴됐을 때 무효 참조가 된다.
+ * 좌석 번호는 그런 위험이 없고, 처리 시점에 PlayerState 를 다시 찾으면 그만이다.
+ */
+USTRUCT()
+struct FBGPendingDeath
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	int32 DeadSeat = INDEX_NONE;
+
+	UPROPERTY()
+	int32 KillerSeat = INDEX_NONE;
+};
+
+/** 연출 단계가 바뀌었다. 서버·클라 양쪽에서 불린다. */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGCinematicStageChanged,
+	EBGCinematicStage /*Stage*/, class ABGCharacter* /*Subject*/);
+
 /** 승패가 확정됐다. WinningRole 과 자기 역할을 비교해 승/패를 표시하면 된다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGMatchWon, FGameplayTag, WinningRole);
 
@@ -169,10 +210,18 @@ public:
 
 	/**
 	 * 서버 전용. 좌석이 사망했다. 캐릭터가 사망을 확정한 뒤 호출한다.
-	 *   손패·장비 정리 → 보상/벌칙 → 승패 판정 → (미결이면) 턴 진행
+	 *
+	 * ⚠️ **연출 중이면 처리를 미룬다.** 규칙 처리(손패 정리·보상/벌칙·승패·턴 진행)가
+	 *    연출 도중에 끼어들면 화면에서는 아직 살아 있는 캐릭터의 카드가 버려지고,
+	 *    승패 판정이 먼저 나 버린다. 연출이 끝난 뒤 순서대로 처리한다.
+	 *
 	 * KillerSeat 은 모르면 INDEX_NONE.
 	 */
 	void HandleSeatDeath(int32 DeadSeat, int32 KillerSeat);
+
+	/** 연출이 끝나기를 기다리는 사망이 있는가. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	bool HasPendingDeaths() const { return PendingDeaths.Num() > 0; }
 
 	/** 승패가 결정됐으면 Phase.GameOver 로 전환하고 true. */
 	bool CheckWinCondition();
@@ -230,6 +279,39 @@ public:
 
 	/** 샷이 바뀌었다. PlayerController 가 구독해 뷰타깃과 카메라 액터를 갱신한다. */
 	FOnBGCameraShotChanged OnCameraShotChanged;
+
+	// ── 카드 연출 (아트 기획서 "전투 연출") ───────────────────────
+	//
+	//  Card.Trait.Cinematic 이 붙은 카드를 쓰면 전원이 연출 상태가 되고,
+	//  Primary(사용자) → Secondary(피해자) 를 거쳐 원래 상태로 돌아온다.
+	//
+	//  ⚠️ 연출은 **규칙에 관여하지 않는다.** 판정·효과 적용·카드 소비는 이 함수가 불리기
+	//     전에 이미 서버에서 끝나 있다. 여기서 하는 일은 그동안 입력을 막고 단계를 알리는 것뿐이다.
+
+	/**
+	 * 서버 전용. 연출을 시작한다. 이미 연출 중이면 무시한다(카드 두 장이 겹쳐 들어오는 경우).
+	 *
+	 * Caster : 카드를 쓴 캐릭터 — Primary 단계의 주인공.
+	 * Victim : 피해자 — Secondary 단계의 주인공. 없으면(자기 대상 카드 등) Caster 를 다시 쓴다.
+	 *
+	 * ⚠️ 인자 이름을 Instigator 로 쓸 수 없다 — AActor::Instigator 와 겹쳐 UHT 가 거부한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Cinematic")
+	void BeginCardCinematic(class ABGCharacter* Caster, class ABGCharacter* Victim);
+
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
+
+	/** 지금 연출 중인가. 연출 중에는 아무도 카드를 낼 수 없다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	bool IsCinematicPlaying() const { return CinematicStage != EBGCinematicStage::None; }
+
+	/** 현재 단계의 주인공. 연출 중이 아니면 nullptr. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	class ABGCharacter* GetCinematicSubject() const;
+
+	/** 단계 전환 통지. 위젯·사운드 등이 구독한다. */
+	FOnBGCinematicStageChanged OnCinematicStageChanged;
 
 	/** 좌석의 현재 Health. ASC 를 못 찾으면 0. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seat")
@@ -301,6 +383,60 @@ protected:
 	FGameplayTag WinningRoleTag;
 
 	//	종료 연출 단계. 이 값이 바뀌는 것이 곧 "승리했다 / 크레딧이다" 라는 통지다.
+	// ── 사망 처리 내부 ──
+	//
+	//	실제 규칙 처리. HandleSeatDeath 가 연출 여부를 보고 지금 부를지 미룰지 정한다.
+	//	직접 부르지 말 것 — 연출 중 호출을 막는 관문을 건너뛰게 된다.
+	void ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat);
+
+	/**
+	 * 미뤄 둔 사망을 발생 순서대로 처리한다. 연출이 끝날 때 불린다.
+	 *
+	 * 🔜 사망 연출은 여기에 들어온다 — 지금은 규칙 처리로 바로 넘어가지만,
+	 *    "사망자 확인 → 사망 연출(여럿이면 순차) → 규칙 처리" 순서가 되면
+	 *    이 함수가 연출을 하나씩 재생한 뒤 ProcessSeatDeath 를 부르는 형태가 된다.
+	 */
+	void FlushPendingDeaths();
+
+	//	서버 전용. 복제하지 않는다 — 클라가 알 필요가 없고, 알면 사망을 미리 보게 된다.
+	UPROPERTY()
+	TArray<FBGPendingDeath> PendingDeaths;
+
+	// ── 카드 연출 내부 ──
+	//
+	//	서버 전용. 단계 전환의 유일한 입구다 (SetPhaseTag / SetMatchEndStage 와 같은 원칙).
+	void SetCinematicStage(EBGCinematicStage NewStage);
+
+	//	서버·클라 공통. 현재 단계에 맞춰 델리게이트를 쏘고 카메라를 맞춘다.
+	void HandleCinematicStage();
+
+	UFUNCTION()
+	void OnRep_CinematicStage();
+
+	UPROPERTY(ReplicatedUsing = OnRep_CinematicStage)
+	EBGCinematicStage CinematicStage = EBGCinematicStage::None;
+
+	//	연출의 두 주인공. 단계와 같은 번들로 복제되므로 OnRep 시점에 이미 채워져 있다.
+	UPROPERTY(Replicated)
+	TObjectPtr<class ABGCharacter> CinematicInstigator;
+
+	UPROPERTY(Replicated)
+	TObjectPtr<class ABGCharacter> CinematicTarget;
+
+	//	복제 재전송으로 같은 델리게이트가 두 번 나가는 것을 막는다(BroadcastedStage 와 같은 이유).
+	EBGCinematicStage BroadcastedCinematicStage = EBGCinematicStage::None;
+
+	//	타이머는 서버에만 하나 돈다. 클라가 각자 세면 늦게 들어온 사람이 어긋난다.
+	FTimerHandle CinematicStageTimer;
+
+	//	사용자 공격 연출 길이(초). 0 이하면 이 단계를 건너뛴다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0"))
+	float PrimaryCinematicSeconds = 3.f;
+
+	//	피해자 결과 연출 길이(초). 0 이하면 이 단계를 건너뛴다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0"))
+	float SecondaryCinematicSeconds = 3.f;
+
 	//	연출 카메라 상태. 트랜스폼이 아니라 "의도" 만 복제한다 — 보간은 각 클라가 로컬에서.
 	UPROPERTY(ReplicatedUsing = OnRep_CameraShot)
 	FBGCameraShot CameraShot;

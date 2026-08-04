@@ -152,6 +152,14 @@ void UGA_BGCardEffects::ExecuteEffects(
 			Line = ApplyTakeFromTarget(Effect.Amount, /*bSteal=*/true, GS, SelfPS, TargetPS, Avatar);
 			break;
 
+		case EBGCardEffectOp::DiscardTargetEquipRandom:
+			Line = ApplyTakeEquipFromTarget(Effect.Amount, /*bSteal=*/false, GS, SelfPS, TargetPS, Avatar);
+			break;
+
+		case EBGCardEffectOp::StealTargetEquipRandom:
+			Line = ApplyTakeEquipFromTarget(Effect.Amount, /*bSteal=*/true, GS, SelfPS, TargetPS, Avatar);
+			break;
+
 		case EBGCardEffectOp::RestoreCardUse:
 			Line = ApplyRestoreCardUse(Effect.Amount, SelfPS);
 			break;
@@ -316,6 +324,60 @@ FString UGA_BGCardEffects::ApplyTakeFromTarget(int32 Amount, bool bSteal,
 
 	return (Moved > 0)
 		? FString::Printf(TEXT("상대 %d장 %s"), Moved, bSteal ? TEXT("훔침") : TEXT("버림"))
+		: FString();
+}
+
+FString UGA_BGCardEffects::ApplyTakeEquipFromTarget(int32 Amount, bool bSteal,
+	ABGGameState* GS, ABGPlayerState* SelfPS, ABGPlayerState* TargetPS, AActor* Avatar)
+{
+	UBGDiceComponent* Dice = UBGDiceComponent::Get(Avatar);
+	if (!GS || !TargetPS || !Dice)
+	{
+		return FString();
+	}
+
+	int32 Moved = 0;
+	for (int32 i = 0; i < Amount; ++i)
+	{
+		//	장비 목록은 매 반복마다 다시 읽는다 — 앞 반복에서 하나가 빠졌다.
+		const TArray<FBGCardInstance>& Equipment = TargetPS->GetEquipment();
+		if (Equipment.IsEmpty())
+		{
+			break;
+		}
+
+		//	덱 셔플과 분리된 판정 스트림을 쓴다 — 같은 시드에서 재현되고 덱 순서를 밀지 않는다.
+		const int32 Index = Dice->RandomIndex(Equipment.Num());
+		if (!Equipment.IsValidIndex(Index))
+		{
+			break;
+		}
+
+		//	제거 전에 값으로 복사 — 제거하면 위 참조가 흔들린다.
+		const FName CardId = Equipment[Index].CardId;
+
+		//	UnequipCard 가 배열에서 빼는 것과 Infinite GE 를 걷어내는 것을 함께 처리한다.
+		//	배열만 지우면 장비는 사라졌는데 확률 보정만 영구히 남는다.
+		FBGCardInstance Removed;
+		if (!TargetPS->UnequipCard(CardId, Removed))
+		{
+			break;
+		}
+
+		if (bSteal && SelfPS)
+		{
+			//	장비 칸이 아니라 손패로 들어간다(헤더 주석 참고).
+			SelfPS->AddCardToHand(Removed);
+		}
+		else
+		{
+			GS->PushToDiscard(Removed);
+		}
+		++Moved;
+	}
+
+	return (Moved > 0)
+		? FString::Printf(TEXT("상대 장비 %d개 %s"), Moved, bSteal ? TEXT("훔침") : TEXT("버림"))
 		: FString();
 }
 
