@@ -10,6 +10,8 @@
 #include "TRPlayerCharacter.generated.h"
 
 class UCameraComponent;
+class UNiagaraSystem;
+
 UCLASS()
 class TR_API ATRPlayerCharacter : public ACharacter
 {
@@ -42,7 +44,14 @@ public:
 	TObjectPtr<UInputAction> IA_Interact;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_Trigger;
-	
+
+	//VFX
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraSystem> NS_Move;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraSystem> NS_JumpLand;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	float JumpLandOffset = -90.f;
 protected:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void NotifyControllerChanged() override;
@@ -50,6 +59,11 @@ protected:
 	virtual void Move(const FInputActionValue& Input);
 	virtual void Look(const FInputActionValue& Input);
 	virtual void StartJump(const FInputActionValue& Input);
+
+	virtual void Landed(const FHitResult& Hit) override;
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayJumpLandEffect(const FVector& Location);
+	void MulticastPlayJumpLandEffect_Implementation(const FVector& Location);
 
 	UFUNCTION(Server, Reliable)
 	virtual void Interact(const FInputActionValue& Input);

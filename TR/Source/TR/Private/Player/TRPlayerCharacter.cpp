@@ -5,6 +5,9 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Camera/CameraComponent.h"
+#include "NiagaraSystem.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 // Sets default values
@@ -149,7 +152,6 @@ void ATRPlayerCharacter::Look(const FInputActionValue& Input)
 	{
 		return;
 	}
-
 	PendingLookInput += InputVector;
 }
 
@@ -169,6 +171,25 @@ void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 	}
 
 	Jump();
+	MulticastPlayJumpLandEffect(GetActorLocation() + FVector(0, 0, JumpLandOffset));
+}
+
+//착지 함수, VFX/SFX 임시 연동 (추후 애니메이션 추가시 AnimNotify 기반으로 변경 필요)
+void ATRPlayerCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	MulticastPlayJumpLandEffect(GetActorLocation() + FVector(0,0,JumpLandOffset));
+}
+
+//착지 이펙트 각 클라이언트에서 출력
+void ATRPlayerCharacter::MulticastPlayJumpLandEffect_Implementation(const FVector& Location)
+{
+	UE_LOG(LogTemp, Warning, TEXT("multicast"));
+	if (IsValid(NS_JumpLand))
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), NS_JumpLand, Location);
+	}
 }
 
 // 상호작용 RPC 함수, 추후 인터페이스 기반해 탑승, 줍기등 연결.
