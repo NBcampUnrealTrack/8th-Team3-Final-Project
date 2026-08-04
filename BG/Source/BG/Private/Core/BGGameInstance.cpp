@@ -111,7 +111,7 @@ void UBGGameInstance::HostSession(int32 MaxPlayers, bool bLAN, const FString& Ro
 	{
 		// OSS 미초기화 시 폴백 — 광고 없이 리슨만 열어 직접 IP 접속(open <IP>)은 살린다.
 		UE_LOG(LogBGNet, Warning, TEXT("HostSession: SessionInterface 없음 — 세션 광고 없이 리슨만 시작"));
-		OnCreateSessionComplete.Broadcast(StartListenInPlace());
+		OnCreateSessionComplete.Broadcast(StartListen());
 		return;
 	}
 
@@ -145,7 +145,7 @@ void UBGGameInstance::StartHostSession(int32 MaxPlayers, bool bLAN, const FStrin
 	if (!Sessions.IsValid())
 	{
 		UE_LOG(LogBGNet, Warning, TEXT("StartHostSession: SessionInterface 없음 — 세션 광고 없이 리슨만 시작"));
-		OnCreateSessionComplete.Broadcast(StartListenInPlace());
+		OnCreateSessionComplete.Broadcast(StartListen());
 		return;
 	}
 
@@ -220,8 +220,56 @@ void UBGGameInstance::HandleCreateSessionComplete(FName SessionName, bool bWasSu
 		return;
 	}
 
-	// 단일 맵이라 ServerTravel 대신 제자리 리슨.
-	OnCreateSessionComplete.Broadcast(StartListenInPlace());
+	// 게임 맵이면 제자리 리슨, 메인메뉴면 게임 맵으로 한 번 이동한다.
+	OnCreateSessionComplete.Broadcast(StartListen());
+}
+
+bool UBGGameInstance::StartListen()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogBGNet, Warning, TEXT("StartListen: World 없음"));
+		return false;
+	}
+
+	// 메인메뉴에서 호스트하면 게임 맵으로 한 번 이동해야 한다. 이미 게임 맵이면 그대로 연다.
+	const FString CurrentMap = World->GetOutermost()->GetName();
+	if (CurrentMap == GameMapPath)
+	{
+		return StartListenInPlace();
+	}
+
+	UE_LOG(LogBGNet, Log, TEXT("StartListen: 게임 맵으로 이동 (%s → %s)"), *CurrentMap, *GameMapPath);
+	World->ServerTravel(GameMapPath + TEXT("?listen"), /*bAbsolute*/ true);
+	return true;
+}
+
+void UBGGameInstance::ReturnToMainMenu()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		UE_LOG(LogBGNet, Warning, TEXT("ReturnToMainMenu: World 없음"));
+		return;
+	}
+
+	const FString CurrentMap = World->GetOutermost()->GetName();
+	if (CurrentMap == MainMenuMapPath)
+	{
+		return;
+	}
+
+	APlayerController* PC = GetFirstLocalPlayerController();
+	if (!PC)
+	{
+		UE_LOG(LogBGNet, Warning, TEXT("ReturnToMainMenu: 로컬 PlayerController 없음"));
+		return;
+	}
+
+	// 호스트도 ClientTravel 로 자기 자신만 빠진다 — 남은 접속자는 넷드라이버가 끊어 준다.
+	UE_LOG(LogBGNet, Log, TEXT("ReturnToMainMenu: 메인메뉴로 이동 (%s → %s)"), *CurrentMap, *MainMenuMapPath);
+	PC->ClientTravel(MainMenuMapPath, ETravelType::TRAVEL_Absolute);
 }
 
 bool UBGGameInstance::StartListenInPlace()

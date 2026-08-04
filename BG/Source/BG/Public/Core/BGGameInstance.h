@@ -1,5 +1,6 @@
 ﻿// BANG! 게임 인스턴스 — OnlineSubsystem 세션 호출부. 방 생성/검색/조인/파기 파이프라인을 담당한다.
-// 서브시스템별 옵션 분기는 FBGOssPolicy 가 맡고, 단일 맵이므로 맵 이동은 하지 않는다.
+// 서브시스템별 옵션 분기는 FBGOssPolicy 가 맡는다. 맵 이동은 메인메뉴 → 게임 맵 1 회뿐이고,
+// 로비 → 판 전환은 여전히 이동 없이 페이즈 태그로 처리한다.
 
 #pragma once
 
@@ -39,6 +40,10 @@ public:
 	// 현재 세션 파기(나가기/호스트 종료).
 	UFUNCTION(BlueprintCallable, Category = "BG|Session")
 	void DestroyCurrentSession();
+
+	// 방을 나간 뒤 메인메뉴 맵으로 복귀. 이미 메인메뉴면 아무것도 하지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "BG|Session")
+	void ReturnToMainMenu();
 
 	// 판이 시작되면 false 로 — 진행 중인 판에 난입을 막는다.
 	UFUNCTION(BlueprintCallable, Category = "BG|Session")
@@ -133,8 +138,20 @@ private:
 	// 실제 JoinSession 실행부 — 기존 세션이 없는 상태에서만 호출된다.
 	void StartJoinSession(const FOnlineSessionSearchResult& Result);
 
+	// 리슨 시작. 이미 게임 맵이면 그 자리에서 열고, 메인메뉴처럼 다른 맵이면
+	// 게임 맵으로 한 번 이동한다(로비→판 전환은 여전히 이동 없음).
+	bool StartListen();
+
 	// 맵을 다시 로드하지 않고 현재 월드를 리슨 서버로 전환한다.
 	bool StartListenInPlace();
+
+	// 세션이 열리는 게임 맵. 메인메뉴에서 호스트할 때 이 맵으로 이동한다.
+	UPROPERTY(Config)
+	FString GameMapPath = TEXT("/Game/GameSystem/TestMap");
+
+	// 방을 나가면 돌아갈 메인메뉴 맵.
+	UPROPERTY(Config)
+	FString MainMenuMapPath = TEXT("/Game/GameSystem/L_MainMenu");
 
 	// 접속 끊김 시 남은 로컬 세션 파기 — 없으면 이후 방 생성이 계속 거부된다.
 	void HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString);

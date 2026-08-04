@@ -2,6 +2,7 @@
 #include "Core/BGGameInstance.h"
 #include "Lobby/BGMatchStartComponent.h"
 #include "Lobby/BGReadyComponent.h"
+#include "UI/Session/BGSessionMenuController.h"
 #include "Debug/BGNetLog.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
@@ -189,12 +190,21 @@ void UBGSessionFlow::BroadcastFilteredSessionList(bool bSearchSuccess)
 // ── 공용 ──
 void UBGSessionFlow::LeaveSession()
 {
-	if (UBGGameInstance* GI = GetBGGameInstance())
+	UBGGameInstance* GI = GetBGGameInstance();
+	if (!GI)
 	{
-		GI->DestroyCurrentSession();
+		return;
 	}
-	// 맵 이동이 없으므로 타이틀 복귀 트래블도 없다 — 파기 후 그대로 Phase.Lobby 로 되돌아간다.
+
+	GI->DestroyCurrentSession();
 	SetPhase(EBGSessionPhase::Idle, TEXT("세션 종료"));
+
+	// 세션 메뉴는 게임 맵 전용이라 이동 전에 닫는다 — 열린 채로 두면 메인메뉴 위에 다시 뜬다.
+	if (UBGSessionMenuController* Menu = GI->GetSubsystem<UBGSessionMenuController>())
+	{
+		Menu->Close();
+	}
+	GI->ReturnToMainMenu();
 }
 
 // ── 로비 준비 ──
