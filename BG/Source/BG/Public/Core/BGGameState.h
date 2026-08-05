@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -19,9 +19,9 @@ class UBGDiceComponent;
 /**
  * 판이 끝난 뒤의 연출 단계.
  *
- * ⚠️ 이 값은 서버가 소유하고 복제된다 — 클라가 자기 타이머로 넘어가면 안 된다.
- *    "이벤트" 가 아니라 "상태" 로 둔 이유: 늦게 접속한 클라도 지금 어느 단계인지
- *    그대로 받는다. 이벤트였다면 놓친 사람은 영영 못 받는다.
+ * 주의: 이 값은 서버가 소유하고 복제된다 — 클라가 자기 타이머로 넘어가면 안 된다.
+ * "이벤트" 가 아니라 "상태" 로 둔 이유: 늦게 접속한 클라도 지금 어느 단계인지
+ * 그대로 받는다. 이벤트였다면 놓친 사람은 영영 못 받는다.
  */
 UENUM(BlueprintType)
 enum class EBGMatchEndStage : uint8
@@ -37,10 +37,10 @@ enum class EBGMatchEndStage : uint8
  *   Primary   — 사용자 캐릭터의 공격 연출
  *   Secondary — 판정 결과에 따른 피해자의 결과 연출
  *
- * ⚠️ Phase.* 와 **별개의 축**이다. PhaseTag 를 덮어쓰지 않는 이유:
- *    연출이 끝나면 원래 페이즈로 "돌아와야" 하는데, 덮어쓰면 무엇으로 돌아갈지를
- *    따로 저장해야 한다. 병렬 상태로 두면 연출 중에도 PhaseTag 가 그대로 남아
- *    복구가 곧 "연출 단계를 None 으로 되돌리는 것" 하나로 끝난다.
+ * 주의: Phase.* 와 **별개의 축**이다. PhaseTag 를 덮어쓰지 않는 이유:
+ * 연출이 끝나면 원래 페이즈로 "돌아와야" 하는데, 덮어쓰면 무엇으로 돌아갈지를
+ * 따로 저장해야 한다. 병렬 상태로 두면 연출 중에도 PhaseTag 가 그대로 남아
+ * 복구가 곧 "연출 단계를 None 으로 되돌리는 것" 하나로 끝난다.
  */
 UENUM(BlueprintType)
 enum class EBGCinematicStage : uint8
@@ -77,6 +77,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGMatchWon, FGameplayTag, Winning
 
 /** 승리 연출이 끝나고 엔딩 크레딧으로 넘어갔다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGEndingCredits);
+
+/** 페이즈·현재 좌석·판 진행 여부 중 하나라도 바뀌었다. 턴 UI 가 구독한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGTurnStateChanged);
 /** 판정 결과가 도착했다. 서버·클라 양쪽에서 불린다 (GDD §4.1 — 전원이 같은 결과를 본다). */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCardResolved, const FBGCardResolution& /*Resolution*/);
 
@@ -119,13 +122,13 @@ public:
 	/**
 	 * [미구현] 뽑기(Draw!) 판정. 수트를 쓰지 않으므로 확률 굴림으로 대체할 자리다.
 	 *
-	 * ⚠️ 지금은 인자를 무시하고 항상 false 를 돌려준다 — 호출하면 조용히 전부 실패한다.
-	 *    감옥·다이너마이트를 넣을 때 구현한다. 반드시 Dice 의 시드된 스트림을 쓸 것
-	 *    (셔플 스트림을 쓰면 판정이 덱 순서를 밀어 재현이 깨진다).
+	 * 주의: 지금은 인자를 무시하고 항상 false 를 돌려준다 — 호출하면 조용히 전부 실패한다.
+	 * 감옥·다이너마이트를 넣을 때 구현한다. 반드시 Dice 의 시드된 스트림을 쓸 것
+	 * (셔플 스트림을 쓰면 판정이 덱 순서를 밀어 재현이 깨진다).
 	 */
 	bool PerformDrawCheck(int32 Seat, float SuccessChance);
 	
-	//	⚠️ 서버 전용 데이터다. 클라에서 부르면 항상 빈 배열이 나온다(덱 내용은 복제되지 않는다).
+	//	주의: 서버 전용 데이터다. 클라에서 부르면 항상 빈 배열이 나온다(덱 내용은 복제되지 않는다).
 	void GetDeck(TArray<FBGCardInstance>& OutDeck) const;
 
 	//	현재 페이즈. 클라도 읽는다 — 로비 UI 가 Phase.Play 를 보고 스스로 물러난다.
@@ -168,8 +171,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Turn")
 	bool CanSeatDiscard(int32 Seat) const;
 
+	/** 판이 돌고 있는가. 로비·종료 상태면 false. */
+	UFUNCTION(BlueprintPure, Category = "BG|Turn")
+	bool IsMatchRunning() const { return bMatchRunning; }
+
+	/**
+	 * 턴 상태(페이즈·현재 좌석·진행 여부)가 바뀌었다. UI 는 폴링하지 말고 이걸 구독한다.
+	 * 위젯이 늦게 생기면 첫 통지를 놓치므로, 구독 직후 한 번 직접 갱신할 것.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "BG|Turn")
+	FOnBGTurnStateChanged OnTurnStateChanged;
+
 	/** 턴 종료 요청. 자기 턴이 아니면 무시된다. 손패 초과면 Discard 페이즈로 간다. */
 	void RequestEndTurn(int32 RequestingSeat);
+
+	// 서버 전용. 밧줄이 다 타서 턴을 강제로 넘긴다. RequestEndTurn 과 달리 멈추지 않는다 —
+	// 손패가 한도를 넘으면 초과분을 자동으로 버린다(고를 사람이 없으면 판이 영영 멈추므로).
+	void ForceEndTurn(int32 Seat, const FString& Reason);
+
+	// 서버 전용. 좌석을 즉사시킨다(복귀 포기 등). ASC 가 있으면 피해 GE, 없으면 직접 통지.
+	// 둘 다 HandleSeatDeath 로 모이므로 승패·손패 정리가 평소대로 처리된다.
+	void KillSeat(int32 Seat, const FString& Reason);
 
 	/** 손패를 한 장 버렸다는 통지. 한도 이하가 되면 턴을 넘긴다. */
 	void NotifyCardDiscarded(int32 Seat);
@@ -211,9 +233,9 @@ public:
 	/**
 	 * 서버 전용. 좌석이 사망했다. 캐릭터가 사망을 확정한 뒤 호출한다.
 	 *
-	 * ⚠️ **연출 중이면 처리를 미룬다.** 규칙 처리(손패 정리·보상/벌칙·승패·턴 진행)가
-	 *    연출 도중에 끼어들면 화면에서는 아직 살아 있는 캐릭터의 카드가 버려지고,
-	 *    승패 판정이 먼저 나 버린다. 연출이 끝난 뒤 순서대로 처리한다.
+	 * 주의: **연출 중이면 처리를 미룬다.** 규칙 처리(손패 정리·보상/벌칙·승패·턴 진행)가
+	 * 연출 도중에 끼어들면 화면에서는 아직 살아 있는 캐릭터의 카드가 버려지고,
+	 * 승패 판정이 먼저 나 버린다. 연출이 끝난 뒤 순서대로 처리한다.
 	 *
 	 * KillerSeat 은 모르면 INDEX_NONE.
 	 */
@@ -238,8 +260,8 @@ public:
 	//  서버가 단계를 넘기고, 클라는 복제된 단계를 받아 델리게이트만 쏜다.
 	//  BP 바인딩 예) Get Game State → Cast To BGGameState → Bind Event to OnMatchWon
 	//
-	//  ⚠️ 위젯이 승리보다 늦게 만들어지면 이벤트를 놓친다. 바인딩 직후
-	//     GetMatchEndStage() 를 한 번 확인해 이미 진행 중이면 즉시 처리할 것.
+	//  주의: 위젯이 승리보다 늦게 만들어지면 이벤트를 놓친다. 바인딩 직후
+	// GetMatchEndStage() 를 한 번 확인해 이미 진행 중이면 즉시 처리할 것.
 
 	UPROPERTY(BlueprintAssignable, Category = "BG|Match")
 	FOnBGMatchWon OnMatchWon;
@@ -263,8 +285,8 @@ public:
 	//  복제되는 것은 "지금 누구의 B 카메라를 비추는가" 라는 상태 하나뿐이다.
 	//  카메라의 실제 위치는 각 클라가 로컬에서 보간한다(ABGCinematicCamera).
 	//
-	//  ⚠️ MatchEndStage 와 같은 이유로 이벤트가 아니라 상태다 — 늦게 온 클라도
-	//     지금 어느 샷인지 그대로 받아 따라잡는다.
+	//  주의: MatchEndStage 와 같은 이유로 이벤트가 아니라 상태다 — 늦게 온 클라도
+	// 지금 어느 샷인지 그대로 받아 따라잡는다.
 
 	/**
 	 * 서버 전용. 특정 캐릭터의 B 카메라로 연출을 전환한다.
@@ -285,8 +307,8 @@ public:
 	//  Card.Trait.Cinematic 이 붙은 카드를 쓰면 전원이 연출 상태가 되고,
 	//  Primary(사용자) → Secondary(피해자) 를 거쳐 원래 상태로 돌아온다.
 	//
-	//  ⚠️ 연출은 **규칙에 관여하지 않는다.** 판정·효과 적용·카드 소비는 이 함수가 불리기
-	//     전에 이미 서버에서 끝나 있다. 여기서 하는 일은 그동안 입력을 막고 단계를 알리는 것뿐이다.
+	//  주의: 연출은 **규칙에 관여하지 않는다.** 판정·효과 적용·카드 소비는 이 함수가 불리기
+	// 전에 이미 서버에서 끝나 있다. 여기서 하는 일은 그동안 입력을 막고 단계를 알리는 것뿐이다.
 
 	/**
 	 * 서버 전용. 연출을 시작한다. 이미 연출 중이면 무시한다(카드 두 장이 겹쳐 들어오는 경우).
@@ -294,7 +316,7 @@ public:
 	 * Caster : 카드를 쓴 캐릭터 — Primary 단계의 주인공.
 	 * Victim : 피해자 — Secondary 단계의 주인공. 없으면(자기 대상 카드 등) Caster 를 다시 쓴다.
 	 *
-	 * ⚠️ 인자 이름을 Instigator 로 쓸 수 없다 — AActor::Instigator 와 겹쳐 UHT 가 거부한다.
+	 * 주의: 인자 이름을 Instigator 로 쓸 수 없다 — AActor::Instigator 와 겹쳐 UHT 가 거부한다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Cinematic")
 	void BeginCardCinematic(class ABGCharacter* Caster, class ABGCharacter* Victim);
@@ -346,8 +368,8 @@ protected:
 	void SetMatchEndStage(EBGMatchEndStage NewStage);
 
 	//	서버·클라 공통. 현재 단계에 맞는 델리게이트를 쏜다.
-	//	⚠️ 리슨서버 호스트는 자기 GameState 의 OnRep 을 받지 못한다 —
-	//	   그래서 서버는 SetMatchEndStage 에서, 클라는 OnRep 에서 이 함수로 모인다.
+	//	주의: 리슨서버 호스트는 자기 GameState 의 OnRep 을 받지 못한다 —
+	// 그래서 서버는 SetMatchEndStage 에서, 클라는 OnRep 에서 이 함수로 모인다.
 	void HandleMatchEndStage();
 
 	UFUNCTION()
@@ -356,6 +378,19 @@ protected:
 	//	서버 전용. 같은 맵을 다시 열어 판을 통째로 되돌린다(= 로비 복귀).
 	//	제자리에서 상태를 하나씩 지우지 않는 이유는 BGGameState.cpp 의 구현 주석 참고.
 	void ReturnToLobby();
+
+	// ── 턴 상태 통지 ──
+	//
+	//	세 값(PhaseTag / CurrentSeat / bMatchRunning)이 하나의 OnRep 으로 모인다.
+	//	리슨서버 호스트는 자기 OnRep 을 받지 못하므로 서버는 값을 바꾼 자리에서 직접 부른다.
+	UFUNCTION()
+	void OnRep_TurnState();
+
+	void BroadcastTurnState();
+
+	//	서버 전용. 현재 좌석과 판 진행 여부를 바꾸는 유일한 입구다(SetPhaseTag 와 같은 원칙).
+	void SetCurrentSeat(int32 Seat);
+	void SetMatchRunning(bool bRunning);
 
 	// ── 턴 진행 내부 ──
 	void BeginTurn(int32 Seat);
@@ -389,11 +424,11 @@ protected:
 	FBGCardInstance DiscardTop;   // 버린 패 맨 위 1장은 공개 정보
 	
 	//	현재 진행상황 태그
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
 	FGameplayTag PhaseTag;          // Phase.*
 
 	//	현재 턴 좌석. 전원 공개 — 좌석 UI 의 강조와 카드 사용 검증이 이 값을 본다.
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
 	int32 CurrentSeat = INDEX_NONE;
 
 	//	승리 진영. 판이 끝나면 채워진다.
@@ -410,7 +445,7 @@ protected:
 	/**
 	 * 미뤄 둔 사망을 발생 순서대로 처리한다. 연출이 끝날 때 불린다.
 	 *
-	 * 🔜 사망 연출은 여기에 들어온다 — 지금은 규칙 처리로 바로 넘어가지만,
+	 * TODO: 사망 연출은 여기에 들어온다 — 지금은 규칙 처리로 바로 넘어가지만,
 	 *    "사망자 확인 → 사망 연출(여럿이면 순차) → 규칙 처리" 순서가 되면
 	 *    이 함수가 연출을 하나씩 재생한 뒤 ProcessSeatDeath 를 부르는 형태가 된다.
 	 */
@@ -471,8 +506,8 @@ protected:
 	/**
 	 * 단계 사이(사용자 샷 → 피해자 샷) 카메라 이동 시간(초). 0 이하면 순간이동.
 	 *
-	 * ⚠️ 단계 길이(Primary/SecondaryCinematicSeconds)보다 짧게 둘 것.
-	 *    이동이 단계보다 길면 도착하기도 전에 다음 단계로 넘어가 샷을 제대로 못 본다.
+	 * 주의: 단계 길이(Primary/SecondaryCinematicSeconds)보다 짧게 둘 것.
+	 * 이동이 단계보다 길면 도착하기도 전에 다음 단계로 넘어가 샷을 제대로 못 본다.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0"))
 	float CinematicShotBlendSeconds = 0.6f;
@@ -526,14 +561,14 @@ protected:
 	int32 InitialHandSize = 0;
 
 	//	판이 진행 중인가. 무한 루프 방지 겸 턴 검증의 첫 조건이다.
-	//	⚠️ 반드시 복제할 것 — CanSeatPlayCards / CanSeatDiscard 를 클라도 호출한다
-	//	   (손패의 bPlayable 계산과 플레이 존 드롭 판정이 여기 달려 있다).
-	//	   복제하지 않으면 클라에서 항상 false 라 자기 차례에도 카드가 나가지 않는다.
-	UPROPERTY(Replicated)
+	//	주의: 반드시 복제할 것 — CanSeatPlayCards / CanSeatDiscard 를 클라도 호출한다
+	// (손패의 bPlayable 계산과 플레이 존 드롭 판정이 여기 달려 있다).
+	// 복제하지 않으면 클라에서 항상 false 라 자기 차례에도 카드가 나가지 않는다.
+	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
 	bool bMatchRunning = false;
 	
-	//	⚠️ 덱 셔플 전용 스트림이다. 주사위 판정은 UBGDiceComponent 가 별도 스트림을 쓴다
-	//	   (한 스트림을 공유하면 판정 횟수가 셔플 결과를 밀어 재현이 깨진다).
+	//	주의: 덱 셔플 전용 스트림이다. 주사위 판정은 UBGDiceComponent 가 별도 스트림을 쓴다
+	// (한 스트림을 공유하면 판정 횟수가 셔플 결과를 밀어 재현이 깨진다).
 	UPROPERTY()
 	FRandomStream RandomStream;
 	//	시드 보존을 위해 한번 초기화 하면 다시는 초기화 하지 않는다.
@@ -544,4 +579,12 @@ protected:
 	//	확률 판정 전담 컴포넌트. 매치 시드로 InitializeDeck 에서 함께 초기화된다.
 	UPROPERTY(VisibleAnywhere, Category = "BG|Dice")
 	TObjectPtr<UBGDiceComponent> Dice;
+
+	//	턴 제한 시간(밧줄) 전담. 턴을 여닫는 곳에서만 건드린다.
+	UPROPERTY(VisibleAnywhere, Category = "BG|Rope")
+	TObjectPtr<class UBGRopeComponent> Rope;
+
+public:
+	UFUNCTION(BlueprintPure, Category = "BG|Rope")
+	UBGRopeComponent* GetRope() const { return Rope; }
 };

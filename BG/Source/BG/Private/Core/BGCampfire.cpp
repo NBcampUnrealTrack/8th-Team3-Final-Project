@@ -49,17 +49,17 @@ ABGCampfire* ABGCampfire::Find(const UWorld* World)
 	return Found;
 }
 
-FTransform ABGCampfire::GetSeatTransform(int32 Ordinal, int32 SeatCount) const
+FTransform ABGCampfire::GetSeatTransform(int32 Slot, int32 SlotCount) const
 {
-	if (SeatCount <= 0)
+	if (SlotCount <= 0)
 	{
 		return GetActorTransform();
 	}
 
-	//	인원수로 각도를 나눈다 — 4명이면 90도, 7명이면 약 51.43도.
-	const float StepDeg  = GetAngleStepDeg(SeatCount);
+	//	자리 수는 정원(7)으로 고정이다 — 레벨의 의자가 그 간격으로 놓여 있다.
+	const float StepDeg  = GetAngleStepDeg(SlotCount);
 	const float Direction = bClockwise ? -1.f : 1.f;
-	const float AngleDeg  = FirstSeatAngleDeg + Direction * StepDeg * Ordinal;
+	const float AngleDeg  = FirstSeatAngleDeg + Direction * StepDeg * Slot;
 	const float AngleRad  = FMath::DegreesToRadians(AngleDeg);
 
 	const FVector Center = GetActorLocation();
@@ -114,8 +114,8 @@ bool ABGCampfire::GetTransformForSeat(int32 SeatIndex, FTransform& OutTransform)
 	TArray<int32> Seats;
 	CollectOccupiedSeats(Seats);
 
-	//	좌석 "번호" 가 아니라 정렬된 목록에서의 "순번" 으로 각도를 매긴다.
-	//	로비의 듬성듬성한 번호(0,2,4)도 균등하게 벌어진다.
+	//	좌석 "번호" 가 아니라 정렬된 목록에서의 "순번" 으로 각도를 매긴다 — 4인이면 90도로
+	//	고르게 벌어진다. 로비의 7자리 고정 배치는 레벨의 PS_Seat* 가 맡는다.
 	const int32 Ordinal = Seats.IndexOfByKey(SeatIndex);
 	if (Ordinal == INDEX_NONE)
 	{
@@ -217,13 +217,13 @@ void ABGCampfire::ArrangePlayers()
 			continue;
 		}
 
-		const int32 Ordinal = Seats.IndexOfByKey(PS->GetSeatIndex());
-		if (Ordinal == INDEX_NONE)
+		FTransform SeatTransform;
+		if (!GetTransformForSeat(PS->GetSeatIndex(), SeatTransform))
 		{
 			continue;
 		}
 
-		if (PlacePawn(Pawn, GetSeatTransform(Ordinal, SeatCount)))
+		if (PlacePawn(Pawn, SeatTransform))
 		{
 			++Placed;
 		}

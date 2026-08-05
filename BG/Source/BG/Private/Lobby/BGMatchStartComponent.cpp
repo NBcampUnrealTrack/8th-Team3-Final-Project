@@ -7,6 +7,7 @@
 #include "Core/BGGameState.h"
 #include "BGGameplayTags.h"
 #include "UI/Session/BGSessionMenuController.h"
+#include "Debug/BGDebug.h"
 #include "Debug/BGNetLog.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
@@ -36,6 +37,9 @@ void UBGMatchStartComponent::NotifyPlayerJoined()
 
 	UE_LOG(LogBGNet, Log, TEXT("[MatchStart] 로비 %d/%d명 · 준비 %d명"),
 		Total, GetMinStartPlayers(), Ready);
+
+	//	검증용 자동 시작(-BGAutoStart). 본문은 디버그 계층에 있고 Shipping 에서는 비어 있다.
+	BGDebug::TryAutoStartMatch(this, Total, GetMinStartPlayers());
 }
 
 UBGMatchStartComponent* UBGMatchStartComponent::Find(const UWorld* World)

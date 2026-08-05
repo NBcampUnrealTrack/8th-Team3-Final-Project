@@ -1,4 +1,4 @@
-﻿// BANG! 좌석(다른 플레이어) UI 전용 뷰모델 + 대상 선택 계약.
+// BANG! 좌석(다른 플레이어) UI 전용 뷰모델 + 대상 선택 계약.
 //
 // FBGCardView 와 같은 원칙: UI 계층은 ABGPlayerState 도 ASC 도 DT 도 모른다.
 // 게임 로직이 UBGSeatViewLibrary 로 변환해 밀어넣고, UI 는 좌석 번호만 돌려준다.
@@ -11,8 +11,8 @@
 /**
  * 좌석 1개(플레이어 1명)의 공개 정보.
  *
- * ⚠️ 여기 들어가는 값은 전부 "전원에게 공개되어도 되는 것"이어야 한다.
- *    손패 내용(FBGCardView)은 절대 넣지 말 것 — HandCount 만 넣는다.
+ * 주의: 여기 들어가는 값은 전부 "전원에게 공개되어도 되는 것"이어야 한다.
+ * 손패 내용(FBGCardView)은 절대 넣지 말 것 — HandCount 만 넣는다.
  */
 USTRUCT(BlueprintType)
 struct FBGSeatView
@@ -59,6 +59,10 @@ struct FBGSeatView
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
 	bool bIsCurrentTurn = false;
+
+	// 접속이 끊긴 채 자리만 남아 있다. 죽은 것이 아니라 복귀를 기다리는 중이다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
+	bool bIsDisconnected = false;
 
 	bool IsValid() const { return SeatIndex != INDEX_NONE; }
 };

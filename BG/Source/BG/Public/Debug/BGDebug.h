@@ -7,6 +7,8 @@
 
 #include "CoreMinimal.h"
 
+class UBGMatchStartComponent;
+
 namespace BGDebug
 {
 	// Bang.Debug != 0 이면 true.
@@ -15,4 +17,8 @@ namespace BGDebug
 	// 화면에 색 메시지. Key<0 이면 계속 쌓이고, Key>=0 이면 같은 슬롯을 갱신한다.
 	BG_API void Screen(const FString& Msg, const FColor& Color = FColor::White,
 		float Time = 4.f, int32 Key = INDEX_NONE);
+
+	// -BGAutoStart 로 띄웠고 정원이 찼으면 전원 준비 처리 후 판을 연다.
+	// 클라마다 콘솔을 치지 않고 검증하기 위한 것 — Shipping 에서는 아무것도 하지 않는다.
+	BG_API void TryAutoStartMatch(UBGMatchStartComponent* MatchStart, int32 Total, int32 Required);
 }

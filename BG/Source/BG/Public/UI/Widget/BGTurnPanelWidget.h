@@ -18,6 +18,7 @@ class UTextBlock;
  *   Text_HandLimit (TextBlock, 선택 — "손패 5 / 한도 4")
  *   Text_Deck      (TextBlock, 선택 — 남은 덱 장수)
  *   Text_CardUse   (TextBlock, 선택 — "카드 1 / 2")
+ *   Text_Rope      (TextBlock, 선택 — "밧줄 37초" 턴 제한 시간)
  *
  * ── 게임 로직과의 연결 지점 ──
  *   들어오는 방향: SetTurnView()      — PlayerController 가 주기적으로 밀어넣는다
@@ -72,6 +73,24 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_CardUse;
 
+	/** 밧줄(턴 제한 시간). 남은 초는 매 틱 줄어들므로 델리게이트가 아니라 여기서 직접 읽는다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Rope;
+
+	//	밧줄이 붙고 꺼지는 순간만 델리게이트로 받는다. 남은 초는 NativeTick 이 읽는다.
+	UFUNCTION()
+	void HandleRopeChanged(int32 Seat, float SecondsRemaining, float TotalSeconds);
+
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+	virtual void NativeDestruct() override;
+
 private:
 	void RefreshVisual();
+
+	// 밧줄 컴포넌트를 찾아 구독한다. 아직 없으면 false — 다음 틱에 다시 시도한다.
+	bool TryBindRope();
+
+	void RefreshRopeText();
+
+	TWeakObjectPtr<class UBGRopeComponent> Rope;
 };

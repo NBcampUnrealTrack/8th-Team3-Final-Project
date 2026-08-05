@@ -32,18 +32,20 @@ class BG_API ABGCampfire : public AActor
 public:
 	ABGCampfire();
 
-	/**
-	 * 월드의 캠프파이어를 찾는다. 없으면 nullptr.
-	 * 둘 이상 있으면 경고를 남기고 첫 번째를 쓴다 — 조용히 하나를 고르면
-	 * "왜 저쪽 불 주위에 앉지" 를 한참 뒤에야 알게 된다.
-	 */
 	static ABGCampfire* Find(const UWorld* World);
 
 	// ── 배치 설정 ────────────────────────────────────────────────
 
-	/** 캠프파이어 중심에서 플레이어까지의 거리. */
+	/** 캠프파이어 중심에서 플레이어까지의 거리. 레벨의 의자·PS_Seat* 반지름과 같아야 한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seating", meta = (ClampMin = "0.0"))
-	float SeatRadius = 400.f;
+	float SeatRadius = 500.f;
+
+	/**
+	 * 로비의 고정 자리 수(정원). 판 시작 전에는 이 수로 원을 나눈 자리에 선다 —
+	 * 레벨의 PS_Seat0~6 이 그 좌표다. 판이 시작되면 참여 인원수로 다시 나눈다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seating", meta = (ClampMin = "1"))
+	int32 SeatSlotCount = 7;
 
 	/** 1번 플레이어(정렬 순번 0)가 설 각도. 0도는 캠프파이어 기준 +X 방향이다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seating")
@@ -60,36 +62,23 @@ public:
 	// ── 계산 ─────────────────────────────────────────────────────
 
 	/**
-	 * 총 SeatCount 명 중 Ordinal 번째 자리의 월드 트랜스폼. 순수 계산이라 클라에서도 안전하다.
-	 *
+	 * SlotCount 등분한 원에서 Slot 번째 자리의 월드 트랜스폼. 순수 계산이라 클라에서도 안전하다.
 	 * 회전은 항상 캠프파이어를 바라본다(요만 쓴다 — 피치·롤을 넣으면 캐릭터가 기운다).
-	 * SeatCount 가 0 이하면 캠프파이어 자신의 트랜스폼을 돌려준다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "BG|Seating")
-	FTransform GetSeatTransform(int32 Ordinal, int32 SeatCount) const;
+	FTransform GetSeatTransform(int32 Slot, int32 SlotCount) const;
 
-	/** 인원수에 따른 좌석 간 각도(도). SeatCount 가 0 이하면 0. */
+	/** 자리 간 각도(도). SlotCount 가 0 이하면 0. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seating")
-	static float GetAngleStepDeg(int32 SeatCount) { return SeatCount > 0 ? 360.f / SeatCount : 0.f; }
+	static float GetAngleStepDeg(int32 SlotCount) { return SlotCount > 0 ? 360.f / SlotCount : 0.f; }
 
 	/**
-	 * 좌석 번호로 트랜스폼을 얻는다. 현재 접속 인원을 기준으로 순번을 계산한다.
-	 * 그 좌석이 비어 있으면 false.
-	 *
-	 * ⚠️ 돌려주는 위치는 **바닥의 한 점**이다. 폰을 놓을 때는 캡슐 반높이만큼 올려야 한다 —
-	 *    직접 쓰지 말고 PlacePawn 을 쓸 것.
+	 * 좌석 번호의 트랜스폼. 좌석 번호가 곧 자리 번호다 — 인원수와 무관하게 같은 자리에 선다.
+	 * 위치는 바닥의 한 점이므로 폰을 놓을 때는 PlacePawn 을 쓸 것(캡슐 반높이 보정).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Seating")
 	bool GetTransformForSeat(int32 SeatIndex, FTransform& OutTransform) const;
 
-	/**
-	 * 폰 하나를 좌석 트랜스폼에 세운다. 폰을 자리에 놓는 **유일한 경로**다.
-	 *
-	 * ⚠️ 여기에 모은 이유: 좌석 트랜스폼은 바닥 좌표라 그대로 TeleportTo 하면 캡슐 절반이
-	 *    지면에 파묻힌다. 그러면 FindTeleportSpot 이 자리를 찾지 못해 TeleportTo 가 false 를
-	 *    반환하고 **액터는 제자리에 그대로 남는다** — 아무 오류 없이 조용히 실패한다.
-	 *    캡슐 반높이 보정과 실패 로그를 이 함수 하나에만 두어 호출부마다 빠뜨리지 않게 한다.
-	 */
 	bool PlacePawn(APawn* Pawn, const FTransform& SeatTransform) const;
 
 	// ── 배치 ─────────────────────────────────────────────────────
@@ -108,7 +97,6 @@ public:
 	int32 GetSeatedPlayerCount() const;
 
 protected:
-	/** 좌석 번호를 오름차순으로 모은다. 비어 있는 번호는 빠지므로 결과는 촘촘하다. */
 	void CollectOccupiedSeats(TArray<int32>& OutSeats) const;
 
 	/** 캠프파이어 본체. 메시는 BP 에서 지정한다 — 여기서는 위치 기준일 뿐이다. */

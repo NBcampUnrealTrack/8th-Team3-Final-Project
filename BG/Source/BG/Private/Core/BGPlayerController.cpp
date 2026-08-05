@@ -1,4 +1,4 @@
-﻿#include "Core/BGPlayerController.h"
+#include "Core/BGPlayerController.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemGlobals.h"
@@ -60,6 +60,7 @@ void ABGPlayerController::SetHandWidget(UBGHandWidget* InHandWidget)
 	TryBindAttributeDelegates();
 	TryBindResolutionDelegate();
 	TryBindCameraShotDelegate();
+	TryBindTurnStateDelegate();
 	RefreshHandWidget();
 	UpdateHandInteractionLock();
 }
@@ -142,7 +143,7 @@ void ABGPlayerController::SetupInputComponent()
 
 	//	대상 선택 취소. CancelTargetSelection 은 선택 중이 아니면 아무것도 하지 않으므로
 	//	평소 우클릭에는 영향이 없다.
-	//	⚠️ PIE 에서는 ESC 를 에디터가 먼저 먹어 세션이 종료된다 — 테스트는 우클릭으로 할 것.
+	//	주의: PIE 에서는 ESC 를 에디터가 먼저 먹어 세션이 종료된다 — 테스트는 우클릭으로 할 것.
 	InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
 }
@@ -156,7 +157,45 @@ void ABGPlayerController::OnRep_PlayerState()
 	TryBindAttributeDelegates();
 	TryBindResolutionDelegate();
 	TryBindCameraShotDelegate();
+	TryBindTurnStateDelegate();
 	RefreshHandWidget();
+}
+
+void ABGPlayerController::Destroyed()
+{
+	//	판이 도는 중이면 폰을 떼어 내 월드에 남긴다. Super 가 폰을 파괴하기 전 마지막 기회다.
+	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	APawn* Current = GetPawn();
+
+	if (HasAuthority() && GS && GS->IsMatchRunning() && Current)
+	{
+		if (ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
+		{
+			PS->SaveVitals(Current);
+		}
+		UnPossess();
+	}
+
+	Super::Destroyed();
+}
+
+void ABGPlayerController::CleanupPlayerState()
+{
+	//	AController::Destroyed 는 Logout 을 먼저 부른다 — 그때 붙은 이탈 표시를 여기서 본다.
+	//	표시가 있으면 이 PlayerState 는 아직 판의 일부라 파괴하면 안 된다.
+	ABGPlayerState* PS = Cast<ABGPlayerState>(PlayerState);
+	if (PS && PS->IsDisconnected())
+	{
+		//	소유 관계를 끊어 둔다 — 파괴되는 컨트롤러가 끌고 가지 않도록.
+		PS->SetOwner(nullptr);
+		SetPlayerState(nullptr);
+
+		UE_LOG(LogBGCard, Log, TEXT("[Seat] 좌석 %d PlayerState 유지 — 복귀 대기"),
+			PS->GetSeatIndex());
+		return;
+	}
+
+	Super::CleanupPlayerState();
 }
 
 void ABGPlayerController::TryBindHandDelegate()
@@ -499,6 +538,31 @@ void ABGPlayerController::BeginPlay()
 	}
 }
 
+void ABGPlayerController::TryBindTurnStateDelegate()
+{
+	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	if (!GS || BoundTurnGameState.Get() == GS)
+	{
+		return;
+	}
+
+	GS->OnTurnStateChanged.AddUniqueDynamic(this, &ABGPlayerController::HandleTurnStateChanged);
+	BoundTurnGameState = GS;
+
+	//	구독 전에 이미 판이 시작됐을 수 있다 — 지금 상태로 한 번 맞춘다.
+	HandleTurnStateChanged();
+
+	UE_LOG(LogBGCard, Verbose, TEXT("[PC] 턴 상태 통지 구독"));
+}
+
+void ABGPlayerController::HandleTurnStateChanged()
+{
+	RefreshTurnPanel();
+	RefreshSeatBoard();
+	UpdateHandInteractionLock();
+	RefreshHandWidget();   //	카드의 사용 가능 표시가 페이즈에 걸려 있다.
+}
+
 void ABGPlayerController::RefreshSeatBoard()
 {
 	if (SeatBoardWidget)
@@ -519,6 +583,7 @@ void ABGPlayerController::RefreshSeatBoard()
 	TryBindResolutionDelegate();
 	TryBindCameraShotDelegate();
 	TryBindAttributeDelegates();
+	TryBindTurnStateDelegate();
 }
 
 // ======================================================================================
@@ -807,8 +872,8 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	}
 
 	// ── CardId 태그 → GA 클래스 (맵을 "카드 종류"로 직접 조회) ──
-	//  ⚠️ 맵(AbilityByCardId)의 키는 카드 태그(Card.Id.*)다 — 유저 설정에 맞춰 카드 기준 조회.
-	//     (메커니즘 태그 Ability.* 로 거치지 않는다.)
+	//  주의: 맵(AbilityByCardId)의 키는 카드 태그(Card.Id.*)다 — 유저 설정에 맞춰 카드 기준 조회.
+	// (메커니즘 태그 Ability.* 로 거치지 않는다.)
 	const TSubclassOf<UGameplayAbility>* Found = AbilityByCardId.Find(CardId);
 	if (!Found || !*Found)
 	{
@@ -888,8 +953,8 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 	// ── 파란 카드(장비): 판정 없이 즉시 장착 (GDD §6.3) ──
 	//	장비는 지속 효과라 판정 대상이 아니다. GA 도 발동하지 않는다.
-	//	⚠️ 카드가 버린 패로 가지 않는다 — 손패에서 장비로 "이동" 한다.
-	//	   그래서 ConsumeCard(버리기)를 쓰지 않고 직접 옮긴다.
+	//	주의: 카드가 버린 패로 가지 않는다 — 손패에서 장비로 "이동" 한다.
+	// 그래서 ConsumeCard(버리기)를 쓰지 않고 직접 옮긴다.
 	if (CardRow->TypeTag == BG::Card::Type::Blue.GetTag())
 	{
 		ABGPlayerState* EquipPS = GetPlayerState<ABGPlayerState>();
@@ -953,9 +1018,9 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			//	§11 "설정 확률 vs 실측" 비교가 성립한다. (ApplyModifiers 안에서 제외됨)
 			//	→ UBGDiceComponent::ApplyLuck 은 선언만 남고 호출처가 없다(§13.1 비활성).
 			//
-			//	⚠️ 장비 보정은 반드시 통과시켜야 한다. 이 호출을 빼면 드워프 장갑·마녀의 부적이
-			//	   GE 로 어트리뷰트를 바꿔도 판정이 읽지 않아 효과가 사라진다.
-			//	   GDD §10 도 "장비 효과가 적용된 최종 확률" 을 표시하라고 요구한다.
+			//	주의: 장비 보정은 반드시 통과시켜야 한다. 이 호출을 빼면 드워프 장갑·마녀의 부적이
+			// GE 로 어트리뷰트를 바꿔도 판정이 읽지 않아 효과가 사라진다.
+			// GDD §10 도 "장비 효과가 적용된 최종 확률" 을 표시하라고 요구한다.
 			const FBGOutcomeWeights Weights = Dice->ApplyModifiers(CardRow->OutcomeWeights, ASC);
 
 			int32 Roll = INDEX_NONE;
@@ -1023,9 +1088,9 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			//	[비활성] EventMagnitude 는 전용 GA(GA_Bang/GA_Heal/GA_StealOrDiscard)의 폴백 경로다.
 			//	  그 GA 들이 전부 비활성이라(GDD §13.1) 지금은 아무도 읽지 않는다.
 			//	  실어 보내는 것 자체는 무해하고, 전용 GA 를 되살릴 때 이 줄이 있어야 하므로 남긴다.
-			//	  ⚠️ 다만 로그에는 찍지 않는다 — OutcomeMagnitudes 는 비활성 필드라 실제 효과와
-			//	     어긋난다(뱅 성공이 "수치 0" 으로, 함정이 "수치 1" 로 보였다).
-			//	     실제 효과는 바로 다음 줄에서 GA 가 요약을 출력한다.
+			//	  주의: 다만 로그에는 찍지 않는다 — OutcomeMagnitudes 는 비활성 필드라 실제 효과와
+			// 어긋난다(뱅 성공이 "수치 0" 으로, 함정이 "수치 1" 로 보였다).
+			// 실제 효과는 바로 다음 줄에서 GA 가 요약을 출력한다.
 			Payload.EventMagnitude = static_cast<float>(CardRow->OutcomeMagnitudes.ForOutcome(Outcome));
 
 			ResolvedOutcome = Outcome;

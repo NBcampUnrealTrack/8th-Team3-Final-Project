@@ -2,7 +2,13 @@
 
 #include "Debug/BGCardLog.h"
 #include "Card/BGCardType.h"
+#include "Card/BGDataSubsystem.h"
+#include "Card/BGGameDataTypes.h"
+#include "BGGameplayTags.h"
+#include "GAS/BGAttributeSet.h"
+#include "GAS/Effect/GE_BGDamage.h"
 #include "Lobby/BGReadyComponent.h"
+#include "Engine/GameInstance.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "GameFramework/Pawn.h"
@@ -28,6 +34,153 @@ void ABGPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(ABGPlayerState, PublicRoleTag);
 	DOREPLIFETIME(ABGPlayerState, CardsUsedThisTurn);
 	DOREPLIFETIME(ABGPlayerState, PendingStatuses);
+	DOREPLIFETIME(ABGPlayerState, bDisconnected);
+	DOREPLIFETIME(ABGPlayerState, RopeStrikes);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+//  이탈과 복귀
+// ══════════════════════════════════════════════════════════════════════════════════════
+
+FOnBGDisconnectChanged ABGPlayerState::OnAnyDisconnectChanged;
+
+void ABGPlayerState::OnRep_Disconnected()
+{
+	OnAnyDisconnectChanged.Broadcast(SeatIndex, bDisconnected);
+}
+
+void ABGPlayerState::SetDisconnected(bool bInDisconnected)
+{
+	if (!HasAuthority() || bDisconnected == bInDisconnected)
+	{
+		return;
+	}
+
+	bDisconnected = bInDisconnected;
+
+	//	리슨서버 호스트는 자기 OnRep 을 받지 못한다 — 서버에서도 직접 알린다.
+	OnAnyDisconnectChanged.Broadcast(SeatIndex, bDisconnected);
+
+	//	나갈 때도 돌아올 때도 0 이다. 이 값은 "자리를 비운 채 넘긴 연속 턴" 을 세므로,
+	//	잠수로 쌓인 기록을 이월하면 방금 튕긴 사람이 한 턴 만에 죽는다.
+	RopeStrikes = 0;
+}
+
+int32 ABGPlayerState::AddRopeStrike()
+{
+	if (HasAuthority())
+	{
+		++RopeStrikes;
+	}
+	return RopeStrikes;
+}
+
+void ABGPlayerState::ResetRopeStrikes()
+{
+	if (HasAuthority())
+	{
+		RopeStrikes = 0;
+	}
+}
+
+void ABGPlayerState::SaveVitals(APawn* LeavingPawn)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	//	폰은 파괴되지 않고 UnPossess 만 된다 — 놓치면 복귀 때 같은 자리에 하나 더 생긴다.
+	AbandonedPawn = LeavingPawn;
+
+	const UAbilitySystemComponent* ASC =
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(LeavingPawn);
+	if (!ASC)
+	{
+		return;
+	}
+
+	SavedHealth = ASC->GetNumericAttribute(UBGAttributeSet::GetHealthAttribute());
+}
+
+void ABGPlayerState::RestoreVitals()
+{
+	UAbilitySystemComponent* ASC = GetOwnedAbilitySystemComponent();
+	if (!HasAuthority() || !ASC || SavedHealth <= 0.f)
+	{
+		return;
+	}
+
+	//	장비 GE 를 먼저 붙인다 — MaxHealth 를 바꾸는 장비가 있으면 체력 계산이 달라진다.
+	const UGameInstance* GI = GetGameInstance();
+	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	int32 Reapplied = 0;
+
+	for (const FBGCardInstance& Card : Equipment)
+	{
+		const FBGCardRow* Row = Data ? Data->GetCardRow(Card.CardId) : nullptr;
+		if (!Row || !Row->EquipEffect)
+		{
+			continue;
+		}
+
+		FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+		const FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(Row->EquipEffect, 1.f, Context);
+		if (Spec.IsValid())
+		{
+			EquipEffectHandles.Add(Card.CardId, ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get()));
+			++Reapplied;
+		}
+	}
+
+	//	새 폰은 만피로 시작한다. 적어 둔 값까지 깎아 내린다(회복은 하지 않는다).
+	const float Current = ASC->GetNumericAttribute(UBGAttributeSet::GetHealthAttribute());
+	const float Delta   = Current - SavedHealth;
+	if (Delta > 0.f)
+	{
+		FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+		const FGameplayEffectSpecHandle Spec =
+			ASC->MakeOutgoingSpec(UGE_BGDamage::StaticClass(), 1.f, Context);
+		if (Spec.IsValid())
+		{
+			Spec.Data->SetSetByCallerMagnitude(BG::SetByCaller::Damage.GetTag(), -Delta);
+			ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+		}
+	}
+
+	UE_LOG(LogBGCard, Log, TEXT("[Vitals] 좌석 %d 복원 — 체력 %.0f, 장비 GE %d개"),
+		SeatIndex, SavedHealth, Reapplied);
+
+	SavedHealth = 0.f;
+}
+
+void ABGPlayerState::CopyProperties(APlayerState* NewPlayerState)
+{
+	Super::CopyProperties(NewPlayerState);
+
+	ABGPlayerState* To = Cast<ABGPlayerState>(NewPlayerState);
+	if (!To)
+	{
+		return;
+	}
+
+	//	판 상태를 통째로 넘긴다. 하나라도 빠지면 돌아온 사람이 "빈손의 무직" 이 된다.
+	To->SeatIndex         = SeatIndex;
+	To->Hand              = Hand;
+	To->HandCount         = HandCount;
+	To->Equipment         = Equipment;
+	To->bIsDead           = bIsDead;
+	To->PublicRoleTag     = PublicRoleTag;
+	To->CardsUsedThisTurn = CardsUsedThisTurn;
+	To->PendingStatuses   = PendingStatuses;
+	To->CachedRoleTag     = CachedRoleTag;
+	To->CachedJobTag      = CachedJobTag;
+	To->PlayerKey         = PlayerKey;
+	To->SavedHealth       = SavedHealth;
+	To->AbandonedPawn     = AbandonedPawn;
+
+	//	EquipEffectHandles 는 넘기지 않는다 — 옛 폰의 ASC 를 가리켜 새 ASC 에서는 무효다.
+	//	장비 GE 는 폰을 다시 물린 뒤 재적용해야 한다.
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════

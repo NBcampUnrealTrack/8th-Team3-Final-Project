@@ -1,4 +1,4 @@
-﻿// BANG! 게임 인스턴스 — OnlineSubsystem 세션 호출부. 방 생성/검색/조인/파기 파이프라인을 담당한다.
+// BANG! 게임 인스턴스 — OnlineSubsystem 세션 호출부. 방 생성/검색/조인/파기 파이프라인을 담당한다.
 // 서브시스템별 옵션 분기는 FBGOssPolicy 가 맡는다. 맵 이동은 메인메뉴 → 게임 맵 1 회뿐이고,
 // 로비 → 판 전환은 여전히 이동 없이 페이즈 태그로 처리한다.
 
@@ -44,6 +44,14 @@ public:
 	// 방을 나간 뒤 메인메뉴 맵으로 복귀. 이미 메인메뉴면 아무것도 하지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "BG|Session")
 	void ReturnToMainMenu();
+
+	// 이 설치본을 식별하는 열쇠. 접속 URL 에 ?BGKey= 로 실려 서버가 돌아온 사람을 알아본다.
+	// NULL 서브시스템은 접속마다 새 UniqueNetId 를 만들어 쓸 수 없어서 따로 둔다.
+	// 한 PC 에서 여러 클라이언트를 띄우는 검증에서는 -BGKey=... 로 다르게 준다.
+	UFUNCTION(BlueprintPure, Category = "BG|Session")
+	FString GetPlayerKey() const;
+
+	static const TCHAR* PlayerKeyOption;
 
 	// 판이 시작되면 false 로 — 진행 중인 판에 난입을 막는다.
 	UFUNCTION(BlueprintCallable, Category = "BG|Session")
@@ -152,6 +160,10 @@ private:
 	// 방을 나가면 돌아갈 메인메뉴 맵.
 	UPROPERTY(Config)
 	FString MainMenuMapPath = TEXT("/Game/GameSystem/L_MainMenu");
+
+	// 재접속 식별용 열쇠. 처음 한 번 만들어 사용자 설정에 저장하고 계속 쓴다.
+	UPROPERTY(Config)
+	mutable FString PlayerKey;
 
 	// 접속 끊김 시 남은 로컬 세션 파기 — 없으면 이후 방 생성이 계속 거부된다.
 	void HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type FailureType, const FString& ErrorString);

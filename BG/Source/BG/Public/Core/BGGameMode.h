@@ -1,4 +1,4 @@
-﻿// BANG! 게임모드 — 서버 권위. 접속 인원수(4~7)에 맞춰 역할·직업 태그를 셔플 배정한다.
+// BANG! 게임모드 — 서버 권위. 접속 인원수(4~7)에 맞춰 역할·직업 태그를 셔플 배정한다.
 // 배정은 캐릭터의 SetRoleTag / SetJobTag 로 전달되고, 캐릭터가 직업 DT(FBGCharacterRow)를
 // 읽어 스탯/능력/외형을 스스로 부여한다. (Team4Project 의 GODGameMode::AssignRoles 대응)
 //
@@ -84,8 +84,8 @@ public:
 	 * 서버: 접속 인원에게 판타지 직업(Character.Job.*)을 **중복 없이** 하나씩 배정한다.
 	 * 직업 Row 가 스탯 GE/패시브/어빌리티를 부여하고, SkeletalMesh 가 있으면 외형도 바뀐다.
 	 *
-	 * ⚠️ AssignRoles 가 시작할 때 자기가 먼저 호출한다 — 보통은 따로 부를 일이 없다.
-	 *    직업이 이 게임의 유일한 스탯 출처라, 판이 열리기 전에 반드시 끝나 있어야 한다.
+	 * 주의: AssignRoles 가 시작할 때 자기가 먼저 호출한다 — 보통은 따로 부를 일이 없다.
+	 * 직업이 이 게임의 유일한 스탯 출처라, 판이 열리기 전에 반드시 끝나 있어야 한다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG")
 	void AssignJobs();
@@ -97,14 +97,14 @@ public:
 	void CollectPlayers(TArray<APlayerController*>& OutPlayers) const;
 
 	// ── 주사위 판정 ──────────────────────────────────────────────
-	//  ⚠️ 이사 갔다 → UBGDiceComponent (ABGGameState 에 부착).
-	//     GameMode 는 클라에 없어 판정 설정을 클라 UI 가 읽을 수 없고, 시드 난수의 소유자도
-	//     GameState 라 그쪽으로 옮겼다. 호출은 UBGDiceComponent::Get(this) 로 한다.
+	//  주의: 이사 갔다 → UBGDiceComponent (ABGGameState 에 부착).
+	// GameMode 는 클라에 없어 판정 설정을 클라 UI 가 읽을 수 없고, 시드 난수의 소유자도
+	// GameState 라 그쪽으로 옮겼다. 호출은 UBGDiceComponent::Get(this) 로 한다.
 
 	// ── [현재 미사용] 확률 기반 카드 분배 ────────────────────────
 	//
-	// ⚠️ 이 두 함수는 현재 게임 흐름에서 호출되지 않는다. 실제 카드 분배는
-	//    ABGGameState::DrawFromDeck + ABGPlayerState::AddCardToHand 경로를 쓴다.
+	// 주의: 이 두 함수는 현재 게임 흐름에서 호출되지 않는다. 실제 카드 분배는
+	// ABGGameState::DrawFromDeck + ABGPlayerState::AddCardToHand 경로를 쓴다.
 	//
 	//    두 방식은 근본적으로 다르다:
 	//      DrawWeightedCard : DT_BGCardProbability 가중치 기반 **복원추출**.
@@ -137,6 +137,14 @@ public:
 	UFUNCTION(Exec)
 	void BG_Damage(int32 Seat, int32 Amount);
 
+	// 좌석별 폰 위치와 자리 액터 유무를 찍는다. 겹쳐 선 캐릭터를 추적할 때 쓴다.
+	UFUNCTION(Exec)
+	void BG_DumpSeats();
+
+	// 접속자 전원을 준비 상태로 만든다. 클라마다 콘솔을 치지 않고 판을 열 때 쓴다.
+	UFUNCTION(Exec)
+	void BG_ReadyAll();
+
 	/** 레벨의 캠프파이어(좌석 "위치" 의 기준점). 없는 레벨이면 nullptr. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seating")
 	ABGCampfire* GetCampfire() const;
@@ -168,10 +176,16 @@ protected:
 
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 
-	// 퇴장한 플레이어의 좌석을 반납한다.
+	// 자리를 비웠던 사람이면 두고 간 폰을 다시 물린다(체력·역할·장비 GE 가 거기 있다).
+	// 폰이 이미 사라졌으면 새로 스폰한 뒤 역할·직업만 되돌려 준다.
+	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
+
+	// 퇴장한 플레이어의 좌석을 반납한다. 판 중 이탈이면 반납 대신 자리를 비워 둔다.
+	// PlayerState 를 살려 두는 일은 ABGPlayerController::CleanupPlayerState 가 한다.
 	virtual void Logout(AController* Exiting) override;
 
 	// 좌석 번호에 대응하는 PlayerStart 로 스폰시킨다. 없으면 엔진 기본 동작.
+	// 로비에서는 이 자리에 그대로 서 있고, 원형 배치는 판 시작 때 한 번만 한다.
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 
 private:
@@ -193,9 +207,9 @@ private:
 	/**
 	 * 레벨의 캠프파이어. 처음 찾을 때 캐시한다.
 	 *
-	 * ⚠️ 컴포넌트가 아니라 **레벨에 배치된 액터**다. 위 둘과 달리 생성자에서 만들지 않는다 —
-	 *    없는 레벨도 있고(PlayerStart 방식 레벨), 레벨 스트리밍으로 나중에 올 수도 있어
-	 *    BeginPlay 에 캐시하지 않고 요청 시점에 찾는다. 그래서 mutable 이다.
+	 * 주의: 컴포넌트가 아니라 **레벨에 배치된 액터**다. 위 둘과 달리 생성자에서 만들지 않는다 —
+	 * 없는 레벨도 있고(PlayerStart 방식 레벨), 레벨 스트리밍으로 나중에 올 수도 있어
+	 * BeginPlay 에 캐시하지 않고 요청 시점에 찾는다. 그래서 mutable 이다.
 	 */
 	UPROPERTY(Transient)
 	mutable TObjectPtr<class ABGCampfire> Campfire;

@@ -88,6 +88,13 @@ void ABGGameMode::PreLogin(const FString& Options, const FString& Address,
 		return;
 	}
 
+	// 자리를 비워 둔 본인은 판 중에도 돌아올 수 있다 — 난입이 아니라 복귀다.
+	if (Seats && Seats->HasReservedSeat(UBGSeatComponent::ParsePlayerKey(Options), UniqueId))
+	{
+		UE_LOG(LogBGNet, Log, TEXT("[Seat] 복귀 접속 허용 — %s"), *Address);
+		return;
+	}
+
 	// 입장 가부 판정은 진행 컴포넌트가 갖는다 — 여기는 엔진 훅을 넘겨주기만 한다.
 	if (MatchStart && !MatchStart->CanAcceptPlayer(ErrorMessage))
 	{
@@ -99,12 +106,62 @@ FString ABGGameMode::InitNewPlayer(APlayerController* NewPlayerController, const
 	const FString& Options, const FString& Portal)
 {
 	// Super 안에서 ChoosePlayerStart 가 불려 결과가 캐시되므로 좌석은 그 전에 줘야 한다.
+	// 복귀 처리가 좌석 배정보다 먼저다 — 순서를 바꾸면 돌아온 사람이 빈 자리를 새로 받는다.
+	const FString PlayerKey = UBGSeatComponent::ParsePlayerKey(Options);
+
+	if (ABGPlayerState* PS = NewPlayerController ? NewPlayerController->GetPlayerState<ABGPlayerState>() : nullptr)
+	{
+		PS->SetPlayerKey(PlayerKey);
+	}
+
 	if (Seats)
 	{
-		Seats->AssignSeatOnJoin(NewPlayerController);
+		if (!Seats->RestoreSeatOnRejoin(NewPlayerController, PlayerKey, UniqueId))
+		{
+			Seats->AssignSeatOnJoin(NewPlayerController);
+		}
 	}
 
 	return Super::InitNewPlayer(NewPlayerController, UniqueId, Options, Portal);
+}
+
+void ABGGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+	//	두고 간 폰을 다시 문다 — 새로 스폰하면 만신창이로 나갔던 사람이 만피로 돌아온다.
+	if (Seats && Seats->RepossessAbandonedPawn(NewPlayer))
+	{
+		return;
+	}
+
+	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+
+	//	새로 스폰됐다면 역할과 직업을 되돌려 준다 — 안 하면 돌아온 사람이 역할 없는 무직이 되고,
+	//	GetSeatRole 이 폰을 먼저 보므로 승패 판정까지 틀어진다.
+	ABGPlayerState* PS = NewPlayer ? NewPlayer->GetPlayerState<ABGPlayerState>() : nullptr;
+	ABGCharacter*   Char = NewPlayer ? Cast<ABGCharacter>(NewPlayer->GetPawn()) : nullptr;
+	if (!PS || !Char || PS->GetCachedRole().IsValid() == false)
+	{
+		return;
+	}
+
+	//	직업이 먼저다 — 스탯 GE 를 붙이는 쪽이라 역할보다 앞서야 순서가 자연스럽다.
+	if (PS->GetCachedJob().IsValid())
+	{
+		Char->SetJobTag(PS->GetCachedJob());
+	}
+	Char->SetRoleTag(PS->GetCachedRole());
+
+	UE_LOG(LogBGNet, Log, TEXT("[Seat] 좌석 %d 폰 재생성 — 역할·직업 복원(%s / %s)"),
+		PS->GetSeatIndex(), *PS->GetCachedRole().ToString(), *PS->GetCachedJob().ToString());
+
+	//	새 폰은 로비용 PlayerStart 에서 태어난다. 판이 도는 중이면 자기 좌석 자리로 옮긴다.
+	if (Seats)
+	{
+		Seats->SnapToSeat(PS);
+	}
+
+	//	직업 GE 로 MaxHealth 가 정해진 다음이라야 체력을 제자리에 맞출 수 있다.
+	PS->RestoreVitals();
 }
 
 ABGCampfire* ABGGameMode::GetCampfire() const
@@ -128,11 +185,8 @@ void ABGGameMode::PostLogin(APlayerController* NewPlayer)
 		MatchStart->NotifyPlayerJoined();
 	}
 
-	// 좌석 간 각도는 접속 인원수로 정해진다 — 한 명이 들어와도 전원이 다시 서야 한다.
-	if (ABGCampfire* Fire = GetCampfire())
-	{
-		Fire->ArrangePlayers();
-	}
+	// 로비에서는 각자 PlayerStart 자리에 그대로 선다. 원형 배치는 판 시작 때 한 번만 —
+	// 사람이 들고 날 때마다 전원이 움직이면 자리가 계속 흔들린다.
 }
 
 AActor* ABGGameMode::ChoosePlayerStart_Implementation(AController* Player)
@@ -144,19 +198,17 @@ AActor* ABGGameMode::ChoosePlayerStart_Implementation(AController* Player)
 
 void ABGGameMode::Logout(AController* Exiting)
 {
-	if (Seats)
+	//	판이 도는 중이면 좌석을 반납하지 않는다 — 자리를 비워 두고 밧줄이 복귀를 기다린다.
+	//	로비에서 나갔거나 이미 죽은 사람이면 예약이 걸리지 않으므로 평소대로 반납한다.
+	if (Seats && !Seats->ReserveSeatOnLeave(Exiting))
 	{
 		Seats->ReleaseSeat(Exiting);
 	}
 
 	Super::Logout(Exiting);
 
-	//	Super 뒤에 부른다 — 그 전에는 나가는 플레이어가 아직 PlayerArray 에 남아 있어
-	//	인원수가 하나 많게 잡히고, 빈 자리가 생긴 원이 만들어진다.
-	if (ABGCampfire* Fire = GetCampfire())
-	{
-		Fire->ArrangePlayers();
-	}
+	//	판 중 퇴장에는 재배치하지 않는다 — 남은 사람이 다 움직이면 대상 지정을 하던 중에
+	//	자리가 바뀐다. 로비에서는 각자 PlayerStart 에 서 있으므로 재배치할 것도 없다.
 }
 
 TArray<FGameplayTag> ABGGameMode::BuildRolePool(int32 NumPlayers)
@@ -251,6 +303,12 @@ void ABGGameMode::AssignJobs()
 		// 태그 부여 + DT Row 의 스켈레탈 메쉬 교체까지 캐릭터가 한 번에 처리한다.
 		Char->SetJobTag(JobTag);
 
+		// 재접속으로 폰을 새로 스폰하게 되면 이 값으로 직업을 다시 세운다.
+		if (ABGPlayerState* PS = PC->GetPlayerState<ABGPlayerState>())
+		{
+			PS->SetCachedJob(JobTag);
+		}
+
 		UE_LOG(LogTemp, Log, TEXT("[BG] AssignJobs: %s → %s"),
 			*PC->GetName(), *JobTag.ToString());
 	}
@@ -331,6 +389,10 @@ void ABGGameMode::AssignRoles()
 		// (RoleTag 자체는 COND_OwnerOnly 라 본인 외에는 복제되지 않는다)
 		if (ABGPlayerState* PS = PC->GetPlayerState<ABGPlayerState>())
 		{
+			// 접속이 끊겨 폰이 사라져도 역할은 남아야 한다 — 승패 판정이 이 값을 본다.
+			// (서버 전용 사본이라 은닉 정보가 새지 않는다)
+			PS->SetCachedRole(RoleTag);
+
 			if (RoleTag == BG::Role::Sheriff.GetTag())
 			{
 				PS->SetPublicRole(RoleTag);
