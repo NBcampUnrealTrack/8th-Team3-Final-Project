@@ -35,10 +35,55 @@ struct FTRActionDef
 };
 
 USTRUCT(BlueprintType)
-struct FTRInstallCostRow : public FTableRowBase
+struct FTRArmorLevelRow : public FTableRowBase
 {
 	GENERATED_BODY()
-	
+
 	UPROPERTY(EditAnywhere)
-	int32 Cost = 0;
+	float MaxHP = 0.f;
+
+	UPROPERTY(EditAnywhere)
+	int32 InstallCost = 0;   // 재설치 비용
+
+	UPROPERTY(EditAnywhere)
+	int32 UpgradeCost = 0;   // 업그레이드 비용 (관제석용, 나중에 사용)
+};
+
+USTRUCT(BlueprintType)
+struct FTRTurretLevelRow : public FTableRowBase
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere)
+	float MaxHP = 0.f;
+
+	UPROPERTY(EditAnywhere)
+	int32 InstallCost = 0;
+
+	UPROPERTY(EditAnywhere)
+	int32 UpgradeCost = 0;
+
+	UPROPERTY(EditAnywhere)
+	float ManualRange = 0.f;
+
+	UPROPERTY(EditAnywhere)
+	float ManualDamage = 0.f;
+
+	UPROPERTY(EditAnywhere)
+	int32 ManualAmmoPerResource = 0;   // 물자실 자원 1개당 발수
+
+	UPROPERTY(EditAnywhere)
+	float ManualFireRate = 0.f;
+
+	UPROPERTY(EditAnywhere)
+	float AutoRange = 0.f;
+
+	UPROPERTY(EditAnywhere)
+	float AutoDamagePerShot = 0.f;   // 발당 피해
+
+	UPROPERTY(EditAnywhere)
+	float AutoFireRate = 0.f;
+
+	UPROPERTY(EditAnywhere)
+	int32 AutoMagazine = 0;
 };

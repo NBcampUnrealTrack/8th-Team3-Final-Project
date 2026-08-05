@@ -5,6 +5,9 @@
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/Pawn.h"
+#include "Train/TRInstallablePart.h"
+#include "Train/TRSupplyPoint.h"
+#include "Train/TRTurret.h"
 
 // Sets default values for this component's properties
 UTRActionComponent::UTRActionComponent()
@@ -130,9 +133,14 @@ void UTRActionComponent::CompleteAction()
 			// TODO: PS->CarriedSupply -= Def->ResourceAmount;
 			break;
 		case ETRActionType::Build:
-			// TODO: 오브젝트 스폰
-			// TODO: GS->MonsterResource -= Def->ResourceAmount;
-			break;
+			{
+				if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
+				{
+					Part->ApplyInstall();
+				}
+				// TODO: GS->MonsterResource -= Def->ResourceAmount;
+				break;
+			}
 		case ETRActionType::Restock:
 			// TODO: PS->CarriedSupply += Def->ResourceAmount;
 			break;
@@ -153,8 +161,29 @@ float UTRActionComponent::GetActionProgress01() const
 
 bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* Target) const
 {
-	// TODO: 대상 클래스(터렛 등) 확정 후 구현
-	//  - 대상이 이 ActionType을 받을 수 있는 상태인지 (예: 풀내구도 터렛 Repair 불가)
-	//  - 대상과의 거리/상호작용 반경
-	return Target != nullptr;
+	if (!Target)
+	{
+		return false;
+	}
+
+	switch (ActionType)
+	{
+	case ETRActionType::Repair:
+		{
+			const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
+			return Part && !Part->IsDestroyed() && !Part->IsFullHP();
+		}
+	case ETRActionType::Build:
+		{
+			const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
+			return Part && Part->IsDestroyed();
+		}
+	case ETRActionType::Reload:
+		// TODO: 탄창 꽉 찬 상태면 재장전 불가 — ATRTurret에 탄약 필드 생기면 추가
+		return Cast<ATRTurret>(Target) != nullptr;
+	case ETRActionType::Restock:
+		return Cast<ATRSupplyPoint>(Target) != nullptr;
+	default:
+		return false;
+	}
 }

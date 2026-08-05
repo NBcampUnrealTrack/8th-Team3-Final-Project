@@ -8,6 +8,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Interaction/TRActionComponent.h"
 #include "Interaction/TRInteractionComponent.h"
+#include "Train/TRInstallablePart.h"
+#include "Train/TRSupplyPoint.h"
 
 // Sets default values
 ATRPlayerCharacter::ATRPlayerCharacter()
@@ -195,24 +197,23 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("Interact Input"));
-	
 	AActor* Target = InteractionComp->GetCurrentTarget();
 	if (!Target)
 	{
 		return;
 	}
-	UE_LOG(LogTemp, Warning, TEXT("Target: %s"), Target ? *Target->GetName() : TEXT("None"));
-	
-	// TODO: 대상 클래스 확정되면 타입으로 분기
+
+	// TODO: 터렛 탑승 분기 — TurretControlComponent 생기면 추가
 	// if (ATRTurret* Turret = Cast<ATRTurret>(Target))
 	// {
 	//     TurretControlComp->RequestMount(Turret);
+	//     return;
 	// }
-	// else if (ATRSupplyRoom* SupplyRoom = Cast<ATRSupplyRoom>(Target))
-	// {
-	//     ActionComp->RequestStartAction(ETRActionType::Restock, SupplyRoom); // 아래 이름 논의 참고
-	// }
+
+	if (Cast<ATRSupplyPoint>(Target))
+	{
+		ActionComp->RequestStartAction(ETRActionType::Restock, Target);
+	}
 }
 
 // 트리거 RPC 함수, 좌클릭 - 제작/수리 vs 수동사격
@@ -223,8 +224,7 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("Trigger Input"));
-	// TODO: TurretControlComp 생기면 탑승 여부로 먼저 분기
+	// TODO: 탑승 중이면 사격으로 분기 — TurretControlComponent 생기면 추가
 	// if (TurretControlComp->IsMounted())
 	// {
 	//     TurretControlComp->RequestFire();
@@ -232,13 +232,13 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 	// }
 
 	AActor* Target = InteractionComp->GetCurrentTarget();
-	if (!Target)
+	ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
+	if (!Part)
 	{
 		return;
 	}
 
-	// TODO: 대상이 빈 슬롯인지/손상됐는지에 따라 Build vs Repair 판단 (터렛 클래스 확정 후)
-	ETRActionType ActionType = ETRActionType::Repair; // 임시 하드코딩
+	const ETRActionType ActionType = Part->IsDestroyed() ? ETRActionType::Build : ETRActionType::Repair;
 	ActionComp->RequestStartAction(ActionType, Target);
 }
 
