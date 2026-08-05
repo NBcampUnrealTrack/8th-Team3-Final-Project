@@ -16,6 +16,7 @@ UBGAttributeSet::UBGAttributeSet()
 	InitMissedRequired(1.f);
 	InitDrawCount(2.f);
 	InitDrawBangCount(1.f);
+	InitDamageNegateChance(0.f);   // 방어 없음. 요정 갑옷을 장착하면 GE 가 25 를 더한다.
 
 	// 판정 비율 보정 — 가산은 0(보정 없음), 승산은 1.0(그대로).
 	InitWeightBonusCriticalFailure(0.f);
@@ -60,6 +61,7 @@ void UBGAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, MissedRequired,    COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, DrawCount,         COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, DrawBangCount,     COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, DamageNegateChance, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, WeightBonusCriticalFailure, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, WeightBonusFailure,         COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, WeightBonusSuccess,         COND_None, REPNOTIFY_Always);
@@ -167,6 +169,10 @@ void UBGAttributeSet::OnRep_DrawCount(const FGameplayAttributeData& OldValue)
 void UBGAttributeSet::OnRep_DrawBangCount(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, DrawBangCount, OldValue);
+}
+void UBGAttributeSet::OnRep_DamageNegateChance(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, DamageNegateChance, OldValue);
 }
 void UBGAttributeSet::OnRep_WeightBonusCriticalFailure(const FGameplayAttributeData& OldValue)
 {

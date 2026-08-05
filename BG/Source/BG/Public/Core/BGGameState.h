@@ -185,8 +185,8 @@ public:
 	/** 턴 종료 요청. 자기 턴이 아니면 무시된다. 손패 초과면 Discard 페이즈로 간다. */
 	void RequestEndTurn(int32 RequestingSeat);
 
-	// 서버 전용. 밧줄이 다 타서 턴을 강제로 넘긴다. RequestEndTurn 과 달리 멈추지 않는다 —
-	// 손패가 한도를 넘으면 초과분을 자동으로 버린다(고를 사람이 없으면 판이 영영 멈추므로).
+	// 서버 전용. 밧줄이 다 타서 턴을 강제로 넘긴다. 본인 의사와 무관하므로 아무것도 묻지 않고
+	// 바로 다음 좌석으로 간다.
 	void ForceEndTurn(int32 Seat, const FString& Reason);
 
 	// 서버 전용. 좌석을 즉사시킨다(복귀 포기 등). ASC 가 있으면 피해 GE, 없으면 직접 통지.
@@ -196,9 +196,28 @@ public:
 	/** 손패를 한 장 버렸다는 통지. 한도 이하가 되면 턴을 넘긴다. */
 	void NotifyCardDiscarded(int32 Seat);
 
-	/** 손패 한도 = 현재 생명력(최대치가 아님). 좌석이 없으면 0. */
+	/**
+	 * 손패 상한. 좌석과 무관하게 MaxHandSize 다.
+	 *
+	 * ⚠️ [비활성] 예전에는 뱅 원작대로 **현재 생명력**이 한도였고, 턴 종료 시 초과분을
+	 *    버려야 턴이 넘어갔다(Phase.Discard). 지금은 상한을 드로우 시점에 막으므로
+	 *    체력과 무관하다 — 체력이 줄어도 이미 든 카드를 버리지 않는다.
+	 *    되살리려면 이 함수가 GetSeatHealth(Seat) 를 돌려주게 하면 된다.
+	 */
 	UFUNCTION(BlueprintPure, Category = "BG|Turn")
 	int32 GetHandLimitForSeat(int32 Seat) const;
+
+	/**
+	 * 서버 전용. 덱에서 최대 Count 장을 뽑아 손패에 넣는다. **실제로 뽑은 장수**를 반환한다.
+	 *
+	 * 덱에서 카드를 빼기 **전에** 손패 상한을 본다 — 순서가 반대면 뽑아 놓고 넣지 못한
+	 * 카드가 덱에서 사라진다.
+	 *
+	 * ⚠️ 상한에 걸려 0 장을 뽑아도 그것은 **실패가 아니다.** 드로우 효과를 가진 카드는
+	 *    정상적으로 사용된 것으로 처리해야 한다(같은 카드의 다른 효과는 그대로 일어난다).
+	 *    덱에서 뽑는 모든 경로는 이 함수를 쓸 것 — 직접 DrawFromDeck 을 부르면 상한을 우회한다.
+	 */
+	int32 DrawCardsToHand(class ABGPlayerState* PS, int32 Count);
 
 	// ── 턴당 카드 사용 한도 (GDD §5.2 / §7.1) ──
 
@@ -559,6 +578,15 @@ protected:
 	//	판 시작 시 나눠줄 초기 손패. 0 이하면 좌석의 Health 만큼 준다(뱅 원작 규칙).
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Turn")
 	int32 InitialHandSize = 0;
+
+	/**
+	 * 손패 상한. 이 장수를 넘기는 드로우는 넘는 만큼만 뽑히지 않는다.
+	 *
+	 * 뱅 원작의 "턴 종료 시 체력만큼만 남긴다" 를 대체한 규칙이다 — 버리기를 강요하지 않고
+	 * 드로우 쪽에서 막는다. 0 이하면 상한을 두지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Turn", meta = (ClampMin = "0"))
+	int32 MaxHandSize = 10;
 
 	//	판이 진행 중인가. 무한 루프 방지 겸 턴 검증의 첫 조건이다.
 	//	주의: 반드시 복제할 것 — CanSeatPlayCards / CanSeatDiscard 를 클라도 호출한다

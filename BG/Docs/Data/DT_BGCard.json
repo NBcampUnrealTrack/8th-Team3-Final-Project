@@ -571,13 +571,13 @@
     "Name": "Card.Id.FairyArmor",
     "CardIdTag": "Card.Id.FairyArmor",
     "DisplayName": "요정 갑옷",
-    "Description": "[미구현] 나에게 들어오는 공격을 일정 확률로 무효화한다.",
+    "Description": "나에게 들어오는 공격이 25% 확률로 무효화된다.",
     "TypeTag": "Card.Type.Blue",
     "TraitTags": {
       "GameplayTags": []
     },
     "AbilityEventTag": "",
-    "EquipEffect": "",
+    "EquipEffect": "/Script/BG.GE_Equip_FairyArmor",
     "Magnitude": 0,
     "QuantityOfCard": 0,
     "CheckChance": 0,
