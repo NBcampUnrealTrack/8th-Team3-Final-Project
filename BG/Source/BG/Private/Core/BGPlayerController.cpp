@@ -538,7 +538,14 @@ void ABGPlayerController::HandleTargetSelectionCancelled(int32 ContextId)
 {
 	UE_LOG(LogBGCard, Verbose, TEXT("[PC] 대상 선택 취소 — Context=%d"), ContextId);
 
-	//	취소되면 카드는 손패에 그대로 남는다(서버에 보내지 않았다). 다시 집을 수 있게 푼다.
+	//	취소되면 카드는 손패에 그대로 남는다(서버에 보내지 않았다).
+	//	드롭하면서 중앙으로 올려 둔 카드를 손패로 되돌린다 — ContextId 가 곧 InstanceId 다.
+	if (HandWidget)
+	{
+		HandWidget->ReturnHeldCardToHand(ContextId);
+	}
+
+	//	다시 집을 수 있게 푼다.
 	UpdateHandInteractionLock();
 
 	OnTargetSelectionCancelled.Broadcast(ContextId);

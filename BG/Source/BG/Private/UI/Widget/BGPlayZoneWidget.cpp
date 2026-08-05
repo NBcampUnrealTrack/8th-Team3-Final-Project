@@ -46,9 +46,14 @@ bool UBGPlayZoneWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDro
 	}
 
 	// 정식 경로는 원본 핸드 위젯이다. 플레이 존 델리게이트는 보조 훅.
+	//
+	// 좌표까지 넘기는 이유: 드래그 비주얼은 드롭 순간 사라진다. 손패가 "어디에 놓았는지"
+	// 를 모르면 원본 카드가 손패 자리에서 다시 출발해, 놓은 카드가 사라졌다가
+	// 중앙에 다시 나타나는 것처럼 보인다.
 	if (UBGHandWidget* Hand = CardOp->SourceHandWidget.Get())
 	{
-		Hand->NotifyCardPlayRequested(CardOp->CardView);
+		Hand->NotifyCardDroppedOnPlayZone(
+			CardOp->CardView, InGeometry, InDragDropEvent.GetScreenSpacePosition());
 	}
 	OnCardDropped.Broadcast(CardOp->CardView);
 
