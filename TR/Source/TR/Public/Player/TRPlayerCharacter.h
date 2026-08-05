@@ -10,6 +10,7 @@
 #include "TRPlayerCharacter.generated.h"
 
 class UCameraComponent;
+class UNiagaraComponent;
 class UNiagaraSystem;
 
 UCLASS()
@@ -31,7 +32,7 @@ public:
 
 	
 	
-	//입력 액션
+	//--- 입력 액션--- 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> IMC_Character;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -45,25 +46,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_Trigger;
 
-	//VFX
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
-	TObjectPtr<UNiagaraSystem> NS_Move;
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
-	TObjectPtr<UNiagaraSystem> NS_JumpLand;
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
-	float JumpLandOffset = -90.f;
 protected:
+	//--- 플레이어 조작 관련함수 ---
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void NotifyControllerChanged() override;
 
 	virtual void Move(const FInputActionValue& Input);
 	virtual void Look(const FInputActionValue& Input);
 	virtual void StartJump(const FInputActionValue& Input);
-
-	virtual void Landed(const FHitResult& Hit) override;
-	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastPlayJumpLandEffect(const FVector& Location);
-	void MulticastPlayJumpLandEffect_Implementation(const FVector& Location);
 
 	UFUNCTION(Server, Reliable)
 	virtual void Interact(const FInputActionValue& Input);
@@ -73,13 +63,38 @@ protected:
 	virtual void Trigger(const FInputActionValue& Input);
 	virtual void Trigger_Implementation(const FInputActionValue& Input);
 
-	// Local look input smoothing. Character Movement Component sends final ControlRotation to server.
+	// 시점 회전 보간
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))
-	float LookInterpolationSpeed = 50.0f;
+	float LookInterpolationSpeed = 12.5f;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> CameraComp;
 
 	FVector2D PendingLookInput = FVector2D::ZeroVector;
 	FVector2D SmoothedLookInput = FVector2D::ZeroVector;
+
+
+	//--- VFX ---
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraComponent> WalkEffect;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraSystem> JumpLandEffect;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	float JumpLandOffset = -90.f;
+
+
+	FTimerHandle MoveUpdateTimerHandle;
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastUpdateMoveEffect();
+	void MulticastUpdateMoveEffect_Implementation();
+
+	//이펙트&연출용 함수
+	virtual void Landed(const FHitResult& Hit) override;
+	UFUNCTION(Server, Unreliable)
+	void ServerPlayJumpLandEffect(const FVector& Location);
+	void ServerPlayJumpLandEffect_Implementation(const FVector& Location);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayJumpLandEffect(const FVector& Location);
+	void MulticastPlayJumpLandEffect_Implementation(const FVector& Location);
 };
