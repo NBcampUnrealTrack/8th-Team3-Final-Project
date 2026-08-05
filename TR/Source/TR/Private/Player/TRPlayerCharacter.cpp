@@ -6,6 +6,8 @@
 #include "EnhancedInputSubsystems.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Interaction/TRActionComponent.h"
+#include "Interaction/TRInteractionComponent.h"
 
 // Sets default values
 ATRPlayerCharacter::ATRPlayerCharacter()
@@ -23,6 +25,10 @@ ATRPlayerCharacter::ATRPlayerCharacter()
 	CameraComp->bEnableFirstPersonScale = true;
 	CameraComp->FirstPersonFieldOfView = 70.0f;
 	CameraComp->FirstPersonScale = 0.6f;
+	
+	// ActorComponent
+	InteractionComp = CreateDefaultSubobject<UTRInteractionComponent>(TEXT("InteractionComp"));
+	ActionComp = CreateDefaultSubobject<UTRActionComponent>(TEXT("ActionComp"));
 }
 
 // Called when the game starts or when spawned
@@ -107,6 +113,11 @@ void ATRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		if (IsValid(IA_Trigger))
 		{
 			EIC->BindAction(IA_Trigger, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Trigger);
+			EIC->BindAction(IA_Trigger, ETriggerEvent::Completed, this, &ATRPlayerCharacter::TriggerReleased);
+		}
+		if (IsValid(IA_Reload))
+		{
+			EIC->BindAction(IA_Reload, ETriggerEvent::Started, this, &ATRPlayerCharacter::Reload);
 		}
 	}
 }
@@ -126,6 +137,11 @@ void ATRPlayerCharacter::Move(const FInputActionValue& Input)
 		return;
 	}
 
+	if (ActionComp->IsActionInProgress())
+	{
+		ActionComp->RequestCancelAction();
+	}
+	
 	if (!FMath::IsNearlyZero(InputVector.X))
 	{
 		AddMovementInput(GetActorForwardVector() * InputVector.X);
@@ -171,7 +187,7 @@ void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 	Jump();
 }
 
-// 상호작용 RPC 함수, 추후 인터페이스 기반해 탑승, 줍기등 연결.
+// 상호작용 RPC 함수, E키 - 포탑 탑승/하차 vs 물자실 자원 획득
 void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 {
 	if (!HasAuthority())
@@ -180,9 +196,26 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("Interact Input"));
+	
+	AActor* Target = InteractionComp->GetCurrentTarget();
+	if (!Target)
+	{
+		return;
+	}
+	UE_LOG(LogTemp, Warning, TEXT("Target: %s"), Target ? *Target->GetName() : TEXT("None"));
+	
+	// TODO: 대상 클래스 확정되면 타입으로 분기
+	// if (ATRTurret* Turret = Cast<ATRTurret>(Target))
+	// {
+	//     TurretControlComp->RequestMount(Turret);
+	// }
+	// else if (ATRSupplyRoom* SupplyRoom = Cast<ATRSupplyRoom>(Target))
+	// {
+	//     ActionComp->RequestStartAction(ETRActionType::Restock, SupplyRoom); // 아래 이름 논의 참고
+	// }
 }
 
-// 트리거 RPC 함수, 추후 인터페이스 기반해 공격, 무기사용등 연결.
+// 트리거 RPC 함수, 좌클릭 - 제작/수리 vs 수동사격
 void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 {
 	if (!HasAuthority())
@@ -191,5 +224,47 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 	}
 
 	UE_LOG(LogTemp, Warning, TEXT("Trigger Input"));
+	// TODO: TurretControlComp 생기면 탑승 여부로 먼저 분기
+	// if (TurretControlComp->IsMounted())
+	// {
+	//     TurretControlComp->RequestFire();
+	//     return;
+	// }
+
+	AActor* Target = InteractionComp->GetCurrentTarget();
+	if (!Target)
+	{
+		return;
+	}
+
+	// TODO: 대상이 빈 슬롯인지/손상됐는지에 따라 Build vs Repair 판단 (터렛 클래스 확정 후)
+	ETRActionType ActionType = ETRActionType::Repair; // 임시 하드코딩
+	ActionComp->RequestStartAction(ActionType, Target);
+}
+
+void ATRPlayerCharacter::TriggerReleased_Implementation()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ActionComp->RequestCancelAction();
+}
+
+void ATRPlayerCharacter::Reload_Implementation(const FInputActionValue& Input)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	AActor* Target = InteractionComp->GetCurrentTarget();
+	if (!Target)
+	{
+		return;
+	}
+
+	ActionComp->RequestStartAction(ETRActionType::Reload, Target);
 }
 
