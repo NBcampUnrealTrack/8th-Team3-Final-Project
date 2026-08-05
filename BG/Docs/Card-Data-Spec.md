@@ -130,7 +130,7 @@
 | 대비 | Brown | | 5 | — |
 | 드워프 장갑 | **Blue** | | 2 | `GE_Equip_DwarfGloves` |
 | 마녀의 부적 | **Blue** | | 2 | `GE_Equip_WitchCharm` |
-| 요정 갑옷 | **Blue** | | **0** | — (G 미구현) |
+| 요정 갑옷 | **Blue** | | **0** | `GE_Equip_FairyArmor` |
 
 **총 64장.** 대상 지정은 `TraitTags` 에 `Card.Trait.NeedsTargetSeat` 을 넣는다.
 
@@ -157,7 +157,10 @@
 
 - **속공은 실패해도 대상이 필요하다** — 대상 선택이 카드 사용 시점에 일어나고 판정은 그 뒤다.
 - **장비는 매수를 적게 뒀다.** 중복 장착이 금지되므로 손에 여러 장 있어도 한 장만 쓸 수 있다.
-- **요정 갑옷은 `QuantityOfCard = 0`** — 방어 판정(G)이 없어 장착해도 효과가 없다. GDD §13.1 비활성 방식.
+- **요정 갑옷의 방어 판정은 구현되어 있다** — `DamageNegateChance` 어트리뷰트를 25 올리고,
+  피해가 들어가기 직전 `UGA_BGCardEffects::ApplyDamage` 가 서버에서 한 번 굴린다.
+  **덱에 넣으려면 `QuantityOfCard` 만 올리면 된다** (몇 장을 넣을지는 밸런스 판단이라 0 으로 둠).
+  판정 순서는 **공격 판정 성공 → 방어 판정** 이다 (GDD §14 미결 항목을 이렇게 확정).
 
 ---
 

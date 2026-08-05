@@ -33,3 +33,12 @@ UGE_Equip_WitchCharm::UGE_Equip_WitchCharm()
 	AddConstantModifier(Modifiers, UBGAttributeSet::GetWeightMultCriticalSuccessAttribute(), 1.f);
 	AddConstantModifier(Modifiers, UBGAttributeSet::GetWeightMultCriticalFailureAttribute(), 1.f);
 }
+
+UGE_Equip_FairyArmor::UGE_Equip_FairyArmor()
+{
+	DurationPolicy = EGameplayEffectDurationType::Infinite;
+
+	//	방어율 +25%p. 가산이라 다른 출처(직업 패시브 등)와 겹치면 합쳐진다.
+	//	두 장을 겹쳐 끼는 것은 EquipCard 의 중복 장착 금지가 막는다.
+	AddConstantModifier(Modifiers, UBGAttributeSet::GetDamageNegateChanceAttribute(), 25.f);
+}

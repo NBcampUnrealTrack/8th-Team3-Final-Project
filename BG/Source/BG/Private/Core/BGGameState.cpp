@@ -453,22 +453,50 @@ FGameplayTag ABGGameState::GetSeatRole(int32 Seat) const
 	return Char ? Char->GetRoleTag() : FGameplayTag();
 }
 
-int32 ABGGameState::GetHandLimitForSeat(int32 Seat) const
+int32 ABGGameState::GetHandLimitForSeat(int32 /*Seat*/) const
 {
-	//	뱅 규칙: 손패 한도는 "현재" 생명력이다(최대치가 아니다).
-	const int32 Health = GetSeatHealth(Seat);
+	//	[비활성] 예전에는 뱅 원작대로 현재 생명력이 한도였다(GetSeatHealth).
+	//	  체력이 줄 때마다 손패를 버려야 했고, 그래서 ASC 를 못 읽으면 한도 0 으로 판이 멈추는
+	//	  위험이 있어 폴백까지 두고 있었다. 상한을 드로우 시점에 막는 지금은 그 위험이 없다.
+	//	  되살리려면 이 함수가 GetSeatHealth(Seat) 를 돌려주게 하면 된다(호출부는 그대로 둬도 된다).
 
-	//	ASC 를 못 찾으면 GetSeatHealth 가 0 을 준다(폰 미스폰 / DefaultPawnClass 가 ABGCharacter 가 아님).
-	//	그대로 한도 0 이 되면 손패를 전부 버려야만 턴이 넘어가고 그 사이 카드도 못 내는 잠금이 된다.
-	//	설정 실수로 판이 멈추는 것보다 한도를 잠시 풀어두는 쪽이 낫다.
-	if (Health <= 0)
+	//	0 이하면 "상한 없음" 이다.
+	return (MaxHandSize > 0) ? MaxHandSize : TNumericLimits<int32>::Max();
+}
+
+int32 ABGGameState::DrawCardsToHand(ABGPlayerState* PS, int32 Count)
+{
+	if (!HasAuthority() || !PS || Count <= 0)
 	{
-		UE_LOG(LogBGCard, Warning,
-			TEXT("[Turn] 좌석 %d 의 Health 를 읽지 못했습니다(ASC 없음?) — 손패 한도를 적용하지 않습니다."), Seat);
-		return TNumericLimits<int32>::Max();
+		return 0;
 	}
 
-	return Health;
+	const int32 Limit = GetHandLimitForSeat(PS->GetSeatIndex());
+
+	int32 Drawn = 0;
+	for (int32 i = 0; i < Count; ++i)
+	{
+		//	⚠️ 상한 검사가 DrawFromDeck 보다 먼저다. 순서가 반대면 덱에서 이미 빠진 카드를
+		//	   손패에 넣지 못해 그대로 사라진다(덱에도 버린 패에도 없는 유령 카드가 된다).
+		if (PS->GetHandCount() >= Limit)
+		{
+			UE_LOG(LogBGCard, Log,
+				TEXT("[Draw] 좌석 %d 손패 상한 %d 도달 — %d 장 중 %d 장만 뽑음"),
+				PS->GetSeatIndex(), Limit, Count, Drawn);
+			break;
+		}
+
+		FBGCardInstance Card;
+		if (!DrawFromDeck(Card))
+		{
+			break;   // 덱과 버린 패가 모두 비었다
+		}
+
+		PS->AddCardToHand(Card);
+		++Drawn;
+	}
+
+	return Drawn;
 }
 
 int32 ABGGameState::GetCardUseLimitForSeat(int32 Seat) const
@@ -529,15 +557,7 @@ void ABGGameState::StartMatch()
 		}
 
 		const int32 Count = (InitialHandSize > 0) ? InitialHandSize : FMath::Max(1, GetSeatHealth(Seat));
-		for (int32 i = 0; i < Count; ++i)
-		{
-			FBGCardInstance Card;
-			if (!DrawFromDeck(Card))
-			{
-				break;
-			}
-			PS->AddCardToHand(Card);
-		}
+		DrawCardsToHand(PS, Count);
 
 		UE_LOG(LogBGCard, Log, TEXT("[Turn] 초기 손패 — 좌석 %d : %d 장"), Seat, PS->GetHandCount());
 	}
@@ -605,21 +625,11 @@ void ABGGameState::EnterDrawPhase()
 		}
 	}
 
-	int32 Drawn = 0;
-	for (int32 i = 0; i < DrawNum; ++i)
-	{
-		FBGCardInstance Card;
-		if (!DrawFromDeck(Card))
-		{
-			UE_LOG(LogBGCard, Warning, TEXT("[Turn] 덱 고갈 — 좌석 %d 은 %d 장만 뽑음"), CurrentSeat, Drawn);
-			break;
-		}
-		PS->AddCardToHand(Card);
-		++Drawn;
-	}
+	//	손패 상한에 걸리면 덜 뽑힌다. 턴 진행은 그대로다 — 못 뽑았다고 턴이 멈추지 않는다.
+	const int32 Drawn = DrawCardsToHand(PS, DrawNum);
 
-	UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 뽑기 %d 장 (손패 %d, 덱 %d)"),
-		CurrentSeat, Drawn, PS->GetHandCount(), DeckCount);
+	UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 뽑기 %d/%d 장 (손패 %d, 덱 %d)"),
+		CurrentSeat, Drawn, DrawNum, PS->GetHandCount(), DeckCount);
 
 	EnterPlayPhase();
 }
@@ -671,18 +681,18 @@ void ABGGameState::RequestEndTurn(int32 RequestingSeat)
 		return;
 	}
 
-	const ABGPlayerState* PS = GetPlayerStateBySeat(CurrentSeat);
-	const int32 HandNum  = PS ? PS->GetHandCount() : 0;
-	const int32 Limit    = GetHandLimitForSeat(CurrentSeat);
-
-	if (HandNum > Limit)
-	{
-		//	한도를 넘었다 — 버릴 때까지 턴을 넘기지 않는다.
-		SetPhaseTag(BG::Phase::Discard.GetTag());
-		UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 손패 초과 (%d > 한도 %d) — 버리기 대기"),
-			CurrentSeat, HandNum, Limit);
-		return;
-	}
+	//	[비활성] 예전에는 손패가 한도(=체력)를 넘으면 Phase.Discard 로 보내 버릴 때까지
+	//	  턴을 넘기지 않았다. 상한을 드로우 시점에 막는 지금은 초과 상태 자체가 생기지 않는다.
+	//
+	//	  ⚠️ 다만 훔치기(StealTargetRandom)로는 상한을 넘을 수 있다 — 뺏은 카드를 도로
+	//	     버리게 하는 것은 그 카드의 의도와 어긋나므로 막지 않았다. 그래서 여기서도
+	//	     버리기를 강요하지 않는다. 넘긴 손패는 다음 드로우가 막히는 것으로 정산된다.
+	//
+	//	  되살리려면 아래 블록의 주석을 풀고 GetHandLimitForSeat 이 체력을 돌려주게 하면 된다.
+	//
+	//	const int32 HandNum = PS ? PS->GetHandCount() : 0;
+	//	const int32 Limit   = GetHandLimitForSeat(CurrentSeat);
+	//	if (HandNum > Limit) { SetPhaseTag(BG::Phase::Discard.GetTag()); return; }
 
 	AdvanceToNextSeat();
 }
@@ -797,20 +807,11 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 	{
 		if (DeadRole == BG::Role::Outlaw.GetTag())
 		{
-			// 무법자를 잡으면 현상금 3장.
+			// 무법자를 잡으면 현상금 3장. 손패 상한에 걸리면 그만큼만 받는다.
 			ABGPlayerState* KillerPS = GetPlayerStateBySeat(KillerSeat);
-			int32 Drawn = 0;
-			for (int32 i = 0; KillerPS && i < OutlawKillReward; ++i)
-			{
-				FBGCardInstance Card;
-				if (!DrawFromDeck(Card))
-				{
-					break;
-				}
-				KillerPS->AddCardToHand(Card);
-				++Drawn;
-			}
-			UE_LOG(LogBGCard, Log, TEXT("[Death] 무법자 사살 보상 — 좌석 %d 가 %d 장 획득"), KillerSeat, Drawn);
+			const int32 Drawn = DrawCardsToHand(KillerPS, OutlawKillReward);
+			UE_LOG(LogBGCard, Log, TEXT("[Death] 무법자 사살 보상 — 좌석 %d 가 %d/%d 장 획득"),
+				KillerSeat, Drawn, OutlawKillReward);
 		}
 		else if (DeadRole == BG::Role::Deputy.GetTag() && KillerRole == BG::Role::Sheriff.GetTag())
 		{

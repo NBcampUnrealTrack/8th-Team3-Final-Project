@@ -81,6 +81,21 @@ public:
 	FGameplayAttributeData DrawBangCount;
 	ATTRIBUTE_ACCESSORS(UBGAttributeSet, DrawBangCount)
 
+	/**
+	 * 들어오는 공격을 무효화할 확률(%). 0 = 방어 없음. 요정 갑옷이 25 를 더한다.
+	 *
+	 * GDD §7.2 의 "방어 보정 — 자동 방어 판정" 자리다. 하드코딩 25% 대신 어트리뷰트로 둔 이유:
+	 *   · 다른 출처(직업 패시브·상태 효과)가 같은 값에 더할 수 있다
+	 *   · 장비를 떼면 GE 가 회수되며 자동으로 원복된다
+	 *   · UI 가 "현재 방어율" 을 읽어 보여줄 수 있다
+	 *
+	 * ⚠️ 판정은 **피해가 들어가기 직전 서버에서** 굴린다(UGA_BGCardEffects::ApplyDamage).
+	 *    GDD §9.2 대로 플레이어 입력을 요구하지 않는 자동 판정이다.
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageNegateChance, Category = "BG")
+	FGameplayAttributeData DamageNegateChance;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, DamageNegateChance)
+
 	// ── 판정 비율 보정 (GDD §7.2 / §4.2) ─────────────────────────
 	//  장비·캐릭터·상태가 GE 로 이 값을 바꿔 카드 판정 확률을 조정한다.
 	//
@@ -173,6 +188,7 @@ protected:
 	UFUNCTION() void OnRep_MissedRequired(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_DrawCount(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_DrawBangCount(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_DamageNegateChance(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_WeightBonusCriticalFailure(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_WeightBonusFailure(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_WeightBonusSuccess(const FGameplayAttributeData& OldValue);

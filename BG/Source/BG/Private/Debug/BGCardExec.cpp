@@ -266,25 +266,15 @@ void ABGGameMode::BG_DealHand(int32 Count)
 			continue;
 		}
 
-		TArray<FString> Dealt;
-		Dealt.Reserve(Count);
+		const int32 Before = PS->GetHandCount();
 
-		for (int32 i = 0; i < Count; ++i)
-		{
-			FBGCardInstance Card;
-			if (!State->DrawFromDeck(Card))
-			{
-				UE_LOG(LogBGCard, Warning, TEXT("  덱 소진 — %d 장에서 중단"), Dealt.Num());
-				break;
-			}
+		//	덱 뽑기는 반드시 이 함수를 거친다 — 손패 상한 검사가 여기 있다.
+		//	테스트 명령이 상한을 우회하면 상한 자체를 검증할 수 없다.
+		const int32 Dealt = State->DrawCardsToHand(PS, Count);
 
-			//	손패 변경은 반드시 이 함수를 거친다 (HandCount 동기화가 여기에 있다).
-			PS->AddCardToHand(Card);
-			Dealt.Add(FString::Printf(TEXT("%s#%d"), *Card.CardId.ToString(), Card.InstanceId));
-		}
-
-		UE_LOG(LogBGCard, Log, TEXT("  좌석 %d (%s) → %d 장 : %s"),
-			PS->GetSeatIndex(), *PC->GetName(), Dealt.Num(), *FString::Join(Dealt, TEXT(", ")));
+		UE_LOG(LogBGCard, Log, TEXT("  좌석 %d (%s) → %d/%d 장 (손패 %d → %d, 상한 %d)"),
+			PS->GetSeatIndex(), *PC->GetName(), Dealt, Count,
+			Before, PS->GetHandCount(), State->GetHandLimitForSeat(PS->GetSeatIndex()));
 	}
 
 	UE_LOG(LogBGCard, Log, TEXT("배분 후 — 덱 %d 장 / 버린 패 %d 장"),
