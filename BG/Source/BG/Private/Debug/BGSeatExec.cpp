@@ -10,9 +10,6 @@
 #include "Core/BGGameMode.h"
 
 #include "Core/BGCampfire.h"
-#include "Core/BGGameState.h"
-#include "Core/BGPlayerState.h"
-#include "Lobby/BGReadyComponent.h"
 #include "Debug/BGCardLog.h"
 #include "Engine/World.h"
 
@@ -58,28 +55,5 @@ void ABGGameMode::BG_ArrangeSeats(float Radius)
 	//	실제 배치는 캠프파이어가 한다 — 이 명령은 호출 시점만 대신 잡아 준다.
 	//	폰이 아직 스폰되지 않은 좌석은 조용히 건너뛴다(ArrangePlayers 안에서 처리).
 	Fire->ArrangePlayers();
-#endif // !UE_BUILD_SHIPPING
-}
-
-void ABGGameMode::BG_ReadyAll()
-{
-#if !UE_BUILD_SHIPPING
-	const ABGGameState* GS = GetGameState<ABGGameState>();
-	if (!GS)
-	{
-		UE_LOG(LogBGCard, Warning, TEXT("[Exec] GameState 없음"));
-		return;
-	}
-
-	int32 Count = 0;
-	for (APlayerState* Base : GS->PlayerArray)
-	{
-		if (UBGReadyComponent* Ready = UBGReadyComponent::Find(Base))
-		{
-			Ready->SetReadyAuthoritative(true);
-			++Count;
-		}
-	}
-	UE_LOG(LogBGCard, Warning, TEXT("[Exec] BG_ReadyAll — %d명 준비 처리"), Count);
 #endif // !UE_BUILD_SHIPPING
 }

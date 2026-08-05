@@ -1,12 +1,6 @@
 ﻿#include "Debug/BGDebug.h"
-
-#include "Debug/BGNetLog.h"
 #include "Engine/Engine.h"
-#include "GameFramework/GameStateBase.h"
-#include "GameFramework/PlayerState.h"
 #include "HAL/IConsoleManager.h"
-#include "Lobby/BGMatchStartComponent.h"
-#include "Lobby/BGReadyComponent.h"
 
 static TAutoConsoleVariable<int32> CVarBGDebug(
 	TEXT("BG.Debug"),
@@ -28,31 +22,4 @@ void BGDebug::Screen(const FString& Msg, const FColor& Color, float Time, int32 
 	{
 		GEngine->AddOnScreenDebugMessage(Key, Time, Color, Msg);
 	}
-}
-
-void BGDebug::TryAutoStartMatch(UBGMatchStartComponent* MatchStart, int32 Total, int32 Required)
-{
-#if !UE_BUILD_SHIPPING
-	if (!MatchStart || Total < Required)
-	{
-		return;
-	}
-	if (!FParse::Param(FCommandLine::Get(), TEXT("BGAutoStart")))
-	{
-		return;
-	}
-
-	const UWorld* World = MatchStart->GetWorld();
-	const AGameStateBase* GS = World ? World->GetGameState() : nullptr;
-	for (APlayerState* PS : (GS ? GS->PlayerArray : TArray<APlayerState*>()))
-	{
-		if (UBGReadyComponent* Ready = UBGReadyComponent::Find(PS))
-		{
-			Ready->SetReadyAuthoritative(true);
-		}
-	}
-
-	UE_LOG(LogBGNet, Warning, TEXT("[MatchStart] -BGAutoStart — 자동 시작"));
-	MatchStart->StartMatch();
-#endif
 }

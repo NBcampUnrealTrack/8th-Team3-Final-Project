@@ -137,13 +137,6 @@ public:
 	UFUNCTION(Exec)
 	void BG_Damage(int32 Seat, int32 Amount);
 
-	// 좌석별 폰 위치와 자리 액터 유무를 찍는다. 겹쳐 선 캐릭터를 추적할 때 쓴다.
-	UFUNCTION(Exec)
-	void BG_DumpSeats();
-
-	// 접속자 전원을 준비 상태로 만든다. 클라마다 콘솔을 치지 않고 판을 열 때 쓴다.
-	UFUNCTION(Exec)
-	void BG_ReadyAll();
 
 	/** 레벨의 캠프파이어(좌석 "위치" 의 기준점). 없는 레벨이면 nullptr. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seating")
