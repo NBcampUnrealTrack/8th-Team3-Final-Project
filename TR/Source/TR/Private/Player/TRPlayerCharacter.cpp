@@ -6,6 +6,10 @@
 #include "EnhancedInputSubsystems.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Interaction/TRActionComponent.h"
+#include "Interaction/TRInteractionComponent.h"
+#include "Train/TRInstallablePart.h"
+#include "Train/TRSupplyPoint.h"
 
 // Sets default values
 ATRPlayerCharacter::ATRPlayerCharacter()
@@ -23,6 +27,10 @@ ATRPlayerCharacter::ATRPlayerCharacter()
 	CameraComp->bEnableFirstPersonScale = true;
 	CameraComp->FirstPersonFieldOfView = 70.0f;
 	CameraComp->FirstPersonScale = 0.6f;
+	
+	// ActorComponent
+	InteractionComp = CreateDefaultSubobject<UTRInteractionComponent>(TEXT("InteractionComp"));
+	ActionComp = CreateDefaultSubobject<UTRActionComponent>(TEXT("ActionComp"));
 }
 
 // Called when the game starts or when spawned
@@ -107,6 +115,11 @@ void ATRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		if (IsValid(IA_Trigger))
 		{
 			EIC->BindAction(IA_Trigger, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Trigger);
+			EIC->BindAction(IA_Trigger, ETriggerEvent::Completed, this, &ATRPlayerCharacter::TriggerReleased);
+		}
+		if (IsValid(IA_Reload))
+		{
+			EIC->BindAction(IA_Reload, ETriggerEvent::Started, this, &ATRPlayerCharacter::Reload);
 		}
 	}
 }
@@ -126,6 +139,11 @@ void ATRPlayerCharacter::Move(const FInputActionValue& Input)
 		return;
 	}
 
+	if (IsValid(ActionComp) && ActionComp->IsActionInProgress())
+	{
+		ActionComp->RequestCancelAction();
+	}
+	
 	if (!FMath::IsNearlyZero(InputVector.X))
 	{
 		AddMovementInput(GetActorForwardVector() * InputVector.X);
@@ -171,7 +189,7 @@ void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 	Jump();
 }
 
-// 상호작용 RPC 함수, 추후 인터페이스 기반해 탑승, 줍기등 연결.
+// 상호작용 RPC 함수, E키 - 포탑 탑승/하차 vs 물자실 자원 획득
 void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 {
 	if (!HasAuthority())
@@ -179,10 +197,36 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("Interact Input"));
+	if (!IsValid(InteractionComp) || !IsValid(ActionComp))
+	{
+		return;
+	}
+
+	AActor* Target = InteractionComp->GetCurrentTarget();
+	if (!Target)
+	{
+		UE_LOG(LogTemp, Log, TEXT("Interact ignored: no target"));
+		return;
+	}
+
+	// TODO: 터렛 탑승 분기 — TurretControlComponent 생기면 추가
+	// if (ATRTurret* Turret = Cast<ATRTurret>(Target))
+	// {
+	//     TurretControlComp->RequestMount(Turret);
+	//     return;
+	// }
+
+	if (Cast<ATRSupplyPoint>(Target))
+	{
+		ActionComp->RequestStartAction(ETRActionType::Restock, Target);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("Interact ignored: target=%s is not SupplyPoint"), *Target->GetName());
+	}
 }
 
-// 트리거 RPC 함수, 추후 인터페이스 기반해 공격, 무기사용등 연결.
+// 트리거 RPC 함수, 좌클릭 - 제작/수리 vs 수동사격
 void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 {
 	if (!HasAuthority())
@@ -190,6 +234,69 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	UE_LOG(LogTemp, Warning, TEXT("Trigger Input"));
+	if (!IsValid(InteractionComp) || !IsValid(ActionComp))
+	{
+		return;
+	}
+
+	// TODO: 탑승 중이면 사격으로 분기 — TurretControlComponent 생기면 추가
+	// if (TurretControlComp->IsMounted())
+	// {
+	//     TurretControlComp->RequestFire();
+	//     return;
+	// }
+
+	AActor* Target = InteractionComp->GetCurrentTarget();
+	ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
+	if (!Part)
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("Trigger ignored: target=%s is not InstallablePart"), Target ? *Target->GetName() : TEXT("null"));
+		return;
+	}
+
+	if (Part->IsDestroyed())
+	{
+		UE_LOG(LogTemp, Log, TEXT("Trigger ignored: %s is destroyed — install from Control Room"), *Part->GetName());
+		return;
+	}
+
+	ActionComp->RequestStartAction(ETRActionType::Repair, Target);
+}
+
+void ATRPlayerCharacter::TriggerReleased_Implementation()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (!IsValid(ActionComp))
+	{
+		return;
+	}
+
+	ActionComp->RequestCancelAction();
+}
+
+void ATRPlayerCharacter::Reload_Implementation(const FInputActionValue& Input)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (!IsValid(InteractionComp) || !IsValid(ActionComp))
+	{
+		return;
+	}
+
+	AActor* Target = InteractionComp->GetCurrentTarget();
+	if (!Target)
+	{
+		UE_LOG(LogTemp, Log, TEXT("Reload ignored: no target"));
+		return;
+	}
+
+	ActionComp->RequestStartAction(ETRActionType::Reload, Target);
 }
 
