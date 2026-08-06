@@ -200,6 +200,7 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 	AActor* Target = InteractionComp->GetCurrentTarget();
 	if (!Target)
 	{
+		UE_LOG(LogTemp, Log, TEXT("Interact ignored: no target"));
 		return;
 	}
 
@@ -213,6 +214,10 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 	if (Cast<ATRSupplyPoint>(Target))
 	{
 		ActionComp->RequestStartAction(ETRActionType::Restock, Target);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("Interact ignored: target=%s is not SupplyPoint"), *Target->GetName());
 	}
 }
 
@@ -235,11 +240,17 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 	ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
 	if (!Part)
 	{
+		UE_LOG(LogTemp, Verbose, TEXT("Trigger ignored: target=%s is not InstallablePart"), Target ? *Target->GetName() : TEXT("null"));
 		return;
 	}
 
-	const ETRActionType ActionType = Part->IsDestroyed() ? ETRActionType::Build : ETRActionType::Repair;
-	ActionComp->RequestStartAction(ActionType, Target);
+	if (Part->IsDestroyed())
+	{
+		UE_LOG(LogTemp, Log, TEXT("Trigger ignored: %s is destroyed — install from Control Room"), *Part->GetName());
+		return;
+	}
+
+	ActionComp->RequestStartAction(ETRActionType::Repair, Target);
 }
 
 void ATRPlayerCharacter::TriggerReleased_Implementation()
@@ -262,6 +273,7 @@ void ATRPlayerCharacter::Reload_Implementation(const FInputActionValue& Input)
 	AActor* Target = InteractionComp->GetCurrentTarget();
 	if (!Target)
 	{
+		UE_LOG(LogTemp, Log, TEXT("Reload ignored: no target"));
 		return;
 	}
 

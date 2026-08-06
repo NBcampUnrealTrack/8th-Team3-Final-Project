@@ -163,27 +163,43 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 {
 	if (!Target)
 	{
+		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: target is null"));
 		return false;
 	}
 
+	bool bValid = false;
 	switch (ActionType)
 	{
 	case ETRActionType::Repair:
 		{
 			const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
-			return Part && !Part->IsDestroyed() && !Part->IsFullHP();
+			bValid = Part && !Part->IsDestroyed() && !Part->IsFullHP();
+			break;
 		}
 	case ETRActionType::Build:
 		{
 			const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
-			return Part && Part->IsDestroyed();
+			bValid = Part && Part->IsDestroyed();
+			break;
 		}
 	case ETRActionType::Reload:
-		// TODO: 탄창 꽉 찬 상태면 재장전 불가 — ATRTurret에 탄약 필드 생기면 추가
-		return Cast<ATRTurret>(Target) != nullptr;
+		{
+			// TODO: 탄창 꽉 찬 상태면 재장전 불가 — ATRTurret에 탄약 필드 생기면 추가
+			bValid = Cast<ATRTurret>(Target) != nullptr;
+			break;
+		}
 	case ETRActionType::Restock:
-		return Cast<ATRSupplyPoint>(Target) != nullptr;
+		{
+			bValid = Cast<ATRSupplyPoint>(Target) != nullptr;
+			break;
+		}
 	default:
-		return false;
+		break;
 	}
+
+	if (!bValid)
+	{
+		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: action=%d target=%s"), static_cast<int32>(ActionType), *Target->GetName());
+	}
+	return bValid;
 }
