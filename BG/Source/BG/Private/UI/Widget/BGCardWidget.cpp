@@ -370,7 +370,19 @@ bool UBGCardWidget::IsHoverActive() const
 	//	⚠️ 보간값(HoverBlend)이 아니라 실제 마우스 상태를 본다.
 	//	   연출이 풀리는 동안에도 위층에 남아 있으면, 커서를 옆 카드로 옮긴 직후
 	//	   방금 떠난 카드가 새로 고른 카드를 잠깐 가린다.
-	return bHovered;
+	//
+	//	⚠️ 호버 연출이 억제되는 상태(잠금·드래그·등장/퇴장 중)에서는 false 여야 한다.
+	//	   예전에는 여기서 bHovered 만 봤는데, 그러면 손패가 잠긴 동안 카드가
+	//	   **떠오르지는 않으면서 Z 순서만** 올라갔다. 부채꼴에서 카드가 서로 겹쳐
+	//	   있으므로 앞뒤가 바뀌는 순간 커서 아래 카드가 뒤바뀌고, 그게 다시 호버를
+	//	   옮겨 Z 순서를 또 바꾼다 — 손패 전체가 깜빡이는 되먹임이 된다.
+	//	   (내 턴에는 카드가 실제로 떠올라 커서를 확실히 덮으므로 잘 드러나지 않는다.)
+	return bHovered
+		&& !bIsDragVisual
+		&& !bBeingDragged
+		&& !bDragLocked
+		&& !IsLeavingHand()
+		&& !bDealInProgress;
 }
 
 void UBGCardWidget::TickMotion(float DeltaTime)
@@ -552,14 +564,19 @@ void UBGCardWidget::TickSecondaryMotion(float DeltaTime, const FVector2D& Positi
 	// ── 호버 ──
 	//	손패에 얌전히 있는 카드만 반응한다. 날아오는 중이거나 떠나는 중인 카드가
 	//	커서에 반응하면 연출이 두 개 겹쳐 흔들린다.
-	const bool bHoverAllowed = bHovered
-		&& !bIsDragVisual
-		&& !bBeingDragged
-		&& !bDragLocked
-		&& !IsLeavingHand()
-		&& !bDealInProgress;
-
+	//
+	//	⚠️ 조건은 IsHoverActive 하나만 쓴다. 예전에는 여기(연출)와 손패의 Z 순서가
+	//	   각자 판단해서, "안 떠오르는데 앞으로 나오는" 상태가 생겼다.
+	const bool bHoverAllowed = IsHoverActive();
 	HoverBlend = FMath::FInterpTo(HoverBlend, bHoverAllowed ? 1.f : 0.f, DeltaTime, HoverInterpSpeed);
+
+	//	상태가 바뀌는 순간에만 BP 로 알린다. 매 프레임 쏘면 BP 쪽 애니메이션이
+	//	계속 0 프레임으로 되감겨 아무것도 재생되지 않는다.
+	if (bHoverAllowed != bWasHoverActive)
+	{
+		bWasHoverActive = bHoverAllowed;
+		OnHoverChanged(bHoverAllowed);
+	}
 }
 
 void UBGCardWidget::ApplyMotionTransform()

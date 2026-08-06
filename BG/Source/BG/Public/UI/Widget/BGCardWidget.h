@@ -221,6 +221,18 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
 	void OnPlayResolved(const FBGCardPlayContext& Context);
 
+	/**
+	 * 마우스가 올라와 카드가 들리기 시작한 순간 / 내려놓인 순간.
+	 *
+	 * ⚠️ 마우스가 올라왔다고 항상 발사되지 않는다. 손패가 잠겼거나(내 턴이 아님)
+	 *    드래그·등장·퇴장 중이면 호버 연출 자체가 억제되므로 bActive 는 false 다.
+	 *    BP 에서 On Mouse Enter 를 직접 쓰면 상대 턴에도 빛나므로 이쪽을 쓸 것.
+	 *
+	 * 상태가 **바뀔 때만** 온다 — 매 프레임 오지 않는다.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
+	void OnHoverChanged(bool bActive);
+
 	/** 손패로 되돌아가는 순간(대상 선택 취소 등). */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
 	void OnReturnedToHand();
@@ -267,7 +279,7 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> Text_CardDescription;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(BlueprintReadWrite,meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> Border_Root;
 
 	/** "성공 78%" — 표시 공간이 좁을 때의 축약형 (GDD §10). */
@@ -449,6 +461,10 @@ private:
 
 	bool bBeingDragged = false;
 	bool bDragLocked = false;
+
+	//	직전 프레임의 호버 상태. 바뀌는 순간에만 BP 훅을 쏘기 위한 것이다 —
+	//	매 프레임 쏘면 BP 에서 애니메이션이 계속 처음부터 다시 재생된다.
+	bool bWasHoverActive = false;
 
 	// ── 연출 내부 상태 ──
 	EBGCardMotionState MotionState = EBGCardMotionState::Idle;
