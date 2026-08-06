@@ -6,6 +6,8 @@
 #include "Engine/DataTable.h"
 #include "TRTypes.generated.h"
 
+#pragma region Character
+
 UENUM(BlueprintType)
 enum class ETRActionType : uint8
 {
@@ -15,6 +17,7 @@ enum class ETRActionType : uint8
 	Reload,
 	Restock
 };
+
 
 USTRUCT(BlueprintType)
 struct FTRActionDef
@@ -33,6 +36,10 @@ struct FTRActionDef
 	UPROPERTY(EditAnywhere)
 	FText Prompt;
 };
+#pragma endregion
+
+
+#pragma region Train
 
 USTRUCT(BlueprintType)
 struct FTRArmorLevelRow : public FTableRowBase
@@ -87,3 +94,4 @@ struct FTRTurretLevelRow : public FTableRowBase
 	UPROPERTY(EditAnywhere)
 	int32 AutoMagazine = 0;
 };
+#pragma endregion
