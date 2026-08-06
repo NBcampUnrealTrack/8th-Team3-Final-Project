@@ -60,8 +60,9 @@ void UBGTurnPanelWidget::RefreshRopeText()
 	{
 		//	내 밧줄인지 남의 밧줄인지 구분해 둔다 — 지금은 텍스트뿐이라 이 표시가 유일한 단서다.
 		const bool bMine = R->IsSeatBurning(TurnView.MySeat);
-		Label = FString::Printf(TEXT("밧줄 %s%.0f초 (좌석 %d)"),
-			bMine ? TEXT("[내 차례] ") : TEXT(""), R->GetSecondsRemaining(), R->GetRopeSeat());
+		Label = FString::Printf(TEXT("밧줄 %s%.0f초 (좌석 %d)%s"),
+			bMine ? TEXT("[내 차례] ") : TEXT(""), R->GetSecondsRemaining(), R->GetRopeSeat(),
+			R->IsRopePaused() ? TEXT(" [멈춤]") : TEXT(""));
 	}
 
 	if (Text_Rope)

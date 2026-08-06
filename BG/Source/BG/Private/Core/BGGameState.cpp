@@ -106,6 +106,20 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 
 	CinematicStage = NewStage;
 
+	//	연출이 도는 동안 밧줄을 멈춘다. 안 그러면 연출 시간만큼 자기 턴을 깎아 먹는다.
+	//	단계가 Primary → Secondary 로 넘어갈 때는 같은 이유라 잡은 상태가 그대로 유지된다.
+	if (Rope)
+	{
+		if (IsCinematicPlaying())
+		{
+			Rope->PauseRope(BGRopePause::Cinematic);
+		}
+		else
+		{
+			Rope->ResumeRope(BGRopePause::Cinematic);
+		}
+	}
+
 	//	서버는 자기 OnRep 을 받지 못한다 — 여기서 직접 부르지 않으면 리슨서버 호스트만 연출이 안 뜬다.
 	HandleCinematicStage();
 

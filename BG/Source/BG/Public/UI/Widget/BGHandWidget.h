@@ -158,6 +158,13 @@ public:
 	bool ReturnHeldCardToHand(int32 InstanceId);
 
 	/**
+	 * 지금 중앙에 잡혀 있는(확정도 취소도 안 된) 카드들의 InstanceId.
+	 * 되돌릴지 말지는 부르는 쪽이 정한다 — 서버가 받아들인 카드도 손패가 올 때까지는 잡혀 있다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "BG|Hand|Motion")
+	TArray<int32> GetHeldCardIds() const;
+
+	/**
 	 * Index 번째 카드가 있어야 할 자리를 계산한다. 상태를 읽지 않는 순수 함수라
 	 * 언제 불러도 같은 답이 나온다 — 연출 디버깅에도 그대로 쓸 수 있다.
 	 */

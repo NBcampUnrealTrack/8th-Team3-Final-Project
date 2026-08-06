@@ -557,10 +557,50 @@ void ABGPlayerController::TryBindTurnStateDelegate()
 
 void ABGPlayerController::HandleTurnStateChanged()
 {
+	AbortActionIfTurnLost();
+
 	RefreshTurnPanel();
 	RefreshSeatBoard();
 	UpdateHandInteractionLock();
 	RefreshHandWidget();   //	카드의 사용 가능 표시가 페이즈에 걸려 있다.
+}
+
+void ABGPlayerController::AbortActionIfTurnLost()
+{
+	//	밧줄이 다 타서 턴이 넘어가면 서버는 그 뒤에 오는 카드 요청을 거부한다.
+	//	그런데 클라는 대상 선택을 계속 열어 두고 카드도 중앙에 잡아 둔 채라, 확정도 취소도
+	//	오지 않아 화면에 박힌다. 내 차례가 아니게 된 순간 여기서 스스로 접는다.
+	if (IsMyTurnToPlay() || IsMyTurnToDiscard())
+	{
+		return;
+	}
+
+	if (SeatBoardWidget && SeatBoardWidget->IsSelectingTarget())
+	{
+		//	CancelTargetSelection 이 HandleTargetSelectionCancelled 로 이어져 카드를 되돌린다.
+		UE_LOG(LogBGCard, Log, TEXT("[PC] 차례가 끝나 대상 선택을 접는다"));
+		CancelTargetSelection();
+	}
+
+	//	서버로 보냈지만 거부당한 카드는 취소 통지가 오지 않는다 — 남아 있으면 여기서 내린다.
+	//	받아들여진 카드는 손패에서 이미 빠졌으므로, 아직 손패에 있는 것만 되돌린다.
+	//	이 구분이 없으면 방금 정상적으로 낸 카드가 손패로 튀었다가 다시 사라진다.
+	const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
+	if (!HandWidget || !PS)
+	{
+		return;
+	}
+
+	for (const int32 HeldId : HandWidget->GetHeldCardIds())
+	{
+		const bool bStillInHand = PS->GetHand().ContainsByPredicate(
+			[HeldId](const FBGCardInstance& Card) { return Card.InstanceId == HeldId; });
+
+		if (bStillInHand && HandWidget->ReturnHeldCardToHand(HeldId))
+		{
+			UE_LOG(LogBGCard, Log, TEXT("[PC] 차례가 끝나 카드 #%d 를 손패로 되돌린다"), HeldId);
+		}
+	}
 }
 
 void ABGPlayerController::RefreshSeatBoard()

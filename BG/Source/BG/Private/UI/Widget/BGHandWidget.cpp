@@ -777,6 +777,21 @@ bool UBGHandWidget::ReturnHeldCardToHand(int32 InstanceId)
 	return false;
 }
 
+TArray<int32> UBGHandWidget::GetHeldCardIds() const
+{
+	//	사라지는 중인 카드는 세지 않는다. 이미 확정돼 날아가는 것이라 되돌릴 대상이 아니다.
+	TArray<int32> HeldIds;
+	for (const UBGCardWidget* CardWidget : OutgoingWidgets)
+	{
+		if (CardWidget && CardWidget->IsHoldingAtCenter())
+		{
+			HeldIds.Add(CardWidget->GetInstanceId());
+		}
+	}
+
+	return HeldIds;
+}
+
 bool UBGHandWidget::IsOutgoing(int32 InstanceId) const
 {
 	for (const UBGCardWidget* CardWidget : OutgoingWidgets)

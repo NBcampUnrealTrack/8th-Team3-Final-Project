@@ -197,6 +197,9 @@ protected:
 	UFUNCTION()
 	void HandleTurnStateChanged();
 
+	// 내 차례가 아니게 됐다. 진행 중이던 대상 선택을 접고 중앙에 잡혀 있던 카드를 손패로 되돌린다.
+	void AbortActionIfTurnLost();
+
 	/** EBGDiceOutcome → EBGResolutionTier. 뷰 계층이 게임 enum 을 모르게 하는 경계다. */
 	static EBGResolutionTier ToResolutionTier(EBGDiceOutcome Outcome);
 

@@ -34,6 +34,13 @@ void UBGRopeComponent::OnRep_Rope()
 
 void UBGRopeComponent::BroadcastRope()
 {
+	//	멈춤 상태부터 알린다. 남은 시간을 받은 UI 가 곧바로 흐르는 것으로 그리지 않게 한다.
+	if (BroadcastedPaused != Rope.bPaused)
+	{
+		BroadcastedPaused = Rope.bPaused;
+		OnRopePausedChanged.Broadcast(Rope.bPaused);
+	}
+
 	OnRopeChanged.Broadcast(Rope.Seat, GetSecondsRemaining(), Rope.Length);
 }
 
@@ -61,15 +68,18 @@ void UBGRopeComponent::BeginRope(int32 Seat)
 	const ABGPlayerState* PS = GS->GetPlayerStateBySeat(Seat);
 	const bool bAbsent = (PS == nullptr) || PS->IsDisconnected();
 
-	Rope.Length        = FMath::Max(0.1f, bAbsent ? AbsentTurnSeconds : TurnSeconds);
-	Rope.Seat          = Seat;
-	Rope.EndServerTime = GS->GetServerWorldTimeSeconds() + Rope.Length;
-
-	GetWorld()->GetTimerManager().SetTimer(
-		RopeTimer, this, &UBGRopeComponent::HandleRopeBurnedOut, Rope.Length, /*bLoop=*/false);
+	Rope.Length          = FMath::Max(0.1f, bAbsent ? AbsentTurnSeconds : TurnSeconds);
+	Rope.Seat            = Seat;
+	Rope.EndServerTime   = GS->GetServerWorldTimeSeconds() + Rope.Length;
+	Rope.bPaused         = false;
+	Rope.PausedRemaining = 0.f;
 
 	UE_LOG(LogBGCard, Log, TEXT("[Rope] 좌석 %d 밧줄 점화 — %.0f초%s"),
 		Seat, Rope.Length, bAbsent ? TEXT(" (이탈 중)") : TEXT(""));
+
+	//	연출 중에 턴이 넘어가면 새 밧줄도 멈춘 채로 시작해야 한다.
+	//	타이머를 거는 것도 여기 안에서 한다 — 멈춘 상태면 걸지 않는다.
+	ApplyPauseState();
 
 	BroadcastRope();
 }
@@ -86,8 +96,117 @@ void UBGRopeComponent::StopRope()
 		return;   //	이미 꺼져 있다. 같은 통지를 두 번 보내지 않는다.
 	}
 
+	//	잡고 있던 이유(PauseHolders)는 그대로 둔다. 밧줄이 아니라 상황을 잡고 있는 것이라,
+	//	턴이 넘어가 새로 붙는 밧줄도 같은 이유로 멈춰 있어야 한다.
 	Rope = FBGRopeState();
+	Rope.bPaused = (PauseHolders.Num() > 0);
+
 	BroadcastRope();
+}
+
+void UBGRopeComponent::PauseRope(FName Reason)
+{
+	const ABGGameState* GS = GetGameState();
+	if (!GS || !GS->HasAuthority() || Reason.IsNone())
+	{
+		return;
+	}
+
+	if (PauseHolders.Contains(Reason))
+	{
+		return;   //	같은 이유로 두 번 잡아도 하나로 친다.
+	}
+
+	PauseHolders.Add(Reason);
+	UE_LOG(LogBGCard, Log, TEXT("[Rope] 멈춤 — %s (잡고 있는 이유 %d개)"),
+		*Reason.ToString(), PauseHolders.Num());
+
+	ApplyPauseState();
+	BroadcastRope();
+}
+
+void UBGRopeComponent::ResumeRope(FName Reason)
+{
+	const ABGGameState* GS = GetGameState();
+	if (!GS || !GS->HasAuthority())
+	{
+		return;
+	}
+
+	if (PauseHolders.Remove(Reason) == 0)
+	{
+		return;   //	잡은 적이 없다. 짝이 안 맞는 호출은 조용히 무시한다.
+	}
+
+	UE_LOG(LogBGCard, Log, TEXT("[Rope] 놓음 — %s (남은 이유 %d개)"),
+		*Reason.ToString(), PauseHolders.Num());
+
+	ApplyPauseState();
+	BroadcastRope();
+}
+
+void UBGRopeComponent::ClearRopePauses()
+{
+	const ABGGameState* GS = GetGameState();
+	if (!GS || !GS->HasAuthority() || PauseHolders.IsEmpty())
+	{
+		return;
+	}
+
+	PauseHolders.Reset();
+	ApplyPauseState();
+	BroadcastRope();
+}
+
+void UBGRopeComponent::ApplyPauseState()
+{
+	UWorld* World = GetWorld();
+	const ABGGameState* GS = GetGameState();
+	if (!World || !GS)
+	{
+		return;
+	}
+
+	const bool bShouldPause = (PauseHolders.Num() > 0);
+	Rope.bPaused = bShouldPause;
+
+	//	감시 타이머는 밧줄이 붙어 있든 없든 건다. 잡아 놓고 안 놓는 쪽을 잡으려는 것이다.
+	World->GetTimerManager().ClearTimer(PauseWatchdog);
+	if (bShouldPause && PauseTimeoutSeconds > 0.f)
+	{
+		World->GetTimerManager().SetTimer(
+			PauseWatchdog, this, &UBGRopeComponent::HandlePauseTimeout, PauseTimeoutSeconds, /*bLoop=*/false);
+	}
+
+	if (Rope.Seat == INDEX_NONE)
+	{
+		return;   //	멈출 불이 없다. 이유만 기억해 두고 다음 BeginRope 가 멈춘 채 시작한다.
+	}
+
+	if (bShouldPause)
+	{
+		//	타이머는 남은 시간을 알려주지 않는다. 멈추기 전에 직접 재서 들고 있는다.
+		Rope.PausedRemaining = FMath::Max(0.f, Rope.EndServerTime - GS->GetServerWorldTimeSeconds());
+		World->GetTimerManager().ClearTimer(RopeTimer);
+		return;
+	}
+
+	//	다시 태운다. 멈춰 있던 만큼 끝나는 시각을 뒤로 민다.
+	const float Remaining = (Rope.PausedRemaining > 0.f) ? Rope.PausedRemaining : Rope.Length;
+	Rope.EndServerTime   = GS->GetServerWorldTimeSeconds() + Remaining;
+	Rope.PausedRemaining = 0.f;
+
+	World->GetTimerManager().SetTimer(
+		RopeTimer, this, &UBGRopeComponent::HandleRopeBurnedOut, FMath::Max(0.01f, Remaining), /*bLoop=*/false);
+}
+
+void UBGRopeComponent::HandlePauseTimeout()
+{
+	//	놓아 주는 쪽이 빠졌다. 밧줄은 판이 멈추는 것을 막는 장치이므로 스스로 풀고 계속 간다.
+	UE_LOG(LogBGCard, Warning, TEXT("[Rope] %.0f초 넘게 멈춰 있다 — 잡고 있던 이유 %d개를 강제로 놓는다"),
+		PauseTimeoutSeconds, PauseHolders.Num());
+
+	ClearRopePauses();
 }
 
 float UBGRopeComponent::GetSecondsRemaining() const
@@ -97,6 +216,13 @@ float UBGRopeComponent::GetSecondsRemaining() const
 	{
 		return 0.f;
 	}
+
+	//	멈춰 있는 동안 EndServerTime 은 지나간 값이라 그대로 쓰면 0 으로 보인다.
+	if (Rope.bPaused)
+	{
+		return FMath::Max(0.f, Rope.PausedRemaining);
+	}
+
 	return FMath::Max(0.f, Rope.EndServerTime - GS->GetServerWorldTimeSeconds());
 }
 
@@ -113,11 +239,11 @@ void UBGRopeComponent::HandleRopeBurnedOut()
 		return;
 	}
 
-	//	연출 중에는 턴을 못 넘긴다(RequestEndTurn 과 같은 이유). 연출이 끝나면 다시 잰다.
-	if (GS->IsCinematicPlaying())
+	//	멈춰 있는데 타이머가 살아 있었다 = 순서가 꼬였다. 턴을 넘기지 않고 상태만 다시 맞춘다.
+	if (Rope.bPaused)
 	{
-		UE_LOG(LogBGCard, Log, TEXT("[Rope] 연출 재생 중 — 밧줄을 다시 붙인다"));
-		BeginRope(Rope.Seat);
+		UE_LOG(LogBGCard, Warning, TEXT("[Rope] 멈춘 밧줄이 소진 통지를 보냈다 — 무시하고 상태를 다시 맞춘다"));
+		ApplyPauseState();
 		return;
 	}
 

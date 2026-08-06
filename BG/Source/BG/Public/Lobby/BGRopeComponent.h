@@ -10,6 +10,14 @@
 
 class ABGGameState;
 
+// 밧줄을 잡을 때 쓰는 이유 이름. 잡은 쪽과 놓는 쪽이 같은 이름을 써야 짝이 맞는다.
+// 블루프린트에서는 같은 문자열을 FName 으로 넣으면 된다.
+namespace BGRopePause
+{
+	inline const FName Cinematic(TEXT("Cinematic"));   // 카드 연출 재생 중 (GameState 가 자동으로 건다)
+	inline const FName Sequence (TEXT("Sequence"));    // 시퀀서·연출 스크립트가 직접 잡을 때
+}
+
 /** 지금 타고 있는 밧줄. 셋이 따로 복제되면 반쪽 값으로 UI 가 갱신되므로 한 덩어리로 묶는다. */
 USTRUCT(BlueprintType)
 struct FBGRopeState
@@ -27,6 +35,17 @@ struct FBGRopeState
 	/** 이번 밧줄의 전체 길이(초). 게이지 비율 계산에 쓴다. */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Rope")
 	float Length = 0.f;
+
+	/** 멈춰 있는가. 멈춘 동안에는 불이 타지 않는다. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Rope")
+	bool bPaused = false;
+
+	/**
+	 * 멈춘 순간 남아 있던 시간(초). 멈춰 있는 동안 EndServerTime 은 의미가 없다 —
+	 * 다시 붙일 때 이 값으로 끝나는 시각을 새로 계산한다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Rope")
+	float PausedRemaining = 0.f;
 };
 
 /**
@@ -35,6 +54,12 @@ struct FBGRopeState
  */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnBGRopeChanged,
 	int32, Seat, float, SecondsRemaining, float, TotalSeconds);
+
+/**
+ * 밧줄이 멈추거나 다시 탄다. 남은 시간은 그대로이므로 게이지를 지울 필요는 없다 —
+ * 흐르지 않는다는 표시(색·아이콘)만 바꾸면 된다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGRopePausedChanged, bool, bPaused);
 
 UCLASS(Config = Game, ClassGroup = (BG), meta = (BlueprintSpawnableComponent))
 class BG_API UBGRopeComponent : public UActorComponent
@@ -57,6 +82,26 @@ public:
 	// 턴이 닫혔다(정상 종료·사망·판 종료). 불을 끈다.
 	void StopRope();
 
+	// ── 일시정지 (서버 전용) ──
+	//
+	// 이유(Reason)별로 따로 센다. 여러 곳이 동시에 잡을 수 있고, 마지막 하나가 놓아야 다시 탄다.
+	// 그래서 연출이 끝나도 다른 이유가 남아 있으면 밧줄은 계속 멈춰 있다.
+
+	/**
+	 * 밧줄을 멈춘다. 같은 Reason 으로 여러 번 불러도 하나로 친다.
+	 * 멈춘 동안에는 불이 타지 않으므로 턴이 넘어가지도 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Rope")
+	void PauseRope(FName Reason);
+
+	/** PauseRope 로 잡아 둔 것을 놓는다. 잡고 있던 이유가 모두 없어지면 다시 탄다. */
+	UFUNCTION(BlueprintCallable, Category = "BG|Rope")
+	void ResumeRope(FName Reason);
+
+	/** 잡고 있던 이유를 전부 놓는다. 판이 끝나거나 상태가 꼬였을 때만 쓸 것. */
+	UFUNCTION(BlueprintCallable, Category = "BG|Rope")
+	void ClearRopePauses();
+
 	// ── 통지 (서버·클라 공통) ──
 	//
 	// 위젯이 밧줄보다 늦게 만들어지면 이벤트를 놓친다. 바인딩 직후 IsBurning() 을 한 번
@@ -64,10 +109,18 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "BG|Rope")
 	FOnBGRopeChanged OnRopeChanged;
 
+	/** 멈춤 상태가 바뀌었다. 게이지를 흐리게 하거나 정지 아이콘을 띄우는 데 쓴다. */
+	UPROPERTY(BlueprintAssignable, Category = "BG|Rope")
+	FOnBGRopePausedChanged OnRopePausedChanged;
+
 	// ── 조회 (서버·클라 공통) ──
 
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")
 	bool IsBurning() const { return Rope.Seat != INDEX_NONE; }
+
+	/** 멈춰 있는가. 밧줄이 안 붙은 상태에서도 이유가 잡혀 있으면 true 다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Rope")
+	bool IsRopePaused() const { return Rope.bPaused; }
 
 	/** 지금 밧줄이 걸린 좌석. 없으면 INDEX_NONE. */
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")
@@ -107,8 +160,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Config, Category = "BG|Rope")
 	int32 MaxStrikes = 2;
 
+	/**
+	 * 이만큼 멈춰 있으면 잡고 있던 이유를 전부 놓는다. 0 이하면 감시하지 않는다.
+	 * 놓아 주는 쪽이 빠지면 판이 영영 멈추므로 밧줄 자체에도 감시자를 둔다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Config, Category = "BG|Rope")
+	float PauseTimeoutSeconds = 15.f;
+
 	// 불이 끝까지 탔다.
 	void HandleRopeBurnedOut();
+
+	// 잡고 있는 이유가 하나라도 있으면 멈추고, 하나도 없으면 다시 태운다.
+	void ApplyPauseState();
+
+	// 너무 오래 멈춰 있다. 잡고 있던 이유를 전부 놓아 판을 다시 굴린다.
+	void HandlePauseTimeout();
 
 	ABGGameState* GetGameState() const;
 
@@ -123,4 +189,13 @@ protected:
 
 	//	서버 전용. 실제 만료를 재는 타이머.
 	FTimerHandle RopeTimer;
+
+	//	마지막으로 알린 멈춤 상태. 같은 값을 두 번 알리지 않는다.
+	bool BroadcastedPaused = false;
+
+	//	서버 전용. 지금 밧줄을 잡고 있는 이유들. 비면 다시 탄다.
+	TArray<FName> PauseHolders;
+
+	//	서버 전용. 놓아 주는 쪽이 빠졌을 때를 대비한 감시 타이머.
+	FTimerHandle PauseWatchdog;
 };
