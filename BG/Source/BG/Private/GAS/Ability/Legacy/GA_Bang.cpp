@@ -57,8 +57,8 @@ void UGA_Bang::ActivateAbility(
 	//	비율은 DT_BGCard 의 OutcomeWeights, 등급별 수치는 OutcomeMagnitudes 다.
 	//	여기서 다시 굴리지 않는다 — GA 는 "결과 실행" 만 한다(§9.2 같은 판정 한 번만 적용).
 	//
-	//	굴림 보정(행운)은 두지 않는다. 행운은 GDD §7.1 의 확정 스탯이 아니고,
-	//	보정 합산 방식 자체가 §14 미결정이다. 카드 DT 의 비율이 곧 확률이어야
+	//	굴림 보정(행운)은 두지 않는다. 행운은 §7.1 의 확정 스탯 목록에 없는 RPG 능력치이고,
+	//	확률 보정은 WeightBonus*/WeightMult* 축이 담당한다. 카드 DT 의 비율이 곧 확률이어야
 	//	§10 확률 표시와 §11 "설정 확률 vs 실측" 비교가 성립한다.
 	static const FGameplayTag ResolutionRoot = FGameplayTag::RequestGameplayTag(TEXT("Resolution"));
 	const bool bHasServerOutcome =

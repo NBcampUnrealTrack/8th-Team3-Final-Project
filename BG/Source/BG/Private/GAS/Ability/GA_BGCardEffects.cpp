@@ -152,6 +152,14 @@ void UGA_BGCardEffects::ExecuteEffects(
 			Line = ApplyTakeFromTarget(Effect.Amount, /*bSteal=*/true, GS, SelfPS, TargetPS, Avatar);
 			break;
 
+		case EBGCardEffectOp::DiscardTargetEquipRandom:
+			Line = ApplyTakeEquipFromTarget(Effect.Amount, /*bSteal=*/false, GS, SelfPS, TargetPS, Avatar);
+			break;
+
+		case EBGCardEffectOp::StealTargetEquipRandom:
+			Line = ApplyTakeEquipFromTarget(Effect.Amount, /*bSteal=*/true, GS, SelfPS, TargetPS, Avatar);
+			break;
+
 		case EBGCardEffectOp::RestoreCardUse:
 			Line = ApplyRestoreCardUse(Effect.Amount, SelfPS);
 			break;
@@ -182,8 +190,9 @@ FString UGA_BGCardEffects::ApplyDamage(int32 Amount, AActor* Avatar, AActor* Tar
 	//	피해는 카드 데이터가 전부 결정한다.
 	//
 	//	[비활성] 힘 배율 / 대상 지능 경감은 쓰지 않는다 (GDD §7.1 / §13.1).
-	//	  확정 스탯은 CardUseLimit 하나뿐이고, §7.2 도 초기 프로토타입에서는 스탯을 최소로
-	//	  두라고 권한다. 실제로 지능 1(= round(1 × 0.5) = 1)이 피해 1 을 통째로 상쇄해
+	//	  §7.1 에 "공격 보정" 이 확정 스탯으로 있지만 그 자리를 채울 어트리뷰트는 아직 없고,
+	//	  힘·지능은 그 축을 RPG 능력치로 다시 표현한 별개 계층이라 되살릴 대상이 아니다.
+	//	  실제로 지능 1(= round(1 × 0.5) = 1)이 피해 1 을 통째로 상쇄해
 	//	  "성공했는데 피해 0" 이 되는 문제가 있었다 — 카드 수치가 곧 피해여야
 	//	  §10 확률·효과 표시와 §11 밸런스 지표가 성립한다.
 	//	  StrengthDamageMult / IntelligenceMitigation 프로퍼티는 선언만 남는다.
@@ -205,6 +214,38 @@ FString UGA_BGCardEffects::ApplyDamage(int32 Amount, AActor* Avatar, AActor* Tar
 	if (Final <= 0)
 	{
 		return FString::Printf(TEXT("피해 0 (카드 수치 %d)"), Amount);
+	}
+
+	// ── 자동 방어 판정 (요정 갑옷) ────────────────────────────────
+	//	GDD §14 가 "자동 방어 판정과 공격 판정의 처리 순서" 를 미결로 두었다.
+	//	여기서는 **공격 판정이 성공한 뒤에 방어를 굴린다** 로 정했다:
+	//	  · 공격 성공/대성공이 확정돼야 "막을 공격" 이 존재한다
+	//	  · 방어를 먼저 굴리면 실패할 공격까지 방어율을 소모해 체감이 흐려진다
+	//	순서를 바꾸려면 이 블록을 판정 지점(HandlePlayCard)으로 옮기면 된다.
+	//
+	//	⚠️ 굴림은 서버에서만 일어난다. 이 GA 는 서버 권위로 발동되므로 여기가 서버다.
+	const float NegateChance = TargetASC->GetNumericAttribute(
+		UBGAttributeSet::GetDamageNegateChanceAttribute());
+
+	if (NegateChance > 0.f)
+	{
+		//	덱 셔플과 분리된 판정 스트림 — 같은 시드에서 재현되고 덱 순서를 밀지 않는다.
+		UBGDiceComponent* Dice = UBGDiceComponent::Get(Avatar);
+		const int32 Roll = Dice ? Dice->RandomIndex(100) : INDEX_NONE;
+
+		if (Roll != INDEX_NONE && static_cast<float>(Roll) < NegateChance)
+		{
+			//	GDD §10: 자동 판정은 원인·확률·결과를 로그에 남긴다.
+			UE_LOG(LogBGCard, Log,
+				TEXT("[방어] 요정 갑옷 발동 — 눈 %d / 방어율 %.0f%% → 피해 %d 무효화"),
+				Roll, NegateChance, Final);
+
+			return FString::Printf(TEXT("방어 성공 (%.0f%%) — 피해 %d 무효"), NegateChance, Final);
+		}
+
+		UE_LOG(LogBGCard, Log,
+			TEXT("[방어] 판정 실패 — 눈 %d / 방어율 %.0f%% → 피해 %d 적용"),
+			Roll, NegateChance, Final);
 	}
 
 	FGameplayEffectContextHandle Context = SourceASC->MakeEffectContext();
@@ -254,19 +295,23 @@ FString UGA_BGCardEffects::ApplyDraw(int32 Amount, ABGGameState* GS, ABGPlayerSt
 		return FString();
 	}
 
-	int32 Drawn = 0;
-	for (int32 i = 0; i < Amount; ++i)
+	//	손패 상한·덱 고갈에 걸리면 덜 뽑히거나 아예 못 뽑는다.
+	//
+	//	⚠️ 그것은 **카드 사용 실패가 아니다.** 이 함수는 요약 문자열만 돌려주고, 호출부는
+	//	   빈 문자열을 "요약할 내용 없음" 으로만 취급한다(ApplyEffects 의 IsEmpty 검사).
+	//	   즉 뽑기가 막혀도 GA 는 정상 종료되고, 같은 카드의 다른 효과(속공의 피해 등)와
+	//	   카드 소비·사용 횟수 처리는 그대로 일어난다.
+	const int32 Drawn = GS->DrawCardsToHand(SelfPS, Amount);
+
+	if (Drawn < Amount)
 	{
-		FBGCardInstance Card;
-		if (!GS->DrawFromDeck(Card))
-		{
-			break;   // 덱과 버린 패가 모두 비었다
-		}
-		SelfPS->AddCardToHand(Card);
-		++Drawn;
+		//	"카드는 썼는데 왜 안 뽑히지" 를 로그로 바로 알 수 있게 한다.
+		return (Drawn > 0)
+			? FString::Printf(TEXT("%d/%d장 뽑기 (손패 상한)"), Drawn, Amount)
+			: FString::Printf(TEXT("뽑기 없음 (손패 상한 %d장)"), GS->GetHandLimitForSeat(SelfPS->GetSeatIndex()));
 	}
 
-	return (Drawn > 0) ? FString::Printf(TEXT("%d장 뽑기"), Drawn) : FString();
+	return FString::Printf(TEXT("%d장 뽑기"), Drawn);
 }
 
 FString UGA_BGCardEffects::ApplyTakeFromTarget(int32 Amount, bool bSteal,
@@ -316,6 +361,60 @@ FString UGA_BGCardEffects::ApplyTakeFromTarget(int32 Amount, bool bSteal,
 
 	return (Moved > 0)
 		? FString::Printf(TEXT("상대 %d장 %s"), Moved, bSteal ? TEXT("훔침") : TEXT("버림"))
+		: FString();
+}
+
+FString UGA_BGCardEffects::ApplyTakeEquipFromTarget(int32 Amount, bool bSteal,
+	ABGGameState* GS, ABGPlayerState* SelfPS, ABGPlayerState* TargetPS, AActor* Avatar)
+{
+	UBGDiceComponent* Dice = UBGDiceComponent::Get(Avatar);
+	if (!GS || !TargetPS || !Dice)
+	{
+		return FString();
+	}
+
+	int32 Moved = 0;
+	for (int32 i = 0; i < Amount; ++i)
+	{
+		//	장비 목록은 매 반복마다 다시 읽는다 — 앞 반복에서 하나가 빠졌다.
+		const TArray<FBGCardInstance>& Equipment = TargetPS->GetEquipment();
+		if (Equipment.IsEmpty())
+		{
+			break;
+		}
+
+		//	덱 셔플과 분리된 판정 스트림을 쓴다 — 같은 시드에서 재현되고 덱 순서를 밀지 않는다.
+		const int32 Index = Dice->RandomIndex(Equipment.Num());
+		if (!Equipment.IsValidIndex(Index))
+		{
+			break;
+		}
+
+		//	제거 전에 값으로 복사 — 제거하면 위 참조가 흔들린다.
+		const FName CardId = Equipment[Index].CardId;
+
+		//	UnequipCard 가 배열에서 빼는 것과 Infinite GE 를 걷어내는 것을 함께 처리한다.
+		//	배열만 지우면 장비는 사라졌는데 확률 보정만 영구히 남는다.
+		FBGCardInstance Removed;
+		if (!TargetPS->UnequipCard(CardId, Removed))
+		{
+			break;
+		}
+
+		if (bSteal && SelfPS)
+		{
+			//	장비 칸이 아니라 손패로 들어간다(헤더 주석 참고).
+			SelfPS->AddCardToHand(Removed);
+		}
+		else
+		{
+			GS->PushToDiscard(Removed);
+		}
+		++Moved;
+	}
+
+	return (Moved > 0)
+		? FString::Printf(TEXT("상대 장비 %d개 %s"), Moved, bSteal ? TEXT("훔침") : TEXT("버림"))
 		: FString();
 }
 

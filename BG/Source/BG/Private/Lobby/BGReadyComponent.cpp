@@ -8,10 +8,22 @@
 #include "GameFramework/PlayerState.h"
 #include "Net/UnrealNetwork.h"
 
+FOnBGReadyChanged UBGReadyComponent::OnAnyReadyChanged;
+
 UBGReadyComponent::UBGReadyComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(true);
+}
+
+void UBGReadyComponent::NotifyLobbyChanged()
+{
+	OnAnyReadyChanged.Broadcast();
+}
+
+void UBGReadyComponent::OnRep_Ready()
+{
+	NotifyLobbyChanged();
 }
 
 void UBGReadyComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -31,6 +43,16 @@ void UBGReadyComponent::BeginPlay()
 	{
 		SetReadyAuthoritative(true);
 	}
+
+	//	이 컴포넌트가 생겼다 = 누군가 로비에 들어왔다. 인원 표시를 갱신시킨다.
+	NotifyLobbyChanged();
+}
+
+void UBGReadyComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	//	나갔을 때도 같은 이유로 알린다.
+	NotifyLobbyChanged();
+	Super::EndPlay(EndPlayReason);
 }
 
 UBGReadyComponent* UBGReadyComponent::Find(const APlayerState* PlayerState)
@@ -99,6 +121,9 @@ void UBGReadyComponent::SetReadyAuthoritative(bool bInReady)
 	bReady = bInReady;
 	UE_LOG(LogBGNet, Log, TEXT("[Ready] %s → %s"),
 		*Owner->GetName(), bReady ? TEXT("준비") : TEXT("해제"));
+
+	//	리슨서버 호스트는 자기 OnRep 을 받지 못한다 — 서버에서도 직접 알린다.
+	NotifyLobbyChanged();
 
 	if (Match)
 	{

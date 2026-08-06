@@ -1,4 +1,6 @@
 ﻿#include "Core/BGCharacter.h"
+#include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "GAS/BGAbilitySystemComponent.h"
 #include "GAS/BGAttributeSet.h"
 #include "Debug/BGCardLog.h"
@@ -24,6 +26,82 @@ ABGCharacter::ABGCharacter()
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Full);
 
 	AttributeSet = CreateDefaultSubobject<UBGAttributeSet>(TEXT("AttributeSet"));
+
+	//	── 카메라 (구 ABGPlayerBase 에서 통합) ──
+	//	ACharacter 는 CapsuleComponent 를 루트로 하드코딩한다. 별도의 씬 루트를 둘 수 없으므로
+	//	두 카메라는 캡슐 밑에 붙는다 — 캡슐이 돌면 함께 돈다.
+	PrimaryCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PrimaryCamera"));
+	PrimaryCamera->SetupAttachment(GetCapsuleComponent());
+
+	SecondaryCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("SecondaryCamera"));
+	SecondaryCamera->SetupAttachment(GetCapsuleComponent());
+
+	//	활성 카메라는 항상 하나여야 한다 — 이유는 헤더의 SetActiveCamera 주석 참고.
+	//	B 는 연출 샷의 위치 마커일 뿐이라 끝까지 비활성으로 남는다.
+	PrimaryCamera->SetAutoActivate(true);
+	SecondaryCamera->SetAutoActivate(false);
+
+	//	── 몸 회전을 컨트롤러에서 떼어낸다 ──
+	//	기본값(true)이면 APawn::FaceRotation 이 **매 프레임** 컨트롤 회전으로 액터 요를 덮어쓴다.
+	//	그러면 좌석 배치가 몸을 캠프파이어 쪽으로 돌려놔도 다음 프레임에 원위치하고,
+	//	플레이어가 마우스를 돌릴 때마다 캐릭터가 함께 돌아 원형 대형이 무너진다.
+	//	이 게임에서 몸의 방향은 "어느 좌석에 앉았는가" 로 정해진다 — 시선과는 별개다.
+	bUseControllerRotationYaw = false;
+
+	//	대신 시점은 컨트롤 회전을 따르게 한다. 위에서 몸을 고정했으므로 이걸 켜지 않으면
+	//	카메라가 캡슐에 묶여 마우스로 둘러볼 수 없게 된다.
+	PrimaryCamera->bUsePawnControlRotation = true;
+}
+
+void ABGCharacter::SetBodyFacing(FRotator NewRotation)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	//	서버 자신과, 이 캐릭터를 시뮬레이트하는 다른 클라에는 액터 회전 복제로 전달된다.
+	SetActorRotation(NewRotation);
+
+	//	자기 캐릭터를 조종하는 클라는 이동 권위를 자기가 갖고 있어 위 회전이 닿지 않는다.
+	//	리슨서버 호스트 자신은 이미 위에서 처리됐으므로 원격 클라에만 보낸다.
+	if (!IsLocallyControlled())
+	{
+		Client_SetBodyFacing(NewRotation);
+	}
+}
+
+void ABGCharacter::Client_SetBodyFacing_Implementation(FRotator NewRotation)
+{
+	SetActorRotation(NewRotation);
+
+	//	시선도 같은 방향에서 시작하게 한다. bUseControllerRotationYaw 가 꺼져 있어
+	//	이 값이 몸을 돌리지는 않는다 — 카메라(bUsePawnControlRotation)만 따라간다.
+	if (AController* C = GetController())
+	{
+		C->SetControlRotation(NewRotation);
+	}
+}
+
+void ABGCharacter::SetActiveCamera(bool bUsePrimary)
+{
+	if (!PrimaryCamera || !SecondaryCamera)
+	{
+		return;
+	}
+
+	//	끄는 쪽을 먼저 처리한다. 켜는 쪽이 먼저면 두 카메라가 동시에 활성인 순간이 생기고,
+	//	그 프레임에 CalcCamera 가 돌면 엉뚱한 시점이 한 프레임 섞여 보인다.
+	UCameraComponent* Next     = bUsePrimary ? PrimaryCamera : SecondaryCamera;
+	UCameraComponent* Previous = bUsePrimary ? SecondaryCamera : PrimaryCamera;
+
+	Previous->Deactivate();
+	Next->Activate();
+}
+
+bool ABGCharacter::IsPrimaryCameraActive() const
+{
+	return PrimaryCamera && PrimaryCamera->IsActive();
 }
 
 UAbilitySystemComponent* ABGCharacter::GetAbilitySystemComponent() const

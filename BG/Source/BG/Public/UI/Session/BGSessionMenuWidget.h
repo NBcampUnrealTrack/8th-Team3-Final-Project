@@ -127,7 +127,8 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> LeaveButton;
 
-	FTimerHandle LobbyRefreshTimer;
+	//	인원·준비 변화 구독. 폴링을 대신한다.
+	FDelegateHandle LobbyChangedHandle;
 
 	// 로비를 벗어난 페이즈를 본 뒤 한 번만 닫는다. 다시 F9 로 열면 그대로 둔다.
 	bool bClosedOnMatchStart = false;

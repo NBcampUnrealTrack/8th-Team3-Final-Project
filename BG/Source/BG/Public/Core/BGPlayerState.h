@@ -1,4 +1,4 @@
-﻿// BANG! 플레이어 상태 — 좌석/손패/장비/생존 등 플레이어별 데이터의 소유자.
+// BANG! 플레이어 상태 — 좌석/손패/장비/생존 등 플레이어별 데이터의 소유자.
 // 손패는 COND_OwnerOnly 로 본인에게만, 장수는 전원에게 복제한다.
 // 아직 카드 계층이 없어 좌석만 들고 있다 — 손패/장비는 M2 에서 여기에 붙인다.
 
@@ -19,6 +19,13 @@ class UBGReadyComponent;
 /** 손패 내용이 바뀌었다. UI 는 여기에 구독해 갱신한다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGHandChanged);
 
+/**
+ * 이탈/복귀 표시가 바뀌었다. 좌석 위 아이콘이나 이름표 흐리기 등에 쓴다.
+ * 누가 튕길지 모르므로 정적 이벤트로 모은다 — 구독자는 좌석 번호로 대상을 찾는다.
+ */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGDisconnectChanged,
+	int32 /*Seat*/, bool /*bDisconnected*/);
+
 UCLASS()
 class BG_API ABGPlayerState : public APlayerState
 {
@@ -30,9 +37,9 @@ public:
 	/**
 	 * 손패 변경 알림.
 	 *
-	 * ⚠️ 리슨서버 호스트는 자기 PlayerState 에 OnRep 이 호출되지 않는다(서버는 복제를 받지 않으므로).
-	 *    그래서 AddCardToHand / RemoveCardFromHand 안에서도 같이 브로드캐스트한다.
-	 *    이걸 놓치면 "클라는 손패가 보이는데 호스트만 안 보인다" 가 된다.
+	 * 주의: 리슨서버 호스트는 자기 PlayerState 에 OnRep 이 호출되지 않는다(서버는 복제를 받지 않으므로).
+	 * 그래서 AddCardToHand / RemoveCardFromHand 안에서도 같이 브로드캐스트한다.
+	 * 이걸 놓치면 "클라는 손패가 보이는데 호스트만 안 보인다" 가 된다.
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "BG|Player")
 	FOnBGHandChanged OnHandChanged;
@@ -51,9 +58,9 @@ public:
 	void AddCardToHand(const FBGCardInstance& Card);
 	bool RemoveCardFromHand(int32 InstanceId, FBGCardInstance& OutRemoved);
 
-	//	⚠️ COND_OwnerOnly 라 "본인 클라"와 "서버"에서만 내용이 차 있다.
-	//	   다른 플레이어의 PlayerState 에서 부르면 클라에서는 항상 빈 배열이어야 정상이다
-	//	   (비어 있지 않다면 은닉 정보가 새고 있는 것).
+	//	주의: COND_OwnerOnly 라 "본인 클라"와 "서버"에서만 내용이 차 있다.
+	// 다른 플레이어의 PlayerState 에서 부르면 클라에서는 항상 빈 배열이어야 정상이다
+	// (비어 있지 않다면 은닉 정보가 새고 있는 것).
 	const TArray<FBGCardInstance>& GetHand() const { return Hand; }
 
 	//	전원에게 복제되는 공개 장수. 남의 손패 크기는 이 값으로만 알 수 있다.
@@ -66,8 +73,8 @@ public:
 	// ── 장비(파란 카드) 장착 ──
 	//
 	// 장비는 지속 효과다 — EquipEffect(Infinite GE)를 ASC 에 붙여 어트리뷰트를 바꾼다.
-	// ⚠️ GE 핸들 생명주기를 Equipment 배열과 같은 곳에서 관리해야 한다.
-	//    배열만 비우고 GE 를 남기면 "장비는 없는데 효과는 계속" 이 된다(사망 처리에서 실제로 발생).
+	// 주의: GE 핸들 생명주기를 Equipment 배열과 같은 곳에서 관리해야 한다.
+	// 배열만 비우고 GE 를 남기면 "장비는 없는데 효과는 계속" 이 된다(사망 처리에서 실제로 발생).
 
 	UFUNCTION(BlueprintPure, Category = "BG|Equip")
 	bool HasEquippedCard(FName CardId) const;
@@ -82,7 +89,7 @@ public:
 	//
 	// 한도는 어트리뷰트 CardUseLimit 이 갖고, "이번 턴에 몇 장 썼는가" 만 여기서 센다.
 	// 턴 시작(BeginTurn)에 0 으로 초기화된다.
-	//   ⚠️ 버리기는 카드 사용이 아니다 — Discard 페이즈에서는 증가시키지 않는다.
+	//   주의: 버리기는 카드 사용이 아니다 — Discard 페이즈에서는 증가시키지 않는다.
 	UFUNCTION(BlueprintPure, Category = "BG|Player")
 	int32 GetCardsUsedThisTurn() const { return CardsUsedThisTurn; }
 
@@ -134,9 +141,9 @@ public:
 
 	// ── 생사 ──
 	//
-	// ⚠️ ASC 의 State.Dead 루즈 태그는 복제되지 않으므로 클라가 볼 수 없다.
-	//    "죽었다" 는 공개 사실이므로 여기에 복제 변수로 둔다.
-	//    (루즈 태그는 서버에서 GA 의 ActivationBlockedTags 를 막는 용도로만 쓴다)
+	// 주의: ASC 의 State.Dead 루즈 태그는 복제되지 않으므로 클라가 볼 수 없다.
+	// "죽었다" 는 공개 사실이므로 여기에 복제 변수로 둔다.
+	// (루즈 태그는 서버에서 GA 의 ActivationBlockedTags 를 막는 용도로만 쓴다)
 	UFUNCTION(BlueprintPure, Category = "BG|Player")
 	bool IsDead() const { return bIsDead; }
 
@@ -149,6 +156,66 @@ public:
 	 */
 	void TakeAllCards(TArray<FBGCardInstance>& OutCards);
 
+	// ── 이탈과 복귀 (밧줄 시스템) ─────────────────────────────────
+	//
+	// 판 중 이탈에도 이 PlayerState 는 파괴하지 않는다. 좌석·역할·손패가 여기 있어서,
+	// 명단에서 빠지면 보안관이 튕긴 순간 무법자 승리가 나 버린다.
+
+	/** 접속이 끊긴 채 자리만 남아 있는가. 사망과는 다르다 — 아직 살아 있는 좌석이다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Player")
+	bool IsDisconnected() const { return bDisconnected; }
+
+	//	서버 전용.
+	void SetDisconnected(bool bInDisconnected);
+
+	// 누군가의 이탈 표시가 바뀌었다. 서버·클라 양쪽에서 발사된다.
+	// 위젯이 늦게 생기면 통지를 놓치므로, 구독 직후 IsDisconnected() 로 한 번 맞출 것.
+	static FOnBGDisconnectChanged OnAnyDisconnectChanged;
+
+	/** 이 사람 턴에서 밧줄이 끝까지 탄 횟수. 스스로 턴을 끝내거나 돌아오면 0 으로 돌아간다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Player")
+	int32 GetRopeStrikes() const { return RopeStrikes; }
+
+	//	서버 전용. 누적값을 반환한다.
+	int32 AddRopeStrike();
+	void  ResetRopeStrikes();
+
+	// ── 역할·직업 사본 (서버 전용, 복제 금지 — 역할은 은닉 정보다) ──
+	//
+	// 정본은 폰에 있다. 이탈로 폰이 사라지면 GetSeatRole 이 무효 태그를 돌려줘
+	// 승패 판정이 틀어지므로, 배정 때 남긴 이 사본으로 답한다.
+	void SetCachedRole(const FGameplayTag& InRole) { CachedRoleTag = InRole; }
+	void SetCachedJob(const FGameplayTag& InJob)   { CachedJobTag  = InJob;  }
+
+	FGameplayTag GetCachedRole() const { return CachedRoleTag; }
+	FGameplayTag GetCachedJob()  const { return CachedJobTag;  }
+
+	// 접속할 때 클라가 보낸 재접속 열쇠(?BGKey=). 서버 전용 — 알려지면 자리를 가로챌 수 있다.
+	void SetPlayerKey(const FString& InKey) { PlayerKey = InKey; }
+	const FString& GetPlayerKey() const { return PlayerKey; }
+
+	// ── 체력·장비 스냅샷 (이탈 → 복귀) ────────────────────────────
+	//
+	// 이탈하면 폰이 파괴되어 체력과 장비 GE 가 함께 사라진다. 그대로 두면 체력 1 로 튕긴
+	// 사람이 만피로 돌아오므로, 나갈 때 적어 두고 새 폰에 다시 얹는다.
+
+	// 서버 전용. 이탈 직전 체력을 적고, 두고 가는 폰을 기억한다.
+	void SaveVitals(APawn* LeavingPawn);
+
+	// 서버 전용. 새로 스폰된 폰에 장비 GE 를 다시 붙이고 체력을 되돌린다.
+	void RestoreVitals();
+
+	// 두고 간 폰을 그대로 다시 물었을 때. 스냅샷을 쓰면 이중 적용이라 버린다.
+	void DiscardSavedVitals() { SavedHealth = 0.f; }
+
+	// 이탈하며 두고 간 폰. UnPossess 만 됐을 뿐 월드에는 그대로 남아 있다 —
+	// 이 포인터를 놓치면 복귀 때 같은 자리에 폰이 하나 더 스폰되어 두 개가 겹친다.
+	APawn* GetAbandonedPawn() const { return AbandonedPawn.Get(); }
+	void   ClearAbandonedPawn() { AbandonedPawn = nullptr; }
+
+	// 재접속한 컨트롤러의 새 PlayerState 로 판 상태를 넘긴다(복귀 처리가 유일한 호출자).
+	virtual void CopyProperties(APlayerState* NewPlayerState) override;
+
 private:
 	//	로비 준비 상태는 이 컴포넌트가 갖는다.
 	UPROPERTY(VisibleAnywhere, Category = "BG|Player")
@@ -156,8 +223,8 @@ private:
 
 	//	소유 클라에 Hand 가 복제되면 호출된다.
 	//	TODO(3.2): 여기서 OnHandChanged 를 브로드캐스트해 손패 UI 를 갱신한다.
-	//	⚠️ 리슨서버 호스트는 OnRep 이 호출되지 않으므로, 그때는 AddCardToHand /
-	//	   RemoveCardFromHand 안에서도 같은 알림을 쏴야 한다.
+	//	주의: 리슨서버 호스트는 OnRep 이 호출되지 않으므로, 그때는 AddCardToHand /
+	// RemoveCardFromHand 안에서도 같은 알림을 쏴야 한다.
 	UFUNCTION()
 	void OnRep_Hand();
 
@@ -173,6 +240,34 @@ private:
 
 	UPROPERTY(Replicated)
 	bool bIsDead = false;                  // 전원 공개
+
+	//	전원 공개 — 좌석 UI 가 "접속 끊김" 을 표시하고, 그 자리를 기다린다는 것을 모두가 알아야 한다.
+	UPROPERTY(ReplicatedUsing = OnRep_Disconnected)
+	bool bDisconnected = false;
+
+	UFUNCTION()
+	void OnRep_Disconnected();
+
+	//	전원 공개 — 밧줄이 몇 번 탔는지는 남은 기회를 보여 주는 공개 정보다.
+	UPROPERTY(Replicated)
+	int32 RopeStrikes = 0;
+
+	//	서버 전용 사본. 폰이 사라져도 역할·직업을 잃지 않기 위한 것 — 복제 금지(은닉 정보).
+	UPROPERTY()
+	FGameplayTag CachedRoleTag;
+	UPROPERTY()
+	FGameplayTag CachedJobTag;
+
+	//	재접속 열쇠. 서버 전용 — 복제하면 남의 자리를 가로챌 수 있다.
+	UPROPERTY()
+	FString PlayerKey;
+
+	//	이탈 직전 체력. 0 이하면 적어 둔 값이 없다는 뜻이다.
+	UPROPERTY()
+	float SavedHealth = 0.f;
+
+	//	두고 간 폰. PS->GetPawn() 은 UnPossess 와 함께 비므로 따로 들고 있어야 한다.
+	TWeakObjectPtr<APawn> AbandonedPawn;
 
 	UPROPERTY(Replicated)
 	FGameplayTag PublicRoleTag;            // 전원 공개 (공개된 역할만)

@@ -85,6 +85,12 @@ namespace
 		case EBGCardEffectOp::StealTargetRandom:   return EBGCardFXArchetype::Steal;
 		case EBGCardEffectOp::DiscardTargetRandom: return EBGCardFXArchetype::Discard;
 		case EBGCardEffectOp::ApplyStatus:         return EBGCardFXArchetype::Status;
+
+		//	장비를 겨냥한 것도 손패를 겨냥한 것과 같은 원형으로 본다.
+		//	"뭘 훔쳤나" 는 대상 자리의 연출이 말해 주고, 카드 쪽 연출은 같아도 읽힌다.
+		case EBGCardEffectOp::StealTargetEquipRandom:   return EBGCardFXArchetype::Steal;
+		case EBGCardEffectOp::DiscardTargetEquipRandom: return EBGCardFXArchetype::Discard;
+
 		default:                                   return EBGCardFXArchetype::None;
 		}
 	}
@@ -100,6 +106,8 @@ namespace
 		case EBGCardEffectOp::DamageTarget:
 		case EBGCardEffectOp::StealTargetRandom:
 		case EBGCardEffectOp::DiscardTargetRandom:
+		case EBGCardEffectOp::StealTargetEquipRandom:
+		case EBGCardEffectOp::DiscardTargetEquipRandom:
 			return EBGCardFXTargetKind::Target;
 
 		case EBGCardEffectOp::DrawSelf:

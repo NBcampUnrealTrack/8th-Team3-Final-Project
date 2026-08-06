@@ -1,4 +1,4 @@
-﻿#include "Core/BGPlayerController.h"
+#include "Core/BGPlayerController.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemGlobals.h"
@@ -21,6 +21,9 @@
 #include "UI/Widget/BGSeatBoardWidget.h"
 #include "UI/Widget/BGTurnPanelWidget.h"
 #include "UI/Widget/BGResolutionWidget.h"
+#include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
+#include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
+#include "Core/BGCharacter.h"                // 연출 주인공 캐스팅
 #include "Components/InputComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -56,6 +59,8 @@ void ABGPlayerController::SetHandWidget(UBGHandWidget* InHandWidget)
 	TryBindHandDelegate();
 	TryBindAttributeDelegates();
 	TryBindResolutionDelegate();
+	TryBindCameraShotDelegate();
+	TryBindTurnStateDelegate();
 	RefreshHandWidget();
 	UpdateHandInteractionLock();
 }
@@ -138,7 +143,7 @@ void ABGPlayerController::SetupInputComponent()
 
 	//	대상 선택 취소. CancelTargetSelection 은 선택 중이 아니면 아무것도 하지 않으므로
 	//	평소 우클릭에는 영향이 없다.
-	//	⚠️ PIE 에서는 ESC 를 에디터가 먼저 먹어 세션이 종료된다 — 테스트는 우클릭으로 할 것.
+	//	주의: PIE 에서는 ESC 를 에디터가 먼저 먹어 세션이 종료된다 — 테스트는 우클릭으로 할 것.
 	InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
 }
@@ -151,7 +156,46 @@ void ABGPlayerController::OnRep_PlayerState()
 	TryBindHandDelegate();
 	TryBindAttributeDelegates();
 	TryBindResolutionDelegate();
+	TryBindCameraShotDelegate();
+	TryBindTurnStateDelegate();
 	RefreshHandWidget();
+}
+
+void ABGPlayerController::Destroyed()
+{
+	//	판이 도는 중이면 폰을 떼어 내 월드에 남긴다. Super 가 폰을 파괴하기 전 마지막 기회다.
+	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	APawn* Current = GetPawn();
+
+	if (HasAuthority() && GS && GS->IsMatchRunning() && Current)
+	{
+		if (ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
+		{
+			PS->SaveVitals(Current);
+		}
+		UnPossess();
+	}
+
+	Super::Destroyed();
+}
+
+void ABGPlayerController::CleanupPlayerState()
+{
+	//	AController::Destroyed 는 Logout 을 먼저 부른다 — 그때 붙은 이탈 표시를 여기서 본다.
+	//	표시가 있으면 이 PlayerState 는 아직 판의 일부라 파괴하면 안 된다.
+	ABGPlayerState* PS = Cast<ABGPlayerState>(PlayerState);
+	if (PS && PS->IsDisconnected())
+	{
+		//	소유 관계를 끊어 둔다 — 파괴되는 컨트롤러가 끌고 가지 않도록.
+		PS->SetOwner(nullptr);
+		SetPlayerState(nullptr);
+
+		UE_LOG(LogBGCard, Log, TEXT("[Seat] 좌석 %d PlayerState 유지 — 복귀 대기"),
+			PS->GetSeatIndex());
+		return;
+	}
+
+	Super::CleanupPlayerState();
 }
 
 void ABGPlayerController::TryBindHandDelegate()
@@ -294,6 +338,123 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 	ResolutionWidget->ShowResolution(View);
 }
 
+// ======================================================================================
+//  연출 카메라
+//
+//  복제되는 것은 GameState 의 FBGCameraShot("무엇을 비출지") 하나뿐이다.
+//  카메라 액터는 로컬이고, 뷰타깃 전환도 각 클라가 자기 화면에 대해 수행한다.
+// ======================================================================================
+
+void ABGPlayerController::EnsureCinematicCamera()
+{
+	//	화면이 있는 쪽에서만 필요하다. 서버가 남의 몫까지 스폰하면 쓰지도 않을 액터가 인원수만큼 생긴다.
+	if (CinematicCamera || !IsLocalController())
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters Params;
+	Params.Owner = this;
+	//	레벨 스트리밍·세이브에 끼어들 이유가 없는 순수 표시용 액터다.
+	Params.ObjectFlags |= RF_Transient;
+
+	CinematicCamera = World->SpawnActor<ABGCinematicCamera>(
+		ABGCinematicCamera::StaticClass(), FTransform::Identity, Params);
+
+	//	선회(Orbit)의 중심은 판의 중심 — 캠프파이어다.
+	//	비워 두면 월드 원점을 축으로 돌아 테이블을 벗어난 궤도를 그린다.
+	if (CinematicCamera)
+	{
+		if (const ABGCampfire* Campfire = ABGCampfire::Find(World))
+		{
+			CinematicCamera->LookAtLocation = Campfire->GetActorLocation();
+		}
+	}
+}
+
+void ABGPlayerController::TryBindCameraShotDelegate()
+{
+	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	if (!GS || BoundCameraGameState.Get() == GS)
+	{
+		return;
+	}
+
+	if (ABGGameState* Previous = BoundCameraGameState.Get())
+	{
+		Previous->OnCameraShotChanged.RemoveAll(this);
+	}
+
+	GS->OnCameraShotChanged.AddUObject(this, &ABGPlayerController::HandleCameraShotChanged);
+	BoundCameraGameState = GS;
+
+	//	구독보다 샷이 먼저 시작됐을 수 있다(늦게 접속). 현재 상태를 즉시 한 번 적용한다 —
+	//	이게 "이벤트가 아니라 상태" 로 둔 것의 값어치다.
+	HandleCameraShotChanged(GS->GetCameraShot());
+}
+
+void ABGPlayerController::HandleCameraShotChanged(const FBGCameraShot& Shot)
+{
+	if (!IsLocalController())
+	{
+		return;   // 화면이 없는 컨트롤러에는 뷰타깃 개념이 없다.
+	}
+
+	//	연출 속도 설정은 GameState 가 들고 있다 — 세 구간을 한곳에서 조율하기 위해서다.
+	//	EditDefaultsOnly(CDO) 값이라 클라에서도 복제 없이 그대로 읽힌다.
+	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+
+	if (!Shot.IsActive())
+	{
+		//	연출 종료 — 자기 폰으로 돌아간다. 폰이 없으면(관전·사망 대기) 손댈 것이 없다.
+		if (APawn* MyPawn = GetPawn())
+		{
+			//	0 이면 SetViewTarget 이 즉시 전환 분기를 탄다(PlayerCameraManager 의 BlendTime 검사).
+			SetViewTargetWithBlend(MyPawn,
+				GS ? GS->GetCinematicExitBlendSeconds() : 0.f, VTBlend_EaseInOut, 2.f);
+		}
+		return;
+	}
+
+	EnsureCinematicCamera();
+	if (!CinematicCamera)
+	{
+		return;
+	}
+
+	//	샷이 시작된 지 얼마나 지났는지 서버 시간으로 계산한다.
+	//	늦게 접속한 클라는 이만큼 건너뛰고 시작해 남들과 같은 그림에 합류한다.
+	//	서버 시간은 GameState 가 들고 있다(클라에서는 보정된 값이 나온다).
+	const float Elapsed = GS
+		? FMath::Max(0.f, GS->GetServerWorldTimeSeconds() - Shot.StartServerTime)
+		: 0.f;
+
+	const bool bAlreadyInCinematic = (GetViewTarget() == CinematicCamera);
+
+	if (bAlreadyInCinematic)
+	{
+		//	이미 연출 중이다 — 뷰타깃은 그대로 두고 액터만 다음 샷으로 날린다.
+		//	여기서 SetViewTarget 을 다시 부르면 카메라 매니저 블렌드가 끼어들어 튄다.
+		CinematicCamera->BeginShot(Shot, Elapsed);
+		return;
+	}
+
+	//	연출 진입 — 카메라를 먼저 목표에 붙여 놓고 뷰타깃을 넘긴다.
+	//	순서가 반대면 카메라가 원점(0,0,0)에 있는 한 프레임이 화면에 보인다.
+	CinematicCamera->SnapToShot(Shot);
+	CinematicCamera->BeginShot(Shot, Elapsed);
+
+	SetViewTargetWithBlend(CinematicCamera,
+		GS ? GS->GetCinematicEnterBlendSeconds() : 0.f, VTBlend_EaseInOut, 2.f,
+		/*bLockOutgoing=*/true);
+}
+
 void ABGPlayerController::TryBindAttributeDelegates()
 {
 	const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
@@ -409,6 +570,31 @@ void ABGPlayerController::BeginPlay()
 	}
 }
 
+void ABGPlayerController::TryBindTurnStateDelegate()
+{
+	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	if (!GS || BoundTurnGameState.Get() == GS)
+	{
+		return;
+	}
+
+	GS->OnTurnStateChanged.AddUniqueDynamic(this, &ABGPlayerController::HandleTurnStateChanged);
+	BoundTurnGameState = GS;
+
+	//	구독 전에 이미 판이 시작됐을 수 있다 — 지금 상태로 한 번 맞춘다.
+	HandleTurnStateChanged();
+
+	UE_LOG(LogBGCard, Verbose, TEXT("[PC] 턴 상태 통지 구독"));
+}
+
+void ABGPlayerController::HandleTurnStateChanged()
+{
+	RefreshTurnPanel();
+	RefreshSeatBoard();
+	UpdateHandInteractionLock();
+	RefreshHandWidget();   //	카드의 사용 가능 표시가 페이즈에 걸려 있다.
+}
+
 void ABGPlayerController::RefreshSeatBoard()
 {
 	if (SeatBoardWidget)
@@ -427,7 +613,9 @@ void ABGPlayerController::RefreshSeatBoard()
 	//	  · GameState — 클라에서는 PlayerState 보다 늦게 올 수 있다. 놓치면 판정이 영영 안 뜬다.
 	//	  · 폰의 ASC  — 손패보다 늦게 스폰되면 보정 구독이 비어, 장비를 껴도 확률이 안 바뀐다.
 	TryBindResolutionDelegate();
+	TryBindCameraShotDelegate();
 	TryBindAttributeDelegates();
+	TryBindTurnStateDelegate();
 }
 
 // ======================================================================================
@@ -723,8 +911,8 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	}
 
 	// ── CardId 태그 → GA 클래스 (맵을 "카드 종류"로 직접 조회) ──
-	//  ⚠️ 맵(AbilityByCardId)의 키는 카드 태그(Card.Id.*)다 — 유저 설정에 맞춰 카드 기준 조회.
-	//     (메커니즘 태그 Ability.* 로 거치지 않는다.)
+	//  주의: 맵(AbilityByCardId)의 키는 카드 태그(Card.Id.*)다 — 유저 설정에 맞춰 카드 기준 조회.
+	// (메커니즘 태그 Ability.* 로 거치지 않는다.)
 	const TSubclassOf<UGameplayAbility>* Found = AbilityByCardId.Find(CardId);
 	if (!Found || !*Found)
 	{
@@ -804,8 +992,8 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 	// ── 파란 카드(장비): 판정 없이 즉시 장착 (GDD §6.3) ──
 	//	장비는 지속 효과라 판정 대상이 아니다. GA 도 발동하지 않는다.
-	//	⚠️ 카드가 버린 패로 가지 않는다 — 손패에서 장비로 "이동" 한다.
-	//	   그래서 ConsumeCard(버리기)를 쓰지 않고 직접 옮긴다.
+	//	주의: 카드가 버린 패로 가지 않는다 — 손패에서 장비로 "이동" 한다.
+	// 그래서 ConsumeCard(버리기)를 쓰지 않고 직접 옮긴다.
 	if (CardRow->TypeTag == BG::Card::Type::Blue.GetTag())
 	{
 		ABGPlayerState* EquipPS = GetPlayerState<ABGPlayerState>();
@@ -869,9 +1057,9 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			//	§11 "설정 확률 vs 실측" 비교가 성립한다. (ApplyModifiers 안에서 제외됨)
 			//	→ UBGDiceComponent::ApplyLuck 은 선언만 남고 호출처가 없다(§13.1 비활성).
 			//
-			//	⚠️ 장비 보정은 반드시 통과시켜야 한다. 이 호출을 빼면 드워프 장갑·마녀의 부적이
-			//	   GE 로 어트리뷰트를 바꿔도 판정이 읽지 않아 효과가 사라진다.
-			//	   GDD §10 도 "장비 효과가 적용된 최종 확률" 을 표시하라고 요구한다.
+			//	주의: 장비 보정은 반드시 통과시켜야 한다. 이 호출을 빼면 드워프 장갑·마녀의 부적이
+			// GE 로 어트리뷰트를 바꿔도 판정이 읽지 않아 효과가 사라진다.
+			// GDD §10 도 "장비 효과가 적용된 최종 확률" 을 표시하라고 요구한다.
 			const FBGOutcomeWeights Weights = Dice->ApplyModifiers(CardRow->OutcomeWeights, ASC);
 
 			int32 Roll = INDEX_NONE;
@@ -939,9 +1127,9 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			//	[비활성] EventMagnitude 는 전용 GA(GA_Bang/GA_Heal/GA_StealOrDiscard)의 폴백 경로다.
 			//	  그 GA 들이 전부 비활성이라(GDD §13.1) 지금은 아무도 읽지 않는다.
 			//	  실어 보내는 것 자체는 무해하고, 전용 GA 를 되살릴 때 이 줄이 있어야 하므로 남긴다.
-			//	  ⚠️ 다만 로그에는 찍지 않는다 — OutcomeMagnitudes 는 비활성 필드라 실제 효과와
-			//	     어긋난다(뱅 성공이 "수치 0" 으로, 함정이 "수치 1" 로 보였다).
-			//	     실제 효과는 바로 다음 줄에서 GA 가 요약을 출력한다.
+			//	  주의: 다만 로그에는 찍지 않는다 — OutcomeMagnitudes 는 비활성 필드라 실제 효과와
+			// 어긋난다(뱅 성공이 "수치 0" 으로, 함정이 "수치 1" 로 보였다).
+			// 실제 효과는 바로 다음 줄에서 GA 가 요약을 출력한다.
 			Payload.EventMagnitude = static_cast<float>(CardRow->OutcomeMagnitudes.ForOutcome(Outcome));
 
 			ResolvedOutcome = Outcome;
@@ -1056,6 +1244,22 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		{
 			UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 카드 사용 %d / %d"),
 				GetMySeatIndex(), MyPS->GetCardsUsedThisTurn(), GS->GetCardUseLimitForSeat(GetMySeatIndex()));
+		}
+	}
+
+	// ── 연출 (아트 기획서 "전투 연출") ──────────────────────────────
+	//	맨 마지막에 시작한다. 판정·효과 적용·카드 소비가 모두 끝난 뒤라야
+	//	연출이 규칙에 관여하지 않는다는 원칙(Card.Trait.Cinematic 주석)이 지켜진다.
+	//	연출이 켜지든 말든 여기까지의 결과는 완전히 동일하다.
+	if (CardRow->TraitTags.HasTag(BG::Card::Trait::Cinematic.GetTag()))
+	{
+		if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+		{
+			//	Primary 주인공은 카드를 쓴 사람, Secondary 는 대상이다.
+			//	대상이 없는 카드(회복 등)는 GameState 가 사용자를 계속 비춘다.
+			MutableGS->BeginCardCinematic(
+				Cast<ABGCharacter>(GetPawn()),
+				Cast<ABGCharacter>(ResolveTargetActor(TargetSeat)));
 		}
 	}
 }

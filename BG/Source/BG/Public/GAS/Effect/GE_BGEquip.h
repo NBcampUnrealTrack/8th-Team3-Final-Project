@@ -36,3 +36,19 @@ class BG_API UGE_Equip_WitchCharm : public UGameplayEffect
 public:
 	UGE_Equip_WitchCharm();
 };
+
+/**
+ * 요정 갑옷 — 나에게 들어오는 공격이 25% 확률로 무효화된다.
+ *
+ * 앞의 둘과 성격이 다르다: 저 둘은 **내가 굴리는 판정**의 비율을 바꾸지만,
+ * 이것은 **남이 나에게 넣는 피해**를 막는다. 그래서 판정 가중치가 아니라
+ * DamageNegateChance 어트리뷰트를 올리고, 실제 굴림은 피해가 들어가기 직전
+ * UGA_BGCardEffects::ApplyDamage 에서 서버가 한 번 한다.
+ */
+UCLASS()
+class BG_API UGE_Equip_FairyArmor : public UGameplayEffect
+{
+	GENERATED_BODY()
+public:
+	UGE_Equip_FairyArmor();
+};

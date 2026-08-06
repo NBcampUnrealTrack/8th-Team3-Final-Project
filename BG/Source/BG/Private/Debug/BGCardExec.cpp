@@ -106,6 +106,7 @@ void ABGGameMode::BG_DumpDeck()
 	//	   신고되어, 진짜 문제가 생겼을 때 경고에 묻힌다.
 	int32 NumNoEquipEffect = 0;
 	int32 NumNoEffectData = 0;
+	int32 NumCinematic = 0;
 	for (const TPair<FName, int32>& Pair : Counts)
 	{
 		const FBGCardRow* Row = Data->GetCardRow(Pair.Key);
@@ -129,9 +130,19 @@ void ABGGameMode::BG_DumpDeck()
 			++NumNoEffectData;
 		}
 
-		UE_LOG(LogBGCard, Log, TEXT("  %-32s %3d 장%s"),
+		//	연출 카드 표시. 경고가 아니라 상태다 — 태그를 넣었는데 안 붙었는지,
+		//	넣지 않았는데 붙었는지를 DT 를 열지 않고 확인하려는 것이다.
+		const bool bCinematic =
+			(Row != nullptr) && Row->TraitTags.HasTag(BG::Card::Trait::Cinematic.GetTag());
+		if (bCinematic)
+		{
+			++NumCinematic;
+		}
+
+		UE_LOG(LogBGCard, Log, TEXT("  %-32s %3d 장%s%s"),
 			*Pair.Key.ToString(),
 			Pair.Value,
+			bCinematic ? TEXT("  [연출]") : TEXT("      "),
 			(Row == nullptr)  ? TEXT("   [!! DT_BGCard 에 Row 없음]") :
 			bNoEquipEffect    ? TEXT("   [!! EquipEffect 없음 — 장착해도 효과 없음]") :
 			bNoEffectData     ? TEXT("   [!! 효과 데이터 없음 — OutcomeEffects 를 채우세요]") :
@@ -149,6 +160,8 @@ void ABGGameMode::BG_DumpDeck()
 		UE_LOG(LogBGCard, Log, TEXT("총 %d 종류 / %d 장   (기대 장수 미설정 — Bang.ExpectedDeckSize 로 켤 수 있음)"),
 			Counts.Num(), Deck.Num());
 	}
+
+	UE_LOG(LogBGCard, Log, TEXT("연출 카드 %d 종 (Card.Trait.Cinematic)"), NumCinematic);
 
 	if (NumNoEquipEffect > 0)
 	{
@@ -253,25 +266,15 @@ void ABGGameMode::BG_DealHand(int32 Count)
 			continue;
 		}
 
-		TArray<FString> Dealt;
-		Dealt.Reserve(Count);
+		const int32 Before = PS->GetHandCount();
 
-		for (int32 i = 0; i < Count; ++i)
-		{
-			FBGCardInstance Card;
-			if (!State->DrawFromDeck(Card))
-			{
-				UE_LOG(LogBGCard, Warning, TEXT("  덱 소진 — %d 장에서 중단"), Dealt.Num());
-				break;
-			}
+		//	덱 뽑기는 반드시 이 함수를 거친다 — 손패 상한 검사가 여기 있다.
+		//	테스트 명령이 상한을 우회하면 상한 자체를 검증할 수 없다.
+		const int32 Dealt = State->DrawCardsToHand(PS, Count);
 
-			//	손패 변경은 반드시 이 함수를 거친다 (HandCount 동기화가 여기에 있다).
-			PS->AddCardToHand(Card);
-			Dealt.Add(FString::Printf(TEXT("%s#%d"), *Card.CardId.ToString(), Card.InstanceId));
-		}
-
-		UE_LOG(LogBGCard, Log, TEXT("  좌석 %d (%s) → %d 장 : %s"),
-			PS->GetSeatIndex(), *PC->GetName(), Dealt.Num(), *FString::Join(Dealt, TEXT(", ")));
+		UE_LOG(LogBGCard, Log, TEXT("  좌석 %d (%s) → %d/%d 장 (손패 %d → %d, 상한 %d)"),
+			PS->GetSeatIndex(), *PC->GetName(), Dealt, Count,
+			Before, PS->GetHandCount(), State->GetHandLimitForSeat(PS->GetSeatIndex()));
 	}
 
 	UE_LOG(LogBGCard, Log, TEXT("배분 후 — 덱 %d 장 / 버린 패 %d 장"),

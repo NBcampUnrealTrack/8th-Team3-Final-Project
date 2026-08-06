@@ -2,6 +2,8 @@
 
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
+#include "Lobby/BGRopeComponent.h"
+#include "Engine/World.h"
 
 void UBGTurnPanelWidget::NativePreConstruct()
 {
@@ -21,6 +23,84 @@ void UBGTurnPanelWidget::NativeConstruct()
 	}
 
 	RefreshVisual();
+}
+
+bool UBGTurnPanelWidget::TryBindRope()
+{
+	if (Rope.IsValid())
+	{
+		return true;
+	}
+
+	UBGRopeComponent* Found = UBGRopeComponent::Find(GetWorld());
+	if (!Found)
+	{
+		return false;   //	GameState 가 아직 안 왔다(클라 접속 직후). 다음 틱에 다시 본다.
+	}
+
+	Rope = Found;
+	Found->OnRopeChanged.AddUniqueDynamic(this, &UBGTurnPanelWidget::HandleRopeChanged);
+
+	//	위젯이 밧줄보다 늦게 만들어졌으면 점화 통지를 이미 놓쳤다 — 지금 상태로 한 번 맞춘다.
+	RefreshRopeText();
+	return true;
+}
+
+void UBGTurnPanelWidget::HandleRopeChanged(int32 Seat, float SecondsRemaining, float TotalSeconds)
+{
+	RefreshRopeText();
+}
+
+void UBGTurnPanelWidget::RefreshRopeText()
+{
+	const UBGRopeComponent* R = Rope.Get();
+
+	FString Label = TEXT("밧줄 -");
+	if (R && R->IsBurning())
+	{
+		//	내 밧줄인지 남의 밧줄인지 구분해 둔다 — 지금은 텍스트뿐이라 이 표시가 유일한 단서다.
+		const bool bMine = R->IsSeatBurning(TurnView.MySeat);
+		Label = FString::Printf(TEXT("밧줄 %s%.0f초 (좌석 %d)"),
+			bMine ? TEXT("[내 차례] ") : TEXT(""), R->GetSecondsRemaining(), R->GetRopeSeat());
+	}
+
+	if (Text_Rope)
+	{
+		Text_Rope->SetText(FText::FromString(Label));
+		return;
+	}
+
+	//	WBP 에 Text_Rope 가 아직 없다 — 화면에 직접 찍어 흐름만이라도 확인할 수 있게 한다.
+	//	정식 위젯을 붙이면 위에서 반환되어 이 경로는 자연히 죽는다.
+#if !UE_BUILD_SHIPPING
+	if (GEngine)
+	{
+		//	표시 시간은 틱 간격보다 넉넉해야 한다 — 0 이면 그리기 전에 만료돼 아무것도 안 보인다.
+		GEngine->AddOnScreenDebugMessage(/*Key=*/ 0xB60DE, /*Time=*/ 1.f, FColor::Yellow, Label);
+	}
+#endif
+}
+
+void UBGTurnPanelWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	//	Text_Rope 가 없어도 부른다 — 그때는 화면 표시로 폴백하기 때문이다.
+	if (TryBindRope())
+	{
+		RefreshRopeText();   //	남은 초는 매 프레임 줄어든다 — 델리게이트로는 표현할 수 없다.
+	}
+}
+
+void UBGTurnPanelWidget::NativeDestruct()
+{
+	if (UBGRopeComponent* R = Rope.Get())
+	{
+		R->OnRopeChanged.RemoveDynamic(this, &UBGTurnPanelWidget::HandleRopeChanged);
+	}
+	Rope = nullptr;
+
+	Super::NativeDestruct();
 }
 
 void UBGTurnPanelWidget::SetTurnView(const FBGTurnView& InTurnView)

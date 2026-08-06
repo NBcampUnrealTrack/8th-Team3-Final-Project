@@ -1,4 +1,4 @@
-﻿// Fill out your copyright notice in the Description page of Project Settings.
+// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Core/BGGameState.h"
@@ -14,6 +14,9 @@
 #include "Core/BGCharacter.h"
 #include "GAS/BGAttributeSet.h"
 #include "Core/BGGameInstance.h"
+#include "Lobby/BGRopeComponent.h"
+#include "Lobby/BGSeatComponent.h"
+#include "GAS/Effect/GE_BGDamage.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
@@ -23,6 +26,9 @@ ABGGameState::ABGGameState()
 	//	확률 판정은 컴포넌트가 맡는다 (GameMode 가 아니라 여기 — 클라도 설정을 읽어야 하고
 	//	시드 난수의 소유자가 GameState 이기 때문).
 	Dice = CreateDefaultSubobject<UBGDiceComponent>(TEXT("Dice"));
+
+	//	턴 제한 시간도 같은 이유로 여기 — 남은 시간을 클라 UI 가 읽어야 한다.
+	Rope = CreateDefaultSubobject<UBGRopeComponent>(TEXT("Rope"));
 }
 
 void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -37,6 +43,191 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, WinningRoleTag);
 	DOREPLIFETIME(ABGGameState, bMatchRunning);
 	DOREPLIFETIME(ABGGameState, MatchEndStage);
+	DOREPLIFETIME(ABGGameState, CameraShot);
+	DOREPLIFETIME(ABGGameState, CinematicStage);
+	DOREPLIFETIME(ABGGameState, CinematicInstigator);
+	DOREPLIFETIME(ABGGameState, CinematicTarget);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+//  카드 연출
+//
+//  Phase.* 와 별개의 축이다. PhaseTag 는 연출 중에도 그대로 남아 있고, 연출이 끝나면
+//  단계를 None 으로 되돌리는 것만으로 원래 상태가 복구된다.
+// ══════════════════════════════════════════════════════════════════════════════════════
+
+ABGCharacter* ABGGameState::GetCinematicSubject() const
+{
+	switch (CinematicStage)
+	{
+	case EBGCinematicStage::Primary:   return CinematicInstigator;
+	//	피해자가 없는 카드(회복 등)는 사용자를 계속 비춘다 — 빈 화면을 3초 보여주는 것보다 낫다.
+	case EBGCinematicStage::Secondary: return CinematicTarget ? CinematicTarget : CinematicInstigator;
+	default:                           return nullptr;
+	}
+}
+
+void ABGGameState::BeginCardCinematic(ABGCharacter* Caster, ABGCharacter* Victim)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	//	연출 중에 또 시작하면 단계가 꼬인다. 카드 사용은 연출 중 막혀 있지만(CanSeatPlayCards),
+	//	서버 내부에서 연쇄로 불릴 여지가 있어 여기서도 한 번 막는다.
+	if (IsCinematicPlaying())
+	{
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[Cinematic] 이미 연출 중입니다(%d 단계) — 새 연출 요청을 무시합니다."),
+			static_cast<int32>(CinematicStage));
+		return;
+	}
+
+	if (!Caster)
+	{
+		//	주인공이 없으면 비출 대상이 없다. 상태만 걸어 두면 입력만 막히고 화면은 그대로다.
+		UE_LOG(LogBGCard, Warning, TEXT("[Cinematic] 사용자 캐릭터가 없어 연출을 건너뜁니다."));
+		return;
+	}
+
+	CinematicInstigator = Caster;
+	CinematicTarget     = Victim;
+
+	SetCinematicStage(EBGCinematicStage::Primary);
+}
+
+void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
+{
+	if (!HasAuthority() || CinematicStage == NewStage)
+	{
+		return;
+	}
+
+	CinematicStage = NewStage;
+
+	//	서버는 자기 OnRep 을 받지 못한다 — 여기서 직접 부르지 않으면 리슨서버 호스트만 연출이 안 뜬다.
+	HandleCinematicStage();
+
+	GetWorldTimerManager().ClearTimer(CinematicStageTimer);
+
+	//	다음 단계 예약. 길이가 0 이하면 그 단계를 건너뛴다 — 연출을 끄고 규칙만 돌릴 때 쓴다.
+	switch (NewStage)
+	{
+	case EBGCinematicStage::Primary:
+		if (PrimaryCinematicSeconds > 0.f)
+		{
+			GetWorldTimerManager().SetTimer(CinematicStageTimer,
+				[this]() { SetCinematicStage(EBGCinematicStage::Secondary); },
+				PrimaryCinematicSeconds, /*bLoop=*/false);
+		}
+		else
+		{
+			SetCinematicStage(EBGCinematicStage::Secondary);
+		}
+		break;
+
+	case EBGCinematicStage::Secondary:
+		if (SecondaryCinematicSeconds > 0.f)
+		{
+			GetWorldTimerManager().SetTimer(CinematicStageTimer,
+				[this]() { SetCinematicStage(EBGCinematicStage::None); },
+				SecondaryCinematicSeconds, /*bLoop=*/false);
+		}
+		else
+		{
+			SetCinematicStage(EBGCinematicStage::None);
+		}
+		break;
+
+	case EBGCinematicStage::None:
+		//	연출 종료 — 주인공 참조를 놓아준다. 남겨 두면 죽은 캐릭터를 계속 붙들고 있게 된다.
+		CinematicInstigator = nullptr;
+		CinematicTarget     = nullptr;
+
+		//	주의: 참조를 놓은 **뒤에** 부른다. 사망 처리 안에서 승패가 나면 판이 끝나는데,
+		// 그 전에 연출 상태가 완전히 정리돼 있어야 한다.
+		// 또한 IsCinematicPlaying() 이 이미 false 라 여기서 처리하는 사망이
+		// 다시 대기열로 들어가는 일이 없다 — 순서가 뒤바뀌면 영영 처리되지 않는다.
+		FlushPendingDeaths();
+		break;
+	}
+}
+
+void ABGGameState::OnRep_CinematicStage()
+{
+	//	같은 번들의 CinematicInstigator/Target 은 RepNotify 전에 모두 적용된다 — 여기서 읽어도 안전하다.
+	HandleCinematicStage();
+}
+
+void ABGGameState::HandleCinematicStage()
+{
+	if (BroadcastedCinematicStage == CinematicStage)
+	{
+		return;   // 복제 재전송으로 같은 통지가 두 번 나가는 것을 막는다.
+	}
+	BroadcastedCinematicStage = CinematicStage;
+
+	ABGCharacter* Subject = GetCinematicSubject();
+
+	UE_LOG(LogBGCard, Log, TEXT("[Cinematic] 단계 %d — 주인공 %s"),
+		static_cast<int32>(CinematicStage),
+		Subject ? *Subject->GetName() : TEXT("없음"));
+
+	//	── 카메라 연동 ──
+	//	연출 단계가 곧 "누구의 B 카메라를 비출 것인가" 다. 이 두 줄만 지우면
+	//	상태 관리는 그대로 두고 카메라만 직접 제어할 수 있다.
+	if (HasAuthority())
+	{
+		//	단계 사이 이동 속도. None 단계면 Subject 가 nullptr → 각자 A 카메라로 복귀하며,
+		//	그때는 이 값이 아니라 CinematicExitBlendSeconds(뷰타깃 전환)가 체감을 결정한다.
+		SetCameraShot(Subject, CinematicShotBlendSeconds);
+	}
+
+	OnCinematicStageChanged.Broadcast(CinematicStage, Subject);
+}
+
+void ABGGameState::SetCameraShot(ABGCharacter* Target, float BlendSeconds, EBGShotBlend Blend)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	//	같은 대상으로 다시 걸면 무시한다 — 안 그러면 시작 시각이 갱신되어
+	//	이미 도착한 카메라가 처음부터 다시 날아온다.
+	if (CameraShot.Target == Target)
+	{
+		return;
+	}
+
+	CameraShot.Target       = Target;
+	CameraShot.BlendSeconds = BlendSeconds;
+	CameraShot.Blend        = Blend;
+
+	//	서버 시간을 기준으로 삼아야 늦게 온 클라가 진행도를 계산할 수 있다.
+	//	각자 자기 시계로 0 부터 세면 같은 순간에 서로 다른 그림을 본다.
+	CameraShot.StartServerTime = GetServerWorldTimeSeconds();
+
+	//	서버는 자기 OnRep 을 받지 못한다 — 여기서 직접 부르지 않으면 리슨서버 호스트만 연출이 안 뜬다.
+	HandleCameraShot();
+
+	UE_LOG(LogBGCard, Log, TEXT("[Camera] 샷 전환 — %s (%.2fs, %s)"),
+		Target ? *Target->GetName() : TEXT("연출 종료"),
+		BlendSeconds,
+		Blend == EBGShotBlend::Orbit ? TEXT("선회") : TEXT("직선"));
+}
+
+void ABGGameState::OnRep_CameraShot()
+{
+	HandleCameraShot();
+}
+
+void ABGGameState::HandleCameraShot()
+{
+	//	여기서 뷰타깃을 직접 건드리지 않는다 — 화면은 PlayerController 의 몫이고,
+	//	GameState 는 "무엇을 비출지" 만 안다. (UI/View 를 가른 것과 같은 이유)
+	OnCameraShotChanged.Broadcast(CameraShot);
 }
 
 void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution& Resolution)
@@ -74,6 +265,39 @@ void ABGGameState::SetPhaseTag(FGameplayTag InPhase)
 
 	PhaseTag = InPhase;
 	UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d — %s"), CurrentSeat, *InPhase.ToString());
+	BroadcastTurnState();
+}
+
+void ABGGameState::SetCurrentSeat(int32 Seat)
+{
+	if (!HasAuthority() || CurrentSeat == Seat)
+	{
+		return;
+	}
+
+	CurrentSeat = Seat;
+	BroadcastTurnState();
+}
+
+void ABGGameState::SetMatchRunning(bool bRunning)
+{
+	if (!HasAuthority() || bMatchRunning == bRunning)
+	{
+		return;
+	}
+
+	bMatchRunning = bRunning;
+	BroadcastTurnState();
+}
+
+void ABGGameState::OnRep_TurnState()
+{
+	BroadcastTurnState();
+}
+
+void ABGGameState::BroadcastTurnState()
+{
+	OnTurnStateChanged.Broadcast();
 }
 
 void ABGGameState::InitializeDeck(int32 Seed)
@@ -237,7 +461,8 @@ bool ABGGameState::IsSeatAlive(int32 Seat) const
 		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PS->GetPawn());
 	if (!ASC)
 	{
-		//	폰이 아직 스폰되지 않았다 — 살아 있는 것으로 본다(판 시작 직후 등).
+		//	스폰 전이거나 이탈로 폰이 파괴된 경우다. 둘 다 살아 있는 것으로 본다 —
+		//	이탈을 사망으로 치면 자리를 비운 순간 그 진영이 전멸한 셈이 된다.
 		return true;
 	}
 
@@ -264,26 +489,65 @@ TArray<int32> ABGGameState::GetAliveSeatsInTableOrder() const
 FGameplayTag ABGGameState::GetSeatRole(int32 Seat) const
 {
 	const ABGPlayerState* PS = GetPlayerStateBySeat(Seat);
-	const ABGCharacter* Char = PS ? Cast<ABGCharacter>(PS->GetPawn()) : nullptr;
-	return Char ? Char->GetRoleTag() : FGameplayTag();
-}
-
-int32 ABGGameState::GetHandLimitForSeat(int32 Seat) const
-{
-	//	뱅 규칙: 손패 한도는 "현재" 생명력이다(최대치가 아니다).
-	const int32 Health = GetSeatHealth(Seat);
-
-	//	ASC 를 못 찾으면 GetSeatHealth 가 0 을 준다(폰 미스폰 / DefaultPawnClass 가 ABGCharacter 가 아님).
-	//	그대로 한도 0 이 되면 손패를 전부 버려야만 턴이 넘어가고 그 사이 카드도 못 내는 잠금이 된다.
-	//	설정 실수로 판이 멈추는 것보다 한도를 잠시 풀어두는 쪽이 낫다.
-	if (Health <= 0)
+	if (!PS)
 	{
-		UE_LOG(LogBGCard, Warning,
-			TEXT("[Turn] 좌석 %d 의 Health 를 읽지 못했습니다(ASC 없음?) — 손패 한도를 적용하지 않습니다."), Seat);
-		return TNumericLimits<int32>::Max();
+		return FGameplayTag();
 	}
 
-	return Health;
+	if (const ABGCharacter* Char = Cast<ABGCharacter>(PS->GetPawn()))
+	{
+		return Char->GetRoleTag();
+	}
+
+	//	폰이 없다. 무효 태그를 돌려주면 보안관이 튕긴 순간 무법자 승리가 나므로,
+	//	배정 때 남긴 사본으로 답한다.
+	return PS->GetCachedRole();
+}
+
+int32 ABGGameState::GetHandLimitForSeat(int32 /*Seat*/) const
+{
+	//	[비활성] 예전에는 뱅 원작대로 현재 생명력이 한도였다(GetSeatHealth).
+	//	  체력이 줄 때마다 손패를 버려야 했고, 그래서 ASC 를 못 읽으면 한도 0 으로 판이 멈추는
+	//	  위험이 있어 폴백까지 두고 있었다. 상한을 드로우 시점에 막는 지금은 그 위험이 없다.
+	//	  되살리려면 이 함수가 GetSeatHealth(Seat) 를 돌려주게 하면 된다(호출부는 그대로 둬도 된다).
+
+	//	0 이하면 "상한 없음" 이다.
+	return (MaxHandSize > 0) ? MaxHandSize : TNumericLimits<int32>::Max();
+}
+
+int32 ABGGameState::DrawCardsToHand(ABGPlayerState* PS, int32 Count)
+{
+	if (!HasAuthority() || !PS || Count <= 0)
+	{
+		return 0;
+	}
+
+	const int32 Limit = GetHandLimitForSeat(PS->GetSeatIndex());
+
+	int32 Drawn = 0;
+	for (int32 i = 0; i < Count; ++i)
+	{
+		//	⚠️ 상한 검사가 DrawFromDeck 보다 먼저다. 순서가 반대면 덱에서 이미 빠진 카드를
+		//	   손패에 넣지 못해 그대로 사라진다(덱에도 버린 패에도 없는 유령 카드가 된다).
+		if (PS->GetHandCount() >= Limit)
+		{
+			UE_LOG(LogBGCard, Log,
+				TEXT("[Draw] 좌석 %d 손패 상한 %d 도달 — %d 장 중 %d 장만 뽑음"),
+				PS->GetSeatIndex(), Limit, Count, Drawn);
+			break;
+		}
+
+		FBGCardInstance Card;
+		if (!DrawFromDeck(Card))
+		{
+			break;   // 덱과 버린 패가 모두 비었다
+		}
+
+		PS->AddCardToHand(Card);
+		++Drawn;
+	}
+
+	return Drawn;
 }
 
 int32 ABGGameState::GetCardUseLimitForSeat(int32 Seat) const
@@ -332,7 +596,7 @@ void ABGGameState::StartMatch()
 		return;
 	}
 
-	bMatchRunning = true;
+	SetMatchRunning(true);
 
 	//	초기 손패. InitialHandSize 가 0 이하면 좌석의 Health 만큼 준다(뱅 원작).
 	for (const int32 Seat : Alive)
@@ -344,15 +608,7 @@ void ABGGameState::StartMatch()
 		}
 
 		const int32 Count = (InitialHandSize > 0) ? InitialHandSize : FMath::Max(1, GetSeatHealth(Seat));
-		for (int32 i = 0; i < Count; ++i)
-		{
-			FBGCardInstance Card;
-			if (!DrawFromDeck(Card))
-			{
-				break;
-			}
-			PS->AddCardToHand(Card);
-		}
+		DrawCardsToHand(PS, Count);
 
 		UE_LOG(LogBGCard, Log, TEXT("[Turn] 초기 손패 — 좌석 %d : %d 장"), Seat, PS->GetHandCount());
 	}
@@ -382,7 +638,7 @@ void ABGGameState::BeginTurn(int32 Seat)
 		return;
 	}
 
-	CurrentSeat = Seat;
+	SetCurrentSeat(Seat);
 	SetPhaseTag(BG::Phase::TurnStart.GetTag());
 
 	//	턴당 카드 사용 횟수를 새로 연다(GDD §5.2).
@@ -395,6 +651,13 @@ void ABGGameState::BeginTurn(int32 Seat)
 	//	      지금은 통과 페이즈다.
 
 	EnterDrawPhase();
+
+	//	밧줄은 드로우까지 끝난 뒤 붙인다 — 자동 처리에 제한 시간을 물릴 이유가 없다.
+	//	자리를 비운 사람이면 짧은 밧줄이 붙어 곧바로 다음 좌석으로 넘어간다.
+	if (Rope)
+	{
+		Rope->BeginRope(CurrentSeat);
+	}
 }
 
 void ABGGameState::EnterDrawPhase()
@@ -420,21 +683,11 @@ void ABGGameState::EnterDrawPhase()
 		}
 	}
 
-	int32 Drawn = 0;
-	for (int32 i = 0; i < DrawNum; ++i)
-	{
-		FBGCardInstance Card;
-		if (!DrawFromDeck(Card))
-		{
-			UE_LOG(LogBGCard, Warning, TEXT("[Turn] 덱 고갈 — 좌석 %d 은 %d 장만 뽑음"), CurrentSeat, Drawn);
-			break;
-		}
-		PS->AddCardToHand(Card);
-		++Drawn;
-	}
+	//	손패 상한에 걸리면 덜 뽑힌다. 턴 진행은 그대로다 — 못 뽑았다고 턴이 멈추지 않는다.
+	const int32 Drawn = DrawCardsToHand(PS, DrawNum);
 
-	UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 뽑기 %d 장 (손패 %d, 덱 %d)"),
-		CurrentSeat, Drawn, PS->GetHandCount(), DeckCount);
+	UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 뽑기 %d/%d 장 (손패 %d, 덱 %d)"),
+		CurrentSeat, Drawn, DrawNum, PS->GetHandCount(), DeckCount);
 
 	EnterPlayPhase();
 }
@@ -447,6 +700,7 @@ void ABGGameState::EnterPlayPhase()
 bool ABGGameState::CanSeatPlayCards(int32 Seat) const
 {
 	return bMatchRunning
+		&& !IsCinematicPlaying()   // 연출 중에는 전원 조작 불가
 		&& Seat != INDEX_NONE
 		&& Seat == CurrentSeat
 		&& PhaseTag == BG::Phase::Play.GetTag();
@@ -455,6 +709,7 @@ bool ABGGameState::CanSeatPlayCards(int32 Seat) const
 bool ABGGameState::CanSeatDiscard(int32 Seat) const
 {
 	return bMatchRunning
+		&& !IsCinematicPlaying()   // 연출 중에는 전원 조작 불가
 		&& Seat != INDEX_NONE
 		&& Seat == CurrentSeat
 		&& PhaseTag == BG::Phase::Discard.GetTag();
@@ -467,6 +722,14 @@ void ABGGameState::RequestEndTurn(int32 RequestingSeat)
 		return;
 	}
 
+	//	연출 중에는 턴을 넘기지 않는다. 이 함수는 CanSeatPlayCards 를 거치지 않고
+	//	직접 검사하므로 거기 넣은 연출 차단이 여기에는 적용되지 않는다 — 따로 막아야 한다.
+	if (IsCinematicPlaying())
+	{
+		UE_LOG(LogBGCard, Log, TEXT("[Turn] EndTurn 보류 — 연출 재생 중"));
+		return;
+	}
+
 	//	자기 턴이 아니면 무시. 클라가 마음대로 턴을 넘기지 못하게 한다.
 	if (RequestingSeat != CurrentSeat || PhaseTag != BG::Phase::Play.GetTag())
 	{
@@ -476,20 +739,90 @@ void ABGGameState::RequestEndTurn(int32 RequestingSeat)
 		return;
 	}
 
-	const ABGPlayerState* PS = GetPlayerStateBySeat(CurrentSeat);
-	const int32 HandNum  = PS ? PS->GetHandCount() : 0;
-	const int32 Limit    = GetHandLimitForSeat(CurrentSeat);
-
-	if (HandNum > Limit)
+	//	스스로 턴을 끝냈다 = 자리에 있다. 밧줄 기록을 지운다.
+	if (ABGPlayerState* ActingPS = GetPlayerStateBySeat(CurrentSeat))
 	{
-		//	한도를 넘었다 — 버릴 때까지 턴을 넘기지 않는다.
-		SetPhaseTag(BG::Phase::Discard.GetTag());
-		UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 손패 초과 (%d > 한도 %d) — 버리기 대기"),
-			CurrentSeat, HandNum, Limit);
+		ActingPS->ResetRopeStrikes();
+	}
+
+	//	[비활성] 예전에는 손패가 한도(=체력)를 넘으면 Phase.Discard 로 보내 버릴 때까지
+	//	  턴을 넘기지 않았다. 상한을 드로우 시점에 막는 지금은 초과 상태 자체가 생기지 않는다.
+	//
+	//	  ⚠️ 다만 훔치기(StealTargetRandom)로는 상한을 넘을 수 있다 — 뺏은 카드를 도로
+	//	     버리게 하는 것은 그 카드의 의도와 어긋나므로 막지 않았다. 그래서 여기서도
+	//	     버리기를 강요하지 않는다. 넘긴 손패는 다음 드로우가 막히는 것으로 정산된다.
+	//
+	//	  되살리려면 아래 블록의 주석을 풀고 GetHandLimitForSeat 이 체력을 돌려주게 하면 된다.
+	//
+	//	const int32 HandNum = PS ? PS->GetHandCount() : 0;
+	//	const int32 Limit   = GetHandLimitForSeat(CurrentSeat);
+	//	if (HandNum > Limit) { SetPhaseTag(BG::Phase::Discard.GetTag()); return; }
+
+	AdvanceToNextSeat();
+}
+
+void ABGGameState::ForceEndTurn(int32 Seat, const FString& Reason)
+{
+	if (!HasAuthority() || !bMatchRunning)
+	{
 		return;
 	}
 
+	//	이미 다른 사유로 턴이 넘어간 뒤 늦게 도착한 호출이다. 남의 턴을 뺏으면 안 된다.
+	if (Seat != CurrentSeat)
+	{
+		UE_LOG(LogBGCard, Log, TEXT("[Turn] 강제 종료 무시 — 요청 좌석 %d, 현재 좌석 %d"),
+			Seat, CurrentSeat);
+		return;
+	}
+
+	//	손패 정리는 하지 않는다 — 상한은 드로우 시점에 막고, 훔치기로 넘긴 손패는
+	//	버리게 하지 않는 것이 RequestEndTurn 과 같은 규칙이다.
+	UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 턴 강제 종료 — %s"), Seat, *Reason);
 	AdvanceToNextSeat();
+}
+
+void ABGGameState::KillSeat(int32 Seat, const FString& Reason)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ABGPlayerState* PS = GetPlayerStateBySeat(Seat);
+	if (!PS || PS->IsDead())
+	{
+		return;
+	}
+
+	UE_LOG(LogBGCard, Warning, TEXT("[Death] 좌석 %d 강제 사망 — %s"), Seat, *Reason);
+
+	//	폰을 물고 있으면 평소 경로 그대로 — 피해 GE 가 Health 를 0 으로 만들고
+	//	AttributeSet 이 사망을 통지한다.
+	//
+	//	주의: 두고 간 폰의 ASC 를 쓰면 안 된다. 그 폰은 PlayerState 가 없어
+	//	ABGCharacter 의 사망 통지가 룰 계층까지 오지 못하고 판이 그대로 멈춘다.
+	if (UAbilitySystemComponent* ASC =
+			UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PS->GetPawn()))
+	{
+		FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+		const FGameplayEffectSpecHandle Spec =
+			ASC->MakeOutgoingSpec(UGE_BGDamage::StaticClass(), 1.f, Context);
+
+		if (Spec.IsValid())
+		{
+			//	남은 체력이 얼마든 확실히 넘기려고 크게 준다(피해는 음수로 넣는다).
+			const float Lethal = static_cast<float>(FMath::Max(99, GetSeatHealth(Seat)));
+			Spec.Data->SetSetByCallerMagnitude(BG::SetByCaller::Damage.GetTag(), -Lethal);
+			ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+			return;
+		}
+	}
+
+	//	이탈자다. 두고 간 폰은 PlayerState 가 없어 사망 통지가 오지 않으므로 직접 확정한다.
+	UE_LOG(LogBGCard, Log, TEXT("[Death] 좌석 %d 컨트롤러 없음 — 사망을 직접 통지"), Seat);
+	PS->SetDead(true);
+	HandleSeatDeath(Seat, INDEX_NONE);
 }
 
 void ABGGameState::NotifyCardDiscarded(int32 Seat)
@@ -520,8 +853,79 @@ void ABGGameState::HandleSeatDeath(int32 DeadSeat, int32 KillerSeat)
 		return;
 	}
 
+	//	연출 중이면 규칙 처리를 미룬다.
+	//	여기서 바로 처리하면 화면에서는 아직 공격 연출이 도는 중인데 카드가 버려지고
+	//	승패까지 나 버린다 — 연출이 결과를 "보여주기 전에" 결과가 확정되는 셈이다.
+	if (IsCinematicPlaying())
+	{
+		//	같은 좌석이 두 번 들어오지 않는다 — ABGCharacter::NotifyHealthDepleted 의
+		//	bDead 플래그가 사망 통지 자체를 1회로 막는다. 그래도 방어적으로 확인한다.
+		const bool bAlreadyQueued = PendingDeaths.ContainsByPredicate(
+			[DeadSeat](const FBGPendingDeath& D) { return D.DeadSeat == DeadSeat; });
+
+		if (!bAlreadyQueued)
+		{
+			PendingDeaths.Add({ DeadSeat, KillerSeat });
+			UE_LOG(LogBGCard, Log,
+				TEXT("[Death] 좌석 %d 사망 처리를 연출 후로 미룸 (대기 %d 건)"),
+				DeadSeat, PendingDeaths.Num());
+		}
+		return;
+	}
+
+	ProcessSeatDeath(DeadSeat, KillerSeat);
+}
+
+void ABGGameState::FlushPendingDeaths()
+{
+	if (!HasAuthority() || PendingDeaths.IsEmpty())
+	{
+		return;
+	}
+
+	//	처리 도중 새 사망이 들어올 수 있다(보상 드로우가 다이너마이트를 터뜨리는 등).
+	//	원본을 비우고 사본을 돌려야 그 새 사망이 이번 순회에 섞이지 않는다.
+	TArray<FBGPendingDeath> Deaths = MoveTemp(PendingDeaths);
+	PendingDeaths.Reset();
+
+	UE_LOG(LogBGCard, Log, TEXT("[Death] 미뤄 둔 사망 %d 건 처리 시작"), Deaths.Num());
+
+	//	TODO: 사망 연출은 이 자리에 들어온다. 지금은 규칙 처리로 바로 넘어가지만,
+	//	   "사망자 확인 → 사망 연출(여럿이면 순차) → 규칙 처리" 순서가 되면
+	//	   이 반복문이 연출을 하나 재생하고 끝나기를 기다린 뒤 다음으로 넘어가는 형태가 된다.
+	//	   그때 ProcessSeatDeath 호출 시점은 각 사망 연출이 끝난 직후가 된다.
+	for (const FBGPendingDeath& Death : Deaths)
+	{
+		ProcessSeatDeath(Death.DeadSeat, Death.KillerSeat);
+	}
+}
+
+void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
 	const FGameplayTag DeadRole   = GetSeatRole(DeadSeat);
 	const FGameplayTag KillerRole = GetSeatRole(KillerSeat);
+
+	//	죽은 자리는 더 기다리지 않는다 — 예약이 남으면 죽은 좌석으로 재접속이 허용된다.
+	if (UBGSeatComponent* SeatComp = UBGSeatComponent::Find(GetWorld()))
+	{
+		SeatComp->ClearReservation(DeadSeat);
+	}
+
+	//	이탈자가 두고 간 폰은 주인이 없어 아무도 치우지 않는다. 죽었으니 여기서 내보낸다 —
+	//	안 그러면 시체가 자리에 계속 서 있는다.
+	if (ABGPlayerState* DeadPS = GetPlayerStateBySeat(DeadSeat))
+	{
+		if (APawn* Abandoned = DeadPS->GetAbandonedPawn())
+		{
+			DeadPS->ClearAbandonedPawn();
+			Abandoned->Destroy();
+		}
+	}
 
 	// ── 1. 사망자의 역할을 공개하고 손패·장비를 전부 버린 패로 ──
 	if (ABGPlayerState* DeadPS = GetPlayerStateBySeat(DeadSeat))
@@ -548,20 +952,11 @@ void ABGGameState::HandleSeatDeath(int32 DeadSeat, int32 KillerSeat)
 	{
 		if (DeadRole == BG::Role::Outlaw.GetTag())
 		{
-			// 무법자를 잡으면 현상금 3장.
+			// 무법자를 잡으면 현상금 3장. 손패 상한에 걸리면 그만큼만 받는다.
 			ABGPlayerState* KillerPS = GetPlayerStateBySeat(KillerSeat);
-			int32 Drawn = 0;
-			for (int32 i = 0; KillerPS && i < OutlawKillReward; ++i)
-			{
-				FBGCardInstance Card;
-				if (!DrawFromDeck(Card))
-				{
-					break;
-				}
-				KillerPS->AddCardToHand(Card);
-				++Drawn;
-			}
-			UE_LOG(LogBGCard, Log, TEXT("[Death] 무법자 사살 보상 — 좌석 %d 가 %d 장 획득"), KillerSeat, Drawn);
+			const int32 Drawn = DrawCardsToHand(KillerPS, OutlawKillReward);
+			UE_LOG(LogBGCard, Log, TEXT("[Death] 무법자 사살 보상 — 좌석 %d 가 %d/%d 장 획득"),
+				KillerSeat, Drawn, OutlawKillReward);
 		}
 		else if (DeadRole == BG::Role::Deputy.GetTag() && KillerRole == BG::Role::Sheriff.GetTag())
 		{
@@ -634,9 +1029,15 @@ bool ABGGameState::CheckWinCondition()
 	}
 
 	WinningRoleTag = Winner;
-	CurrentSeat    = INDEX_NONE;
-	bMatchRunning  = false;
+	SetCurrentSeat(INDEX_NONE);
+	SetMatchRunning(false);
 	SetPhaseTag(BG::Phase::GameOver.GetTag());
+
+	//	판이 끝났으니 타고 있던 밧줄도 끈다 — 안 끄면 종료 연출 중에 만료가 튀어나온다.
+	if (Rope)
+	{
+		Rope->StopRope();
+	}
 
 	//	판이 끝나면 전원의 역할을 공개한다(누가 배신자였는지 보는 것이 마무리의 재미다).
 	for (APlayerState* Base : PlayerArray)
@@ -773,8 +1174,8 @@ void ABGGameState::ReturnToLobby()
 	//	  같은 맵을 다시 열면 월드가 통째로 새로 만들어져 지울 목록이라는 개념 자체가 사라진다.
 	//	  클라이언트는 서버를 따라 함께 이동하므로 접속은 유지된다.
 
-	//	⚠️ GameInstance 는 트래블을 넘어 살아남는다 — 여기만 직접 되돌려야 한다.
-	//	   빠뜨리면 새 로비가 난입 차단 상태로 열려 아무도 들어오지 못한다.
+	//	주의: GameInstance 는 트래블을 넘어 살아남는다 — 여기만 직접 되돌려야 한다.
+	// 빠뜨리면 새 로비가 난입 차단 상태로 열려 아무도 들어오지 못한다.
 	if (UBGGameInstance* GI = GetGameInstance<UBGGameInstance>())
 	{
 		GI->SetAllowJoinInProgress(true);
@@ -791,13 +1192,19 @@ void ABGGameState::ReturnToLobby()
 
 void ABGGameState::AdvanceToNextSeat()
 {
+	//	넘어가는 동안에는 밧줄이 타지 않는다. 새 좌석의 BeginTurn 이 다시 붙인다.
+	if (Rope)
+	{
+		Rope->StopRope();
+	}
+
 	const TArray<int32> Alive = GetAliveSeatsInTableOrder();
 	if (Alive.IsEmpty())
 	{
 		//	전멸 — 승패 판정이 붙기 전까지는 여기서 멈춘다.
 		UE_LOG(LogBGCard, Warning, TEXT("[Turn] 살아있는 좌석이 없습니다 — 진행 중단."));
 		SetPhaseTag(BG::Phase::GameOver.GetTag());
-		bMatchRunning = false;
+		SetMatchRunning(false);
 		return;
 	}
 

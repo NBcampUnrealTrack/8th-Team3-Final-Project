@@ -1,4 +1,4 @@
-﻿// BANG! 플레이어 컨트롤러 — 클라 입력을 서버로 중계한다 (md §1.2).
+// BANG! 플레이어 컨트롤러 — 클라 입력을 서버로 중계한다 (md §1.2).
 // HUD 는 GAS 인풋 바인딩을 쓰지 않고, 카드 사용 의도를 이 커스텀 RPC 로 보낸다.
 
 #pragma once
@@ -87,7 +87,7 @@ public:
 
 	/**
 	 * 카드 사용용 편의 함수 — 살아 있는 다른 좌석 전부를 대상 후보로 연다.
-	 * ⚠️ 사거리 판정이 아직 없어 실제 규칙보다 넓다. 최종 판정은 서버가 한다(STEP 7/8).
+	 * 주의: 사거리 판정이 아직 없어 실제 규칙보다 넓다. 최종 판정은 서버가 한다(STEP 7/8).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Target")
 	void BeginTargetSelectionForCard(int32 CardInstanceId);
@@ -151,6 +151,14 @@ public:
 	
 	virtual void OnRep_PlayerState() override;
 
+	// 엔진 기본 동작은 PlayerState 파괴지만, 판 중에 파괴하면 그 좌석의 역할·손패가 사라져
+	// 승패 판정이 틀어진다. 자리를 비운 것으로 표시된 PlayerState 는 살려 둔다.
+	virtual void CleanupPlayerState() override;
+
+	// 컨트롤러가 사라질 때 폰도 함께 파괴된다. 판 중이면 먼저 떼어 내 월드에 남긴다 —
+	// Logout 보다 이 시점이 빨라서, 여기서 잡지 않으면 캐릭터가 자리에서 사라진다.
+	virtual void Destroyed() override;
+
 protected:
 	// PlayerState 의 OnHandChanged 에 구독한다. 위젯/PlayerState 중 늦게 오는 쪽에 맞춰 재시도된다.
 	void TryBindHandDelegate();
@@ -182,8 +190,32 @@ protected:
 	/** 판정 결과가 도착했다. 게임 로직 타입 → UI 뷰모델 변환이 여기서 일어난다. */
 	void HandleCardResolved(const struct FBGCardResolution& Resolution);
 
+	// GameState 의 턴 상태 통지를 구독한다. 늦게 도착하므로 여러 진입점에서 재시도한다.
+	void TryBindTurnStateDelegate();
+
+	/** 페이즈·현재 좌석이 바뀌었다. 턴 패널과 좌석 보드를 다시 그린다. */
+	UFUNCTION()
+	void HandleTurnStateChanged();
+
 	/** EBGDiceOutcome → EBGResolutionTier. 뷰 계층이 게임 enum 을 모르게 하는 경계다. */
 	static EBGResolutionTier ToResolutionTier(EBGDiceOutcome Outcome);
+
+	// ── 연출 카메라 ────────────────────────────────────────────────
+
+	/** GameState 의 샷 상태를 구독한다. GameState 가 늦게 오므로 재시도된다. */
+	void TryBindCameraShotDelegate();
+
+	/** 샷이 바뀌었다 — 뷰타깃과 로컬 카메라 액터를 갱신한다. */
+	void HandleCameraShotChanged(const struct FBGCameraShot& Shot);
+
+	/**
+	 * 연출 카메라 액터를 로컬에 스폰한다(로컬 컨트롤러 전용, 1회).
+	 * 복제하지 않는다 — 클라마다 자기 것을 갖고 자기 화면만 책임진다.
+	 */
+	void EnsureCinematicCamera();
+
+	//	연출 속도 설정은 ABGGameState 에 모여 있다 (진입·단계·종료가 하나의 체감이라
+	//	한곳에서 조율해야 한다). 여기서 따로 들지 않고 그때그때 읽어 쓴다.
 
 	/** 손패에서 카드를 중앙에 드롭했다. 대상이 필요한 카드면 좌석 선택으로 넘어간다. */
 	UFUNCTION()
@@ -219,9 +251,14 @@ protected:
 	 */
 	void UpdateHandInteractionLock();
 
-	/** 좌석 정보 주기 갱신 간격(초). 0 이하면 갱신하지 않는다. */
+	/**
+	 * 갱신 안전망 간격(초). 0 이하면 끈다.
+	 *
+	 * 턴 UI 는 GameState 의 OnTurnStateChanged 로 갱신된다 — 이 타이머는 체력처럼
+	 * 통지가 없는 값과 늦게 도착하는 구독 재시도만 맡는다. 그래서 주기가 느려도 된다.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|UI")
-	float SeatBoardRefreshInterval = 0.25f;
+	float SeatBoardRefreshInterval = 1.0f;
 	// 클라 → 서버. 검증 후 카드 사용을 처리한다.
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerRequestPlayCard(int32 InstanceId, int32 TargetSeat);
@@ -242,9 +279,9 @@ protected:
 	void ConsumeCard(int32 InstanceId);
 
 	// 카드 종류(Card.Id.*) → 그 카드가 구동할 GA 매핑.
-	//   ⚠️ 반드시 에디터(BP 컨트롤러 디폴트)에서 채운다. 비어 있으면 카드가 발동되지 않는다:
-	//     Card.Id.Bang→GA_Bang, Card.Id.Beer→GA_Heal, Card.Id.Missed→GA_Missed, ...
-	//   키는 RequestPlayCard 로 넘어온 CardId 태그와 그대로 매칭된다.
+	//   주의: 반드시 에디터(BP 컨트롤러 디폴트)에서 채운다. 비어 있으면 카드가 발동되지 않는다:
+	// Card.Id.Bang→GA_Bang, Card.Id.Beer→GA_Heal, Card.Id.Missed→GA_Missed, ...
+	// 키는 RequestPlayCard 로 넘어온 CardId 태그와 그대로 매칭된다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG")
 	TMap<FGameplayTag, TSubclassOf<UGameplayAbility>> AbilityByCardId;
 
@@ -278,6 +315,17 @@ private:
 	//	중복 구독을 막기 위해 현재 구독 중인 GameState 를 기억한다.
 	UPROPERTY()
 	TWeakObjectPtr<class ABGGameState> BoundGameState;
+
+	//	카메라 샷 구독은 판정 구독과 시점이 다를 수 있어 따로 기억한다.
+	UPROPERTY()
+	TWeakObjectPtr<class ABGGameState> BoundCameraGameState;
+
+	//	턴 상태 통지를 구독한 GameState. 중복 구독을 막는다.
+	TWeakObjectPtr<class ABGGameState> BoundTurnGameState;
+
+	//	로컬 연출 카메라. 복제하지 않는다 — 각 클라가 자기 것을 스폰한다.
+	UPROPERTY()
+	TObjectPtr<class ABGCinematicCamera> CinematicCamera;
 
 	FTimerHandle SeatRefreshTimer;
 };

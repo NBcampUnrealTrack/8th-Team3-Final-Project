@@ -273,6 +273,27 @@ void UBGGameInstance::ReturnToMainMenu()
 	PC->ClientTravel(MainMenuMapPath, ETravelType::TRAVEL_Absolute);
 }
 
+const TCHAR* UBGGameInstance::PlayerKeyOption = TEXT("BGKey");
+
+FString UBGGameInstance::GetPlayerKey() const
+{
+	//	검증용 오버라이드가 최우선 — 한 PC 의 여러 클라이언트는 설정 파일을 공유해
+	//	열쇠가 같아지고, 그러면 서로의 자리를 가져간다.
+	FString Override;
+	if (FParse::Value(FCommandLine::Get(), TEXT("BGKey="), Override) && !Override.IsEmpty())
+	{
+		return Override;
+	}
+
+	if (PlayerKey.IsEmpty())
+	{
+		PlayerKey = FGuid::NewGuid().ToString(EGuidFormats::Digits);
+		const_cast<UBGGameInstance*>(this)->SaveConfig();
+		UE_LOG(LogBGNet, Log, TEXT("PlayerKey 생성: %s"), *PlayerKey);
+	}
+	return PlayerKey;
+}
+
 bool UBGGameInstance::StartListenInPlace()
 {
 	UWorld* World = GetWorld();
@@ -372,13 +393,13 @@ void UBGGameInstance::JoinFoundSession(int32 SearchResultIndex)
 		return;
 	}
 
-	// 판이 진행 중이면 참여 불가.
+	// 판이 진행 중이어도 접속은 시도한다. 자리를 비워 둔 본인일 수 있는데, 그 여부는
+	// 예약을 들고 있는 서버만 안다 — 여기서 막으면 복귀 자체가 불가능해진다.
+	// 난입 차단은 ABGGameMode::PreLogin 이 한다.
 	const FOnlineSessionSearchResult& Result = SessionSearch->SearchResults[SearchResultIndex];
 	if (!Result.Session.SessionSettings.bAllowJoinInProgress)
 	{
-		UE_LOG(LogBGNet, Warning, TEXT("JoinFoundSession: 판 진행 중 — 참여 불가"));
-		OnJoinSessionComplete.Broadcast(false);
-		return;
+		UE_LOG(LogBGNet, Log, TEXT("JoinFoundSession: 판 진행 중 — 복귀 시도(수락 여부는 서버가 정한다)"));
 	}
 
 	// 생성과 같은 제약 — 로컬에 세션이 남아 있으면 JoinSession 이 실패한다.
@@ -450,10 +471,14 @@ void UBGGameInstance::HandleJoinSessionComplete(FName SessionName, EOnJoinSessio
 		return;
 	}
 
+	//	열쇠를 URL 에 실어 보낸다. 서버는 이 값으로 판 중에 나갔던 사람을 알아보고 자리를 돌려준다.
+	const FString TravelURL = FString::Printf(TEXT("%s?%s=%s"),
+		*ConnectString, PlayerKeyOption, *GetPlayerKey());
+
 	if (APlayerController* PC = GetFirstLocalPlayerController())
 	{
-		UE_LOG(LogBGNet, Log, TEXT("JoinSession 접속: %s"), *ConnectString);
-		PC->ClientTravel(ConnectString, ETravelType::TRAVEL_Absolute);
+		UE_LOG(LogBGNet, Log, TEXT("JoinSession 접속: %s"), *TravelURL);
+		PC->ClientTravel(TravelURL, ETravelType::TRAVEL_Absolute);
 	}
 	else
 	{

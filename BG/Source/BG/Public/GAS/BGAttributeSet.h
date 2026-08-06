@@ -81,7 +81,22 @@ public:
 	FGameplayAttributeData DrawBangCount;
 	ATTRIBUTE_ACCESSORS(UBGAttributeSet, DrawBangCount)
 
-	// ── 판정 비율 보정 (GDD §7.2 / §4.2) ─────────────────────────
+	/**
+	 * 들어오는 공격을 무효화할 확률(%). 0 = 방어 없음. 요정 갑옷이 25 를 더한다.
+	 *
+	 * GDD §7.1 의 확정 스탯 "방어 보정 — 자동 방어 판정" 이다. 하드코딩 25% 대신 어트리뷰트로 둔 이유:
+	 *   · 다른 출처(직업 패시브·상태 효과)가 같은 값에 더할 수 있다
+	 *   · 장비를 떼면 GE 가 회수되며 자동으로 원복된다
+	 *   · UI 가 "현재 방어율" 을 읽어 보여줄 수 있다
+	 *
+	 * ⚠️ 판정은 **피해가 들어가기 직전 서버에서** 굴린다(UGA_BGCardEffects::ApplyDamage).
+	 *    GDD §9.2 대로 플레이어 입력을 요구하지 않는 자동 판정이다.
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageNegateChance, Category = "BG")
+	FGameplayAttributeData DamageNegateChance;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, DamageNegateChance)
+
+	// ── 판정 비율 보정 (GDD §7.1 확정 스탯 "성공률/대성공률 보정" / §4.2) ──
 	//  장비·캐릭터·상태가 GE 로 이 값을 바꿔 카드 판정 확률을 조정한다.
 	//
 	//  적용 순서 (GDD §14 "보정 합산 방식" 을 여기서 확정):
@@ -129,8 +144,10 @@ public:
 	// ── [비활성] 능력치(RPG 스탯) 4종 ────────────────────────────
 	//
 	//  ⚠️ 네 스탯 모두 어떤 규칙도 읽지 않는다 (GDD §7.1 / §13.1).
-	//     §7.1 의 확정 스탯은 CardUseLimit 하나뿐이고, §7.2 도 초기 프로토타입에서는
-	//     스탯을 최소로 두라고 권한다. 선언과 캐릭터 GE 세팅은 남기되 참조를 끊었다.
+	//     이 넷은 §7.1 의 확정 스탯 목록에 없다 — 확정된 것은 카드 사용 한도와
+	//     성공률·대성공률·방어·공격·회복·드로우 보정이고, 힘·민첩·지능·행운은 그 축을
+	//     RPG 능력치로 다시 표현한 별개 계층이라 중복이다.
+	//     선언과 캐릭터 GE 세팅은 남기되 참조를 끊었다.
 	//
 	//     끊은 이유:
 	//       힘·지능 — 지능 1(= round(1 × 0.5) = 1)이 피해 1 을 통째로 상쇄해
@@ -173,6 +190,7 @@ protected:
 	UFUNCTION() void OnRep_MissedRequired(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_DrawCount(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_DrawBangCount(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_DamageNegateChance(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_WeightBonusCriticalFailure(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_WeightBonusFailure(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_WeightBonusSuccess(const FGameplayAttributeData& OldValue);

@@ -81,6 +81,14 @@ namespace BG
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(NeedsTargetSeat) // 대상 좌석 지정 필요
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Reaction)        // 응답 창에서만 사용 (Missed! 등)
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(RangeLimited)    // 사거리(WeaponRange) 제약을 받음
+
+			//	사용 시 연출을 재생한다 (아트 기획서 "전투 연출" — 사용자 공격 연출을 확대해
+			//	보여주고, 판정 결과에 따라 피해자 연출로 이어진다).
+			//
+			//	⚠️ 이 태그가 없는 카드는 연출 없이 즉시 해결된다. 판정·효과 적용은 태그와 무관하게
+			//	   서버에서 똑같이 일어난다 — 연출은 보여주기만 할 뿐 규칙에 관여하지 않는다.
+			//	   (GDD §9.2 "자동 판정은 짧은 연출과 로그를 제공하되 별도의 확인 입력을 요구하지 않는다")
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cinematic)       // 사용 시 연출 재생
 		}
 	}
 

@@ -20,6 +20,7 @@
 #include "Session/BGSessionFlow.h"
 #include "Session/BGSessionInterface.h"
 #include "UI/Session/BGSessionMenuController.h"
+#include "Lobby/BGReadyComponent.h"
 #include "Core/BGGameState.h"
 #include "BGGameplayTags.h"
 
@@ -229,12 +230,9 @@ void UBGSessionMenuWidget::NativeConstruct()
 	RefreshHeader();
 	RefreshLobbyStatus();
 
-	// 접속 인원은 통지가 없어 짧은 주기로 훑는다(러프 UI 한정).
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().SetTimer(
-			LobbyRefreshTimer, this, &UBGSessionMenuWidget::RefreshLobbyStatus, 0.5f, true);
-	}
+	// 인원·준비 변화는 준비 컴포넌트가 알려 준다 — 폴링하지 않는다.
+	LobbyChangedHandle = UBGReadyComponent::OnAnyReadyChanged.AddUObject(
+		this, &UBGSessionMenuWidget::RefreshLobbyStatus);
 }
 
 void UBGSessionMenuWidget::RefreshLobbyStatus()
@@ -309,10 +307,8 @@ void UBGSessionMenuWidget::RefreshLobbyStatus()
 
 void UBGSessionMenuWidget::NativeDestruct()
 {
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(LobbyRefreshTimer);
-	}
+	UBGReadyComponent::OnAnyReadyChanged.Remove(LobbyChangedHandle);
+	LobbyChangedHandle.Reset();
 
 	if (IBGSessionInterface* Session = GetSession())
 	{
