@@ -42,6 +42,30 @@ struct FBGCardChanceView
 	bool IsSet() const { return (CriticalFailure + Failure + Success + CriticalSuccess) > 0.f; }
 };
 
+/**
+ * 연출 원형(archetype) — "이 카드는 대충 어떤 종류의 일을 하는가".
+ *
+ * 카드마다 전용 연출을 만들면 카드 수만큼 에셋이 필요해 끝나지 않는다. 대신 카드가
+ * 하는 일에서 원형을 뽑아 공용 연출에 매핑하고, 정말 특별한 몇 장만 전용으로 만든다.
+ *
+ * ⚠️ 이 값은 DT 에 따로 적지 않는다. FBGCardRow 의 OutcomeEffects / TypeTag 에서
+ *    유도한다 — 두 곳에 적으면 카드 효과를 바꿨을 때 연출만 옛것으로 남는다.
+ *    유도는 BGCardViewLibrary.cpp 의 DeriveFXArchetype 한 곳에서만 일어나고,
+ *    결과는 FBGCardView::FXArchetype 에만 실린다. 다른 곳에서 다시 유도하지 말 것.
+ */
+UENUM(BlueprintType)
+enum class EBGCardFXArchetype : uint8
+{
+	None    UMETA(DisplayName = "없음"),
+	Damage  UMETA(DisplayName = "공격"),      // 대상에게 피해
+	Heal    UMETA(DisplayName = "회복"),      // 자신 회복
+	Draw    UMETA(DisplayName = "수급"),      // 카드 뽑기 · 사용한도 회복
+	Steal   UMETA(DisplayName = "탈취"),      // 상대 손패를 가져옴
+	Discard UMETA(DisplayName = "파괴"),      // 상대 손패를 버림
+	Status  UMETA(DisplayName = "상태 부여"),  // "다음 1회" 상태
+	Equip   UMETA(DisplayName = "장착")       // 파란 카드
+};
+
 USTRUCT(BlueprintType)
 struct FBGCardView
 {
@@ -95,6 +119,13 @@ struct FBGCardView
 	/** 보정으로 확률이 실제로 달라졌는가. UI 가 "65% → 78%" 처럼 변화를 드러낼 때 쓴다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
 	bool bChanceModified = false;
+
+	/**
+	 * 이 카드의 연출 원형. 카드 데이터에서 유도된 값이다.
+	 * 전용 연출이 없는 카드는 이 값만 보고 공용 연출을 고르면 된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
+	EBGCardFXArchetype FXArchetype = EBGCardFXArchetype::None;
 
 	bool IsValid() const { return InstanceId != INDEX_NONE; }
 };

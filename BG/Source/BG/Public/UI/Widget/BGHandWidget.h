@@ -5,11 +5,23 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "UI/View/BGCardView.h"
+#include "UI/View/BGCardFXTypes.h"   // FBGCardDealContext / FBGCardPlayContext
 #include "BGHandWidget.generated.h"
 
 class UBGCardWidget;
 class UCanvasPanel;
 class UPanelWidget;
+
+/**
+ * 카드가 손패에 나타났다. 카드 자신이 아니라 **바깥**에서 반응할 것들이 구독한다 —
+ * 사운드 매니저, 카메라 흔들림, 덱 카운터 애니메이션 등.
+ *
+ * 카드 위젯의 OnDealt 훅과 역할이 다르다: 저쪽은 "그 카드의 연출", 이쪽은 "화면의 반응".
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardDealtDelegate, int32, InstanceId, const FBGCardDealContext&, Context);
+
+/** 사용한 카드의 효과가 확정됐다. 화면 전체 연출(흔들림·플래시)이 여기 붙는다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardPlayResolvedDelegate, int32, InstanceId, const FBGCardPlayContext&, Context);
 
 /** 카드 한 장이 있어야 할 자리. ComputeCardSlot 이 계산한다. */
 USTRUCT(BlueprintType)
@@ -81,6 +93,17 @@ public:
 	 */
 	UPROPERTY(BlueprintAssignable, Category = "BG|Hand")
 	FOnBGCardPlayRequested OnCardPlayRequested;
+
+	// ── 연출 관찰용 ──────────────────────────────────────────────────
+	//
+	//	카드 위젯은 자기 연출만 한다. 화면 전체에 걸리는 연출(카메라 흔들림, 전체 플래시,
+	//	사운드)은 카드가 알 필요가 없으므로 여기 구독해서 처리한다.
+
+	UPROPERTY(BlueprintAssignable, Category = "BG|Hand|FX")
+	FOnBGCardDealtDelegate OnCardDealt;
+
+	UPROPERTY(BlueprintAssignable, Category = "BG|Hand|FX")
+	FOnBGCardPlayResolvedDelegate OnCardPlayResolved;
 
 	/** 플레이 존이 드롭을 받으면 호출한다. 직접 호출로 드래그 없이 테스트할 수도 있다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Hand")
@@ -156,6 +179,18 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Hand|Motion")
 	bool ReturnHeldCardToHand(int32 InstanceId);
+
+	/**
+	 * 판정 결과가 도착했다. 중앙에 잡혀 있는 카드를 놓아 주고 맥락을 넘긴다.
+	 *
+	 * ⚠️ 이 통지가 "효과가 발동했다" 의 정식 신호다. 손패에서 카드가 사라지는 것보다
+	 *    정확하고 등급까지 실어 올 수 있다. 다만 장비(파란 카드)는 판정을 거치지 않아
+	 *    이 통지가 오지 않는다 — 그쪽은 SetHand 의 폴백 경로로 풀린다(bResolvedWithoutRoll).
+	 *
+	 * 내가 낸 카드가 아니면(다른 좌석의 판정) 아무것도 하지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Hand|Motion")
+	void NotifyCardResolved(const FBGCardPlayContext& Context, int32 InstanceId);
 
 	/**
 	 * Index 번째 카드가 있어야 할 자리를 계산한다. 상태를 읽지 않는 순수 함수라
@@ -349,6 +384,30 @@ private:
 	/** 이미 손패를 떠나 연출 중인 카드인가. 갱신이 겹칠 때 복제본이 생기는 것을 막는다. */
 	bool IsOutgoing(int32 InstanceId) const;
 
+	/**
+	 * 중앙에 잡혀 대기 중인 카드를 찾는다. InstanceId 가 INDEX_NONE 이면 아무거나 —
+	 * 중앙에 잡히는 카드는 한 번에 하나뿐이라 모호하지 않다.
+	 */
+	UBGCardWidget* FindHeldCard(int32 InstanceId) const;
+
+	/**
+	 * 잡아 둔 카드를 놓아 주는 **유일한 경로**.
+	 *
+	 * ⚠️ 해제 경로가 둘(판정 통지 / 손패 갱신 폴백)이라 예전에는 한쪽만 델리게이트를
+	 *    쏘고 있었다 — 장비 카드는 OnCardPlayResolved 가 영영 안 나갔다.
+	 *    양쪽이 반드시 여기로 모이게 한다.
+	 */
+	void ReleaseHeldCard(UBGCardWidget* CardWidget, const FBGCardPlayContext& Context);
+
+	/** 이번 묶음의 총 장수를 채워 넣고 OnCardDealt 를 쏜다. SetHand 배분 루프 직후. */
+	void FinalizeDealBatch(const TArray<UBGCardWidget*>& Batch);
+
+	/**
+	 * 중앙에 잡혀 있는데 새 손패 목록에 없는 카드를 놓아 준다 — 판정 통지가
+	 * 오지 않는(또는 늦게 오는) 경우의 폴백이다.
+	 */
+	void ReleaseHeldCardsMissingFrom(const TArray<FBGCardView>& InCards);
+
 	/** 배치 계산에 쓸 패널 폭. 지오메트리가 아직 없으면 MaxHandWidth 로 폴백한다. */
 	float GetLayoutWidth() const;
 	float GetLayoutHeight() const;
@@ -384,11 +443,22 @@ private:
 	/** InstanceId → 표시가 만료되기까지 남은 시간. 틱에서 줄어든다. */
 	TMap<int32, float> PlayedMarks;
 
-	/** 중앙에 잡아 두기 전 손패에서의 위치. 되돌릴 때 원래 자리로 넣는다. */
-	TMap<int32, int32> HeldOriginalIndex;
+	/**
+	 * 중앙에 잡혀 있는 카드의 부기(簿記).
+	 *
+	 * 예전에는 원래 위치와 경과 시간을 각각 다른 맵에 들고 있었다 — 수명이 같은 값을
+	 * 두 곳에서 지우다 보니 한쪽만 남는 누수가 생기기 쉬웠다. 한 구조체로 묶는다.
+	 */
+	struct FHeldCardRecord
+	{
+		/** 잡아 두기 전 손패에서의 인덱스. 되돌릴 때 원래 자리로 넣는다. */
+		int32 OriginalIndex = 0;
 
-	/** InstanceId → 중앙에 잡혀 있은 시간. 안전장치 타임아웃에 쓴다. */
-	TMap<int32, float> HeldElapsed;
+		/** 중앙에 잡혀 있은 시간. 안전장치 타임아웃에 쓴다. */
+		float Elapsed = 0.f;
+	};
+
+	TMap<int32, FHeldCardRecord> HeldCards;
 
 	//	구형 패널 경고는 한 번만 — 매 SetHand 마다 찍으면 로그가 도배된다.
 	bool bLegacyPanelWarned = false;

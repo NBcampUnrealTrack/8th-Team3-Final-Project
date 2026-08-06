@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "UI/View/BGCardView.h"
+#include "UI/View/BGCardFXTypes.h"   // FBGCardDealContext / FBGCardPlayContext
 #include "BGCardWidget.generated.h"
 
 class UTextBlock;
@@ -121,7 +122,7 @@ public:
 	 * 덱에서 날아오는 등장 연출을 시작한다.
 	 * Delay 동안은 숨어 있다가 나타난다 — 여러 장을 동시에 뽑을 때 겹쳐 보이지 않게 한다.
 	 */
-	void BeginDeal(const FVector2D& FromPosition, float Delay, int32 OrderInBatch);
+	void BeginDeal(const FVector2D& FromPosition, float Delay, const FBGCardDealContext& Context);
 
 	/**
 	 * 곧장 사라지는 퇴장. 남이 훔쳐 갔거나 버려진 카드처럼 "보여 줄 필요가 없는" 경우다.
@@ -141,8 +142,14 @@ public:
 	 */
 	void BeginPlayExit(const FVector2D& CenterPosition, const FVector2D& ToPosition);
 
-	/** 중앙에 잡아 두던 카드를 놓아 준다. DwellDuration 만큼 더 보여 준 뒤 사라진다. */
-	void ReleaseHold();
+	/**
+	 * 중앙에 잡아 두던 카드를 놓아 준다. DwellDuration 만큼 더 보여 준 뒤 사라진다.
+	 * 여기서 OnPlayResolved 가 발사된다 — 그 순간이 곧 "효과가 발동했다" 이다.
+	 *
+	 * 부르는 쪽이 모르는 칸(연출 원형)은 **카드가 스스로 채운다** — 자기 데이터니까.
+	 * 채워진 맥락을 돌려주므로, 손패는 그것을 그대로 관찰자에게 흘려보내면 된다.
+	 */
+	FBGCardPlayContext ReleaseHold(const FBGCardPlayContext& Context);
 
 	/** 중앙에 잡혀 대기 중인가(아직 확정되지 않았다). */
 	UFUNCTION(BlueprintPure, Category = "BG|Card|Motion")
@@ -178,6 +185,15 @@ public:
 	/** 한 장을 배분하는 데 걸리는 시간. 손패가 순차 배분 지연을 계산할 때 읽는다. */
 	float GetDealFlightDuration() const { return DealFlightDuration; }
 
+	/**
+	 * 이번 묶음의 총 장수를 뒤늦게 채운다.
+	 * BeginDeal 시점에는 몇 장이 들어올지 아직 모른다 — 손패가 다 훑은 뒤에 알려 준다.
+	 */
+	void SetDealBatchTotal(int32 InTotal) { DealContext.TotalInBatch = InTotal; }
+
+	UFUNCTION(BlueprintPure, Category = "BG|Card|Motion")
+	const FBGCardDealContext& GetDealContext() const { return DealContext; }
+
 	// ── BP 훅 ────────────────────────────────────────────────────────
 	//
 	//	C++ 은 "언제 / 어디로" 만 정하고, "어떻게 보이는가" 는 BP 가 붙인다.
@@ -186,7 +202,7 @@ public:
 
 	/** stagger 대기가 끝나 카드가 실제로 나타나는 순간. 등장 애니메이션·사운드를 여기에. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
-	void OnDealt(int32 OrderInBatch);
+	void OnDealt(const FBGCardDealContext& Context);
 
 	/**
 	 * 사용한 카드가 중앙에 도착한 순간. 아직 확정 전이라 여기서 대기가 시작된다.
@@ -198,9 +214,12 @@ public:
 	/**
 	 * 서버가 카드를 확정해 효과가 발동한 순간(대기 해제).
 	 * 발동 연출(빛·파티클·화면 흔들림)은 여기에 붙이는 것이 맞다.
+	 *
+	 * Context.Tier 로 등급별 분기, Context.Archetype 으로 카드 성격별 분기를 한다.
+	 * ⚠️ 장비는 판정이 없어 Tier 가 None 이다 — 분기할 때 반드시 처리할 것.
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
-	void OnPlayResolved();
+	void OnPlayResolved(const FBGCardPlayContext& Context);
 
 	/** 손패로 되돌아가는 순간(대상 선택 취소 등). */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
@@ -442,7 +461,9 @@ private:
 
 	//	Pending 동안 남은 대기 시간.
 	float DealDelayRemaining = 0.f;
-	int32 DealOrderInBatch = 0;
+
+	//	등장 맥락. 대기가 끝나 실제로 나타나는 시점에 BP 로 넘어간다.
+	FBGCardDealContext DealContext;
 
 	//	등장 연출이 자리에 도착할 때까지 true. 스냅으로 연출이 잘리는 것을 막는다.
 	bool bDealInProgress = false;
