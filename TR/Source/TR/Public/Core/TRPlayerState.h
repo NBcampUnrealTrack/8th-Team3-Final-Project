@@ -17,9 +17,10 @@ public:
 	
 	static constexpr int32 MaxCarriedSupply = 6;
 	
-	UPROPERTY(Replicated)
-	int32 CarriedSupply = 0;
-	
 protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+private:
+	UPROPERTY(Replicated)
+	int32 CarriedSupply = 0;
 };

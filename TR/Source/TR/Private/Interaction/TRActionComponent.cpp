@@ -9,7 +9,6 @@
 #include "Train/TRSupplyPoint.h"
 #include "Train/TRTurret.h"
 
-// Sets default values for this component's properties
 UTRActionComponent::UTRActionComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -42,6 +41,12 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 {
 	// 이미 다른 액션 진행 중이면 무시 (동시 2개 방지)
 	if (CurrentActionType != ETRActionType::None)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
 	{
 		return;
 	}
@@ -86,7 +91,7 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 	CurrentActionType = ActionType;
 	CurrentTarget = Target;
 
-	GetWorld()->GetTimerManager().SetTimer(
+	World->GetTimerManager().SetTimer(
 		ActionTimerHandle,
 		this,
 		&UTRActionComponent::CompleteAction,
@@ -108,7 +113,10 @@ void UTRActionComponent::ServerCancelAction_Implementation()
 		return;
 	}
 
-	GetWorld()->GetTimerManager().ClearTimer(ActionTimerHandle);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ActionTimerHandle);
+	}
 	CurrentActionType = ETRActionType::None;
 	CurrentTarget = nullptr;
 }
@@ -202,4 +210,14 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: action=%d target=%s"), static_cast<int32>(ActionType), *Target->GetName());
 	}
 	return bValid;
+}
+
+void UTRActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ActionTimerHandle);
+	}
+
+	Super::EndPlay(EndPlayReason);
 }

@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// TRSupplyPoint.h
 
 #pragma once
 
@@ -14,7 +14,6 @@ class TR_API ATRSupplyPoint : public AActor
 	GENERATED_BODY()
 	
 public:	
-	// Sets default values for this actor's properties
 	ATRSupplyPoint();
 
 private:

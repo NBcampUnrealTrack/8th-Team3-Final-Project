@@ -16,6 +16,7 @@ public:
 	
 	// 레벨별 수치는 자식이 자기 DataTable로 답변
 	virtual float GetMaxHP() const PURE_VIRTUAL(ATRInstallablePart::GetMaxHP, return 0.f;);
+	
 	virtual int32 GetInstallCost() const PURE_VIRTUAL(ATRInstallablePart::GetInstallCost, return 0;);
 	
 	UFUNCTION(BlueprintPure, Category = "Part")
@@ -31,6 +32,8 @@ public:
 	void ApplyInstall();
 	
 protected:
+	virtual void BeginPlay() override;
+	
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Part")

@@ -10,6 +10,17 @@ ATRInstallablePart::ATRInstallablePart()
 	bReplicates = true;
 }
 
+void ATRInstallablePart::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 레벨 배치 파츠는 설치 완료 상태로 게임을 시작한다.
+	if (HasAuthority())
+	{
+		ApplyInstall();
+	}
+}
+
 void ATRInstallablePart::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);

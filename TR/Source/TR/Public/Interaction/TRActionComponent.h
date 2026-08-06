@@ -34,6 +34,8 @@ public:
 private:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerStartAction(ETRActionType ActionType, AActor* Target);
 	bool ServerStartAction_Validate(ETRActionType ActionType, AActor* Target);
@@ -46,11 +48,11 @@ private:
 	// 타이머 완료 시 서버에서 호출 (수리 반영, 자원 차감 등 실제 효과 적용)
 	void CompleteAction();
 
-	// TODO: 대상 클래스(터렛 등) 확정되면 구현.
-	//  - 대상이 해당 ActionType을 받을 수 있는 상태인지 (예: 풀내구도 터렛에 Repair 불가)
-	//  - 대상과의 거리/상호작용 반경
+	// TODO: 대상과의 거리/상호작용 반경
 	bool ValidateActionTarget(ETRActionType ActionType, AActor* Target) const;
 
+	bool RequiresMonsterResource(ETRActionType ActionType) const { return ActionType == ETRActionType::Build; }
+	
 	UPROPERTY(Replicated)
 	ETRActionType CurrentActionType = ETRActionType::None;
 
@@ -61,6 +63,4 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category="Action")
 	TMap<ETRActionType, FTRActionDef> ActionDefs;
-
-	bool RequiresMonsterResource(ETRActionType ActionType) const { return ActionType == ETRActionType::Build; }
 };

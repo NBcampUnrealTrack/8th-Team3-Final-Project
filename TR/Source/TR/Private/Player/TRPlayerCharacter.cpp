@@ -139,7 +139,7 @@ void ATRPlayerCharacter::Move(const FInputActionValue& Input)
 		return;
 	}
 
-	if (ActionComp->IsActionInProgress())
+	if (IsValid(ActionComp) && ActionComp->IsActionInProgress())
 	{
 		ActionComp->RequestCancelAction();
 	}
@@ -197,6 +197,11 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
+	if (!IsValid(InteractionComp) || !IsValid(ActionComp))
+	{
+		return;
+	}
+
 	AActor* Target = InteractionComp->GetCurrentTarget();
 	if (!Target)
 	{
@@ -225,6 +230,11 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 {
 	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (!IsValid(InteractionComp) || !IsValid(ActionComp))
 	{
 		return;
 	}
@@ -260,12 +270,22 @@ void ATRPlayerCharacter::TriggerReleased_Implementation()
 		return;
 	}
 
+	if (!IsValid(ActionComp))
+	{
+		return;
+	}
+
 	ActionComp->RequestCancelAction();
 }
 
 void ATRPlayerCharacter::Reload_Implementation(const FInputActionValue& Input)
 {
 	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (!IsValid(InteractionComp) || !IsValid(ActionComp))
 	{
 		return;
 	}

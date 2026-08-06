@@ -4,6 +4,7 @@
 #include "Interaction/TRInteractionComponent.h"
 #include "Player/TRPlayerCharacter.h"
 #include "Camera/CameraComponent.h"
+#include "DrawDebugHelpers.h"
 
 UTRInteractionComponent::UTRInteractionComponent()
 {
@@ -36,14 +37,21 @@ void UTRInteractionComponent::UpdateTrace()
 		return;
 	}
 	
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		LastTraceResult = nullptr;
+		return;
+	}
+
 	const FVector Start = CameraComp->GetComponentLocation();
 	const FVector End = Start + CameraComp->GetForwardVector() * TraceDistance;
-	
+
 	FHitResult Hit;
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(GetOwner());
-	
-	GetWorld()->LineTraceSingleByChannel(
+
+	const bool bHit = World->LineTraceSingleByChannel(
 		Hit,
 		Start,
 		End,
