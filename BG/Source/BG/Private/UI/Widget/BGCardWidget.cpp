@@ -202,7 +202,7 @@ void UBGCardWidget::SetMotionPosition(const FVector2D& InPosition)
 	ApplyMotionTransform();
 }
 
-void UBGCardWidget::BeginDeal(const FVector2D& FromPosition, float Delay, int32 OrderInBatch)
+void UBGCardWidget::BeginDeal(const FVector2D& FromPosition, float Delay, const FBGCardDealContext& Context)
 {
 	CurrentPosition   = FromPosition;
 	DealStartPosition = FromPosition;
@@ -211,7 +211,8 @@ void UBGCardWidget::BeginDeal(const FVector2D& FromPosition, float Delay, int32 
 	DealElapsed       = 0.f;
 
 	DealDelayRemaining = FMath::Max(0.f, Delay);
-	DealOrderInBatch   = OrderInBatch;
+	DealContext        = Context;
+	DealContext.FromPosition = FromPosition;   // 손패가 안 채웠어도 여기서는 확실히 안다
 	bDealInProgress    = true;   // 자리에 도착할 때까지 스냅에서 보호한다
 
 	if (DealFadeInDuration > 0.f)
@@ -227,7 +228,7 @@ void UBGCardWidget::BeginDeal(const FVector2D& FromPosition, float Delay, int32 
 		MotionState = (DealFlightDuration > 0.f)
 			? EBGCardMotionState::Dealing
 			: EBGCardMotionState::Moving;
-		OnDealt(DealOrderInBatch);
+		OnDealt(DealContext);
 		return;
 	}
 
@@ -294,11 +295,19 @@ void UBGCardWidget::BeginPlayExit(const FVector2D& CenterPosition, const FVector
 	MotionState = EBGCardMotionState::Presenting;
 }
 
-void UBGCardWidget::ReleaseHold()
+FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 {
+	//	부르는 쪽은 판정만 알고 카드 데이터는 모른다. 빈 칸은 여기서 메운다 —
+	//	두 해제 경로(판정 통지 / 손패 갱신 폴백)가 같은 결과를 갖게 하는 지점이다.
+	FBGCardPlayContext Filled = Context;
+	if (Filled.Archetype == EBGCardFXArchetype::None)
+	{
+		Filled.Archetype = CardView.FXArchetype;
+	}
+
 	if (!bHoldingAtCenter)
 	{
-		return;
+		return Filled;   // 이미 풀렸다. 맥락만 돌려준다.
 	}
 
 	bHoldingAtCenter = false;
@@ -310,8 +319,10 @@ void UBGCardWidget::ReleaseHold()
 	//	아직 중앙으로 가는 중이면 도착 후 자연스럽게 대기로 넘어간다.
 	if (MotionState == EBGCardMotionState::Dwelling || MotionState == EBGCardMotionState::Presenting)
 	{
-		OnPlayResolved();
+		OnPlayResolved(Filled);
 	}
+
+	return Filled;
 }
 
 bool UBGCardWidget::ReturnToHand()
@@ -380,7 +391,7 @@ void UBGCardWidget::TickMotion(float DeltaTime)
 		MotionState = (DealFlightDuration > 0.f)
 			? EBGCardMotionState::Dealing
 			: EBGCardMotionState::Moving;
-		OnDealt(DealOrderInBatch);
+		OnDealt(DealContext);
 		break;
 	}
 

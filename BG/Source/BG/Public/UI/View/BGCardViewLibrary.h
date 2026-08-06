@@ -11,9 +11,11 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UI/View/BGCardView.h"
+#include "UI/View/BGCardFXTypes.h"   // FBGCardFXStep
 #include "BGCardViewLibrary.generated.h"
 
 struct FBGCardInstance;
+struct FBGCardRow;
 class ABGPlayerState;
 class UAbilitySystemComponent;
 
@@ -46,4 +48,15 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "BG|Card")
 	static TArray<FBGCardView> MakeHandViews(const ABGPlayerState* PlayerState);
+
+	/**
+	 * 발동한 등급의 효과 목록을 연출 스텝 목록으로 바꾼다.
+	 *
+	 * **연출용 DT 를 따로 두지 않는 이유가 이 함수다.** 카드가 실제로 한 일이 곧 연출
+	 * 구성이므로, 효과를 바꾸면 연출이 저절로 따라온다 — 두 곳에 적혀 어긋날 일이 없다.
+	 *
+	 * ⚠️ 게임 로직 타입(FBGCardEffect / EBGCardEffectOp)은 여기서 끊긴다.
+	 *    UI 계층으로는 FBGCardFXStep 만 넘어간다.
+	 */
+	static TArray<FBGCardFXStep> MakeFXSteps(const FBGCardRow& Row, EBGResolutionTier Tier);
 };

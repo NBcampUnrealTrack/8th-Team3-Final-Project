@@ -42,6 +42,199 @@ namespace
 			|| !FMath::IsNearlyEqual(A.Success,         B.Success,         Epsilon)
 			|| !FMath::IsNearlyEqual(A.CriticalSuccess, B.CriticalSuccess, Epsilon);
 	}
+
+	//	장비(파란 카드)인가. 판정도 대상도 없어 연출 유도가 통째로 갈라지는 지점이라
+	//	판별을 한 곳에 둔다.
+	bool IsEquipmentRow(const FBGCardRow& Row)
+	{
+		return Row.TypeTag == BG::Card::Type::Blue.GetTag();
+	}
+
+	//	가장 인상이 강한 원형. 이 값이 나오면 더 볼 것 없이 확정이다.
+	constexpr int32 StrongestArchetypePriority = 0;
+
+	//	연출로 표현할 것이 없는 효과. 어떤 후보보다도 뒤에 온다.
+	constexpr int32 NoArchetypePriority = TNumericLimits<int32>::Max();
+
+	/**
+	 * 효과 하나를 연출 원형으로. 우선순위는 "화면에서 가장 크게 보이는 것" 순이다.
+	 * 낮은 값일수록 인상이 강하다 — 여러 효과가 섞이면 가장 강한 것이 카드의 성격이 된다.
+	 */
+	int32 ArchetypePriority(EBGCardFXArchetype Archetype)
+	{
+		switch (Archetype)
+		{
+		case EBGCardFXArchetype::Damage:  return StrongestArchetypePriority;   // 피해가 있으면 그게 이 카드의 정체다
+		case EBGCardFXArchetype::Steal:   return 1;
+		case EBGCardFXArchetype::Discard: return 2;
+		case EBGCardFXArchetype::Heal:    return 3;
+		case EBGCardFXArchetype::Status:  return 4;
+		case EBGCardFXArchetype::Draw:    return 5;   // 부수적으로 딸려오는 경우가 많다
+		default:                          return NoArchetypePriority;
+		}
+	}
+
+	EBGCardFXArchetype OpToArchetype(EBGCardEffectOp Op)
+	{
+		switch (Op)
+		{
+		case EBGCardEffectOp::DamageTarget:        return EBGCardFXArchetype::Damage;
+		case EBGCardEffectOp::HealSelf:            return EBGCardFXArchetype::Heal;
+		case EBGCardEffectOp::DrawSelf:            return EBGCardFXArchetype::Draw;
+		case EBGCardEffectOp::RestoreCardUse:      return EBGCardFXArchetype::Draw;
+		case EBGCardEffectOp::StealTargetRandom:   return EBGCardFXArchetype::Steal;
+		case EBGCardEffectOp::DiscardTargetRandom: return EBGCardFXArchetype::Discard;
+		case EBGCardEffectOp::ApplyStatus:         return EBGCardFXArchetype::Status;
+
+		//	장비를 겨냥한 것도 손패를 겨냥한 것과 같은 원형으로 본다.
+		//	"뭘 훔쳤나" 는 대상 자리의 연출이 말해 주고, 카드 쪽 연출은 같아도 읽힌다.
+		case EBGCardEffectOp::StealTargetEquipRandom:   return EBGCardFXArchetype::Steal;
+		case EBGCardEffectOp::DiscardTargetEquipRandom: return EBGCardFXArchetype::Discard;
+
+		default:                                   return EBGCardFXArchetype::None;
+		}
+	}
+
+	/**
+	 * 연출이 어디서 터지는가. 피해는 맞는 쪽, 회복은 자기 자리다 —
+	 * 전부 카드 자리에서 터지면 무엇이 누구에게 일어났는지 읽히지 않는다.
+	 */
+	EBGCardFXTargetKind OpToTargetKind(const FBGCardEffect& Effect)
+	{
+		switch (Effect.Op)
+		{
+		case EBGCardEffectOp::DamageTarget:
+		case EBGCardEffectOp::StealTargetRandom:
+		case EBGCardEffectOp::DiscardTargetRandom:
+		case EBGCardEffectOp::StealTargetEquipRandom:
+		case EBGCardEffectOp::DiscardTargetEquipRandom:
+			return EBGCardFXTargetKind::Target;
+
+		case EBGCardEffectOp::DrawSelf:
+			return EBGCardFXTargetKind::Deck;   // 덱에서 온다
+
+		case EBGCardEffectOp::ApplyStatus:
+			//	상태는 자기 강화일 수도, 상대 방해(함정)일 수도 있다.
+			//	DT 에 이미 방향이 적혀 있으므로 추측하지 않는다.
+			return Effect.bToTarget ? EBGCardFXTargetKind::Target : EBGCardFXTargetKind::Caster;
+
+		default:
+			return EBGCardFXTargetKind::Caster;
+		}
+	}
+
+	//	UI 등급 → 게임 로직 등급. 변환이 두 곳에 생기지 않도록 여기서만 한다.
+	EBGDiceOutcome TierToOutcome(EBGResolutionTier Tier)
+	{
+		switch (Tier)
+		{
+		case EBGResolutionTier::CriticalSuccess: return EBGDiceOutcome::CriticalSuccess;
+		case EBGResolutionTier::Success:         return EBGDiceOutcome::Success;
+		case EBGResolutionTier::Failure:         return EBGDiceOutcome::Failure;
+		default:                                 return EBGDiceOutcome::CriticalFailure;
+		}
+	}
+
+	//	⚠️ EBGDiceOutcome 에 등급을 추가하면 여기도 넣을 것 — 빠뜨리면 그 등급의 효과가
+	//	   원형 유도에서 통째로 누락된다(컴파일은 통과한다).
+	constexpr EBGDiceOutcome AllOutcomes[] = {
+		EBGDiceOutcome::CriticalFailure, EBGDiceOutcome::Failure,
+		EBGDiceOutcome::Success,         EBGDiceOutcome::CriticalSuccess };
+
+	/**
+	 * 카드 데이터에서 연출 원형을 유도한다.
+	 *
+	 * DT 에 연출용 컬럼을 따로 두지 않는 이유: 두 곳에 적으면 카드 효과를 바꿨을 때
+	 * 연출만 옛것으로 남는다(피해를 없앤 카드가 계속 공격 연출로 나가는 식).
+	 * 효과 목록이 곧 성격이므로 거기서 뽑아 쓴다.
+	 *
+	 * 여러 효과가 섞이면 가장 인상이 강한 것을 고른다 — 피해 > 탈취 > 파괴 > 회복 > 상태 > 수급.
+	 */
+	EBGCardFXArchetype DeriveFXArchetype(const FBGCardRow& Row)
+	{
+		//	장비는 판정도 대상도 없다 — 효과 목록을 볼 것 없이 장착 연출이다.
+		if (IsEquipmentRow(Row))
+		{
+			return EBGCardFXArchetype::Equip;
+		}
+
+		//	등급마다 효과가 다르므로 네 등급을 전부 훑는다. 대성공에만 피해가 붙는 카드도
+		//	"공격 카드" 로 읽혀야 한다 — 성공했을 때만 공격처럼 보이면 일관성이 깨진다.
+		EBGCardFXArchetype Best = EBGCardFXArchetype::None;
+		int32 BestPriority = NoArchetypePriority;
+
+		for (EBGDiceOutcome Outcome : AllOutcomes)
+		{
+			for (const FBGCardEffect& Effect : Row.OutcomeEffects.ForOutcome(Outcome))
+			{
+				const EBGCardFXArchetype Candidate = OpToArchetype(Effect.Op);
+				const int32 Priority = ArchetypePriority(Candidate);
+				if (Priority < BestPriority)
+				{
+					BestPriority = Priority;
+					Best = Candidate;
+
+					if (BestPriority == StrongestArchetypePriority)
+					{
+						return Best;   // 이보다 강한 후보는 없다
+					}
+				}
+			}
+		}
+
+		return Best;
+	}
+
+	//	연출로 표현할 값이 있는 효과인가.
+	//	수치 0 은 "이 등급에서는 효과 없음" 이다 — 실행 쪽(GA_BGCardEffects)과 같은 규칙을 쓴다.
+	//	ApplyStatus 만 예외: 강제 판정 상태는 수치를 쓰지 않으므로 0 이 정상이다.
+	bool HasVisibleAmount(const FBGCardEffect& Effect)
+	{
+		return Effect.Amount > 0 || Effect.Op == EBGCardEffectOp::ApplyStatus;
+	}
+}
+
+TArray<FBGCardFXStep> UBGCardViewLibrary::MakeFXSteps(const FBGCardRow& Row, EBGResolutionTier Tier)
+{
+	TArray<FBGCardFXStep> Steps;
+
+	//	장비는 판정을 거치지 않는다. 등급으로 목록을 고를 수 없으므로 장착 연출 하나로 끝낸다.
+	if (IsEquipmentRow(Row))
+	{
+		FBGCardFXStep& Equip = Steps.AddDefaulted_GetRef();
+		Equip.Op         = EBGCardFXArchetype::Equip;
+		Equip.Amount     = 1;
+		Equip.TargetKind = EBGCardFXTargetKind::Caster;
+		return Steps;
+	}
+
+	//	등급이 없으면(None) 고를 목록이 없다. 빈 배열이 정상이다 — BP 는 아무것도 재생하지 않는다.
+	if (Tier == EBGResolutionTier::None)
+	{
+		return Steps;
+	}
+
+	//	⚠️ DT 에 적힌 순서를 그대로 지킨다. 순서가 연출의 인과를 만든다
+	//	   ("뽑고 나서 때린다" 와 "때리고 나서 뽑는다" 는 다르게 읽힌다).
+	//	   게임플레이 실행 순서(GA_BGCardEffects::ExecuteEffects)와도 같아야 한다.
+	const TArray<FBGCardEffect>& Fired = Row.OutcomeEffects.ForOutcome(TierToOutcome(Tier));
+	Steps.Reserve(Fired.Num());
+
+	for (const FBGCardEffect& Effect : Fired)
+	{
+		const EBGCardFXArchetype Op = OpToArchetype(Effect.Op);
+		if (Op == EBGCardFXArchetype::None || !HasVisibleAmount(Effect))
+		{
+			continue;   // 연출로 표현할 것이 없는 효과
+		}
+
+		FBGCardFXStep& Step = Steps.AddDefaulted_GetRef();
+		Step.Op         = Op;
+		Step.Amount     = Effect.Amount;
+		Step.TargetKind = OpToTargetKind(Effect);
+	}
+
+	return Steps;
 }
 
 FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, const FBGCardInstance& Card,
@@ -67,6 +260,7 @@ FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, 
 	View.DisplayName  = Row->DisplayName;
 	View.Description  = Row->Description;
 	View.bNeedsTarget = Row->TraitTags.HasTag(BG::Card::Trait::NeedsTargetSeat.GetTag());
+	View.FXArchetype  = DeriveFXArchetype(*Row);
 
 	// TODO(5.x): 사거리·턴당 BANG 한도·현재 페이즈를 반영한 실제 판정으로 교체.
 	//            어디까지나 표시용 힌트이고, 최종 판정은 언제나 서버가 한다.

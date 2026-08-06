@@ -87,6 +87,14 @@ void UBGHandWidget::SetHand(const TArray<FBGCardView>& InCards)
 
 	int32 DealOrder = 0;
 
+	//	이번 갱신에서 새로 들어온 카드들. 총 장수를 뒤늦게 채워 주려고 모아 둔다
+	//	(FinalizeDealBatch).
+	TArray<UBGCardWidget*> DealtThisBatch;
+
+	//	손패가 비어 있다가 채워지는 것은 판 시작 배분이다. 턴 드로우와 연출을 다르게
+	//	하고 싶을 때 쓰라고 구분해 둔다(서버가 사유를 보내 주기 전까지의 근사치다).
+	const bool bFirstHand = CardWidgets.IsEmpty();
+
 	//	순차 배분에서 다음 카드가 출발할 시각. 앞 카드가 안착한 뒤에 시작한다.
 	//	이미 날아오는 중인 카드가 있으면 그 뒤에 줄을 세워야 겹치지 않는다.
 	float NextDealDelay = 0.f;
@@ -142,7 +150,14 @@ void UBGHandWidget::SetHand(const TArray<FBGCardView>& InCards)
 			NextDealDelay += CardWidget->GetDealFlightDuration() + SequentialDealGap;
 		}
 
-		CardWidget->BeginDeal(GetDeckAnchor(), Delay, DealOrder);
+		//	⚠️ TotalInBatch 는 아직 모른다 — 이 루프가 끝나야 몇 장이 새로 들어왔는지 안다.
+		//	   아래에서 채워 넣는다. Reason 도 지금은 유추할 근거가 없어 Draw 고정이다.
+		FBGCardDealContext Context;
+		Context.OrderInBatch = DealOrder;
+		Context.Reason = bFirstHand ? EBGCardGainReason::InitialHand : EBGCardGainReason::Draw;
+
+		CardWidget->BeginDeal(GetDeckAnchor(), Delay, Context);
+		DealtThisBatch.Add(CardWidget);
 		++DealOrder;
 		NewOrder.Add(CardWidget);
 	}
@@ -155,11 +170,39 @@ void UBGHandWidget::SetHand(const TArray<FBGCardView>& InCards)
 
 	CardWidgets = MoveTemp(NewOrder);
 
+	FinalizeDealBatch(DealtThisBatch);
+	ReleaseHeldCardsMissingFrom(InCards);
+
+	//	패널 크기를 아직 모르는 첫 프레임이면 보간 없이 배치한다 —
+	//	폴백 폭으로 잡았다가 실제 폭으로 고칠 때 카드가 눈에 띄게 튄다.
+	RelayoutCards(/*bSnap=*/!bHasValidPanelSize);
+}
+
+void UBGHandWidget::FinalizeDealBatch(const TArray<UBGCardWidget*>& Batch)
+{
+	//	묶음 총 장수는 SetHand 루프가 끝나야 알 수 있다 — BeginDeal 시점에는 몇 장이
+	//	들어올지 모른다. "마지막 한 장" 판별은 이 값 없이는 불가능하다.
+	for (UBGCardWidget* Dealt : Batch)
+	{
+		Dealt->SetDealBatchTotal(Batch.Num());
+		OnCardDealt.Broadcast(Dealt->GetInstanceId(), Dealt->GetDealContext());
+	}
+}
+
+void UBGHandWidget::ReleaseHeldCardsMissingFrom(const TArray<FBGCardView>& InCards)
+{
 	//	중앙에 잡혀 있던 카드가 서버 손패에서 사라졌다 = 서버가 사용을 확정했다.
-	//	이것이 곧 "효과가 발동했다" 는 신호다 — 이제 놓아 준다.
+	//
+	//	⚠️ 이건 **폴백** 경로다. 정식 신호는 판정 통지(NotifyCardResolved)이고, 그쪽이
+	//	   등급까지 실어 온다. 여기까지 오는 것은 판정을 거치지 않는 장비 카드이거나
+	//	   판정 통지보다 손패 갱신이 먼저 도착한 경우다.
 	//
 	//	⚠️ 손패 목록이 아니라 들어온 목록(InCards)과 비교해야 한다. 잡혀 있는 카드는
 	//	   이미 CardWidgets 에서 빠져 있어 손패 목록만 봐서는 알 수 없다.
+	//
+	//	해제는 OnCardPlayResolved 를 쏘고, 그 끝은 BP 다 — 구독자가 무엇을 하든
+	//	OutgoingWidgets 순회가 깨지지 않도록 대상을 먼저 모아 둔 뒤 해제한다.
+	TArray<UBGCardWidget*> ToRelease;
 	for (UBGCardWidget* Outgoing : OutgoingWidgets)
 	{
 		if (!Outgoing || !Outgoing->IsHoldingAtCenter())
@@ -172,14 +215,19 @@ void UBGHandWidget::SetHand(const TArray<FBGCardView>& InCards)
 
 		if (!bStillInHand)
 		{
-			Outgoing->ReleaseHold();
-			HeldOriginalIndex.Remove(Outgoing->GetInstanceId());
+			ToRelease.Add(Outgoing);
 		}
 	}
 
-	//	패널 크기를 아직 모르는 첫 프레임이면 보간 없이 배치한다 —
-	//	폴백 폭으로 잡았다가 실제 폭으로 고칠 때 카드가 눈에 띄게 튄다.
-	RelayoutCards(/*bSnap=*/!bHasValidPanelSize);
+	for (UBGCardWidget* Outgoing : ToRelease)
+	{
+		//	판정을 못 받은 해제다 — 등급도 Steps 도 지어낼 수 없으니 비워서 넘긴다.
+		//	나머지 칸은 카드가 자기 데이터로 채운다.
+		FBGCardPlayContext WithoutRoll;
+		WithoutRoll.bResolvedWithoutRoll = true;
+
+		ReleaseHeldCard(Outgoing, WithoutRoll);
+	}
 }
 
 void UBGHandWidget::SetHandLegacy(const TArray<FBGCardView>& InCards)
@@ -253,8 +301,7 @@ void UBGHandWidget::ClearHand()
 	//	퇴장 중이던 카드도 같이 사라진다 — ClearChildren 이 이미 떼어냈다.
 	OutgoingWidgets.Reset();
 	PlayedMarks.Reset();
-	HeldOriginalIndex.Reset();
-	HeldElapsed.Reset();
+	HeldCards.Reset();
 }
 
 bool UBGHandWidget::RemoveCardByInstanceId(int32 InstanceId)
@@ -616,8 +663,7 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		if (CardWidget->IsExitFinished())
 		{
 			const int32 FinishedId = CardWidget->GetInstanceId();
-			HeldOriginalIndex.Remove(FinishedId);
-			HeldElapsed.Remove(FinishedId);
+			HeldCards.Remove(FinishedId);
 
 			CardWidget->RemoveFromParent();
 			OutgoingWidgets.RemoveAt(Index);
@@ -627,9 +673,9 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		//	안전장치 — 확정도 취소도 오지 않은 카드를 영원히 중앙에 두지 않는다.
 		if (CardWidget->IsHoldingAtCenter())
 		{
-			float& Elapsed = HeldElapsed.FindOrAdd(CardWidget->GetInstanceId());
-			Elapsed += InDeltaTime;
-			if (Elapsed >= HoldTimeoutSeconds)
+			FHeldCardRecord& Record = HeldCards.FindOrAdd(CardWidget->GetInstanceId());
+			Record.Elapsed += InDeltaTime;
+			if (Record.Elapsed >= HoldTimeoutSeconds)
 			{
 				TimedOutIds.Add(CardWidget->GetInstanceId());
 			}
@@ -643,8 +689,7 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			TEXT("%s: 카드 #%d 가 중앙에서 %.0f초 동안 확정되지 않아 손패로 되돌립니다."),
 			*GetName(), TimedOutId, HoldTimeoutSeconds);
 
-		HeldElapsed.Remove(TimedOutId);
-		ReturnHeldCardToHand(TimedOutId);
+		ReturnHeldCardToHand(TimedOutId);   // 기록 정리도 여기서 함께 한다
 	}
 }
 
@@ -720,7 +765,7 @@ bool UBGHandWidget::BeginPlayPresentationAt(int32 InstanceId, const FVector2D& L
 
 		//	손패 목록에서 지금 뺀다 — 나머지 카드가 곧바로 중앙 재정렬된다.
 		//	되돌릴 때 원래 자리로 넣기 위해 위치를 기억한다.
-		HeldOriginalIndex.Add(InstanceId, Index);
+		HeldCards.Add(InstanceId, FHeldCardRecord{ Index, 0.f });
 		CardWidgets.RemoveAt(Index);
 
 		//	드롭 지점으로 순간이동시킨 뒤 거기서 연출을 시작한다.
@@ -760,11 +805,11 @@ bool UBGHandWidget::ReturnHeldCardToHand(int32 InstanceId)
 
 		//	빠졌던 자리로 되돌린다. 모르면 끝에 붙인다 — 다음 갱신에서 순서가 바로잡힌다.
 		int32 InsertAt = CardWidgets.Num();
-		if (const int32* Remembered = HeldOriginalIndex.Find(InstanceId))
+		if (const FHeldCardRecord* Record = HeldCards.Find(InstanceId))
 		{
-			InsertAt = FMath::Clamp(*Remembered, 0, CardWidgets.Num());
+			InsertAt = FMath::Clamp(Record->OriginalIndex, 0, CardWidgets.Num());
 		}
-		HeldOriginalIndex.Remove(InstanceId);
+		HeldCards.Remove(InstanceId);
 
 		CardWidgets.Insert(CardWidget, InsertAt);
 
@@ -790,6 +835,43 @@ TArray<int32> UBGHandWidget::GetHeldCardIds() const
 	}
 
 	return HeldIds;
+}
+
+UBGCardWidget* UBGHandWidget::FindHeldCard(int32 InstanceId) const
+{
+	for (UBGCardWidget* CardWidget : OutgoingWidgets)
+	{
+		if (!CardWidget || !CardWidget->IsHoldingAtCenter())
+		{
+			continue;
+		}
+
+		if (InstanceId == INDEX_NONE || CardWidget->GetInstanceId() == InstanceId)
+		{
+			return CardWidget;
+		}
+	}
+	return nullptr;
+}
+
+void UBGHandWidget::ReleaseHeldCard(UBGCardWidget* CardWidget, const FBGCardPlayContext& Context)
+{
+	if (!CardWidget)
+	{
+		return;
+	}
+
+	//	빈 칸(연출 원형)은 카드가 스스로 채워 돌려준다. 그 결과를 관찰자에게 흘린다 —
+	//	카드가 받은 것과 바깥이 받는 것이 어긋나면 추적이 매우 어렵다.
+	const FBGCardPlayContext Resolved = CardWidget->ReleaseHold(Context);
+
+	HeldCards.Remove(CardWidget->GetInstanceId());
+	OnCardPlayResolved.Broadcast(CardWidget->GetInstanceId(), Resolved);
+}
+
+void UBGHandWidget::NotifyCardResolved(const FBGCardPlayContext& Context, int32 InstanceId)
+{
+	ReleaseHeldCard(FindHeldCard(InstanceId), Context);
 }
 
 bool UBGHandWidget::IsOutgoing(int32 InstanceId) const

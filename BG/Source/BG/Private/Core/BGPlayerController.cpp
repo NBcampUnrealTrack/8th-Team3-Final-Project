@@ -266,22 +266,54 @@ EBGResolutionTier ABGPlayerController::ToResolutionTier(EBGDiceOutcome Outcome)
 
 void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution)
 {
+	//	Row 는 두 군데서 쓰인다 — 판정 위젯의 카드 이름, 그리고 손패 연출의 스텝 목록.
+	//	(카드 이름을 DT 에서 가져오는 이유: 태그 문자열을 그대로 띄우면 플레이어가 읽을 수 없다.)
+	const UBGDataSubsystem* Data = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UBGDataSubsystem>()
+		: nullptr;
+	const FBGCardRow* Row = Data ? Data->GetCardRow(Resolution.CardId) : nullptr;
+
+	const EBGResolutionTier Tier = ToResolutionTier(Resolution.Outcome);
+
+	//	── 손패 연출 통지 ──
+	//	내 카드의 판정이면 중앙에 잡혀 있는 카드를 놓아 준다. 이것이 "효과가 발동했다" 의
+	//	정식 신호다 — 손패에서 사라지는 것을 신호로 쓰면 등급을 알 수 없다.
+	//
+	//	⚠️ 아래 ResolutionWidget 조기 반환보다 먼저 와야 한다. 판정 표시 위젯을 아직
+	//	   붙이지 않은 HUD 에서도 카드는 중앙에서 풀려야 하기 때문이다.
+	if (HandWidget && Resolution.SeatIndex == GetMySeatIndex())
+	{
+		FBGCardPlayContext PlayContext;
+		PlayContext.Tier      = Tier;
+		PlayContext.Roll      = Resolution.Roll;
+		PlayContext.bForced   = Resolution.bForced;
+		PlayContext.SeatIndex = Resolution.SeatIndex;
+
+		//	실제로 발동한 효과들을 연출 스텝으로. 이것이 연출의 정식 입력이다 —
+		//	대표값 하나로 줄이면 "피해 + 뽑기" 같은 복합 카드가 뭉개진다.
+		//
+		//	대표 원형(Archetype)은 여기서 채우지 않는다. 카드 위젯이 자기 뷰에 이미 들고 있는
+		//	값으로 메운다 — 같은 값을 두 번 유도하면 한쪽만 낡을 자리가 생긴다.
+		if (Row)
+		{
+			PlayContext.Steps = UBGCardViewLibrary::MakeFXSteps(*Row, Tier);
+		}
+
+		//	판정 결과에는 InstanceId 가 없다(카드 "종류" 만 온다). 중앙에 잡힌 카드는
+		//	한 번에 하나뿐이므로 손패가 알아서 찾는다.
+		HandWidget->NotifyCardResolved(PlayContext, INDEX_NONE);
+	}
+
 	if (!ResolutionWidget)
 	{
 		return;   // HUD 가 위젯을 넘기지 않았다. 판정 자체는 이미 서버에서 끝났으므로 무해하다.
 	}
 
 	FBGResolutionView View;
-	View.Tier      = ToResolutionTier(Resolution.Outcome);
+	View.Tier      = Tier;
 	View.Roll      = Resolution.Roll;
 	View.bForced   = Resolution.bForced;
 	View.SeatIndex = Resolution.SeatIndex;
-
-	//	카드 이름은 DT 에서 가져온다. 태그 문자열을 그대로 띄우면 플레이어가 읽을 수 없다.
-	const UBGDataSubsystem* Data = GetGameInstance()
-		? GetGameInstance()->GetSubsystem<UBGDataSubsystem>()
-		: nullptr;
-	const FBGCardRow* Row = Data ? Data->GetCardRow(Resolution.CardId) : nullptr;
 
 	View.CardName = Row
 		? Row->DisplayName
