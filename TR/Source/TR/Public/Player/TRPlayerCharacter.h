@@ -9,6 +9,8 @@
 #include "InputMappingContext.h"
 #include "TRPlayerCharacter.generated.h"
 
+class UTRActionComponent;
+class UTRInteractionComponent;
 class UCameraComponent;
 class UNiagaraComponent;
 class UNiagaraSystem;
@@ -30,7 +32,8 @@ public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
-	
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	UCameraComponent* GetCameraComponent() const { return CameraComp; }
 	
 	//--- 입력 액션--- 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -46,6 +49,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_Trigger;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> IA_Reload;
+	
 protected:
 	//--- 플레이어 조작 관련함수 ---
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -64,12 +70,27 @@ protected:
 	virtual void Trigger_Implementation(const FInputActionValue& Input);
 
 	// 시점 회전 보간
+	UFUNCTION(Server, Reliable)
+	void TriggerReleased();
+	void TriggerReleased_Implementation();
+	
+	UFUNCTION(Server, Reliable)
+	void Reload(const FInputActionValue& Input);
+	void Reload_Implementation(const FInputActionValue& Input);
+	
+	// Local look input smoothing. Character Movement Component sends final ControlRotation to server.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))
 	float LookInterpolationSpeed = 12.5f;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> CameraComp;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Interaction")
+	TObjectPtr<UTRInteractionComponent> InteractionComp;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Action")
+	TObjectPtr<UTRActionComponent> ActionComp;
+	
 	FVector2D PendingLookInput = FVector2D::ZeroVector;
 	FVector2D SmoothedLookInput = FVector2D::ZeroVector;
 
