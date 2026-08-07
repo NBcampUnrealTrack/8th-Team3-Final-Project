@@ -49,7 +49,7 @@ void ATRPlayerCharacter::BeginPlay()
 	if (IsValid(WalkEffect) && IsValid(WalkEffect->GetAsset()))
 	{
 		WalkEffect->Activate();
-		GetWorld()->GetTimerManager().SetTimer(MoveUpdateTimerHandle, this, &ATRPlayerCharacter::UpdateMoveEffect, 0.2, true);
+		GetWorld()->GetTimerManager().SetTimer(MoveUpdateTimerHandle, this, &ATRPlayerCharacter::UpdateMoveEffect, 0.2f, true);
 		UpdateMoveEffect();
 	}
 	
@@ -211,8 +211,8 @@ void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 //이동속도 및 지면 접촉 여부 이동 이펙트에 전달
 void ATRPlayerCharacter::UpdateMoveEffect()
 {
-	WalkEffect->SetVariableVec3(FName("MovementVelocity"), GetVelocity());
-	WalkEffect->SetVariableBool(FName("IsOnFloor"), !GetCharacterMovement()->IsFalling());
+	WalkEffect->SetVariableVec3(FName(TEXT("MovementVelocity")), GetVelocity());
+	WalkEffect->SetVariableBool(FName(TEXT("IsOnFloor")), !GetCharacterMovement()->IsFalling());
 }
 
 //착지 함수, VFX/SFX 임시 연동 (추후 애니메이션 추가시 AnimNotify 기반으로 변경 필요)
@@ -229,6 +229,11 @@ void ATRPlayerCharacter::Landed(const FHitResult& Hit)
 //서버 RPC 점프 및 착지 이팩트 전파 호출
 void ATRPlayerCharacter::ServerPlayJumpLandEffect_Implementation()
 {
+	UCharacterMovementComponent* MovementComp = GetCharacterMovement();
+	if (!IsValid(WalkEffect) || !IsValid(MovementComp))
+	{
+		return;
+	}
 	MulticastPlayJumpLandEffect(GetActorLocation() + FVector(0, 0, JumpLandOffset));
 }
 
