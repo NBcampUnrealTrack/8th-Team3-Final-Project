@@ -9,7 +9,11 @@ public class TR : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
-            "Niagara"
+            "Niagara",
+            "UMG",
+            "Slate",
+            "SlateCore",
+            "CommonUI"
 			});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
