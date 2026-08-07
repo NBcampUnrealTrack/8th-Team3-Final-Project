@@ -24,13 +24,26 @@
 #include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
 #include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
 #include "Core/BGCharacter.h"                // 연출 주인공 캐스팅
+#include "UI/Target/BGSeatInfoDisplayComponent.h"
+#include "UI/Target/BGWorldTargetingComponent.h"
 #include "Components/InputComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 
-//	생성자는 없다 — GA 는 AbilityByCardId(BP 디폴트에서 채움)로만 조회한다.
+//	생성자에서는 컴포넌트만 만든다 — GA 는 AbilityByCardId(BP 디폴트에서 채움)로만 조회한다.
 //	하드코딩 폴백을 두지 않는 이유: 매핑이 비었을 때 엉뚱한 GA 로 조용히 새는 것보다
 //	"GA 매핑 없음!" 을 화면에 띄우고 멈추는 편이 낫다(HandlePlayCard 참고).
+
+ABGPlayerController::ABGPlayerController()
+{
+	//	전부 마우스로 하는 게임이다. 지금까지는 세션 메뉴가 켜 준 커서에 얹혀 있었는데,
+	//	호버 판정이 커서에 걸리므로 남의 상태에 기대지 않고 여기서 정한다.
+	bShowMouseCursor = true;
+
+	//	둘 다 보는 사람 화면에만 있는 것이라 복제하지 않는다. 서버에서는 스스로 틱을 끈다.
+	SeatInfoDisplay = CreateDefaultSubobject<UBGSeatInfoDisplayComponent>(TEXT("SeatInfoDisplay"));
+	WorldTargeting  = CreateDefaultSubobject<UBGWorldTargetingComponent>(TEXT("WorldTargeting"));
+}
 
 // ======================================================================================
 //  손패 UI 배선
@@ -82,7 +95,7 @@ void ABGPlayerController::UpdateHandInteractionLock()
 
 	//	잠금 조건을 한곳에서 계산한다. 두 소스가 각자 Set 하면 서로 덮어써서
 	//	"대상 선택 중인데 잠금이 풀린다" 같은 상태가 생긴다.
-	const bool bSelectingTarget = SeatBoardWidget && SeatBoardWidget->IsSelectingTarget();
+	const bool bSelectingTarget = IsSelectingTarget();
 
 	//	Play 페이즈에서는 사용 횟수가 남아 있어야 조작할 수 있다(GDD §5.2).
 	//	Discard 페이즈는 버리기라 한도와 무관하다.
@@ -104,7 +117,7 @@ void ABGPlayerController::HandleCardPlayRequested(const FBGCardView& Card)
 	//	이미 다른 카드가 대상 선택 중이면 무시한다.
 	//	손패 잠금이 정상 동작하면 여기까지 오지 않지만, 잠금이 걸리기 전의 입력이
 	//	큐에 남아 있을 수 있어 한 번 더 막는다. 안 그러면 ContextId 가 뒤엉킨다.
-	if (SeatBoardWidget && SeatBoardWidget->IsSelectingTarget())
+	if (IsSelectingTarget())
 	{
 		UE_LOG(LogBGCard, Verbose, TEXT("[PC] 대상 선택 진행 중 — 카드 %d 요청 무시"), Card.InstanceId);
 		return;
@@ -146,6 +159,8 @@ void ABGPlayerController::SetupInputComponent()
 	//	주의: PIE 에서는 ESC 를 에디터가 먼저 먹어 세션이 종료된다 — 테스트는 우클릭으로 할 것.
 	InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
+
+	//	좌클릭(대상 확정)은 조준 컴포넌트가 직접 건다.
 }
 
 void ABGPlayerController::OnRep_PlayerState()
@@ -547,6 +562,13 @@ void ABGPlayerController::SetSeatBoardWidget(UBGSeatBoardWidget* InSeatBoard)
 	{
 		SeatBoardWidget->OnSeatSelected.AddDynamic(this, &ABGPlayerController::HandleSeatSelected);
 		SeatBoardWidget->OnTargetSelectionCancelled.AddDynamic(this, &ABGPlayerController::HandleTargetSelectionCancelled);
+
+		//	머리 위 3D 정보와 같은 것을 두 번 보여주지 않는다. HUD 애셋은 그대로 두고
+		//	여기서만 접는다 — bShowSeatBoardWidget 를 켜면 예전 화면으로 돌아온다.
+		if (!bShowSeatBoardWidget)
+		{
+			SeatBoardWidget->SetVisibility(ESlateVisibility::Collapsed);
+		}
 	}
 
 	RefreshSeatBoard();
@@ -568,6 +590,19 @@ void ABGPlayerController::BeginPlay()
 				&ABGPlayerController::RefreshSeatBoard, SeatBoardRefreshInterval, /*bLoop=*/true);
 		}
 	}
+
+	//	3D 조준도 좌석 보드와 같은 계약을 쓴다 — 같은 처리 함수에 붙인다.
+	if (WorldTargeting)
+	{
+		WorldTargeting->OnSeatSelected.AddUniqueDynamic(this, &ABGPlayerController::HandleSeatSelected);
+		WorldTargeting->OnTargetSelectionCancelled.AddUniqueDynamic(
+			this, &ABGPlayerController::HandleTargetSelectionCancelled);
+	}
+}
+
+void ABGPlayerController::CollectGameplayHudWidgets(TArray<UWidget*>& OutWidgets) const
+{
+	OutWidgets.Append({ HandWidget, SeatBoardWidget, TurnPanelWidget });
 }
 
 void ABGPlayerController::TryBindTurnStateDelegate()
@@ -591,6 +626,7 @@ void ABGPlayerController::HandleTurnStateChanged()
 {
 	AbortActionIfTurnLost();
 
+
 	RefreshTurnPanel();
 	RefreshSeatBoard();
 	UpdateHandInteractionLock();
@@ -607,7 +643,7 @@ void ABGPlayerController::AbortActionIfTurnLost()
 		return;
 	}
 
-	if (SeatBoardWidget && SeatBoardWidget->IsSelectingTarget())
+	if (IsSelectingTarget())
 	{
 		//	CancelTargetSelection 이 HandleTargetSelectionCancelled 로 이어져 카드를 되돌린다.
 		UE_LOG(LogBGCard, Log, TEXT("[PC] 차례가 끝나 대상 선택을 접는다"));
@@ -637,7 +673,9 @@ void ABGPlayerController::AbortActionIfTurnLost()
 
 void ABGPlayerController::RefreshSeatBoard()
 {
-	if (SeatBoardWidget)
+	//	접어 둔 보드에는 값을 밀어넣지 않는다. 안 보이는 위젯 때문에 매 주기 전원의
+	//	뷰모델을 다시 만드는 것은 낭비다.
+	if (SeatBoardWidget && bShowSeatBoardWidget)
 	{
 		SeatBoardWidget->SetSeats(UBGSeatViewLibrary::MakeSeatViews(this));
 	}
@@ -648,6 +686,9 @@ void ABGPlayerController::RefreshSeatBoard()
 	//	턴/페이즈 잠금도 여기서 갱신한다. 페이즈 전환(Draw→Play)은 손패 내용을 바꾸지 않아
 	//	OnHandChanged 가 오지 않는다 — 폴링하지 않으면 자기 차례가 되어도 손패가 잠긴 채 굳는다.
 	UpdateHandInteractionLock();
+
+	//	이름표 켜기도 여기서 다시 본다. 좌석 배정과 페이즈 통지의 순서가 보장되지 않아
+	//	늦게 들어온 사람은 HandleTurnStateChanged 를 놓칠 수 있다.
 
 	//	늦게 도착하는 것들에 대한 구독 재시도. 둘 다 이미 걸려 있으면 즉시 빠져나온다.
 	//	  · GameState — 클라에서는 PlayerState 보다 늦게 올 수 있다. 놓치면 판정이 영영 안 뜬다.
@@ -748,17 +789,25 @@ void ABGPlayerController::RefreshTurnPanel()
 
 void ABGPlayerController::BeginTargetSelection(int32 ContextId, const FText& Prompt, const TArray<int32>& SelectableSeats)
 {
-	if (!SeatBoardWidget)
-	{
-		UE_LOG(LogBGCard, Warning, TEXT("[PC] 좌석 보드가 없어 대상 선택을 시작할 수 없습니다."));
-		return;
-	}
-
 	FBGTargetRequest Request;
 	Request.ContextId        = ContextId;
 	Request.Prompt           = Prompt;
 	Request.SelectableSeats  = SelectableSeats;
 	Request.bAllowCancel     = true;
+
+	//	월드 조준이 켜져 있으면 그쪽으로 보낸다. 두 표현이 같은 계약을 쓰므로
+	//	받는 쪽(HandleSeatSelected)은 어느 쪽에서 왔는지 알 필요가 없다.
+	if (WorldTargeting && WorldTargeting->IsWorldTargetingEnabled())
+	{
+		WorldTargeting->BeginTargeting(Request);
+		return;
+	}
+
+	if (!SeatBoardWidget)
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[PC] 좌석 보드가 없어 대상 선택을 시작할 수 없습니다."));
+		return;
+	}
 
 	SeatBoardWidget->BeginTargetSelection(Request);
 }
@@ -774,10 +823,25 @@ void ABGPlayerController::BeginTargetSelectionForCard(int32 CardInstanceId)
 
 void ABGPlayerController::CancelTargetSelection()
 {
+	//	둘 다 부른다. 진행 중이 아닌 쪽은 스스로 빠져나가므로 어느 표현이 켜져 있든 접힌다.
+	if (WorldTargeting)
+	{
+		WorldTargeting->CancelTargeting();
+	}
+
 	if (SeatBoardWidget)
 	{
 		SeatBoardWidget->CancelTargetSelection();
 	}
+}
+
+bool ABGPlayerController::IsSelectingTarget() const
+{
+	if (WorldTargeting && WorldTargeting->IsTargeting())
+	{
+		return true;
+	}
+	return SeatBoardWidget && SeatBoardWidget->IsSelectingTarget();
 }
 
 void ABGPlayerController::HandleSeatSelected(int32 SeatIndex, int32 ContextId)

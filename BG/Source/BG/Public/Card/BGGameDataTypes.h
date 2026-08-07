@@ -291,6 +291,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FGameplayTag CharacterTag;
 
+	// 화면에 보여줄 직업 이름. 비워 두면 태그의 마지막 마디를 쓴다
+	// (Character.Job.Mage → "Mage") — 이름을 코드에 박지 않기 위한 폴백이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FText DisplayName;
+
 	// 기본 스탯 세팅 GE (Instant). Health/MaxHealth/WeaponRange/BangLimit ... 를 초기화.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TSubclassOf<UGameplayEffect> DefaultAttributeGE;

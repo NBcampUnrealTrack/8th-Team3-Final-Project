@@ -246,6 +246,16 @@ void ABGGameState::HandleCameraShot()
 
 void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution& Resolution)
 {
+	//	주사위가 화면에 떠 있는 동안 밧줄을 멈춘다. 판정 표시는 클라 위젯의 일이라 서버에
+	//	"끝났다" 통지가 없다 — 같은 길이의 타이머로 놓는다. 연속 판정이면 타이머가 갱신된다.
+	if (HasAuthority() && Rope && ResolutionRopePauseSeconds > 0.f)
+	{
+		Rope->PauseRope(BGRopePause::Resolution);
+		GetWorldTimerManager().SetTimer(ResolutionPauseTimer,
+			[this]() { if (Rope) { Rope->ResumeRope(BGRopePause::Resolution); } },
+			ResolutionRopePauseSeconds, /*bLoop=*/false);
+	}
+
 	//	리슨서버에서는 호스트에서도 이 본문이 실행된다 — 호스트 UI 도 같은 경로로 갱신된다.
 	//	여기서 규칙을 처리하지 않는다. 판정과 효과 적용은 이미 서버에서 끝났고 이건 통지뿐이다.
 	OnCardResolved.Broadcast(Resolution);

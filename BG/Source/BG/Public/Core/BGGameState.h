@@ -612,6 +612,14 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "BG|Rope")
 	TObjectPtr<class UBGRopeComponent> Rope;
 
+	//	주사위(판정) 표시 동안 밧줄을 멈추는 시간. 판정 위젯의 DisplaySeconds 와 맞출 것.
+	//	0 이하면 멈추지 않는다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Rope")
+	float ResolutionRopePauseSeconds = 2.5f;
+
+	//	판정 표시가 끝나는 시점에 밧줄을 놓는 타이머. 연속 판정이면 갱신된다.
+	FTimerHandle ResolutionPauseTimer;
+
 public:
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")
 	UBGRopeComponent* GetRope() const { return Rope; }
