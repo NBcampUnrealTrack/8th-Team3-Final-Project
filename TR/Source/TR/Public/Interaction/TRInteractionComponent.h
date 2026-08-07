@@ -25,7 +25,9 @@ protected:
 
 private:
 	void UpdateTrace();
-	
+
+	void UpdateInteractionWidget();
+
 	// 이건 매번 새로 계산한 결과를 다음 조회 전까지만 들고 있는 캐시
 	TWeakObjectPtr<AActor> LastTraceResult;
 

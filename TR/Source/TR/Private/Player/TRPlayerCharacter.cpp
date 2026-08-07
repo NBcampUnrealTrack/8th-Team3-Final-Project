@@ -1,10 +1,13 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+//TRPlayerCharacter.cpp
 
 
 #include "Player/TRPlayerCharacter.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Camera/CameraComponent.h"
+#include "NiagaraSystem.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Interaction/TRActionComponent.h"
 #include "Interaction/TRInteractionComponent.h"
@@ -29,6 +32,10 @@ ATRPlayerCharacter::ATRPlayerCharacter()
 	CameraComp->bEnableFirstPersonScale = true;
 	CameraComp->FirstPersonFieldOfView = 70.0f;
 	CameraComp->FirstPersonScale = 0.6f;
+
+	WalkEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("WalkEffect"));
+	WalkEffect->SetupAttachment(RootComponent);
+	WalkEffect->bAutoActivate = false;
 	
 	// ActorComponent
 	InteractionComp = CreateDefaultSubobject<UTRInteractionComponent>(TEXT("InteractionComp"));
@@ -40,6 +47,14 @@ ATRPlayerCharacter::ATRPlayerCharacter()
 void ATRPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	//이동 이펙트 활성화
+	if (IsValid(WalkEffect) && IsValid(WalkEffect->GetAsset()))
+	{
+		WalkEffect->Activate();
+		GetWorld()->GetTimerManager().SetTimer(MoveUpdateTimerHandle, this, &ATRPlayerCharacter::UpdateMoveEffect, 0.2f, true);
+		UpdateMoveEffect();
+	}
 	
 }
 
@@ -176,11 +191,10 @@ void ATRPlayerCharacter::Look(const FInputActionValue& Input)
 	{
 		return;
 	}
-
 	PendingLookInput += InputVector;
 }
 
-// 캐릭터 점프 함수, UCharacterMovementComponent사용으로 RPC 구현 불필요.
+// 캐릭터 점프 함수, UCharacterMovementComponent사용으로 RPC 구현 불필요. 이펙트 전파만 서버 RPC 호출
 void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 {
 	if (IsValid(TurretControlComp) && TurretControlComp->IsMounted())
@@ -201,6 +215,49 @@ void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 	}
 
 	Jump();
+
+	if (!GetCharacterMovement()->IsFalling())
+	{
+		ServerPlayJumpLandEffect();
+	}
+}
+
+//이동속도 및 지면 접촉 여부 이동 이펙트에 전달
+void ATRPlayerCharacter::UpdateMoveEffect()
+{
+	WalkEffect->SetVariableVec3(FName(TEXT("MovementVelocity")), GetVelocity());
+	WalkEffect->SetVariableBool(FName(TEXT("IsOnFloor")), !GetCharacterMovement()->IsFalling());
+}
+
+//착지 함수, VFX/SFX 임시 연동 (추후 애니메이션 추가시 AnimNotify 기반으로 변경 필요)
+void ATRPlayerCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	if (HasAuthority())
+	{
+		ServerPlayJumpLandEffect();
+	}
+}
+
+//서버 RPC 점프 및 착지 이팩트 전파 호출
+void ATRPlayerCharacter::ServerPlayJumpLandEffect_Implementation()
+{
+	UCharacterMovementComponent* MovementComp = GetCharacterMovement();
+	if (!IsValid(WalkEffect) || !IsValid(MovementComp))
+	{
+		return;
+	}
+	MulticastPlayJumpLandEffect(GetActorLocation() + FVector(0, 0, JumpLandOffset));
+}
+
+//멀티캐스트 RPC 점프 및 착지 이펙트 각 클라이언트로 전파
+void ATRPlayerCharacter::MulticastPlayJumpLandEffect_Implementation(const FVector& Location)
+{
+	if (IsValid(JumpLandEffect))
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), JumpLandEffect, Location);
+	}
 }
 
 // 상호작용 RPC 함수, E키 - 포탑 탑승/하차 vs 물자실 자원 획득

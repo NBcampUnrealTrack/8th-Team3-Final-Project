@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+//TRPlayerCharacter.h
 
 #pragma once
 
@@ -13,6 +13,9 @@ class UTRTurretControlComponent;
 class UTRActionComponent;
 class UTRInteractionComponent;
 class UCameraComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
+
 UCLASS()
 class TR_API ATRPlayerCharacter : public ACharacter
 {
@@ -33,7 +36,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Action")
 	float GetHealPercent() const { return HealPercent; }
 	
-	//입력 액션
+	//--- 입력 액션--- 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> IMC_Character;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -50,6 +53,7 @@ public:
 	TObjectPtr<UInputAction> IA_Reload;
 	
 protected:
+	//--- 플레이어 조작 관련함수 ---
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void NotifyControllerChanged() override;
 
@@ -77,7 +81,7 @@ protected:
 	
 	// Local look input smoothing. Character Movement Component sends final ControlRotation to server.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))
-	float LookInterpolationSpeed = 50.0f;
+	float LookInterpolationSpeed = 12.5f;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> CameraComp;
@@ -93,6 +97,29 @@ protected:
 	
 	FVector2D PendingLookInput = FVector2D::ZeroVector;
 	FVector2D SmoothedLookInput = FVector2D::ZeroVector;
+
+
+	//--- VFX ---
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraComponent> WalkEffect;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraSystem> JumpLandEffect;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	float JumpLandOffset = -90.f;
+
+
+	FTimerHandle MoveUpdateTimerHandle;
+	void UpdateMoveEffect();
+
+	//이펙트&연출용 함수
+	virtual void Landed(const FHitResult& Hit) override;
+	UFUNCTION(Server, Unreliable)
+	void ServerPlayJumpLandEffect();
+	void ServerPlayJumpLandEffect_Implementation();
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayJumpLandEffect(const FVector& Location);
+	void MulticastPlayJumpLandEffect_Implementation(const FVector& Location);
 	
 private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Action")
