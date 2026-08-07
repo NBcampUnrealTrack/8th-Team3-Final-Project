@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+//TRPlayerCharacter.cpp
 
 
 #include "Player/TRPlayerCharacter.h"
@@ -49,11 +49,8 @@ void ATRPlayerCharacter::BeginPlay()
 	if (IsValid(WalkEffect) && IsValid(WalkEffect->GetAsset()))
 	{
 		WalkEffect->Activate();
-		if (HasAuthority())
-		{
-			GetWorld()->GetTimerManager().SetTimer(MoveUpdateTimerHandle, this, &ATRPlayerCharacter::MulticastUpdateMoveEffect, 0.2, true);
-			MulticastUpdateMoveEffect();
-		}
+		GetWorld()->GetTimerManager().SetTimer(MoveUpdateTimerHandle, this, &ATRPlayerCharacter::UpdateMoveEffect, 0.2, true);
+		UpdateMoveEffect();
 	}
 	
 }
@@ -204,17 +201,18 @@ void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 	}
 
 	Jump();
-	ServerPlayJumpLandEffect(GetActorLocation() + FVector(0, 0, JumpLandOffset));
+
+	if (!GetCharacterMovement()->IsFalling())
+	{
+		ServerPlayJumpLandEffect();
+	}
 }
 
 //이동속도 및 지면 접촉 여부 이동 이펙트에 전달
-void ATRPlayerCharacter::MulticastUpdateMoveEffect_Implementation()
+void ATRPlayerCharacter::UpdateMoveEffect()
 {
-	if (IsValid(WalkEffect))
-	{
-		WalkEffect->SetVariableVec3(FName("MovementVelocity"), GetVelocity());
-		WalkEffect->SetVariableBool(FName("IsOnFloor"), !GetCharacterMovement()->IsFalling());
-	}
+	WalkEffect->SetVariableVec3(FName("MovementVelocity"), GetVelocity());
+	WalkEffect->SetVariableBool(FName("IsOnFloor"), !GetCharacterMovement()->IsFalling());
 }
 
 //착지 함수, VFX/SFX 임시 연동 (추후 애니메이션 추가시 AnimNotify 기반으로 변경 필요)
@@ -224,14 +222,14 @@ void ATRPlayerCharacter::Landed(const FHitResult& Hit)
 
 	if (HasAuthority())
 	{
-		ServerPlayJumpLandEffect(GetActorLocation() + FVector(0, 0, JumpLandOffset));
+		ServerPlayJumpLandEffect();
 	}
 }
 
 //서버 RPC 점프 및 착지 이팩트 전파 호출
-void ATRPlayerCharacter::ServerPlayJumpLandEffect_Implementation(const FVector& Location)
+void ATRPlayerCharacter::ServerPlayJumpLandEffect_Implementation()
 {
-	MulticastPlayJumpLandEffect(Location);
+	MulticastPlayJumpLandEffect(GetActorLocation() + FVector(0, 0, JumpLandOffset));
 }
 
 //멀티캐스트 RPC 점프 및 착지 이펙트 각 클라이언트로 전파

@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+//TRPlayerCharacter.h
 
 #pragma once
 
@@ -69,7 +69,6 @@ protected:
 	virtual void Trigger(const FInputActionValue& Input);
 	virtual void Trigger_Implementation(const FInputActionValue& Input);
 
-	// 시점 회전 보간
 	UFUNCTION(Server, Reliable)
 	void TriggerReleased();
 	void TriggerReleased_Implementation();
@@ -105,15 +104,13 @@ protected:
 
 
 	FTimerHandle MoveUpdateTimerHandle;
-	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastUpdateMoveEffect();
-	void MulticastUpdateMoveEffect_Implementation();
+	void UpdateMoveEffect();
 
 	//이펙트&연출용 함수
 	virtual void Landed(const FHitResult& Hit) override;
 	UFUNCTION(Server, Unreliable)
-	void ServerPlayJumpLandEffect(const FVector& Location);
-	void ServerPlayJumpLandEffect_Implementation(const FVector& Location);
+	void ServerPlayJumpLandEffect();
+	void ServerPlayJumpLandEffect_Implementation();
 
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastPlayJumpLandEffect(const FVector& Location);
