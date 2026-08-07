@@ -7,13 +7,14 @@ void ATRPlayerHUD::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (!PlayerHUDWidgetClass)
+	if (!IsValid(PlayerHUDWidgetClass))
 	{
+		UE_LOG(LogTemp, Warning, TEXT("PlayerHUDWidgetClass is not set"));
 		return;
 	}
 
 	PlayerHUDWidget = CreateWidget<UTRPlayerHUDWidget>(GetOwningPlayerController(), PlayerHUDWidgetClass);
-	if (PlayerHUDWidget)
+	if (IsValid(PlayerHUDWidget))
 	{
 		PlayerHUDWidget->AddToViewport();
 	}

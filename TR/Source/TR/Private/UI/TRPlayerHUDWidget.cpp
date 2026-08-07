@@ -12,7 +12,7 @@ void UTRPlayerHUDWidget::NativeConstruct()
 
 void UTRPlayerHUDWidget::SetInteractionVisible(bool bVisible)
 {
-	if (!PlayerInteraction)
+	if (!IsValid(PlayerInteraction))
 	{
 		return;
 	}

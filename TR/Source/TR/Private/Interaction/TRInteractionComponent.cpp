@@ -69,16 +69,22 @@ void UTRInteractionComponent::UpdateTrace()
 
 void UTRInteractionComponent::UpdateInteractionWidget()
 {
+	
 	const APawn* OwnerPawn = GetOwner<APawn>();
+	if (!IsValid(OwnerPawn))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Owner is not a valid APawn"));
+		return;
+	}
 	const APlayerController* PC = OwnerPawn ? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
 	const ATRPlayerHUD* PlayerHUD = PC ? Cast<ATRPlayerHUD>(PC->GetHUD()) : nullptr;
 	UTRPlayerHUDWidget* HUDWidget = PlayerHUD ? PlayerHUD->GetPlayerHUDWidget() : nullptr;
-	if (!HUDWidget)
+	if (!IsValid(HUDWidget))
 	{
 		return;
 	}
 
-	// TODO: 상호작용 판정, 현재는 ATRInstallablePart과 ATRSupplyPoint만 체크.
+	// TODO: 상호작용 판정, 현재는 ATRInstallablePart와 ATRSupplyPoint만 체크.
 	const AActor* Target = LastTraceResult.Get();
 	HUDWidget->SetInteractionVisible(Target && (Target->IsA<ATRInstallablePart>() || Target->IsA<ATRSupplyPoint>()));
 }

@@ -10,6 +10,9 @@ public class TR : ModuleRules
 	
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
             "Niagara",
+            "UMG",
+            "Slate",
+            "SlateCore",
             "CommonUI"
 			});
 
