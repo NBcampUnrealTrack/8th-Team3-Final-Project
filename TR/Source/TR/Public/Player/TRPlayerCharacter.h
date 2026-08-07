@@ -83,6 +83,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))
 	float LookInterpolationSpeed = 12.5f;
 	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Action")
+	float HealPercent = 0.1f;
+	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> CameraComp;
 
@@ -97,7 +100,6 @@ protected:
 	
 	FVector2D PendingLookInput = FVector2D::ZeroVector;
 	FVector2D SmoothedLookInput = FVector2D::ZeroVector;
-
 
 	//--- VFX ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
@@ -120,8 +122,4 @@ protected:
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastPlayJumpLandEffect(const FVector& Location);
 	void MulticastPlayJumpLandEffect_Implementation(const FVector& Location);
-	
-private:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Action")
-	float HealPercent = 0.1f;
 };
