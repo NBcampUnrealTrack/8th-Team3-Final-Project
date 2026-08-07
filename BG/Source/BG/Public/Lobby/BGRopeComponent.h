@@ -14,8 +14,9 @@ class ABGGameState;
 // 블루프린트에서는 같은 문자열을 FName 으로 넣으면 된다.
 namespace BGRopePause
 {
-	inline const FName Cinematic(TEXT("Cinematic"));   // 카드 연출 재생 중 (GameState 가 자동으로 건다)
-	inline const FName Sequence (TEXT("Sequence"));    // 시퀀서·연출 스크립트가 직접 잡을 때
+	inline const FName Cinematic (TEXT("Cinematic"));    // 카드 연출 재생 중 (GameState 가 자동으로 건다)
+	inline const FName Resolution(TEXT("Resolution"));   // 주사위(판정) 표시 중 (GameState 가 자동으로 건다)
+	inline const FName Sequence  (TEXT("Sequence"));     // 시퀀서·연출 스크립트가 직접 잡을 때
 }
 
 /** 지금 타고 있는 밧줄. 셋이 따로 복제되면 반쪽 값으로 UI 가 갱신되므로 한 덩어리로 묶는다. */

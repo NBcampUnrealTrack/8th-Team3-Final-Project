@@ -10,6 +10,7 @@
 #include "Card/BGDataSubsystem.h"
 #include "Card/BGGameDataTypes.h"
 #include "BGGameplayTags.h"
+#include "Core/BGCharacter.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerState.h"
 #include "GAS/BGAttributeSet.h"
@@ -54,6 +55,32 @@ namespace
 		if (Role == BG::Role::Outlaw.GetTag())   { return TEXT("무법자"); }
 		if (Role == BG::Role::Renegade.GetTag()) { return TEXT("배신자"); }
 		return Role.IsValid() ? Role.ToString() : FString();
+	}
+
+	// 직업 이름. DT 의 DisplayName 이 우선이고, 비어 있으면 태그의 마지막 마디를 쓴다.
+	// 이름을 코드에 박지 않으려는 것이라 폴백이 보기 나빠도 그대로 둔다 — DT 를 채우라는 신호다.
+	FText JobDisplayName(const FGameplayTag& Job, const UBGDataSubsystem* Data)
+	{
+		if (!Job.IsValid())
+		{
+			return FText::GetEmpty();
+		}
+
+		if (const FBGCharacterRow* Row = Data ? Data->GetCharacterRow(Job) : nullptr)
+		{
+			if (!Row->DisplayName.IsEmpty())
+			{
+				return Row->DisplayName;
+			}
+		}
+
+		FString Leaf = Job.ToString();
+		int32 LastDot = INDEX_NONE;
+		if (Leaf.FindLastChar(TEXT('.'), LastDot))
+		{
+			Leaf = Leaf.RightChop(LastDot + 1);
+		}
+		return FText::FromString(Leaf);
 	}
 
 	ABGGameState* GetBGGameState(const APlayerController* Viewer)
@@ -160,6 +187,12 @@ TArray<FBGSeatView> UBGSeatViewLibrary::MakeSeatViews(const APlayerController* V
 		//	생사 판정도 GameState 한곳에서만 한다(턴 진행과 어긋나면 안 된다).
 		View.bIsAlive = GS ? GS->IsSeatAlive(View.SeatIndex) : true;
 
+		//	직업은 역할과 달리 조건 없이 전원에게 복제된다(GDD §7) — 숨김 처리가 필요 없다.
+		if (const ABGCharacter* Character = Cast<ABGCharacter>(PS->GetPawn()))
+		{
+			View.JobName = JobDisplayName(Character->GetJobTag(), Data);
+		}
+
 		//	파란 카드(장비)는 공개 정보다.
 		for (const FBGCardInstance& Equip : PS->GetEquipment())
 		{
@@ -184,8 +217,9 @@ TArray<FBGSeatView> UBGSeatViewLibrary::MakeSeatViews(const APlayerController* V
 
 		View.Distance = GetRingDistance(Viewer, ViewerSeat, View.SeatIndex);
 
-		View.bIsCurrentTurn = (CurrentSeat != INDEX_NONE && View.SeatIndex == CurrentSeat);
+		View.bIsCurrentTurn  = (CurrentSeat != INDEX_NONE && View.SeatIndex == CurrentSeat);
 		View.bIsDisconnected = PS->IsDisconnected();
+		View.bMatchRunning   = (GS != nullptr) && GS->IsMatchRunning();
 	}
 
 	return Views;

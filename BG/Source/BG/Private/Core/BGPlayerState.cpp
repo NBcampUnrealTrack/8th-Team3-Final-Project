@@ -42,7 +42,8 @@ void ABGPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 //  이탈과 복귀
 // ══════════════════════════════════════════════════════════════════════════════════════
 
-FOnBGDisconnectChanged ABGPlayerState::OnAnyDisconnectChanged;
+FOnBGDisconnectChanged        ABGPlayerState::OnAnyDisconnectChanged;
+FOnBGSeatPublicInfoChanged    ABGPlayerState::OnAnySeatPublicInfoChanged;
 
 void ABGPlayerState::OnRep_Disconnected()
 {
@@ -340,7 +341,8 @@ void ABGPlayerState::TakeAllCards(TArray<FBGCardInstance>& OutCards)
 	Equipment.Reset();
 	HandCount = 0;
 
-	OnHandChanged.Broadcast();   //	서버(리슨 호스트) 자신의 UI 갱신용
+	OnHandChanged.Broadcast();          //	서버(리슨 호스트) 자신의 UI 갱신용
+	BroadcastPublicInfoChanged();       //	남의 이름표에 보이는 장수도 같이 바뀌었다
 }
 
 void ABGPlayerState::SetSeatIndex(int32 InSeat)
@@ -363,12 +365,26 @@ void ABGPlayerState::AddCardToHand(const FBGCardInstance& Card)
 
 	//	서버에는 OnRep 이 오지 않는다 — 리슨서버 호스트의 UI 를 위해 여기서 직접 알린다.
 	OnHandChanged.Broadcast();
+	BroadcastPublicInfoChanged();
 }
 
 void ABGPlayerState::OnRep_Hand()
 {
 	UE_LOG(LogBGCard, Verbose, TEXT("[PlayerState] OnRep_Hand — 좌석 %d, %d 장"), SeatIndex, Hand.Num());
 	OnHandChanged.Broadcast();
+}
+
+void ABGPlayerState::OnRep_PublicInfo()
+{
+	BroadcastPublicInfoChanged();
+}
+
+void ABGPlayerState::BroadcastPublicInfoChanged() const
+{
+	if (SeatIndex != INDEX_NONE)
+	{
+		OnAnySeatPublicInfoChanged.Broadcast(SeatIndex);
+	}
 }
 
 bool ABGPlayerState::RemoveCardFromHand(int32 InstanceId, FBGCardInstance& OutRemoved)
@@ -384,7 +400,8 @@ bool ABGPlayerState::RemoveCardFromHand(int32 InstanceId, FBGCardInstance& OutRe
 			OutRemoved = Hand[i];
 			Hand.RemoveAt(i);
 			HandCount = Hand.Num();
-			OnHandChanged.Broadcast();   //	서버(리슨 호스트) 자신의 UI 갱신용
+			OnHandChanged.Broadcast();          //	서버(리슨 호스트) 자신의 UI 갱신용
+	BroadcastPublicInfoChanged();       //	남의 이름표에 보이는 장수도 같이 바뀌었다
 			return true;
 		}
 	}
@@ -454,6 +471,8 @@ bool ABGPlayerState::EquipCard(const FBGCardInstance& Card, TSubclassOf<UGamepla
 	}
 
 	Equipment.Add(Card);
+	BroadcastPublicInfoChanged();
+
 	UE_LOG(LogBGCard, Log, TEXT("[Equip] 좌석 %d 이 %s#%d 장착 (장비 %d개)"),
 		SeatIndex, *Card.CardId.ToString(), Card.InstanceId, Equipment.Num());
 	return true;
@@ -475,6 +494,7 @@ bool ABGPlayerState::UnequipCard(FName CardId, FBGCardInstance& OutRemoved)
 
 	OutRemoved = Equipment[Index];
 	Equipment.RemoveAt(Index);
+	BroadcastPublicInfoChanged();
 
 	//	GE 를 함께 걷어낸다 — 배열만 지우면 효과가 영구히 남는다.
 	if (FActiveGameplayEffectHandle* Handle = EquipEffectHandles.Find(CardId))

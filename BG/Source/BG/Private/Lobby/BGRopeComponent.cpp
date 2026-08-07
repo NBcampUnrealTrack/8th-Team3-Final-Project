@@ -185,8 +185,11 @@ void UBGRopeComponent::ApplyPauseState()
 
 	if (bShouldPause)
 	{
-		//	타이머는 남은 시간을 알려주지 않는다. 멈추기 전에 직접 재서 들고 있는다.
-		Rope.PausedRemaining = FMath::Max(0.f, Rope.EndServerTime - GS->GetServerWorldTimeSeconds());
+		//	남은 시간은 타이머에게 직접 묻는다. EndServerTime 은 복제용 시계라 실제보다
+		//	뒤처져 있어서, 그걸로 계산하면 멈출 때마다 시간이 조금씩 늘어난다.
+		const float Remaining = World->GetTimerManager().GetTimerRemaining(RopeTimer);
+
+		Rope.PausedRemaining = FMath::Max(0.f, Remaining);
 		World->GetTimerManager().ClearTimer(RopeTimer);
 		return;
 	}

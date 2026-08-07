@@ -10,6 +10,7 @@
 #include "UI/View/BGSeatView.h"       // FOnBGSeatSelected 등 델리게이트 타입
 #include "UI/View/BGResolutionView.h" // EBGResolutionTier (ToResolutionTier 반환형)
 #include "Card/BGGameDataTypes.h"     // EBGDiceOutcome (ToResolutionTier 인자)
+#include "UI/Target/BGGameplayHudOwner.h"   // 조준 중 클릭 통과 대상 알려주기
 #include "BGPlayerController.generated.h"   // 항상 마지막
 
 class UGameplayAbility;
@@ -22,7 +23,7 @@ class ABGPlayerState;
 class UCameraShakeBase;
 
 UCLASS()
-class BG_API ABGPlayerController : public APlayerController
+class BG_API ABGPlayerController : public APlayerController, public IBGGameplayHudOwner
 {
 	GENERATED_BODY()
 
@@ -77,6 +78,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|UI")
 	void RefreshTurnPanel();
 
+	ABGPlayerController();
+
 	// ── 대상 좌석 선택 ───────────────────────────────────────────
 
 	/**
@@ -95,6 +98,20 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "BG|Target")
 	void CancelTargetSelection();
+
+	/** 지금 대상을 고르는 중인가. 어느 표현(좌석 보드/월드 조준)이든 하나라도 켜져 있으면 true. */
+	UFUNCTION(BlueprintPure, Category = "BG|Target")
+	bool IsSelectingTarget() const;
+
+	/**
+	 * 화면 위쪽 2D 좌석 보드를 띄울지. 머리 위 3D 정보와 같은 것을 두 번 보여주게 되어
+	 * 지금은 꺼 둔다. 켜면 예전처럼 다시 나온다 — HUD 애셋은 건드리지 않았다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Target")
+	bool bShowSeatBoardWidget = false;
+
+	//	IBGGameplayHudOwner — 조준 중 클릭을 통과시킬 위젯을 조준 컴포넌트에 알려 준다.
+	virtual void CollectGameplayHudWidgets(TArray<UWidget*>& OutWidgets) const override;
 
 	// ── 턴 ───────────────────────────────────────────────────────
 	//
@@ -200,6 +217,7 @@ protected:
 
 	// 내 차례가 아니게 됐다. 진행 중이던 대상 선택을 접고 중앙에 잡혀 있던 카드를 손패로 되돌린다.
 	void AbortActionIfTurnLost();
+
 
 	/** EBGDiceOutcome → EBGResolutionTier. 뷰 계층이 게임 enum 을 모르게 하는 경계다. */
 	static EBGResolutionTier ToResolutionTier(EBGDiceOutcome Outcome);
@@ -357,6 +375,14 @@ private:
 
 	//	턴 상태 통지를 구독한 GameState. 중복 구독을 막는다.
 	TWeakObjectPtr<class ABGGameState> BoundTurnGameState;
+
+	//	머리 위 좌석 정보 + 커서 호버 판정. 보는 사람 화면에만 있는 것이라 복제하지 않는다.
+	UPROPERTY(VisibleAnywhere, Category = "BG|Target")
+	TObjectPtr<class UBGSeatInfoDisplayComponent> SeatInfoDisplay;
+
+	//	월드 캐릭터를 눌러 대상을 고르는 조준 모드.
+	UPROPERTY(VisibleAnywhere, Category = "BG|Target")
+	TObjectPtr<class UBGWorldTargetingComponent> WorldTargeting;
 
 	//	로컬 연출 카메라. 복제하지 않는다 — 각 클라가 자기 것을 스폰한다.
 	UPROPERTY()

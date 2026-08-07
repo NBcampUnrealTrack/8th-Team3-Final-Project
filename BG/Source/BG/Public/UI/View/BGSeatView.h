@@ -43,6 +43,10 @@ struct FBGSeatView
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
 	FText RoleName;
 
+	/** 직업 이름(Character.Job.*). 역할과 달리 공개 정보라 항상 채운다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
+	FText JobName;
+
 	/**
 	 * 보는 사람 기준 거리. 자기 자신이거나 계산 불가면 INDEX_NONE (화면에는 "-").
 	 * 살아 있는 좌석만으로 이루어진 원의 최단 걸음 수다.
@@ -59,6 +63,11 @@ struct FBGSeatView
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
 	bool bIsCurrentTurn = false;
+
+	// 판이 돌고 있는가. 로비에도 어트리뷰트는 이미 있어서 체력만 보고는 구분되지 않는다 —
+	// 스탯을 언제부터 보여줄지는 이 값으로 정한다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
+	bool bMatchRunning = false;
 
 	// 접속이 끊긴 채 자리만 남아 있다. 죽은 것이 아니라 복귀를 기다리는 중이다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
