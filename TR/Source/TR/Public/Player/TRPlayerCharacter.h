@@ -69,7 +69,7 @@ protected:
 	virtual void Trigger(const FInputActionValue& Input);
 	virtual void Trigger_Implementation(const FInputActionValue& Input);
 	
-	UFUNCTION(Server, Reliable)
+	UFUNCTION(Server, Unreliable)
 	void Reload(const FInputActionValue& Input);
 	void Reload_Implementation(const FInputActionValue& Input);
 	

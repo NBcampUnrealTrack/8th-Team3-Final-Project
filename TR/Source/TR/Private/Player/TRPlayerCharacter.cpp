@@ -14,6 +14,7 @@
 #include "Interaction/TRTurretControlComponent.h"
 #include "Train/TRInstallablePart.h"
 #include "Train/TRSupplyPoint.h"
+#include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
 
 // Sets default values
@@ -138,7 +139,8 @@ void ATRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		}
 		if (IsValid(IA_Reload))
 		{
-			EIC->BindAction(IA_Reload, ETriggerEvent::Started, this, &ATRPlayerCharacter::Reload);
+			EIC->BindAction(IA_Reload, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Reload);
+			EIC->BindAction(IA_Reload, ETriggerEvent::Completed, this, &ATRPlayerCharacter::TriggerReleased);
 		}
 	}
 }
@@ -335,20 +337,25 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 	}
 
 	AActor* Target = InteractionComp->GetCurrentTarget();
-	ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
-	if (!Part)
+
+	if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("Trigger ignored: target=%s is not InstallablePart"), Target ? *Target->GetName() : TEXT("null"));
+		if (Part->IsDestroyed())
+		{
+			UE_LOG(LogTemp, Log, TEXT("Trigger ignored: %s is destroyed — install from Control Room"), *Part->GetName());
+			return;
+		}
+		ActionComp->ServerStartAction(ETRActionType::Repair, Target);
 		return;
 	}
 
-	if (Part->IsDestroyed())
+	if (Cast<ATRTrain>(Target))
 	{
-		UE_LOG(LogTemp, Log, TEXT("Trigger ignored: %s is destroyed — install from Control Room"), *Part->GetName());
+		ActionComp->ServerStartAction(ETRActionType::Repair, Target);
 		return;
 	}
 
-	ActionComp->ServerStartAction(ETRActionType::Repair, Target);
+	UE_LOG(LogTemp, Verbose, TEXT("Trigger ignored: target=%s is not repairable"), Target ? *Target->GetName() : TEXT("null"));
 }
 
 // 좌클릭 뗌 - 진행 중이던 Repair 액션 취소

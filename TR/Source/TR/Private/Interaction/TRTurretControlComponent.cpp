@@ -28,7 +28,7 @@ void UTRTurretControlComponent::ServerMount_Implementation(ATRTurret* Turret)
 {
 	if (!IsValid(Turret) || IsMounted() || Turret->IsOccupied() || Turret->IsDestroyed())
 	{
-		UE_LOG(LogTemp, Log, TEXT("Mount ignored: invalid/occupied/destroyed"));
+		UE_LOG(LogTemp, Verbose, TEXT("Mount ignored: invalid/occupied/destroyed"));
 		return;
 	}
 
@@ -61,7 +61,7 @@ void UTRTurretControlComponent::CompleteMount()
 
 	if (!IsValid(Turret) || Turret->IsOccupied() || Turret->IsDestroyed())
 	{
-		UE_LOG(LogTemp, Log, TEXT("Mount failed after delay: target no longer valid"));
+		UE_LOG(LogTemp, Verbose, TEXT("Mount failed after delay: target no longer valid"));
 		return;
 	}
 
@@ -74,6 +74,7 @@ void UTRTurretControlComponent::CompleteMount()
 	Turret->SetOccupant(OwnerPawn);
 	MountedTurret = Turret;
 	OnRep_MountedTurret();
+	UE_LOG(LogTemp, Verbose, TEXT("Mounted: %s"), *Turret->GetName());
 }
 
 void UTRTurretControlComponent::ServerDismount_Implementation()
@@ -96,6 +97,7 @@ void UTRTurretControlComponent::ForceDismount()
 
 	if (IsValid(MountedTurret))
 	{
+		UE_LOG(LogTemp, Verbose, TEXT("Dismounted: %s"), *MountedTurret->GetName());
 		MountedTurret->SetOccupant(nullptr);
 	}
 	MountedTurret = nullptr;
@@ -113,6 +115,7 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	{
 		if (!TryAutoRefillFromInventory())
 		{
+			UE_LOG(LogTemp, Verbose, TEXT("Fire blocked: out of ammo"));
 			return;
 		}
 	}
@@ -127,6 +130,7 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	const FRotator CamRot = Controller->GetControlRotation();
 	if (!MountedTurret->IsWithinFireArc(CamRot.Yaw, CamRot.Pitch))
 	{
+		UE_LOG(LogTemp, Verbose, TEXT("Fire blocked: out of arc"));
 		return;
 	}
 
@@ -137,7 +141,9 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 		return;
 	}
 	LastFireTime = Now;
-	
+
+	MountedTurret->ConsumeAmmo(1);
+
 	FHitResult Hit;
 	if (TraceFireTarget(Hit))
 	{
@@ -145,9 +151,13 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 		if (IsValid(HitActor))
 		{
 			UGameplayStatics::ApplyDamage(HitActor, MountedTurret->GetManualDamage(), Controller, MountedTurret, nullptr);
+			UE_LOG(LogTemp, Verbose, TEXT("Fire hit: %s"), *HitActor->GetName());
 		}
 	}
-	MountedTurret->ConsumeAmmo(1);
+	else
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("Fire missed"));
+	}
 }
 
 bool UTRTurretControlComponent::TraceFireTarget(FHitResult& OutHit) const
@@ -187,6 +197,7 @@ bool UTRTurretControlComponent::TryAutoRefillFromInventory()
 
 	PS->ConsumeCarriedSupply(1);
 	MountedTurret->AddAmmo(MountedTurret->GetManualAmmoPerResource());
+	UE_LOG(LogTemp, Verbose, TEXT("Auto-refilled ammo: +%d"), MountedTurret->GetManualAmmoPerResource());
 	return true;
 }
 

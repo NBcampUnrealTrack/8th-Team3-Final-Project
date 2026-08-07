@@ -31,6 +31,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Train")
 	bool IsFullHP() const { return CurrentHullHealth >= MaxHullHealth; }
 
+	UFUNCTION(BlueprintPure, Category = "Train")
+	float GetCurrentHullHealth() const { return CurrentHullHealth; }
+
 	void ApplyRepair(float Amount);
 	
 private:
@@ -42,7 +45,8 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Train")
 	float MaxHullHealth = 2000.f;
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Train", meta = (AllowPrivateAccess = "true"))
+	// 테스트용 — 데미지 시스템(적 등) 생기면 EditInstanceOnly 제거 검토
+	UPROPERTY(EditInstanceOnly, Replicated, BlueprintReadOnly, Category = "Train", meta = (AllowPrivateAccess = "true"))
 	float CurrentHullHealth = 2000.f;
 
 	UPROPERTY(EditInstanceOnly, Category = "Train")

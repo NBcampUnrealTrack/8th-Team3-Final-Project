@@ -96,7 +96,7 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 		Def.CycleDuration,
 		false
 	);
-	UE_LOG(LogTemp, Warning, TEXT("Action Started: %.1fs"), Def.CycleDuration);
+	UE_LOG(LogTemp, Verbose, TEXT("Action Started: %.1fs"), Def.CycleDuration);
 }
 
 void UTRActionComponent::ServerCancelAction_Implementation()
@@ -134,10 +134,12 @@ void UTRActionComponent::CompleteAction()
 					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 					{
 						Part->ApplyRepair(Part->GetMaxHP() * HealPercent);
+						UE_LOG(LogTemp, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
 					}
 					else if (ATRTrain* Train = Cast<ATRTrain>(Target))
 					{
 						Train->ApplyRepair(Train->GetMaxHullHealth() * HealPercent);
+						UE_LOG(LogTemp, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
 					}
 
 					if (PS)
@@ -151,6 +153,7 @@ void UTRActionComponent::CompleteAction()
 					if (ATRTurret* Turret = Cast<ATRTurret>(Target))
 					{
 						Turret->AddAmmo(Def->ResourceAmount * Turret->GetManualAmmoPerResource());
+						UE_LOG(LogTemp, Verbose, TEXT("Reload complete: %s Ammo %d / %d"), *Turret->GetName(), Turret->GetCurrentAmmo(), Turret->GetMaxAmmo());
 					}
 					if (PS)
 					{
@@ -163,6 +166,7 @@ void UTRActionComponent::CompleteAction()
 					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 					{
 						Part->ApplyInstall();
+						UE_LOG(LogTemp, Verbose, TEXT("Build complete: %s"), *Part->GetName());
 					}
 					if (ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>())
 					{
@@ -175,6 +179,7 @@ void UTRActionComponent::CompleteAction()
 					if (PS)
 					{
 						PS->AddCarriedSupply(Def->ResourceAmount);
+						UE_LOG(LogTemp, Verbose, TEXT("Restock complete: CarriedSupply %d / %d"), PS->GetCarriedSupply(), ATRPlayerState::MaxCarriedSupply);
 					}
 					break;
 				}
