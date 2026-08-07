@@ -13,6 +13,42 @@ class UBorder;
 class UImage;
 class UTexture2D;
 class UBGHandWidget;
+class UMaterialInstanceDynamic;
+class UCurveFloat;
+
+/**
+ * 판정 등급 하나에 대한 글로우 연출값.
+ *
+ * ⚠️ 색만으로 등급을 가르지 말 것. 색각이상(남성 약 8%)에서 빨강·노랑·주황이 한 덩어리로
+ *    뭉쳐서 대실패·성공·대성공이 구분되지 않는다. Seconds 와 Intensity 를 등급마다 다르게
+ *    줘서 **밝기와 속도로도** 읽히게 한다 — 대성공은 세고 길게, 실패는 약하고 짧게.
+ */
+USTRUCT(BlueprintType)
+struct FBGCardTierFX
+{
+	GENERATED_BODY()
+
+	/** 이 등급의 글로우 색. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|TierFX")
+	FLinearColor Color = FLinearColor::White;
+
+	/** 터지는 순간의 세기. 여기서 평상시 값으로 잦아든다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|TierFX", meta = (ClampMin = "0.0"))
+	float Intensity = 3.f;
+
+	/** 테두리 링의 세기. 머테리얼에 링 파라미터가 없으면 무시된다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|TierFX", meta = (ClampMin = "0.0"))
+	float RingStrength = 1.f;
+
+	/**
+	 * 잦아드는 데 걸리는 시간(초).
+	 *
+	 * 실패 계열을 길게 끌지 말 것 — 실패는 빨리 넘어가야 답답하지 않다.
+	 * 판이 뒤집히는 대성공·대실패만 길게 준다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|TierFX", meta = (ClampMin = "0.01"))
+	float Seconds = 0.6f;
+};
 
 /**
  * 카드 위젯의 연출 상태.
@@ -58,6 +94,28 @@ class BG_API UBGCardWidget : public UUserWidget
 public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Card")
 	void SetCardView(const FBGCardView& InCardView);
+
+	/**
+	 * 판정 등급 연출을 터뜨린다. 판정이 확정되는 순간 자동으로 불린다.
+	 *
+	 * BlueprintCallable 인 이유는 튜닝 때문이다 — 판을 돌리지 않고 BP 에서 등급을 골라
+	 * 바로 재생해 볼 수 있어야 색·세기를 맞출 수 있다.
+	 *
+	 * 등급이 None 이면(장비처럼 판정하지 않는 카드) 아무 일도 하지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Card|TierFX")
+	void PlayTierFX(EBGResolutionTier Tier);
+
+	/**
+	 * 중앙 대기를 지금 끝낸다 — 카드가 퇴장을 시작한다.
+	 *
+	 * bWaitForDwellAnimation 을 켰을 때 **BP 가 반드시 불러야 하는 신호**다.
+	 * UMG 애니메이션의 Finished 이벤트에 물려 두면 연출 길이가 애셋을 따라간다.
+	 *
+	 * 대기 중이 아니면 아무 일도 하지 않는다 — 여러 번 불러도 안전하다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Card|Motion")
+	void FinishDwell();
 
 	UFUNCTION(BlueprintPure, Category = "BG|Card")
 	const FBGCardView& GetCardView() const { return CardView; }
@@ -302,6 +360,67 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card")
 	TObjectPtr<UTexture2D> FallbackArtTexture;
 
+	// ── 등급 연출 (글로우 머테리얼) ──────────────────────────────────
+	//
+	//	브러시에 머테리얼이 물린 이미지를 잡아 **이 카드 전용 DMI** 로 바꿔 쓴다.
+	//
+	//	⚠️ DMI 없이 MI 를 그대로 쓰면 손패 전원이 같은 인스턴스를 공유한다 —
+	//	   한 장이 대성공 나면 손패가 통째로 번쩍인다.
+
+	/**
+	 * C++ 글로우로 등급을 표현할지. **기본은 꺼짐** — 등급 연출은 WBP 의 UMG 애니메이션이 맡는다.
+	 *
+	 * 코드를 지우지 않고 스위치로 둔 이유는 §13.1 비활성 정책과 같다. 애니메이션으로
+	 * 원하는 그림이 안 나오면 켜서 같이 쓰거나, 애니메이션 대신 되돌릴 수 있어야 한다.
+	 * 꺼져 있으면 PlayTierFX 가 즉시 빠져나가므로 DMI 도 만들지 않는다(비용 0).
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
+	bool bUseTierGlow = false;
+
+	/** 글로우 머테리얼이 물려 있는 이미지. 없으면 등급 연출만 조용히 꺼진다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_Glow;
+
+	//	파라미터 이름을 값으로 두는 이유: 이 위젯에 어떤 머테리얼이 물릴지 코드가 모른다.
+	//	M_BGCardGlow 면 아래 기본값이 맞고, M_BGCardFX 면 RimColor / RimIntensity 로 바꾸면 된다.
+	//	이름이 틀리면 UMaterialInstanceDynamic 이 조용히 무시하므로 BP 에서 확인할 것.
+	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
+	FName ColorParamName = TEXT("GlowColor");
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
+	FName IntensityParamName = TEXT("GlowIntensity");
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
+	FName RingParamName = TEXT("GlowRingStrength");
+
+	/**
+	 * 위젯 크기를 받는 파라미터. SDF 글로우가 테두리 두께를 균일하게 그리려면 필요하다.
+	 * 안 먹이면 카드 비율이 바뀔 때 글로우가 찌그러진다. 없는 머테리얼이면 그냥 무시된다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
+	FName WidgetSizeParamName = TEXT("WidgetSize");
+
+	/**
+	 * 잦아드는 곡선(가로 0~1 → 세로 1~0). 비우면 선형으로 잦아든다.
+	 *
+	 * 커브를 애셋으로 빼 두면 아티스트가 코드 빌드 없이 감쇠를 고칠 수 있다.
+	 * 앞부분을 평평하게 만들면 "확 터졌다가 천천히" 가 된다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
+	TObjectPtr<UCurveFloat> TierFXCurve;
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
+	FBGCardTierFX CriticalFailureFX = { FLinearColor(0.85f, 0.15f, 0.15f), 3.5f, 1.4f, 0.9f };
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
+	FBGCardTierFX FailureFX = { FLinearColor(0.63f, 0.63f, 0.63f), 1.2f, 0.4f, 0.35f };
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
+	FBGCardTierFX SuccessFX = { FLinearColor(1.f, 0.92f, 0.23f), 2.2f, 0.9f, 0.5f };
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
+	FBGCardTierFX CriticalSuccessFX = { FLinearColor(1.f, 0.55f, 0.f), 4.5f, 2.f, 1.1f };
+
 	/** "성공 78%" — 표시 공간이 좁을 때의 축약형 (GDD §10). */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Chance;
@@ -454,9 +573,25 @@ protected:
 	 *
 	 * ⚠️ 대상을 고르는 동안의 대기는 여기에 포함되지 않는다. 그쪽은 시간이 아니라
 	 *    ReleaseHold 가 올 때까지 무한히 기다린다.
+	 *
+	 * ⚠️ bWaitForDwellAnimation 을 켜면 이 값은 **안전 상한**으로만 쓰인다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Play", meta = (ClampMin = "0"))
-	float DwellDuration = 1.0f;
+	float DwellDuration = 2.2f;
+
+	/**
+	 * 중앙 대기의 길이를 **UMG 애니메이션이 정하게** 한다.
+	 *
+	 * 켜면 DwellRemaining 이 저절로 줄지 않고, BP 가 FinishDwell() 을 부를 때까지 머문다.
+	 * 애니메이션 끝 이벤트에 FinishDwell 을 물리면 연출 길이를 애셋에서 잡을 수 있다 —
+	 * 길이를 바꿀 때마다 C++ 값을 따라 고칠 필요가 없어진다.
+	 *
+	 * ⚠️ 그래도 DwellDuration 이 상한으로 계속 돈다. BP 가 FinishDwell 을 빠뜨리거나
+	 *    애니메이션이 없으면 카드가 중앙에 영원히 박혀서 손패가 잠기기 때문이다 —
+	 *    상한이 없으면 그 상태에서 아무 에러도 안 난다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Play")
+	bool bWaitForDwellAnimation = false;
 
 private:
 	void RefreshVisual();
@@ -478,6 +613,43 @@ private:
 
 	/** 테두리 안쪽 그림을 채운다. 뷰에 그림이 없으면 폴백으로, 그것도 없으면 칸을 접는다. */
 	void RefreshArt();
+
+	// ── 등급 연출 ────────────────────────────────────────────────────
+
+	/**
+	 * 이 카드 전용 DMI 를 얻는다(처음 부를 때 만든다).
+	 * 브러시에 머테리얼이 없으면(그냥 텍스처면) nullptr — 등급 연출은 조용히 꺼진다.
+	 */
+	UMaterialInstanceDynamic* GetGlowMID();
+
+	/** 등급별 연출값을 고른다. 등급이 없으면(장비 등) nullptr. */
+	const FBGCardTierFX* FindTierFX(EBGResolutionTier Tier) const;
+
+	/**
+	 * 잦아드는 진행도(1 = 방금 터짐, 0 = 평상시)를 머테리얼에 반영한다.
+	 * 평상시 값은 DMI 를 만들 때 붙잡아 둔 것으로 되돌아간다 — 0 으로 밀어 버리면
+	 * 판정 한 번 뒤에 카드 글로우가 영영 꺼진다.
+	 */
+	void ApplyTierFX(float Shape);
+
+	/** 감쇠를 굴린다. TickMotion 이 매 프레임 부른다. */
+	void TickTierFX(float DeltaTime);
+
+	// ── 등급 연출 런타임 상태 ────────────────────────────────────────
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GlowMID;
+
+	//	DMI 를 만든 시점의 값 — 연출이 끝나면 여기로 돌아간다.
+	//	0 으로 되돌리면 아티스트가 잡아 둔 평상시 글로우까지 죽는다.
+	FLinearColor RestColor = FLinearColor::White;
+	float RestIntensity = 0.f;
+	float RestRing = 0.f;
+	bool bRestCaptured = false;
+
+	FBGCardTierFX ActiveTierFX;
+	float TierFXElapsed = 0.f;
+	bool bTierFXActive = false;
 
 	UPROPERTY()
 	TWeakObjectPtr<UBGHandWidget> OwningHand;

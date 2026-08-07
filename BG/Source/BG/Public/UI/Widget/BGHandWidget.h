@@ -222,7 +222,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Hand")
 	TSubclassOf<UBGCardWidget> CardWidgetClass;
 
-	/** ⚠️ 구형 HorizontalBox 경로에서만 쓰인다. 캔버스 배치는 CardSpacing 을 본다. */
+	/** ⚠️ 구형 HorizontalBox 경로에서만 쓰인다. 캔버스 배치는 CardOverlapRatio 를 본다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Hand")
 	FMargin CardPadding = FMargin(4.f, 0.f);
 
@@ -230,41 +230,49 @@ protected:
 
 	// ── 간격 ─────────────────────────────────────────────────────────
 	//
-	//	카드 중심 사이의 거리 = CardWidth + CardSpacing.
+	//	카드 중심 사이의 거리 = 카드 폭 × (1 - CardOverlapRatio).
 	//	일직선이든 부채꼴이든 **같은 값**이 쓰인다 — 모드를 바꿔도 간격 감각이 유지된다.
 	//
-	//	  CardSpacing > 0  →  카드 사이가 벌어진다
-	//	  CardSpacing = 0  →  옆면끼리 딱 붙는다
-	//	  CardSpacing < 0  →  그만큼 겹친다
+	//	⚠️ 간격을 픽셀이 아니라 **비율**로 잡는 이유: 픽셀로 두면 카드 크기를 바꿀 때마다
+	//	   간격도 같이 고쳐야 하고, CardWidth 가 실제 카드와 어긋나면 조용히 틀어진다.
+	//	   비율이면 카드가 커지든 작아지든 "얼마나 겹쳐 보이는가" 가 유지된다.
 
 	/**
-	 * 카드 한 장의 폭. **실제 크기이자 배치 계산의 기준값**이다 — 카드 슬롯이 이 값으로 고정된다.
+	 * 카드 한 장의 폭.
+	 * ⚠️ 카드 WBP 의 실제 폭과 맞춰야 한다. 이 값이 실제보다 작으면 겹쳐 보이고,
+	 *    크면 사이가 벌어져 보인다 — 간격이 안 맞는 원인은 대개 여기다.
 	 *
-	 * 예전에는 AutoSize 로 두고 WBP 가 정한 크기를 따랐는데, 그러면 카드 안의 내용물이
-	 * 크기를 밀어낸다. 줄바꿈이 꺼진 긴 설명 텍스트 한 줄이 카드를 통째로 늘려서
-	 * **카드마다 폭이 달라지고** 간격 계산(이 값 기준)과도 어긋났다.
-	 * 카드는 규격이 같아야 하는 물건이라 크기를 코드가 정한다.
+	 * ⚠️ 실제 크기는 WBP 가 정한다(슬롯이 AutoSize 다). 그래서 카드 **안의 내용물**이
+	 *    크기를 밀어낼 수 있다 — 줄바꿈이 꺼진 긴 설명 텍스트가 대표적이고, 그러면
+	 *    텍스트가 긴 카드만 넓어져 이 값과 어긋난다. 카드 폭이 제각각으로 보이면
+	 *    WBP 의 Auto Wrap Text 부터 확인할 것.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout", meta = (ClampMin = "1"))
-	float CardWidth = 140.f;
-
-	/** 카드 한 장의 높이. 폭과 같은 이유로 코드가 정한다. */
-	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout", meta = (ClampMin = "1"))
-	float CardHeight = 200.f;
+	float CardWidth = 200.f;
 
 	/**
-	 * 카드 내용물을 카드 경계에서 자를지.
+	 * 옆 카드에 **가려지는 비율**. 0.3 이면 카드의 30% 가 다음 카드에 덮인다.
 	 *
-	 * 크기를 고정해도 **넘치는 내용은 밖으로 그려진다** — 줄바꿈이 꺼진 텍스트가 대표적이다.
-	 * 켜 두면 삐져나온 부분이 잘려서 규격이 눈에 보이고, WBP 쪽 줄바꿈 설정이 빠졌다는 것도
-	 * 바로 드러난다. 끄면 예전처럼 옆 카드 위로 글자가 넘어간다.
+	 *   0.0  →  옆면끼리 딱 붙는다 (겹침 없음)
+	 *   0.3  →  슬레이 더 스파이어 정도의 손패 밀도  ← 기본
+	 *   0.5  →  절반이 가려진다. 장수가 많을 때의 느낌
+	 *
+	 * 손패는 겹쳐 쥐는 것이라 0 에 가까우면 진열대처럼 보인다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout", meta = (ClampMin = "0.0", ClampMax = "0.9"))
+	float CardOverlapRatio = 0.30f;
+
+	/**
+	 * 실제 카드 폭을 위젯에서 재서 쓸지. 켜 두는 것을 권한다.
+	 *
+	 * ⚠️ 슬롯이 AutoSize 라 카드의 진짜 폭은 WBP 가 정한다. 그래서 CardWidth 가 실제와
+	 *    어긋나면 간격이 조용히 틀어진다 — 카드가 이유 없이 겹치거나 벌어지는 원인이
+	 *    대부분 이것이었다. 재서 쓰면 WBP 에서 카드 크기를 바꿔도 간격이 알아서 따라온다.
+	 *
+	 * 첫 프레임처럼 아직 크기를 모를 때만 CardWidth 로 폴백한다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout")
-	bool bClipCardContent = true;
-
-	/** 카드 옆면 사이의 여백. 음수면 그만큼 겹친다. */
-	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout")
-	float CardSpacing = 12.f;
+	bool bMeasureCardWidth = true;
 
 	/**
 	 * 손패가 퍼질 수 있는 최대 폭. 패널이 더 넓어도 이 폭을 넘지 않는다
@@ -277,9 +285,14 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout", meta = (ClampMin = "1"))
 	float MaxHandWidth = 1100.f;
 
-	/** 압축의 하한. 이보다 좁아지지 않는다 — 완전히 겹쳐 한 장처럼 보이는 것을 막는다. */
+	/**
+	 * 압축의 하한. 이보다 좁아지지 않는다 — 완전히 겹쳐 한 장처럼 보이는 것을 막는다.
+	 *
+	 * 카드 폭의 25~30% 아래로 내리지 말 것. 그보다 좁으면 남는 부분이 테두리뿐이라
+	 * 카드 장수는 세어져도 무슨 카드인지 못 읽는다.
+	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout", meta = (ClampMin = "1"))
-	float MinCardStep = 28.f;
+	float MinCardStep = 60.f;
 
 	/**
 	 * 카드의 정렬 기준점이자 회전 축.
@@ -313,7 +326,7 @@ protected:
 	bool bUseFanLayout = true;
 
 	/**
-	 * 회전 중심까지의 거리(픽셀). **곡률만** 정한다 — 간격은 CardSpacing 이 정한다.
+	 * 회전 중심까지의 거리(픽셀). **곡률만** 정한다 — 간격은 CardOverlapRatio 가 정한다.
 	 *   크게  → 완만하게 휜다 (거의 일직선)
 	 *   작게  → 급하게 휜다
 	 *
@@ -435,6 +448,12 @@ private:
 	/** 배치 계산에 쓸 패널 폭. 지오메트리가 아직 없으면 MaxHandWidth 로 폴백한다. */
 	float GetLayoutWidth() const;
 	float GetLayoutHeight() const;
+
+	/**
+	 * 배치 계산에 쓸 카드 폭. bMeasureCardWidth 면 실제 위젯에서 재고,
+	 * 아직 크기를 모르면 CardWidth 로 폴백한다.
+	 */
+	float GetEffectiveCardWidth() const;
 
 	FVector2D GetDeckAnchor() const;
 	FVector2D GetDiscardAnchor() const;

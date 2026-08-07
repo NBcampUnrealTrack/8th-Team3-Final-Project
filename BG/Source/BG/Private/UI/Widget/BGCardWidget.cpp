@@ -8,7 +8,10 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "Curves/CurveFloat.h"
+#include "Debug/BGCardLog.h"
 #include "Engine/Texture2D.h"
+#include "Materials/MaterialInstanceDynamic.h"
 
 namespace
 {
@@ -171,6 +174,143 @@ void UBGCardWidget::RefreshArt()
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
+//  등급 연출 (판정 4단계를 글로우로)
+//
+//  ⚠️ 시간축을 여기서 굴리는 것은 **카드 한 장짜리라 성립하는 단순화**다.
+//     "대성공 → 피해 → 상대 사망 → 승리 연출" 처럼 여러 연출이 연쇄될 때는 누가 누구를
+//     기다리는지 중재할 곳이 필요하다. 나중에 연출 큐를 만들면 TickTierFX 의 진행도 계산만
+//     그쪽으로 옮기면 되도록, 재생(PlayTierFX) · 진행(TickTierFX) · 적용(ApplyTierFX)을
+//     세 함수로 갈라 두었다.
+// ══════════════════════════════════════════════════════════════════════════════════════
+
+UMaterialInstanceDynamic* UBGCardWidget::GetGlowMID()
+{
+	if (GlowMID)
+	{
+		return GlowMID;
+	}
+
+	if (!Img_Glow)
+	{
+		return nullptr;   // WBP 가 글로우 칸을 두지 않았다. 선택 사항이다.
+	}
+
+	//	브러시의 머테리얼을 이 위젯 전용 DMI 로 바꿔 준다.
+	//	브러시가 그냥 텍스처면 null 이 돌아온다 — 그때는 등급 연출만 조용히 꺼진다.
+	GlowMID = Img_Glow->GetDynamicMaterial();
+	if (!GlowMID)
+	{
+		return nullptr;
+	}
+
+	//	평상시 값을 붙잡아 둔다. 연출이 끝나면 0 이 아니라 여기로 돌아가야
+	//	아티스트가 잡아 둔 기본 글로우가 살아남는다.
+	if (!bRestCaptured)
+	{
+		GlowMID->GetVectorParameterValue(FMaterialParameterInfo(ColorParamName), RestColor);
+		GlowMID->GetScalarParameterValue(FMaterialParameterInfo(IntensityParamName), RestIntensity);
+		GlowMID->GetScalarParameterValue(FMaterialParameterInfo(RingParamName), RestRing);
+		bRestCaptured = true;
+	}
+
+	return GlowMID;
+}
+
+const FBGCardTierFX* UBGCardWidget::FindTierFX(EBGResolutionTier Tier) const
+{
+	switch (Tier)
+	{
+	case EBGResolutionTier::CriticalFailure: return &CriticalFailureFX;
+	case EBGResolutionTier::Failure:         return &FailureFX;
+	case EBGResolutionTier::Success:         return &SuccessFX;
+	case EBGResolutionTier::CriticalSuccess: return &CriticalSuccessFX;
+
+	//	None = 판정하지 않은 카드(장비 등). 연출이 없는 것이 정답이다 —
+	//	기본값으로 떨어뜨리면 장비를 낼 때마다 대실패처럼 보인다.
+	default: return nullptr;
+	}
+}
+
+void UBGCardWidget::PlayTierFX(EBGResolutionTier Tier)
+{
+	if (!bUseTierGlow)
+	{
+		return;   // 등급 연출은 WBP 애니메이션이 맡는다. DMI 도 만들지 않는다.
+	}
+
+	const FBGCardTierFX* Params = FindTierFX(Tier);
+	if (!Params || !GetGlowMID())
+	{
+		return;
+	}
+
+	ActiveTierFX  = *Params;
+	TierFXElapsed = 0.f;
+	bTierFXActive = true;
+
+	ApplyTierFX(1.f);   // 터지는 순간을 한 프레임 기다리지 않고 바로 반영한다
+}
+
+void UBGCardWidget::ApplyTierFX(float Shape)
+{
+	UMaterialInstanceDynamic* MID = GetGlowMID();
+	if (!MID)
+	{
+		return;
+	}
+
+	//	SDF 글로우는 위젯 크기를 알아야 테두리 두께가 균일하다. 매번 먹이는 이유는
+	//	손패 재배치·호버 스케일로 크기가 계속 변하기 때문이다. 없는 파라미터면 무시된다.
+	if (!WidgetSizeParamName.IsNone() && Img_Glow)
+	{
+		const FVector2D Size = Img_Glow->GetCachedGeometry().GetLocalSize();
+		if (!Size.IsNearlyZero())
+		{
+			MID->SetVectorParameterValue(WidgetSizeParamName,
+				FLinearColor(static_cast<float>(Size.X), static_cast<float>(Size.Y), 0.f, 0.f));
+		}
+	}
+
+	const float Clamped = FMath::Clamp(Shape, 0.f, 1.f);
+
+	MID->SetVectorParameterValue(ColorParamName,
+		FMath::Lerp(RestColor, ActiveTierFX.Color, Clamped));
+
+	MID->SetScalarParameterValue(IntensityParamName,
+		FMath::Lerp(RestIntensity, ActiveTierFX.Intensity, Clamped));
+
+	MID->SetScalarParameterValue(RingParamName,
+		FMath::Lerp(RestRing, ActiveTierFX.RingStrength, Clamped));
+}
+
+void UBGCardWidget::TickTierFX(float DeltaTime)
+{
+	if (!bTierFXActive)
+	{
+		return;
+	}
+
+	TierFXElapsed += DeltaTime;
+
+	const float Alpha = FMath::Clamp(
+		TierFXElapsed / FMath::Max(ActiveTierFX.Seconds, KINDA_SMALL_NUMBER), 0.f, 1.f);
+
+	//	커브가 있으면 그것이 모양을 정한다(가로 0~1 → 세로 1~0).
+	//	없으면 선형으로 잦아든다 — 커브 애셋 없이도 동작해야 튜닝을 나중으로 미룰 수 있다.
+	const float Shape = TierFXCurve
+		? TierFXCurve->GetFloatValue(Alpha)
+		: (1.f - Alpha);
+
+	ApplyTierFX(Shape);
+
+	if (Alpha >= 1.f)
+	{
+		bTierFXActive = false;
+		ApplyTierFX(0.f);   // 평상시 값으로 정확히 맞춰 놓고 끝낸다
+	}
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
 //  연출 (Presentation)
 //
 //  게임 상태와 화면 상태는 시간축이 다르다 — 손패에서 이미 빠진 카드도 Exiting 동안
@@ -320,6 +460,19 @@ void UBGCardWidget::BeginPlayExit(const FVector2D& CenterPosition, const FVector
 	MotionState = EBGCardMotionState::Presenting;
 }
 
+void UBGCardWidget::FinishDwell()
+{
+	//	대기 중이 아니면 조용히 넘어간다 — 애니메이션 Finished 는 중복으로 올 수 있고,
+	//	이미 퇴장에 들어간 카드를 다시 퇴장시키면 궤적이 처음부터 다시 그려진다.
+	if (MotionState != EBGCardMotionState::Dwelling || bHoldingAtCenter)
+	{
+		return;
+	}
+
+	DwellRemaining = 0.f;
+	EnterExitPhase(PendingExitPosition);
+}
+
 FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 {
 	//	부르는 쪽은 판정만 알고 카드 데이터는 모른다. 빈 칸은 여기서 메운다 —
@@ -344,6 +497,10 @@ FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 	//	아직 중앙으로 가는 중이면 도착 후 자연스럽게 대기로 넘어간다.
 	if (MotionState == EBGCardMotionState::Dwelling || MotionState == EBGCardMotionState::Presenting)
 	{
+		//	등급 연출을 BP 훅보다 먼저 터뜨린다. BP 가 이 위에 무엇을 얹든
+		//	글로우는 이미 올라와 있어야 "판정이 확정된 순간" 으로 읽힌다.
+		PlayTierFX(Filled.Tier);
+
 		OnPlayResolved(Filled);
 	}
 
@@ -412,6 +569,9 @@ bool UBGCardWidget::IsHoverActive() const
 
 void UBGCardWidget::TickMotion(float DeltaTime)
 {
+	//	등급 연출은 이동 상태와 무관하게 굴러야 한다 — 카드가 Idle 로 멈춰도 잦아드는 중일 수 있다.
+	TickTierFX(DeltaTime);
+
 	const FVector2D PositionBeforeTick = CurrentPosition;
 
 	switch (MotionState)
@@ -528,9 +688,23 @@ void UBGCardWidget::TickMotion(float DeltaTime)
 			break;   // 부수 효과는 계속 굴러야 기울기가 0 으로 되돌아온다
 		}
 
+		//	애니메이션이 길이를 쥐는 모드에서도 시계는 계속 돈다 — 다만 그때 DwellDuration 은
+		//	연출 길이가 아니라 **안전 상한**이다. BP 가 FinishDwell 을 빠뜨려도 카드가
+		//	중앙에 영원히 박히지 않게 하는 장치다(그 상태는 에러도 안 나고 손패가 잠긴다).
 		DwellRemaining -= DeltaTime;
+
 		if (DwellRemaining <= 0.f)
 		{
+			if (bWaitForDwellAnimation)
+			{
+				//	상한까지 왔는데 아직 신호가 없다. 연출이 잘린 것이므로 원인을 남긴다.
+				UE_LOG(LogBGCard, Warning,
+					TEXT("[Card] 대기 상한(%.2f초) 초과 — FinishDwell 이 안 왔다. "
+					     "WBP 애니메이션 Finished 에 FinishDwell 을 물렸는지, "
+					     "애니메이션이 DwellDuration 보다 길지 않은지 확인할 것."),
+					DwellDuration);
+			}
+
 			EnterExitPhase(PendingExitPosition);
 		}
 		break;

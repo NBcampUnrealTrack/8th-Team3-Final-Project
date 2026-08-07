@@ -275,26 +275,19 @@ UBGCardWidget* UBGHandWidget::CreateCardWidget(const FBGCardView& Card)
 
 	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(AddedSlot))
 	{
-		//	크기를 코드가 정한다 — AutoSize 를 쓰지 않는다.
+		//	AutoSize 로 두면 카드 WBP 가 정한 크기를 그대로 쓴다.
+		//	CardWidth 는 배치 계산용 값일 뿐 실제 크기를 강제하지 않는다.
 		//
-		//	⚠️ AutoSize 면 카드 **안의 내용물**이 카드 크기를 밀어낸다. 줄바꿈이 꺼진 설명
-		//	   텍스트 한 줄이 카드를 가로로 늘려서, 텍스트가 긴 카드만 넓어지는 문제가 있었다.
-		//	   그러면 카드마다 규격이 달라지는 데다, 간격 계산이 CardWidth 를 기준으로 하므로
-		//	   실제 폭과 어긋나 배치까지 흐트러진다.
-		CanvasSlot->SetAutoSize(false);
-		CanvasSlot->SetSize(FVector2D(CardWidth, CardHeight));
+		//	⚠️ 그래서 카드 **안의 내용물**이 크기를 밀어낼 수 있다. 줄바꿈이 꺼진 설명
+		//	   텍스트 한 줄이 카드를 가로로 늘리면 텍스트가 긴 카드만 넓어진다 —
+		//	   카드 폭이 제각각으로 보이면 WBP 의 Auto Wrap Text 부터 확인할 것.
+		CanvasSlot->SetAutoSize(true);
 	}
 	else if (UHorizontalBoxSlot* HBoxSlot = Cast<UHorizontalBoxSlot>(AddedSlot))
 	{
 		HBoxSlot->SetPadding(CardPadding);
 		HBoxSlot->SetVerticalAlignment(VAlign_Bottom);
 	}
-
-	//	크기를 고정해도 넘치는 내용은 밖으로 그려진다 — 줄바꿈이 꺼진 텍스트가 옆 카드를 덮는다.
-	//	잘라 두면 규격이 눈에 보이고, WBP 의 줄바꿈 설정이 빠졌다는 것도 바로 드러난다.
-	CardWidget->SetClipping(bClipCardContent
-		? EWidgetClipping::ClipToBounds
-		: EWidgetClipping::Inherit);
 
 	ApplyCardAlignment(CardWidget);
 
@@ -409,6 +402,31 @@ float UBGHandWidget::GetLayoutHeight() const
 	return bHasValidPanelSize ? CachedPanelSize.Y : 0.f;
 }
 
+float UBGHandWidget::GetEffectiveCardWidth() const
+{
+	if (bMeasureCardWidth)
+	{
+		//	손패 카드는 전부 같은 WBP 라 한 장만 재면 된다. 아직 레이아웃 전이면 0 이 나오므로
+		//	유효한 값이 나오는 첫 장을 쓴다(퇴장 중인 카드는 크기가 줄어드는 중이라 건너뛴다).
+		for (const UBGCardWidget* CardWidget : CardWidgets)
+		{
+			if (!CardWidget || CardWidget->IsLeavingHand())
+			{
+				continue;
+			}
+
+			const float Measured = static_cast<float>(CardWidget->GetDesiredSize().X);
+			if (Measured > KINDA_SMALL_NUMBER)
+			{
+				return Measured;
+			}
+		}
+	}
+
+	//	첫 프레임이라 아직 잰 값이 없다. 눈에 띄게 틀리지만 않으면 한 프레임 뒤 교정된다.
+	return CardWidth;
+}
+
 FBGCardSlotLayout UBGHandWidget::ComputeCardSlot(int32 Index, int32 Count) const
 {
 	FBGCardSlotLayout Out;
@@ -433,7 +451,11 @@ FBGCardSlotLayout UBGHandWidget::ComputeCardSlot(int32 Index, int32 Count) const
 
 	//	카드 중심 사이의 목표 거리. 일직선이든 부채꼴이든 이 값에서 출발한다 —
 	//	모드를 바꿔도 간격 감각이 그대로 유지된다.
-	const float DesiredStep = FMath::Max(CardWidth + CardSpacing, MinCardStep);
+	//
+	//	폭은 실제 위젯에서 잰다(GetEffectiveCardWidth). 겹침을 비율로 잡으므로
+	//	카드 크기를 바꿔도 "30% 가려진다" 는 감각이 그대로 유지된다.
+	const float EffectiveWidth = GetEffectiveCardWidth();
+	const float DesiredStep = FMath::Max(EffectiveWidth * (1.f - CardOverlapRatio), MinCardStep);
 
 	// ══════════════════════════════════════════════════════════════════
 	//  부채를 끈 경우 — 일직선 배치
@@ -445,11 +467,11 @@ FBGCardSlotLayout UBGHandWidget::ComputeCardSlot(int32 Index, int32 Count) const
 		{
 			//	다 펼쳤을 때의 총 폭 = 중심 간격 × (장수-1) + 카드 한 장 폭.
 			//	넘치면 간격을 줄여 겹치게 만든다(뱅 원작처럼 손패가 많아지면 겹친다).
-			const float NeededWidth = Step * (Count - 1) + CardWidth;
+			const float NeededWidth = Step * (Count - 1) + EffectiveWidth;
 			if (NeededWidth > Available)
 			{
 				//	하한이 없으면 손패가 많을 때 카드가 완전히 포개져 한 장처럼 보인다.
-				Step = FMath::Max((Available - CardWidth) / static_cast<float>(Count - 1), MinCardStep);
+				Step = FMath::Max((Available - EffectiveWidth) / static_cast<float>(Count - 1), MinCardStep);
 			}
 		}
 
