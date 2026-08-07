@@ -238,12 +238,29 @@ protected:
 	//	  CardSpacing < 0  →  그만큼 겹친다
 
 	/**
-	 * 카드 한 장의 폭.
-	 * ⚠️ 카드 WBP 의 실제 폭과 맞춰야 한다. 이 값이 실제보다 작으면 겹쳐 보이고,
-	 *    크면 사이가 벌어져 보인다 — 간격이 안 맞는 원인은 대개 여기다.
+	 * 카드 한 장의 폭. **실제 크기이자 배치 계산의 기준값**이다 — 카드 슬롯이 이 값으로 고정된다.
+	 *
+	 * 예전에는 AutoSize 로 두고 WBP 가 정한 크기를 따랐는데, 그러면 카드 안의 내용물이
+	 * 크기를 밀어낸다. 줄바꿈이 꺼진 긴 설명 텍스트 한 줄이 카드를 통째로 늘려서
+	 * **카드마다 폭이 달라지고** 간격 계산(이 값 기준)과도 어긋났다.
+	 * 카드는 규격이 같아야 하는 물건이라 크기를 코드가 정한다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout", meta = (ClampMin = "1"))
 	float CardWidth = 140.f;
+
+	/** 카드 한 장의 높이. 폭과 같은 이유로 코드가 정한다. */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout", meta = (ClampMin = "1"))
+	float CardHeight = 200.f;
+
+	/**
+	 * 카드 내용물을 카드 경계에서 자를지.
+	 *
+	 * 크기를 고정해도 **넘치는 내용은 밖으로 그려진다** — 줄바꿈이 꺼진 텍스트가 대표적이다.
+	 * 켜 두면 삐져나온 부분이 잘려서 규격이 눈에 보이고, WBP 쪽 줄바꿈 설정이 빠졌다는 것도
+	 * 바로 드러난다. 끄면 예전처럼 옆 카드 위로 글자가 넘어간다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout")
+	bool bClipCardContent = true;
 
 	/** 카드 옆면 사이의 여백. 음수면 그만큼 겹친다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout")

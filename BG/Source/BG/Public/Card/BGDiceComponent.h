@@ -6,8 +6,12 @@
 //   · 시드 난수(RandomStream)의 소유자가 GameState 다. 재현 가능한 판정을 하려면 옆에 있어야 한다.
 //   · 같은 성격의 PerformDrawCheck 가 이미 GameState 에 있다 — 확률 판정을 한 곳에 모은다.
 //
-// ⚠️ 굴리기(RollDice/RollForOutcome)는 서버 전용이다. 클라에서 부르면 경고 후 실패값을 준다.
-//    설정값 읽기와 ClassifyRoll(순수 계산)은 클라에서도 안전하다.
+// ⚠️ 굴리기(RollDice/RollForOutcome/RollOutcome/RandomIndex)는 서버 전용이다.
+//    설정값 읽기와 ApplyModifiers·ClassifyRoll(순수 계산)은 클라에서도 안전하다.
+//
+// ⚠️ 판정 경로가 둘이다. 정식은 **RollOutcome**(카드 비율 기반, GDD §4.2)이고,
+//    RollDice/ClassifyRoll/RollForOutcome 은 구형 비활성 경로다 — 눈의 방향까지 반대다.
+//    아래 "판정 (구형 경로)" 블록의 경고를 반드시 읽을 것.
 
 #pragma once
 
@@ -41,18 +45,21 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "BG|Dice", meta = (ClampMin = "2"))
 	int32 DiceFaces = 24;
 
-	// 각 단계의 "상대 비율". 합이 1 일 필요 없다(내부에서 정규화).
+	// [비활성] 각 단계의 "상대 비율". 합이 1 일 필요 없다(내부에서 정규화).
 	// 낮은 눈=대실패 … 높은 눈=대성공. 예) 5/45/45/5 로 두면 극단이 5% 씩.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "BG|Dice", meta = (ClampMin = "0.0"))
+	//
+	// ⚠️ ClassifyRoll 전용이다 — 구형 경로라 실제 판정에 쓰이지 않는다. 여기를 아무리 고쳐도
+	//    게임의 확률은 바뀌지 않는다. 카드 확률은 DT_BGCard 의 OutcomeWeights 가 정한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "BG|Dice|Deprecated", meta = (ClampMin = "0.0"))
 	float CriticalFailureRatio = 0.1f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "BG|Dice", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "BG|Dice|Deprecated", meta = (ClampMin = "0.0"))
 	float FailureRatio = 0.4f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "BG|Dice", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "BG|Dice|Deprecated", meta = (ClampMin = "0.0"))
 	float SuccessRatio = 0.4f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "BG|Dice", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "BG|Dice|Deprecated", meta = (ClampMin = "0.0"))
 	float CriticalSuccessRatio = 0.1f;
 
 	// ── 시드 ─────────────────────────────────────────────────────
@@ -66,21 +73,37 @@ public:
 	 */
 	void InitializeStream(int32 MatchSeed);
 
-	// ── 판정 ─────────────────────────────────────────────────────
-	// 주사위를 굴려 1~Faces 결과를 반환한다 (서버 전용). Faces<=0 이면 DiceFaces 사용.
-	UFUNCTION(BlueprintCallable, Category = "BG|Dice")
+	// ── 판정 (구형 경로) ─────────────────────────────────────────
+	//
+	// ⚠️ [비활성] 아래 셋(RollDice / ClassifyRoll / RollForOutcome)과 위의 *Ratio 네 개는
+	//    **컴포넌트 기본 비율**로 판정하는 구형 경로다. 유일한 호출처가 비활성 GA_Missed 하나뿐이라
+	//    실제 게임에서는 한 번도 돌지 않는다. 정식 경로는 아래 RollOutcome(카드 비율 기반)이다.
+	//
+	// ⚠️⚠️ **눈의 방향이 정식 경로와 반대다.** 되살리기 전에 반드시 볼 것:
+	//        · ClassifyRoll  : 낮은 눈 = 대실패 … 높은 눈 = 대성공
+	//        · RollOutcome   : 낮은 눈 = 대성공 … 높은 눈 = 대실패  (GDD §4.2 누적 순서)
+	//      새 카드가 실수로 이 경로를 타면 판정이 **뒤집힌 채로 조용히 동작한다** —
+	//      확률 표시(§10)와 실측(§11)이 어긋나는데 크래시도 경고도 없어서 찾기 어렵다.
+	//      되살릴 때는 ClassifyRoll 의 누적 순서를 RollOutcome 에 맞춰 뒤집는 것이 먼저다.
+	//
+	// 삭제하지 않는 이유는 §13.1 비활성 정책과 같다. GA_Missed 를 되살리는 선택지를 남긴다.
+
+	// [비활성] 주사위를 굴려 1~Faces 결과를 반환한다 (서버 전용). Faces<=0 이면 DiceFaces 사용.
+	UFUNCTION(BlueprintCallable, Category = "BG|Dice|Deprecated")
 	int32 RollDice(int32 Faces = 0);
 
-	// 주어진 눈을 비율 구간으로 판정한다 (순수 계산 — 클라에서도 안전). Faces<=0 이면 DiceFaces.
-	UFUNCTION(BlueprintPure, Category = "BG|Dice")
+	// [비활성] 주어진 눈을 비율 구간으로 판정한다 (순수 계산). 위 방향 경고 참고.
+	UFUNCTION(BlueprintPure, Category = "BG|Dice|Deprecated")
 	EBGDiceOutcome ClassifyRoll(int32 Roll, int32 Faces = 0) const;
 
 	/**
-	 * 주사위를 굴려 판정 결과를 반환한다 (굴린 눈은 OutRoll). 서버 전용.
+	 * [비활성] 주사위를 굴려 판정 결과를 반환한다 (굴린 눈은 OutRoll). 서버 전용.
 	 *   RollBonus: 판정에만 더해지는 보정치(행운·민첩 등). OutRoll(원본 눈)은 그대로 두고,
 	 *              (OutRoll + RollBonus) 로 구간을 판정한다. 값이 커지면 상위 등급이 잘 뜬다.
+	 *
+	 * 호출처는 비활성 GA_Missed 뿐이다. 새 코드에서 부르지 말 것 — 위 방향 경고 참고.
 	 */
-	UFUNCTION(BlueprintCallable, Category = "BG|Dice")
+	UFUNCTION(BlueprintCallable, Category = "BG|Dice|Deprecated")
 	EBGDiceOutcome RollForOutcome(int32& OutRoll, int32 Faces = 0, int32 RollBonus = 0);
 
 	// 판정 결과 → 화면/로그용 텍스트 ("대실패"/"실패"/"성공"/"대성공"). 출력용.

@@ -19,6 +19,7 @@ class UBGSeatBoardWidget;
 class UBGTurnPanelWidget;
 class UBGResolutionWidget;
 class ABGPlayerState;
+class UCameraShakeBase;
 
 UCLASS()
 class BG_API ABGPlayerController : public APlayerController
@@ -202,6 +203,37 @@ protected:
 
 	/** EBGDiceOutcome → EBGResolutionTier. 뷰 계층이 게임 enum 을 모르게 하는 경계다. */
 	static EBGResolutionTier ToResolutionTier(EBGDiceOutcome Outcome);
+
+	/**
+	 * 판정이 확정된 순간 화면을 흔든다 — 등급과 효과 세기에서 강도를 유도한다.
+	 *
+	 * ⚠️ 좌석으로 거르지 말 것. 남이 낸 카드도 전원이 같은 판을 보고 있으므로 함께 흔들려야 한다.
+	 *    (손패 연출은 내 카드만이지만 이쪽은 다르다 — HandleCardResolved 의 호출 위치 주석 참고.)
+	 */
+	void PlayResolveShake(const struct FBGCardPlayContext& Ctx);
+
+	/**
+	 * 판정 셰이크 애셋. 등급별로 나누지 않는다 — 강도는 StartCameraShake 의 Scale 로 준다.
+	 * 비어 있으면 셰이크만 조용히 생략된다(연출 없이도 판정 자체는 정상 진행).
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Camera")
+	TSubclassOf<UCameraShakeBase> ResolveShakeClass;
+
+	/**
+	 * 판정 등급별 셰이크 배율. 인덱스는 EBGResolutionTier 순서 —
+	 * None / 대실패 / 실패 / 성공 / 대성공.
+	 *
+	 * 대실패가 성공보다 큰 것은 의도다. 판이 뒤집히는 순간일수록 세게 흔들어야 읽힌다.
+	 * None(장비처럼 판정하지 않는 카드)은 0 이라 흔들리지 않는다.
+	 *
+	 * ⚠️ 여기 기본값을 고쳐도 이미 저장된 BP 는 옛 배열을 들고 있다. 조정은 BP 디폴트에서 할 것.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Camera")
+	TArray<float> TierShakeScale = { 0.f, 1.4f, 0.5f, 0.8f, 1.6f };
+
+	/** 셰이크 강도 상한. 데이터 테이블 수치가 커져도 화면이 무너지지 않게 막는다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Camera", meta = (ClampMin = "0.0"))
+	float MaxShakeScale = 3.f;
 
 	// ── 연출 카메라 ────────────────────────────────────────────────
 

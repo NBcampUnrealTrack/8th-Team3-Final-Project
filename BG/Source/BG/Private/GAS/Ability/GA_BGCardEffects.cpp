@@ -145,19 +145,19 @@ void UGA_BGCardEffects::ExecuteEffects(
 			break;
 
 		case EBGCardEffectOp::DiscardTargetRandom:
-			Line = ApplyTakeFromTarget(Effect.Amount, /*bSteal=*/false, GS, SelfPS, TargetPS, Avatar);
+			Line = ApplyTakeFromTarget(Effect.Amount, /*bSteal=*/false, /*bFromEquipment=*/false, GS, SelfPS, TargetPS, Avatar);
 			break;
 
 		case EBGCardEffectOp::StealTargetRandom:
-			Line = ApplyTakeFromTarget(Effect.Amount, /*bSteal=*/true, GS, SelfPS, TargetPS, Avatar);
+			Line = ApplyTakeFromTarget(Effect.Amount, /*bSteal=*/true, /*bFromEquipment=*/false, GS, SelfPS, TargetPS, Avatar);
 			break;
 
 		case EBGCardEffectOp::DiscardTargetEquipRandom:
-			Line = ApplyTakeEquipFromTarget(Effect.Amount, /*bSteal=*/false, GS, SelfPS, TargetPS, Avatar);
+			Line = ApplyTakeFromTarget(Effect.Amount, /*bSteal=*/false, /*bFromEquipment=*/true, GS, SelfPS, TargetPS, Avatar);
 			break;
 
 		case EBGCardEffectOp::StealTargetEquipRandom:
-			Line = ApplyTakeEquipFromTarget(Effect.Amount, /*bSteal=*/true, GS, SelfPS, TargetPS, Avatar);
+			Line = ApplyTakeFromTarget(Effect.Amount, /*bSteal=*/true, /*bFromEquipment=*/true, GS, SelfPS, TargetPS, Avatar);
 			break;
 
 		case EBGCardEffectOp::RestoreCardUse:
@@ -184,6 +184,14 @@ FString UGA_BGCardEffects::ApplyDamage(int32 Amount, AActor* Avatar, AActor* Tar
 	UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor);
 	if (!SourceASC || !TargetASC)
 	{
+		//	조용히 넘어가면 "판정도 성공, 카드도 소비, 피해만 0" 이 되어 원인을 짚을 수 없다.
+		//	§13.2 가 기록한 뱅 피해 미적용 사고가 정확히 이 모양이었다.
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[피해] ASC 없음 — 시전자 %s / 대상 %s (대상 액터=%s). 피해 %d 가 유실된다."),
+			SourceASC ? TEXT("O") : TEXT("X"),
+			TargetASC ? TEXT("O") : TEXT("X"),
+			TargetActor ? *TargetActor->GetName() : TEXT("없음"),
+			Amount);
 		return FString();
 	}
 
@@ -255,6 +263,7 @@ FString UGA_BGCardEffects::ApplyDamage(int32 Amount, AActor* Avatar, AActor* Tar
 	const FGameplayEffectSpecHandle Spec = SourceASC->MakeOutgoingSpec(UGE_BGDamage::StaticClass(), 1.f, Context);
 	if (!Spec.IsValid())
 	{
+		UE_LOG(LogBGCard, Warning, TEXT("[피해] GE_BGDamage Spec 생성 실패 — 피해 %d 가 유실된다."), Final);
 		return FString();
 	}
 
@@ -269,6 +278,7 @@ FString UGA_BGCardEffects::ApplyHeal(int32 Amount, UAbilitySystemComponent* Sour
 {
 	if (!SourceASC)
 	{
+		UE_LOG(LogBGCard, Warning, TEXT("[회복] 시전자 ASC 없음 — 회복 %d 가 유실된다."), Amount);
 		return FString();
 	}
 
@@ -278,6 +288,7 @@ FString UGA_BGCardEffects::ApplyHeal(int32 Amount, UAbilitySystemComponent* Sour
 	const FGameplayEffectSpecHandle Spec = SourceASC->MakeOutgoingSpec(UGE_BGHeal::StaticClass(), 1.f, Context);
 	if (!Spec.IsValid())
 	{
+		UE_LOG(LogBGCard, Warning, TEXT("[회복] GE_BGHeal Spec 생성 실패 — 회복 %d 가 유실된다."), Amount);
 		return FString();
 	}
 
@@ -292,6 +303,9 @@ FString UGA_BGCardEffects::ApplyDraw(int32 Amount, ABGGameState* GS, ABGPlayerSt
 {
 	if (!GS || !SelfPS)
 	{
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[뽑기] 실행 불가 — GameState %s / 내 PlayerState %s. %d장 뽑기가 유실된다."),
+			GS ? TEXT("O") : TEXT("X"), SelfPS ? TEXT("O") : TEXT("X"), Amount);
 		return FString();
 	}
 
@@ -314,96 +328,60 @@ FString UGA_BGCardEffects::ApplyDraw(int32 Amount, ABGGameState* GS, ABGPlayerSt
 	return FString::Printf(TEXT("%d장 뽑기"), Drawn);
 }
 
-FString UGA_BGCardEffects::ApplyTakeFromTarget(int32 Amount, bool bSteal,
+FString UGA_BGCardEffects::ApplyTakeFromTarget(int32 Amount, bool bSteal, bool bFromEquipment,
 	ABGGameState* GS, ABGPlayerState* SelfPS, ABGPlayerState* TargetPS, AActor* Avatar)
 {
 	UBGDiceComponent* Dice = UBGDiceComponent::Get(Avatar);
 	if (!GS || !TargetPS || !Dice)
 	{
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[탈취] 실행 불가 — GameState %s / 대상 %s / 주사위 %s. 카드는 이미 소비됐다."),
+			GS ? TEXT("O") : TEXT("X"), TargetPS ? TEXT("O") : TEXT("X"), Dice ? TEXT("O") : TEXT("X"));
 		return FString();
 	}
 
 	int32 Moved = 0;
 	for (int32 i = 0; i < Amount; ++i)
 	{
-		//	손패는 매 반복마다 다시 읽는다 — 앞 반복에서 한 장이 빠졌다.
-		const TArray<FBGCardInstance>& Hand = TargetPS->GetHand();
-		if (Hand.IsEmpty())
+		//	목록은 매 반복마다 다시 읽는다 — 앞 반복에서 하나가 빠졌다.
+		const TArray<FBGCardInstance>& Source =
+			bFromEquipment ? TargetPS->GetEquipment() : TargetPS->GetHand();
+
+		if (Source.IsEmpty())
 		{
-			break;
-		}
-
-		const int32 Index = Dice->RandomIndex(Hand.Num());
-		if (!Hand.IsValidIndex(Index))
-		{
-			break;
-		}
-
-		//	제거 전에 값으로 복사 — 제거하면 위 참조가 흔들린다.
-		const int32 InstanceId = Hand[Index].InstanceId;
-
-		FBGCardInstance Removed;
-		if (!TargetPS->RemoveCardFromHand(InstanceId, Removed))
-		{
-			break;
-		}
-
-		if (bSteal && SelfPS)
-		{
-			SelfPS->AddCardToHand(Removed);
-		}
-		else
-		{
-			GS->PushToDiscard(Removed);
-		}
-		++Moved;
-	}
-
-	return (Moved > 0)
-		? FString::Printf(TEXT("상대 %d장 %s"), Moved, bSteal ? TEXT("훔침") : TEXT("버림"))
-		: FString();
-}
-
-FString UGA_BGCardEffects::ApplyTakeEquipFromTarget(int32 Amount, bool bSteal,
-	ABGGameState* GS, ABGPlayerState* SelfPS, ABGPlayerState* TargetPS, AActor* Avatar)
-{
-	UBGDiceComponent* Dice = UBGDiceComponent::Get(Avatar);
-	if (!GS || !TargetPS || !Dice)
-	{
-		return FString();
-	}
-
-	int32 Moved = 0;
-	for (int32 i = 0; i < Amount; ++i)
-	{
-		//	장비 목록은 매 반복마다 다시 읽는다 — 앞 반복에서 하나가 빠졌다.
-		const TArray<FBGCardInstance>& Equipment = TargetPS->GetEquipment();
-		if (Equipment.IsEmpty())
-		{
-			break;
+			break;   // 더 가져갈 것이 없다. 실패가 아니라 정상 종료다.
 		}
 
 		//	덱 셔플과 분리된 판정 스트림을 쓴다 — 같은 시드에서 재현되고 덱 순서를 밀지 않는다.
-		const int32 Index = Dice->RandomIndex(Equipment.Num());
-		if (!Equipment.IsValidIndex(Index))
+		const int32 Index = Dice->RandomIndex(Source.Num());
+		if (!Source.IsValidIndex(Index))
 		{
 			break;
 		}
 
 		//	제거 전에 값으로 복사 — 제거하면 위 참조가 흔들린다.
-		const FName CardId = Equipment[Index].CardId;
+		const FBGCardInstance Picked = Source[Index];
 
-		//	UnequipCard 가 배열에서 빼는 것과 Infinite GE 를 걷어내는 것을 함께 처리한다.
-		//	배열만 지우면 장비는 사라졌는데 확률 보정만 영구히 남는다.
+		//	장비는 UnequipCard 로 뺀다. 배열에서 지우는 것과 Infinite GE 를 걷어내는 것을
+		//	함께 처리하기 때문이다 — 배열만 지우면 장비는 사라졌는데 확률 보정만 영구히 남는다.
 		FBGCardInstance Removed;
-		if (!TargetPS->UnequipCard(CardId, Removed))
+		const bool bRemoved = bFromEquipment
+			? TargetPS->UnequipCard(Picked.CardId, Removed)
+			: TargetPS->RemoveCardFromHand(Picked.InstanceId, Removed);
+
+		if (!bRemoved)
 		{
+			//	방금 목록에서 고른 것이 안 빠진다면 목록과 제거 경로가 어긋난 것이다.
+			UE_LOG(LogBGCard, Warning,
+				TEXT("[탈취] %s 제거 실패 — CardId %s / InstanceId %d"),
+				bFromEquipment ? TEXT("장비") : TEXT("손패"),
+				*Picked.CardId.ToString(), Picked.InstanceId);
 			break;
 		}
 
 		if (bSteal && SelfPS)
 		{
-			//	장비 칸이 아니라 손패로 들어간다(헤더 주석 참고).
+			//	장비여도 장비 칸이 아니라 손패로 들어간다(헤더 주석 참고).
 			SelfPS->AddCardToHand(Removed);
 		}
 		else
@@ -413,9 +391,14 @@ FString UGA_BGCardEffects::ApplyTakeEquipFromTarget(int32 Amount, bool bSteal,
 		++Moved;
 	}
 
-	return (Moved > 0)
+	if (Moved == 0)
+	{
+		return FString();
+	}
+
+	return bFromEquipment
 		? FString::Printf(TEXT("상대 장비 %d개 %s"), Moved, bSteal ? TEXT("훔침") : TEXT("버림"))
-		: FString();
+		: FString::Printf(TEXT("상대 %d장 %s"),      Moved, bSteal ? TEXT("훔침") : TEXT("버림"));
 }
 
 FString UGA_BGCardEffects::ApplyRestoreCardUse(int32 Amount, ABGPlayerState* SelfPS)

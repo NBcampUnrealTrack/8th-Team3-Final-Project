@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "BGCardView.generated.h"
 
+class UTexture2D;
+
 /**
  * UI 전용 카드 뷰모델.
  *
@@ -126,6 +128,19 @@ struct FBGCardView
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
 	EBGCardFXArchetype FXArchetype = EBGCardFXArchetype::None;
+
+	/**
+	 * 테두리 안쪽에 그릴 그림. DT_BGCard 의 ArtTexture 를 로드한 결과다.
+	 *
+	 * ⚠️ null 일 수 있다 — DT 에 그림을 아직 안 넣은 카드가 그렇다. 위젯은 null 이면
+	 *    폴백(무지 사각형·물음표 등)을 그릴 것. 그냥 Set Brush 하면 카드가 투명해져서
+	 *    "카드가 안 보인다" 로 시간을 버린다.
+	 *
+	 * 테두리는 여기 없다 — 카드마다 다른 것은 안쪽 그림뿐이고, 테두리는 타입·등급으로
+	 * 갈리므로 위젯이 TypeTag 계열 값에서 골라 겹쳐 그리는 편이 데이터가 덜 중복된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
+	TObjectPtr<UTexture2D> ArtTexture = nullptr;
 
 	bool IsValid() const { return InstanceId != INDEX_NONE; }
 };

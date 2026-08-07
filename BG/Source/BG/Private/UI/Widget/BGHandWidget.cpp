@@ -275,15 +275,26 @@ UBGCardWidget* UBGHandWidget::CreateCardWidget(const FBGCardView& Card)
 
 	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(AddedSlot))
 	{
-		//	AutoSize 로 두면 카드 WBP 가 정한 크기를 그대로 쓴다.
-		//	CardWidth 는 배치 계산용 값일 뿐 실제 크기를 강제하지 않는다.
-		CanvasSlot->SetAutoSize(true);
+		//	크기를 코드가 정한다 — AutoSize 를 쓰지 않는다.
+		//
+		//	⚠️ AutoSize 면 카드 **안의 내용물**이 카드 크기를 밀어낸다. 줄바꿈이 꺼진 설명
+		//	   텍스트 한 줄이 카드를 가로로 늘려서, 텍스트가 긴 카드만 넓어지는 문제가 있었다.
+		//	   그러면 카드마다 규격이 달라지는 데다, 간격 계산이 CardWidth 를 기준으로 하므로
+		//	   실제 폭과 어긋나 배치까지 흐트러진다.
+		CanvasSlot->SetAutoSize(false);
+		CanvasSlot->SetSize(FVector2D(CardWidth, CardHeight));
 	}
 	else if (UHorizontalBoxSlot* HBoxSlot = Cast<UHorizontalBoxSlot>(AddedSlot))
 	{
 		HBoxSlot->SetPadding(CardPadding);
 		HBoxSlot->SetVerticalAlignment(VAlign_Bottom);
 	}
+
+	//	크기를 고정해도 넘치는 내용은 밖으로 그려진다 — 줄바꿈이 꺼진 텍스트가 옆 카드를 덮는다.
+	//	잘라 두면 규격이 눈에 보이고, WBP 의 줄바꿈 설정이 빠졌다는 것도 바로 드러난다.
+	CardWidget->SetClipping(bClipCardContent
+		? EWidgetClipping::ClipToBounds
+		: EWidgetClipping::Inherit);
 
 	ApplyCardAlignment(CardWidget);
 

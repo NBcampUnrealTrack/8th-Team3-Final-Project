@@ -10,6 +10,8 @@
 
 class UTextBlock;
 class UBorder;
+class UImage;
+class UTexture2D;
 class UBGHandWidget;
 
 /**
@@ -282,6 +284,24 @@ protected:
 	UPROPERTY(BlueprintReadWrite,meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> Border_Root;
 
+	/**
+	 * 테두리 안쪽 그림. WBP 의 Overlay 에서 테두리 **아래** 칸에 둔다.
+	 *
+	 * Optional 인 이유: 이 클래스는 손패 카드와 드래그 비주얼이 함께 쓴다(BeginDrag 참고).
+	 * 필수로 걸면 그림 칸이 없는 WBP 가 전부 바인딩 에러로 죽는다.
+	 */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_Art;
+
+	/**
+	 * DT 에 그림이 없는 카드에 대신 그릴 이미지.
+	 *
+	 * 비워 두면 그림 칸을 Hidden 으로 접는다 — 브러시를 null 로 두면 카드 한복판이
+	 * 투명해져서 "카드가 안 보인다" 로 시간을 버린다. 아트 작업 중에도 카드 모양은 유지돼야 한다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card")
+	TObjectPtr<UTexture2D> FallbackArtTexture;
+
 	/** "성공 78%" — 표시 공간이 좁을 때의 축약형 (GDD §10). */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Chance;
@@ -455,6 +475,9 @@ private:
 
 	/** 확률 텍스트 두 개를 채운다. 판정하지 않는 카드면 숨긴다. */
 	void RefreshChanceText();
+
+	/** 테두리 안쪽 그림을 채운다. 뷰에 그림이 없으면 폴백으로, 그것도 없으면 칸을 접는다. */
+	void RefreshArt();
 
 	UPROPERTY()
 	TWeakObjectPtr<UBGHandWidget> OwningHand;

@@ -1,6 +1,7 @@
 ﻿#include "UI/View/BGCardViewLibrary.h"
 
 #include "Engine/GameInstance.h"
+#include "Engine/Texture2D.h"   // ArtTexture 동기 로드
 #include "Engine/World.h"
 #include "Debug/BGCardLog.h"
 #include "Card/BGCardType.h"
@@ -261,6 +262,34 @@ FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, 
 	View.Description  = Row->Description;
 	View.bNeedsTarget = Row->TraitTags.HasTag(BG::Card::Trait::NeedsTargetSeat.GetTag());
 	View.FXArchetype  = DeriveFXArchetype(*Row);
+
+	// ── 카드 그림 ────────────────────────────────────────────────────────
+	//	여기서 동기 로드한다. 뷰는 손패에 실제로 들어온 카드에 대해서만 만들어지므로
+	//	한 번에 로드되는 것은 많아야 손패 장수(상한 10장)다 — DT 를 하드 참조로 바꿔
+	//	전체 카드 그림을 상시 물고 있는 것보다 이쪽이 싸다.
+	//
+	//	⚠️ 손패가 바뀔 때만 호출되는 경로다(MakeHandViews). 매 프레임 도는 곳에서 부르면
+	//	   첫 로드마다 히치가 생긴다 — 그때는 비동기 로드로 바꿀 것.
+	if (!Row->ArtTexture.IsNull())
+	{
+		View.ArtTexture = Row->ArtTexture.LoadSynchronous();
+
+		if (!View.ArtTexture)
+		{
+			//	경로는 있는데 로드가 실패했다 — 애셋이 삭제·이동됐다는 뜻이다.
+			UE_LOG(LogBGCard, Warning,
+				TEXT("MakeCardView: '%s' 의 ArtTexture 로드 실패 (%s). 애셋이 지워졌거나 옮겨졌습니다."),
+				*Card.CardId.ToString(), *Row->ArtTexture.ToString());
+		}
+	}
+	else
+	{
+		//	DT 에 아직 그림을 안 넣은 카드. 위젯이 폴백을 그리므로 게임은 정상 진행된다.
+		//	Verbose 로 두는 이유: 아트 작업 중에는 빈 카드가 정상 상태라 Warning 이면 로그가 묻힌다.
+		UE_LOG(LogBGCard, Verbose,
+			TEXT("MakeCardView: '%s' 에 ArtTexture 가 비어 있습니다 — 위젯 폴백으로 그립니다."),
+			*Card.CardId.ToString());
+	}
 
 	// TODO(5.x): 사거리·턴당 BANG 한도·현재 페이즈를 반영한 실제 판정으로 교체.
 	//            어디까지나 표시용 힌트이고, 최종 판정은 언제나 서버가 한다.

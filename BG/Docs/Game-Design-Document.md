@@ -439,6 +439,8 @@ P0~P2 의 카드·장비 시스템이 안정된 상태여야 재활용이 성립
 | 무기 5종의 사거리 정의 | `DT_BGCard` 의 `Magnitude` | 재설계 전까지 `QuantityOfCard = 0` (§8) |
 | `FBGCardRow::CheckChance` | `BGGameDataTypes.h` | 필드 유지, 참조 제거 — `OutcomeWeights` 로 대체됨 (§4.2) |
 | 행운 판정 보정 (`ApplyLuck`) | `UBGDiceComponent` | 선언·구현 유지, **호출처 없음** — 아래 참조 |
+| 구형 판정 경로 (`RollDice` / `ClassifyRoll` / `RollForOutcome`) | `UBGDiceComponent` | 선언·구현 유지, 유일한 호출처가 비활성 `GA_Missed` — **눈의 방향이 정식 경로와 반대다**, 아래 참조 |
+| 판정 비율 4종 (`CriticalFailureRatio` 등) | `UBGDiceComponent` | 설정 유지, `ClassifyRoll` 전용 — 여기를 고쳐도 게임 확률은 바뀌지 않는다 |
 | `LuckSuccessWeightPerPoint` / `LuckCriticalWeightPerPoint` | `UBGDiceComponent` | 설정 유지, 읽는 곳 없음 (`ApplyLuck` 전용) |
 | `FBGOutcomeWeights::ApplyBonus` (2인자) | `BGGameDataTypes.h` | `ApplyLuck` 전용 — 4인자 `ApplyBonusAll` 이 정식 경로 |
 | 능력치 4종 (`Strength` / `Agility` / `Intelligence` / `Luck`) | `UBGAttributeSet` | 선언·캐릭터 GE 세팅 유지, **어떤 규칙도 읽지 않음** — 아래 참조 |
@@ -474,6 +476,20 @@ P0~P2 의 카드·장비 시스템이 안정된 상태여야 재활용이 성립
 **되살리는 법**: 확률 보정은 `WeightBonus*` / `WeightMult*` 어트리뷰트로 환산해 캐릭터 GE 로 부여하고,
 피해 보정은 `UGA_BGCardEffects::ApplyDamage` 에서 다시 곱한다.
 스탯을 다시 넣을 때는 §7.2 의 경고("스탯 수가 많아지면 카드 확률을 예측하기 어려워진다")를 먼저 볼 것.
+
+#### 구형 판정 경로의 눈 방향이 반대인 이유
+
+§4.2 가 확정한 누적 순서는 **대성공 → 성공 → 실패 → 대실패** 다. 그래서 정식 경로
+(`RollOutcome`)에서는 **낮은 눈이 대성공**이다. 반면 그 이전에 만들어진 `ClassifyRoll` 은
+주사위의 직관("높은 눈이 좋다")을 따라 **낮은 눈을 대실패**로 본다.
+
+두 경로가 공존해도 지금은 문제가 없다 — 구형 경로의 유일한 호출처인 `GA_Missed` 가
+비활성이라 실제로는 돌지 않는다. 문제는 되살릴 때다. 새 카드가 실수로 `RollForOutcome` 을
+타면 **판정이 뒤집힌 채로 조용히 동작한다.** 크래시도 경고도 없고, §10 의 확률 표시와
+§11 의 실측이 어긋나는 형태로만 드러나서 원인을 짚기 어렵다.
+
+**되살리는 법**: `ClassifyRoll` 의 누적 구간을 `RollOutcome` 과 같은 순서로 뒤집는 것이
+먼저다. 그 다음에 호출처를 잇는다. 순서를 바꾸지 않고 이으면 안 된다.
 
 #### 행운 보정을 비활성한 이유
 

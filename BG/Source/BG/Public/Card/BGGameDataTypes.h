@@ -12,10 +12,17 @@ class UGameplayAbility;
 class UGameplayEffect;
 class UAnimInstance;
 class USkeletalMesh;
+class UTexture2D;
 
 /**
- * 주사위 판정 결과 4단계. 낮은 눈 = 대실패, 높은 눈 = 대성공.
- * 각 단계의 폭은 GameMode 의 비율(Ratio) 프로퍼티로 조절한다.
+ * 판정 결과 4단계 (GDD §4.1).
+ *
+ * 각 단계의 폭은 카드마다 다르다 — DT_BGCard 의 OutcomeWeights 가 정하고
+ * UBGDiceComponent::RollOutcome 이 굴린다.
+ *
+ * ⚠️ 눈(Roll)의 방향은 **낮은 눈 = 대성공**이다 (§4.2 의 누적 순서가
+ *    대성공 → 성공 → 실패 → 대실패 라서). 구형 ClassifyRoll 만 반대 방향인데
+ *    그쪽은 비활성이다 — BGDiceComponent.h 의 "판정 (구형 경로)" 경고 참고.
  */
 UENUM(BlueprintType)
 enum class EBGDiceOutcome : uint8
@@ -356,8 +363,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) 
 	FText Description;
 	
+	/**
+	 * 카드 그림 — 테두리 안쪽에 들어가는 이미지 (테두리는 위젯이 겹쳐 그린다).
+	 *
+	 * TSoftObjectPtr 인 이유: 하드 참조로 두면 DT_BGCard 를 여는 순간 **모든 카드의 그림이
+	 * 통째로 메모리에 올라온다.** 손패에 실제로 들어온 카드만 로드하면 되므로 소프트 참조로 둔다.
+	 * 실제 로드는 UBGCardViewLibrary::MakeCardView 가 뷰를 만들 때 한 장씩 한다.
+	 *
+	 * 비워 두면 위젯이 폴백을 그린다 — 조용히 투명해지지 않는다(MakeCardView 가 경고도 남긴다).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Art")
+	TSoftObjectPtr<UTexture2D> ArtTexture;
+
 	//	카드 타입 ( Card.Type.* )
-	UPROPERTY(EditAnywhere, BlueprintReadOnly) 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FGameplayTag TypeTag;
 	
 	//	카드 특성 ( Card.Trait.* )

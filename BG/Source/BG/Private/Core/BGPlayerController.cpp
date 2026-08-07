@@ -24,6 +24,8 @@
 #include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
 #include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
 #include "Core/BGCharacter.h"                // 연출 주인공 캐스팅
+#include "Camera/CameraShakeBase.h"          // 판정 셰이크
+#include "Camera/PlayerCameraManager.h"
 #include "Components/InputComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -281,28 +283,34 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 	//
 	//	⚠️ 아래 ResolutionWidget 조기 반환보다 먼저 와야 한다. 판정 표시 위젯을 아직
 	//	   붙이지 않은 HUD 에서도 카드는 중앙에서 풀려야 하기 때문이다.
+	//	맥락은 좌석과 무관하게 먼저 만든다. 손패 연출은 내 카드일 때만 쓰지만
+	//	카메라 셰이크는 남의 카드에도 필요하기 때문이다.
+	FBGCardPlayContext PlayContext;
+	PlayContext.Tier      = Tier;
+	PlayContext.Roll      = Resolution.Roll;
+	PlayContext.bForced   = Resolution.bForced;
+	PlayContext.SeatIndex = Resolution.SeatIndex;
+
+	//	실제로 발동한 효과들을 연출 스텝으로. 이것이 연출의 정식 입력이다 —
+	//	대표값 하나로 줄이면 "피해 + 뽑기" 같은 복합 카드가 뭉개진다.
+	//
+	//	대표 원형(Archetype)은 여기서 채우지 않는다. 카드 위젯이 자기 뷰에 이미 들고 있는
+	//	값으로 메운다 — 같은 값을 두 번 유도하면 한쪽만 낡을 자리가 생긴다.
+	if (Row)
+	{
+		PlayContext.Steps = UBGCardViewLibrary::MakeFXSteps(*Row, Tier);
+	}
+
 	if (HandWidget && Resolution.SeatIndex == GetMySeatIndex())
 	{
-		FBGCardPlayContext PlayContext;
-		PlayContext.Tier      = Tier;
-		PlayContext.Roll      = Resolution.Roll;
-		PlayContext.bForced   = Resolution.bForced;
-		PlayContext.SeatIndex = Resolution.SeatIndex;
-
-		//	실제로 발동한 효과들을 연출 스텝으로. 이것이 연출의 정식 입력이다 —
-		//	대표값 하나로 줄이면 "피해 + 뽑기" 같은 복합 카드가 뭉개진다.
-		//
-		//	대표 원형(Archetype)은 여기서 채우지 않는다. 카드 위젯이 자기 뷰에 이미 들고 있는
-		//	값으로 메운다 — 같은 값을 두 번 유도하면 한쪽만 낡을 자리가 생긴다.
-		if (Row)
-		{
-			PlayContext.Steps = UBGCardViewLibrary::MakeFXSteps(*Row, Tier);
-		}
-
 		//	판정 결과에는 InstanceId 가 없다(카드 "종류" 만 온다). 중앙에 잡힌 카드는
 		//	한 번에 하나뿐이므로 손패가 알아서 찾는다.
 		HandWidget->NotifyCardResolved(PlayContext, INDEX_NONE);
 	}
+
+	//	⚠️ 위 좌석 분기 **밖**이다. 안에 넣으면 내가 낸 카드에만 화면이 흔들려서,
+	//	   같은 판을 보고 있는 다른 플레이어들만 조용한 이상한 그림이 된다.
+	PlayResolveShake(PlayContext);
 
 	if (!ResolutionWidget)
 	{
@@ -336,6 +344,60 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 		View.Chance.Success, View.Chance.CriticalSuccess);
 
 	ResolutionWidget->ShowResolution(View);
+}
+
+// ======================================================================================
+//  판정 셰이크
+//
+//  셰이크 애셋을 등급별로 나누지 않는 이유: StartCameraShake 의 Scale 이 진폭 전체에
+//  곱해지므로 애셋 하나로 4단계를 다 표현할 수 있다. 애셋을 나눠야 하는 것은 지속시간이나
+//  파형 자체가 달라질 때뿐이다(Scale 은 진폭만 건드리고 시간에는 손대지 않는다).
+//
+//  셰이크는 APlayerCameraManager 가 뷰타깃 POV 를 계산한 **뒤에** 덧씌우는 모디파이어다.
+//  그래서 연출 중(뷰타깃 = ABGCinematicCamera)에도 그대로 먹고, 카메라 액터는 손댈 필요가 없다.
+// ======================================================================================
+
+void ABGPlayerController::PlayResolveShake(const FBGCardPlayContext& Ctx)
+{
+	//	화면이 없는 쪽(데디 서버)에는 카메라 매니저가 없다. 애셋 미지정도 조용히 넘어간다 —
+	//	연출이 빠지는 것뿐이고 판정 자체는 이미 끝났으므로 무해하다.
+	if (!ResolveShakeClass || !PlayerCameraManager || !IsLocalController())
+	{
+		return;
+	}
+
+	const int32 TierIdx = static_cast<int32>(Ctx.Tier);
+	if (!TierShakeScale.IsValidIndex(TierIdx))
+	{
+		//	등급이 늘었는데 배열을 안 늘린 경우다. 흔들지 않고 넘어가되 흔적은 남긴다.
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[Shake] TierShakeScale 에 등급 %d 자리가 없다 — BP 디폴트의 배열 길이를 확인할 것."),
+			TierIdx);
+		return;
+	}
+
+	float Scale = TierShakeScale[TierIdx];
+	if (Scale <= 0.f)
+	{
+		return;   // None(장비 등) — 판정하지 않은 카드는 흔들지 않는다
+	}
+
+	//	세기는 스텝의 합이 아니라 **가장 큰 한 방**으로 잡는다. 합산하면 잔효과가 많은 카드가
+	//	피해 3짜리 한 방보다 더 흔들려서 체감이 뒤집힌다.
+	int32 Peak = 0;
+	for (const FBGCardFXStep& Step : Ctx.Steps)
+	{
+		if (Step.Op == EBGCardFXArchetype::Damage || Step.Op == EBGCardFXArchetype::Heal)
+		{
+			Peak = FMath::Max(Peak, Step.Amount);
+		}
+	}
+
+	//	선형이면 피해 5 가 피해 1 의 5 배로 흔들려 화면이 무너진다. sqrt 로 눌러 둔다.
+	//	(효과가 없는 카드도 등급만큼은 흔들려야 하므로 최소 1 을 보장한다.)
+	Scale *= FMath::Sqrt(static_cast<float>(FMath::Max(Peak, 1)));
+
+	PlayerCameraManager->StartCameraShake(ResolveShakeClass, FMath::Min(Scale, MaxShakeScale));
 }
 
 // ======================================================================================

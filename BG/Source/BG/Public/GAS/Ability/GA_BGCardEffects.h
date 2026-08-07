@@ -57,15 +57,20 @@ protected:
 	FString ApplyDamage(int32 Amount, AActor* Avatar, AActor* TargetActor, UAbilitySystemComponent* SourceASC);
 	FString ApplyHeal(int32 Amount, UAbilitySystemComponent* SourceASC);
 	FString ApplyDraw(int32 Amount, ABGGameState* GS, ABGPlayerState* SelfPS);
-	FString ApplyTakeFromTarget(int32 Amount, bool bSteal, ABGGameState* GS, ABGPlayerState* SelfPS, ABGPlayerState* TargetPS, AActor* Avatar);
 
 	/**
-	 * 대상의 **장비**를 무작위로 떼어낸다. 손패 쪽(ApplyTakeFromTarget)과 대상이 다를 뿐 구조는 같다.
+	 * 대상에게서 카드를 무작위로 떼어낸다 — 손패와 장비를 한 함수가 처리한다.
 	 *
-	 * bSteal 이면 훔친 장비가 시전자의 **손패**로 들어간다 — 장비 칸에 바로 꽂지 않는다.
+	 * 두 경로가 다른 것은 셋뿐이다: 어느 배열에서 고르는가, 무엇을 키로 빼는가, 요약 문구.
+	 * 나머지(반복마다 목록 재조회 · 제거 전 값 복사 · 훔침/버림 분기)는 완전히 같아서,
+	 * 따로 두면 한쪽만 고쳐지는 자리가 된다.
+	 *
+	 * bSteal 이면 가져온 카드가 시전자의 **손패**로 들어간다 — 장비여도 장비 칸에 바로 꽂지 않는다.
 	 * 그래야 "장착" 이 카드 사용 횟수를 소비하는 규칙(GDD §5.3)을 우회하지 않는다.
 	 */
-	FString ApplyTakeEquipFromTarget(int32 Amount, bool bSteal, ABGGameState* GS, ABGPlayerState* SelfPS, ABGPlayerState* TargetPS, AActor* Avatar);
+	FString ApplyTakeFromTarget(int32 Amount, bool bSteal, bool bFromEquipment,
+		ABGGameState* GS, ABGPlayerState* SelfPS, ABGPlayerState* TargetPS, AActor* Avatar);
+
 	FString ApplyRestoreCardUse(int32 Amount, ABGPlayerState* SelfPS);
 	FString ApplyStatusEffect(const FBGCardEffect& Effect, ABGPlayerState* SelfPS, ABGPlayerState* TargetPS);
 

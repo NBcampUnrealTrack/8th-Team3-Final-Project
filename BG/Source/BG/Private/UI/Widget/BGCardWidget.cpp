@@ -6,7 +6,9 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "Engine/Texture2D.h"
 
 namespace
 {
@@ -133,6 +135,8 @@ void UBGCardWidget::RefreshVisual()
 	}
 
 	RefreshChanceText();
+	RefreshArt();
+
 	if (Border_Root)
 	{
 		//	잠금이 가장 우선 — 잠긴 동안에는 사용 가능 여부와 무관하게 손댈 수 없다.
@@ -143,6 +147,27 @@ void UBGCardWidget::RefreshVisual()
 			                       NormalTint;
 		Border_Root->SetBrushColor(Tint);
 	}
+}
+
+void UBGCardWidget::RefreshArt()
+{
+	if (!Img_Art)
+	{
+		return;   // WBP 가 그림 칸을 두지 않았다. 선택 사항이므로 조용히 넘어간다.
+	}
+
+	//	뷰의 그림이 없으면 폴백. 폴백도 없으면 브러시를 건드리지 않고 칸을 접는다 —
+	//	null 브러시를 넣으면 카드 한복판이 투명해져서 "카드가 사라졌다" 로 보인다.
+	UTexture2D* Art = CardView.ArtTexture ? CardView.ArtTexture.Get() : FallbackArtTexture.Get();
+
+	if (!Art)
+	{
+		Img_Art->SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+
+	Img_Art->SetVisibility(ESlateVisibility::HitTestInvisible);
+	Img_Art->SetBrushFromTexture(Art, /*bMatchSize=*/false);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
