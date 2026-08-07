@@ -2,11 +2,16 @@
 
 
 #include "Interaction/TRActionComponent.h"
+
+#include "Core/TRGameState.h"
+#include "Core/TRPlayerState.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/PlayerState.h"
 #include "GameFramework/Pawn.h"
+#include "Player/TRPlayerCharacter.h"
 #include "Train/TRInstallablePart.h"
 #include "Train/TRSupplyPoint.h"
+#include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
 
 UTRActionComponent::UTRActionComponent()
@@ -19,12 +24,6 @@ void UTRActionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UTRActionComponent, CurrentActionType);
-}
-
-void UTRActionComponent::RequestStartAction(ETRActionType ActionType, AActor* Target)
-{
-	// 클라이언트 로컬 예측 없음. 바로 서버에 위임.
-	ServerStartAction(ActionType, Target);
 }
 
 bool UTRActionComponent::ServerStartAction_Validate(ETRActionType ActionType, AActor* Target)
@@ -66,26 +65,25 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 	}
 	else if (RequiresMonsterResource(ActionType))
 	{
-		// TODO: GameState에 MonsterResource 필드 선언 후 실제 이름으로 교체
-		// ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>();
-		// if (!GS || GS->MonsterResource < Def.ResourceAmount)
-		// {
-		//     return;
-		// }
+		ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>();
+		if (!GS || GS->GetMonsterResource() < Def.ResourceAmount)
+		{
+		    return;
+		}
 	}
 	else
 	{
 		APawn* OwnerPawn = Cast<APawn>(GetOwner());
-		APlayerState* PS = OwnerPawn ? OwnerPawn->GetPlayerState() : nullptr;
+		ATRPlayerState* PS = OwnerPawn ? Cast<ATRPlayerState>(OwnerPawn->GetPlayerState()) : nullptr;
 		if (!PS)
 		{
 			return;
 		}
-		// TODO: PlayerState에 CarriedSupply 필드 선언 후 실제 이름으로 교체
-		// if (PS->CarriedSupply < Def.ResourceAmount)
-		// {
-		//     return;
-		// }
+
+		if (PS->GetCarriedSupply() < Def.ResourceAmount)
+		{
+			return;
+		}
 	}
 	
 	CurrentActionType = ActionType;
@@ -99,11 +97,6 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 		false
 	);
 	UE_LOG(LogTemp, Warning, TEXT("Action Started: %.1fs"), Def.CycleDuration);
-}
-
-void UTRActionComponent::RequestCancelAction()
-{
-	ServerCancelAction();
 }
 
 void UTRActionComponent::ServerCancelAction_Implementation()
@@ -123,37 +116,70 @@ void UTRActionComponent::ServerCancelAction_Implementation()
 
 void UTRActionComponent::CompleteAction()
 {
-	UE_LOG(LogTemp, Warning, TEXT("Action Completed"));
-	
 	const FTRActionDef* Def = ActionDefs.Find(CurrentActionType);
 	AActor* Target = CurrentTarget.Get();
 
 	if (Def && Target)
 	{
+		APawn* OwnerPawn = Cast<APawn>(GetOwner());
+		ATRPlayerState* PS = OwnerPawn ? Cast<ATRPlayerState>(OwnerPawn->GetPlayerState()) : nullptr;
+
 		switch (CurrentActionType)
 		{
-		case ETRActionType::Repair:
-			// TODO: Target 내구도 회복
-			// TODO: PS->CarriedSupply -= Def->ResourceAmount;
-			break;
-		case ETRActionType::Reload:
-			// TODO: Target 탄약 보충
-			// TODO: PS->CarriedSupply -= Def->ResourceAmount;
-			break;
-		case ETRActionType::Build:
-			{
-				if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
+			case ETRActionType::Repair:
 				{
-					Part->ApplyInstall();
+					ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
+					const float HealPercent = IsValid(Character) ? Character->GetHealPercent() : 0.f;
+
+					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
+					{
+						Part->ApplyRepair(Part->GetMaxHP() * HealPercent);
+					}
+					else if (ATRTrain* Train = Cast<ATRTrain>(Target))
+					{
+						Train->ApplyRepair(Train->GetMaxHullHealth() * HealPercent);
+					}
+
+					if (PS)
+					{
+						PS->ConsumeCarriedSupply(Def->ResourceAmount);
+					}
+					break;
 				}
-				// TODO: GS->MonsterResource -= Def->ResourceAmount;
+			case ETRActionType::Reload:
+				{
+					if (ATRTurret* Turret = Cast<ATRTurret>(Target))
+					{
+						Turret->AddAmmo(Def->ResourceAmount * Turret->GetManualAmmoPerResource());
+					}
+					if (PS)
+					{
+						PS->ConsumeCarriedSupply(Def->ResourceAmount);
+					}
+					break;
+				}
+			case ETRActionType::Build:
+				{
+					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
+					{
+						Part->ApplyInstall();
+					}
+					if (ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>())
+					{
+						GS->ConsumeMonsterResource(Def->ResourceAmount);
+					}
+					break;
+				}
+			case ETRActionType::Restock:
+				{
+					if (PS)
+					{
+						PS->AddCarriedSupply(Def->ResourceAmount);
+					}
+					break;
+				}
+			default:
 				break;
-			}
-		case ETRActionType::Restock:
-			// TODO: PS->CarriedSupply += Def->ResourceAmount;
-			break;
-		default:
-			break;
 		}
 	}
 
@@ -178,31 +204,37 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 	bool bValid = false;
 	switch (ActionType)
 	{
-	case ETRActionType::Repair:
-		{
-			const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
-			bValid = Part && !Part->IsDestroyed() && !Part->IsFullHP();
+		case ETRActionType::Repair:
+			{
+				if (const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
+				{
+					bValid = !Part->IsDestroyed() && !Part->IsFullHP();
+				}
+				else if (const ATRTrain* Train = Cast<ATRTrain>(Target))
+				{
+					bValid = !Train->IsDestroyed() && !Train->IsFullHP();
+				}
+				break;
+			}
+		case ETRActionType::Build:
+			{
+				const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
+				bValid = Part && Part->IsDestroyed();
+				break;
+			}
+		case ETRActionType::Reload:
+			{
+				const ATRTurret* Turret = Cast<ATRTurret>(Target);
+				bValid = Turret && Turret->GetCurrentAmmo() < Turret->GetMaxAmmo();
+				break;
+			}
+		case ETRActionType::Restock:
+			{
+				bValid = Cast<ATRSupplyPoint>(Target) != nullptr;
+				break;
+			}
+		default:
 			break;
-		}
-	case ETRActionType::Build:
-		{
-			const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
-			bValid = Part && Part->IsDestroyed();
-			break;
-		}
-	case ETRActionType::Reload:
-		{
-			// TODO: 탄창 꽉 찬 상태면 재장전 불가 — ATRTurret에 탄약 필드 생기면 추가
-			bValid = Cast<ATRTurret>(Target) != nullptr;
-			break;
-		}
-	case ETRActionType::Restock:
-		{
-			bValid = Cast<ATRSupplyPoint>(Target) != nullptr;
-			break;
-		}
-	default:
-		break;
 	}
 
 	if (!bValid)

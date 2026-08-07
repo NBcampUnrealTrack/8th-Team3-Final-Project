@@ -8,8 +8,10 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Interaction/TRActionComponent.h"
 #include "Interaction/TRInteractionComponent.h"
+#include "Interaction/TRTurretControlComponent.h"
 #include "Train/TRInstallablePart.h"
 #include "Train/TRSupplyPoint.h"
+#include "Train/TRTurret.h"
 
 // Sets default values
 ATRPlayerCharacter::ATRPlayerCharacter()
@@ -31,6 +33,7 @@ ATRPlayerCharacter::ATRPlayerCharacter()
 	// ActorComponent
 	InteractionComp = CreateDefaultSubobject<UTRInteractionComponent>(TEXT("InteractionComp"));
 	ActionComp = CreateDefaultSubobject<UTRActionComponent>(TEXT("ActionComp"));
+	TurretControlComp = CreateDefaultSubobject<UTRTurretControlComponent>(TEXT("TurretControlComp"));
 }
 
 // Called when the game starts or when spawned
@@ -114,6 +117,7 @@ void ATRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		}
 		if (IsValid(IA_Trigger))
 		{
+			EIC->BindAction(IA_Trigger, ETriggerEvent::Started, this, &ATRPlayerCharacter::TriggerPressed);
 			EIC->BindAction(IA_Trigger, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Trigger);
 			EIC->BindAction(IA_Trigger, ETriggerEvent::Completed, this, &ATRPlayerCharacter::TriggerReleased);
 		}
@@ -127,6 +131,11 @@ void ATRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 // 캐릭터 이동 함수, UCharacterMovementComponent사용으로 RPC 구현 불필요.
 void ATRPlayerCharacter::Move(const FInputActionValue& Input)
 {
+	if (IsValid(TurretControlComp) && TurretControlComp->IsMounted())
+	{
+		return;
+	}
+	
 	FVector2D InputVector = Input.Get<FVector2D>().GetSafeNormal();
 	if (FMath::IsNearlyZero(InputVector.X) && FMath::IsNearlyZero(InputVector.Y))
 	{
@@ -138,10 +147,10 @@ void ATRPlayerCharacter::Move(const FInputActionValue& Input)
 	{
 		return;
 	}
-
+	
 	if (IsValid(ActionComp) && ActionComp->IsActionInProgress())
 	{
-		ActionComp->RequestCancelAction();
+		ActionComp->ServerCancelAction();
 	}
 	
 	if (!FMath::IsNearlyZero(InputVector.X))
@@ -174,6 +183,11 @@ void ATRPlayerCharacter::Look(const FInputActionValue& Input)
 // 캐릭터 점프 함수, UCharacterMovementComponent사용으로 RPC 구현 불필요.
 void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 {
+	if (IsValid(TurretControlComp) && TurretControlComp->IsMounted())
+	{
+		return;
+	}
+	
 	bool InputBoolean = Input.Get<bool>();
 	if (!InputBoolean)
 	{
@@ -197,11 +211,17 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	if (!IsValid(InteractionComp) || !IsValid(ActionComp))
+	if (!IsValid(InteractionComp) || !IsValid(ActionComp) || !IsValid(TurretControlComp))
 	{
 		return;
 	}
 
+	if (TurretControlComp->IsMounted())
+	{
+		TurretControlComp->ServerDismount();
+		return;
+	}
+	
 	AActor* Target = InteractionComp->GetCurrentTarget();
 	if (!Target)
 	{
@@ -209,16 +229,15 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	// TODO: 터렛 탑승 분기 — TurretControlComponent 생기면 추가
-	// if (ATRTurret* Turret = Cast<ATRTurret>(Target))
-	// {
-	//     TurretControlComp->RequestMount(Turret);
-	//     return;
-	// }
+	if (ATRTurret* Turret = Cast<ATRTurret>(Target))
+	{
+	    TurretControlComp->ServerMount(Turret);
+	    return;
+	}
 
 	if (Cast<ATRSupplyPoint>(Target))
 	{
-		ActionComp->RequestStartAction(ETRActionType::Restock, Target);
+		ActionComp->ServerStartAction(ETRActionType::Restock, Target);
 	}
 	else
 	{
@@ -226,9 +245,28 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 	}
 }
 
-// 트리거 RPC 함수, 좌클릭 - 제작/수리 vs 수동사격
+// 좌클릭 - 수동사격
+void ATRPlayerCharacter::TriggerPressed(const FInputActionValue& Input)
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (IsValid(TurretControlComp) && TurretControlComp->IsMounted())
+	{
+		TurretControlComp->ServerFire();
+	}
+}
+
+// 트리거 RPC 함수, 좌클릭 - 수리
 void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 {
+	if (IsValid(TurretControlComp) && TurretControlComp->IsMounted())
+	{
+		return;
+	}
+	
 	if (!HasAuthority())
 	{
 		return;
@@ -238,13 +276,6 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 	{
 		return;
 	}
-
-	// TODO: 탑승 중이면 사격으로 분기 — TurretControlComponent 생기면 추가
-	// if (TurretControlComp->IsMounted())
-	// {
-	//     TurretControlComp->RequestFire();
-	//     return;
-	// }
 
 	AActor* Target = InteractionComp->GetCurrentTarget();
 	ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
@@ -260,9 +291,10 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	ActionComp->RequestStartAction(ETRActionType::Repair, Target);
+	ActionComp->ServerStartAction(ETRActionType::Repair, Target);
 }
 
+// 좌클릭 뗌 - 진행 중이던 Repair 액션 취소
 void ATRPlayerCharacter::TriggerReleased_Implementation()
 {
 	if (!HasAuthority())
@@ -270,12 +302,12 @@ void ATRPlayerCharacter::TriggerReleased_Implementation()
 		return;
 	}
 
-	if (!IsValid(ActionComp))
+	if (!IsValid(TurretControlComp) || !IsValid(ActionComp))
 	{
 		return;
 	}
-
-	ActionComp->RequestCancelAction();
+	
+	ActionComp->ServerCancelAction();
 }
 
 void ATRPlayerCharacter::Reload_Implementation(const FInputActionValue& Input)
@@ -297,6 +329,6 @@ void ATRPlayerCharacter::Reload_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	ActionComp->RequestStartAction(ETRActionType::Reload, Target);
+	ActionComp->ServerStartAction(ETRActionType::Reload, Target);
 }
 

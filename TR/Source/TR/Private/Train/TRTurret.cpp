@@ -16,6 +16,52 @@ void ATRTurret::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetim
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ATRTurret, Occupant);
+	DOREPLIFETIME(ATRTurret, CurrentAmmo);
+}
+
+void ATRTurret::BeginPlay()
+{
+	Super::BeginPlay();
+
+	const FRotator InstallRotation = GetActorRotation();
+	InstallYaw = InstallRotation.Yaw;
+	InstallPitch = InstallRotation.Pitch;
+}
+
+float ATRTurret::GetManualRange() const
+{
+	if (LevelTable)
+	{
+		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetManualRange")))
+		{
+			return Row->ManualRange;
+		}
+	}
+	return 0.f;
+}
+
+float ATRTurret::GetManualDamage() const
+{
+	if (LevelTable)
+	{
+		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetManualDamage")))
+		{
+			return Row->ManualDamage;
+		}
+	}
+	return 0.f;
+}
+
+int32 ATRTurret::GetManualAmmoPerResource() const
+{
+	if (LevelTable)
+	{
+		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetManualAmmoPerResource")))
+		{
+			return Row->ManualAmmoPerResource;
+		}
+	}
+	return 0;
 }
 
 float ATRTurret::GetMaxHP() const
@@ -40,4 +86,45 @@ int32 ATRTurret::GetInstallCost() const
 		}
 	}
 	return 0;
+}
+
+float ATRTurret::GetManualFireRate() const
+{
+	if (LevelTable)
+	{
+		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetManualFireRate")))
+		{
+			return Row->ManualFireRate;
+		}
+	}
+	return 0.f;
+}
+
+int32 ATRTurret::GetMaxAmmo() const
+{
+	if (LevelTable)
+	{
+		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetMaxAmmo")))
+		{
+			return Row->AutoMagazine;
+		}
+	}
+	return 0;
+}
+
+void ATRTurret::ConsumeAmmo(int32 Amount)
+{
+	CurrentAmmo = FMath::Max(0, CurrentAmmo - Amount);
+}
+
+void ATRTurret::AddAmmo(int32 Amount)
+{
+	CurrentAmmo = FMath::Clamp(CurrentAmmo + Amount, 0, GetMaxAmmo());
+}
+
+bool ATRTurret::IsWithinFireArc(float CameraYaw, float CameraPitch) const
+{
+	const float YawDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(InstallYaw, CameraYaw));
+	const float PitchDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(InstallPitch, CameraPitch));
+	return YawDelta <= FireArcHalfAngle && PitchDelta <= FireArcHalfAngle;
 }

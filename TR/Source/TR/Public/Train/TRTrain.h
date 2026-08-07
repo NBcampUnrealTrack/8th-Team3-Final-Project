@@ -25,6 +25,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Train")
 	bool HasActiveArmor() const { return GetActiveArmorCount() > 0; }
 
+	UFUNCTION(BlueprintPure, Category = "Train")
+	float GetMaxHullHealth() const { return MaxHullHealth; }
+
+	UFUNCTION(BlueprintPure, Category = "Train")
+	bool IsFullHP() const { return CurrentHullHealth >= MaxHullHealth; }
+
+	void ApplyRepair(float Amount);
+	
 private:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

@@ -17,6 +17,12 @@ public:
 	
 	static constexpr int32 MaxCarriedSupply = 6;
 	
+	void AddCarriedSupply(int32 Amount);
+	
+	int32 GetCarriedSupply() const { return CarriedSupply; }
+	
+	void ConsumeCarriedSupply(int32 Amount);
+	
 protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

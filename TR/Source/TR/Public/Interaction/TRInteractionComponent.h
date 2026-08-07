@@ -25,9 +25,8 @@ protected:
 
 private:
 	void UpdateTrace();
-		
-	// 상태를 "저장"하지 않는다는 원칙과, 매 인터벌마다 갱신되는 캐시는 다른 개념.
-	// 이건 매번 새로 계산한 결과를 다음 조회 전까지만 들고 있는 캐시일 뿐, 복제 안 됨.
+	
+	// 이건 매번 새로 계산한 결과를 다음 조회 전까지만 들고 있는 캐시
 	TWeakObjectPtr<AActor> LastTraceResult;
 
 	UPROPERTY(EditDefaultsOnly, Category="Interaction")
