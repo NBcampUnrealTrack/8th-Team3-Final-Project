@@ -6,7 +6,7 @@
 #include "GameFramework/HUD.h"
 #include "TRPlayerHUD.generated.h"
 
-class UUserWidget;
+class UTRPlayerHUDWidget;
 
 UCLASS()
 class TR_API ATRPlayerHUD : public AHUD
@@ -14,15 +14,14 @@ class TR_API ATRPlayerHUD : public AHUD
 	GENERATED_BODY()
 
 public:
-	UUserWidget* GetPlayerHUDWidget() const { return PlayerHUDWidget; }
+	UTRPlayerHUDWidget* GetPlayerHUDWidget() const { return PlayerHUDWidget; }
 
 protected:
 	virtual void BeginPlay() override;
-
-	// 화면에 띄울 플레이어 HUD 위젯 클래스
-	UPROPERTY(EditDefaultsOnly, Category = "UI")
-	TSubclassOf<UUserWidget> PlayerHUDWidgetClass;
-
+	
 	UPROPERTY(Transient)
-	TObjectPtr<UUserWidget> PlayerHUDWidget;
+	TObjectPtr<UTRPlayerHUDWidget> PlayerHUDWidget;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSubclassOf<UTRPlayerHUDWidget> PlayerHUDWidgetClass;
 };

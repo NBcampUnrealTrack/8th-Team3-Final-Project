@@ -1,8 +1,7 @@
 // TRPlayerHUD.cpp
 
-
 #include "UI/TRPlayerHUD.h"
-#include "Blueprint/UserWidget.h"
+#include "UI/TRPlayerHUDWidget.h"
 
 void ATRPlayerHUD::BeginPlay()
 {
@@ -13,7 +12,7 @@ void ATRPlayerHUD::BeginPlay()
 		return;
 	}
 
-	PlayerHUDWidget = CreateWidget<UUserWidget>(GetOwningPlayerController(), PlayerHUDWidgetClass);
+	PlayerHUDWidget = CreateWidget<UTRPlayerHUDWidget>(GetOwningPlayerController(), PlayerHUDWidgetClass);
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->AddToViewport();
