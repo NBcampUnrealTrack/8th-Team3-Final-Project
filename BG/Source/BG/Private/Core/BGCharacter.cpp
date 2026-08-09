@@ -239,9 +239,26 @@ EBGCharacterAnimState ABGCharacter::ComputeAnimState(const ABGGameState* GS) con
 		case EBGCinematicStage::Secondary:
 			//	Subject 로 비교한다 — 대상이 없는 카드(회복 등)는 사용자가 그대로 대상이 되므로
 			//	CinematicTarget 으로 비교하면 자기 회복 연출에서 아무도 반응하지 않는다.
+			//
+			//	⚠️ 여기서 사망을 보지 않는 것이 설계다. 죽는 일격이어도 평소와 같은 피격 연출을
+			//	   재생하고, 쓰러지는 것은 이 카드 연출이 다 끝난 뒤 DeathPrimary 로 온다.
 			if (GS->GetCinematicSubject() == this)
 			{
 				return EBGCharacterAnimState::React;
+			}
+			break;
+
+		case EBGCinematicStage::DeathPrimary:
+			if (GS->GetCinematicSubject() == this)
+			{
+				return EBGCharacterAnimState::Dying;
+			}
+			break;
+
+		case EBGCinematicStage::DeathSecondary:
+			if (GS->GetCinematicSubject() == this)
+			{
+				return EBGCharacterAnimState::RoleReveal;
 			}
 			break;
 

@@ -32,22 +32,37 @@ enum class EBGMatchEndStage : uint8
 };
 
 /**
- * 카드 사용 연출의 단계 (아트 기획서 "전투 연출").
+ * 연출의 단계 (아트 기획서 "전투 연출" / "사망 연출").
  *
- *   Primary   — 사용자 캐릭터의 공격 연출
- *   Secondary — 판정 결과에 따른 피해자의 결과 연출
+ * 카드 연출 — 카드 1장에 대해 한 번
+ *   Primary   : 사용자 캐릭터의 공격 연출
+ *   Secondary : 피해자의 피격 연출.
+ *               ⚠️ 여기서는 **사망 여부를 보지 않는다.** 죽는 일격이어도 평소와 같은
+ *                  피격 연출을 재생한다 — 쓰러지는 것은 아래 사망 연출의 몫이다.
  *
- * 주의: Phase.* 와 **별개의 축**이다. PhaseTag 를 덮어쓰지 않는 이유:
+ * 사망 연출 — 카드 연출이 끝난 뒤, 이번에 죽은 사람 수만큼 순차로
+ *   DeathPrimary   : 사망자 카메라로 전환 + 쓰러지는 연출
+ *   DeathSecondary : 역할 공개 연출 (이 단계에 들어가는 순간 역할이 실제로 공개된다)
+ *   → 이 단계가 끝나야 규칙이 돈다 (카드 정리·보상/벌칙·승패·턴).
+ *
+ * 두 연출이 같은 축을 쓰는 이유: 입력 차단(CanSeatPlayCards)·밧줄 정지·카메라 전환이
+ * 전부 IsCinematicPlaying() 하나에 걸려 있다. 축을 나누면 그 셋을 각각 두 번 배선해야 한다.
+ *
+ * 주의: Phase.* 와는 **별개의 축**이다. PhaseTag 를 덮어쓰지 않는 이유:
  * 연출이 끝나면 원래 페이즈로 "돌아와야" 하는데, 덮어쓰면 무엇으로 돌아갈지를
  * 따로 저장해야 한다. 병렬 상태로 두면 연출 중에도 PhaseTag 가 그대로 남아
  * 복구가 곧 "연출 단계를 None 으로 되돌리는 것" 하나로 끝난다.
+ *
+ * ⚠️ 값은 끝에 추가할 것 — BP·ABP 가 이미 이 열거형을 참조한다.
  */
 UENUM(BlueprintType)
 enum class EBGCinematicStage : uint8
 {
-	None      UMETA(DisplayName = "연출 아님"),
-	Primary   UMETA(DisplayName = "사용자 연출"),
-	Secondary UMETA(DisplayName = "피해자 연출")
+	None           UMETA(DisplayName = "연출 아님"),
+	Primary        UMETA(DisplayName = "사용자 연출"),
+	Secondary      UMETA(DisplayName = "피해자 연출"),
+	DeathPrimary   UMETA(DisplayName = "사망 연출"),
+	DeathSecondary UMETA(DisplayName = "역할 공개 연출")
 };
 
 /**
@@ -346,9 +361,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
 
-	/** 지금 연출 중인가. 연출 중에는 아무도 카드를 낼 수 없다. */
+	/** 지금 연출 중인가. 카드 연출·사망 연출 어느 쪽이든 참이며, 그동안 아무도 카드를 낼 수 없다. */
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	bool IsCinematicPlaying() const { return CinematicStage != EBGCinematicStage::None; }
+
+	/** 사망 연출 단계인가. 카드 연출과 구분해야 하는 UI(피해 표시 등)가 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	bool IsDeathCinematic() const
+	{
+		return CinematicStage == EBGCinematicStage::DeathPrimary
+			|| CinematicStage == EBGCinematicStage::DeathSecondary;
+	}
 
 	/** 현재 단계의 주인공. 연출 중이 아니면 nullptr. */
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
@@ -477,22 +500,52 @@ protected:
 	//	종료 연출 단계. 이 값이 바뀌는 것이 곧 "승리했다 / 크레딧이다" 라는 통지다.
 	// ── 사망 처리 내부 ──
 	//
-	//	실제 규칙 처리. HandleSeatDeath 가 연출 여부를 보고 지금 부를지 미룰지 정한다.
-	//	직접 부르지 말 것 — 연출 중 호출을 막는 관문을 건너뛰게 된다.
+	/**
+	 * "역할 공개에 따른 결과" — 카드 정리·보상/벌칙·승패·턴 넘김.
+	 *
+	 * 사망 연출의 **마지막**에 불린다. 직접 부르지 말 것 —
+	 * HandleSeatDeath 를 거치지 않으면 연출을 건너뛰고 결과부터 나온다.
+	 */
 	void ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat);
 
 	/**
-	 * 미뤄 둔 사망을 발생 순서대로 처리한다. 연출이 끝날 때 불린다.
-	 *
-	 * TODO: 사망 연출은 여기에 들어온다 — 지금은 규칙 처리로 바로 넘어가지만,
-	 *    "사망자 확인 → 사망 연출(여럿이면 순차) → 규칙 처리" 순서가 되면
-	 *    이 함수가 연출을 하나씩 재생한 뒤 ProcessSeatDeath 를 부르는 형태가 된다.
+	 * 죽은 좌석의 역할을 공개한다. DeathSecondary 진입 **직전**에 불린다 —
+	 * 역할 공개 연출이 무엇을 공개할지 알고 시작해야 하기 때문이다.
 	 */
-	void FlushPendingDeaths();
+	void RevealDeadRole(int32 DeadSeat);
+
+	/**
+	 * 대기열에서 사망 1건을 꺼내 사망 연출을 시작한다. 시작했으면 true.
+	 *
+	 * 연출을 걸 수 없는 사망(폰이 없는 이탈자, 길이를 0 으로 꺼 둔 경우)은
+	 * 그 자리에서 규칙만 처리하고 다음 건으로 넘어간다 — 그래서 반복문이다.
+	 */
+	bool TryBeginNextDeathCinematic();
+
+	/** 사망 연출 1건이 끝났다 — 규칙을 처리하고 다음 사망자로 넘어간다. */
+	void FinishDeathCinematic();
+
+	/**
+	 * 카드 연출이 끝났다. 밀린 사망이 있으면 **None 을 거치지 않고** 사망 연출로 곧장 넘어간다.
+	 *
+	 * ⚠️ 사이에 None 이 한 프레임이라도 끼면 카메라가 각자 시점으로 튀었다가 다시 날아간다.
+	 *    (PlayerController 가 None 을 "연출 종료" 로 보고 뷰타깃을 자기 폰으로 되돌린다)
+	 */
+	void EndCardCinematic();
+
+	//	다음 단계를 예약한다. DelaySeconds 가 0 이하면 기다리지 않고 즉시 실행한다 —
+	//	연출을 끄고 규칙만 돌리고 싶을 때 길이를 0 으로 두면 된다.
+	void ScheduleCinematicStep(float DelaySeconds, TFunction<void()>&& Step);
 
 	//	서버 전용. 복제하지 않는다 — 클라가 알 필요가 없고, 알면 사망을 미리 보게 된다.
 	UPROPERTY()
 	TArray<FBGPendingDeath> PendingDeaths;
+
+	//	지금 사망 연출을 재생 중인 1건. DeadSeat 이 INDEX_NONE 이면 재생 중이 아니다.
+	//	대기열에서 꺼내 여기로 옮기는 이유: 연출이 도는 동안 새 사망이 대기열에 들어와도
+	//	지금 재생 중인 건과 섞이지 않는다.
+	UPROPERTY()
+	FBGPendingDeath ActiveDeath;
 
 	// ── 카드 연출 내부 ──
 	//
@@ -534,6 +587,15 @@ protected:
 	//	피해자 결과 연출 길이(초). 0 이하면 이 단계를 건너뛴다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0"))
 	float SecondaryCinematicSeconds = 3.f;
+
+	//	쓰러지는 연출 길이(초). 0 이하면 이 단계를 건너뛴다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0"))
+	float DeathPrimarySeconds = 3.f;
+
+	//	역할 공개 연출 길이(초). 0 이하면 이 단계를 건너뛴다.
+	//	⚠️ 둘 다 0 이면 사망 연출이 통째로 꺼지고 규칙만 즉시 돈다(이주 전 동작).
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0"))
+	float DeathSecondarySeconds = 3.f;
 
 	/**
 	 * 연출 진입 시 뷰타깃 블렌드(초). **0 이면 즉시 전환**한다.

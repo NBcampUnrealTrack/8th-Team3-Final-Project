@@ -64,6 +64,12 @@ ABGCharacter* ABGGameState::GetCinematicSubject() const
 	case EBGCinematicStage::Primary:   return CinematicInstigator;
 	//	피해자가 없는 카드(회복 등)는 사용자를 계속 비춘다 — 빈 화면을 3초 보여주는 것보다 낫다.
 	case EBGCinematicStage::Secondary: return CinematicTarget ? CinematicTarget : CinematicInstigator;
+
+	//	사망 연출은 두 단계 모두 사망자를 비춘다. TryBeginNextDeathCinematic 이
+	//	CinematicInstigator 에 사망자를 넣어 둔다("이번 단계의 주인공" 이라는 뜻으로 쓴다).
+	case EBGCinematicStage::DeathPrimary:
+	case EBGCinematicStage::DeathSecondary: return CinematicInstigator;
+
 	default:                           return nullptr;
 	}
 }
@@ -109,15 +115,29 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 
 	CinematicStage = NewStage;
 
-	//	연출 종료 — 주인공과 판정 참조를 놓아준다. 남겨 두면 죽은 캐릭터를 계속 붙들고 있게 된다.
-	//	⚠️ 아래 HandleCinematicStage(통지)보다 **먼저** 비운다. 클라는 이 값들을 단계와 같은
-	//	   번들로 받으므로 OnRep 시점에 이미 비어 있다 — 서버만 옛 값을 들고 통지하면
-	//	   같은 순간에 서버와 클라의 애니메이션 분기가 어긋난다.
-	if (NewStage == EBGCinematicStage::None)
+	// ── 통지 전에 상태를 완성해 둔다 ──
+	//	⚠️ 아래 HandleCinematicStage(통지)보다 **먼저** 해야 한다. 클라는 이 값들을 단계와
+	//	   같은 번들로 받으므로 OnRep 시점에 이미 반영돼 있다 — 서버만 옛 값을 들고 통지하면
+	//	   같은 순간에 서버와 클라의 애니메이션·UI 분기가 어긋난다.
+	switch (NewStage)
 	{
+	case EBGCinematicStage::None:
+		//	연출 종료 — 주인공과 판정 참조를 놓아준다.
+		//	남겨 두면 죽은 캐릭터를 계속 붙들고 있게 된다.
 		CinematicInstigator = nullptr;
 		CinematicTarget     = nullptr;
 		CinematicResolution = FBGCardResolution();
+		ActiveDeath         = FBGPendingDeath();
+		break;
+
+	case EBGCinematicStage::DeathSecondary:
+		//	역할 공개 연출이 시작되기 **전에** 실제로 공개한다.
+		//	공개가 통지보다 늦으면 연출이 도는 첫 순간에 UI 가 아직 빈 역할을 읽는다.
+		RevealDeadRole(ActiveDeath.DeadSeat);
+		break;
+
+	default:
+		break;
 	}
 
 	//	연출이 도는 동안 밧줄을 멈춘다. 안 그러면 연출 시간만큼 자기 턴을 깎아 먹는다.
@@ -139,43 +159,57 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 
 	GetWorldTimerManager().ClearTimer(CinematicStageTimer);
 
-	//	다음 단계 예약. 길이가 0 이하면 그 단계를 건너뛴다 — 연출을 끄고 규칙만 돌릴 때 쓴다.
+	//	다음 단계 예약.
 	switch (NewStage)
 	{
 	case EBGCinematicStage::Primary:
-		if (PrimaryCinematicSeconds > 0.f)
-		{
-			GetWorldTimerManager().SetTimer(CinematicStageTimer,
-				[this]() { SetCinematicStage(EBGCinematicStage::Secondary); },
-				PrimaryCinematicSeconds, /*bLoop=*/false);
-		}
-		else
-		{
-			SetCinematicStage(EBGCinematicStage::Secondary);
-		}
+		ScheduleCinematicStep(PrimaryCinematicSeconds,
+			[this]() { SetCinematicStage(EBGCinematicStage::Secondary); });
 		break;
 
 	case EBGCinematicStage::Secondary:
-		if (SecondaryCinematicSeconds > 0.f)
-		{
-			GetWorldTimerManager().SetTimer(CinematicStageTimer,
-				[this]() { SetCinematicStage(EBGCinematicStage::None); },
-				SecondaryCinematicSeconds, /*bLoop=*/false);
-		}
-		else
-		{
-			SetCinematicStage(EBGCinematicStage::None);
-		}
+		//	카드 연출의 끝. None 으로 바로 가지 않는다 — 밀린 사망이 있으면 이어서 재생한다.
+		ScheduleCinematicStep(SecondaryCinematicSeconds,
+			[this]() { EndCardCinematic(); });
+		break;
+
+	case EBGCinematicStage::DeathPrimary:
+		ScheduleCinematicStep(DeathPrimarySeconds,
+			[this]() { SetCinematicStage(EBGCinematicStage::DeathSecondary); });
+		break;
+
+	case EBGCinematicStage::DeathSecondary:
+		//	역할 공개가 끝나야 결과가 나온다 — 보상·승패는 FinishDeathCinematic 안에 있다.
+		ScheduleCinematicStep(DeathSecondarySeconds,
+			[this]() { FinishDeathCinematic(); });
 		break;
 
 	case EBGCinematicStage::None:
-		//	주의: 참조를 놓은(위쪽) **뒤에** 부른다. 사망 처리 안에서 승패가 나면 판이 끝나는데,
-		// 그 전에 연출 상태가 완전히 정리돼 있어야 한다.
-		// 또한 IsCinematicPlaying() 이 이미 false 라 여기서 처리하는 사망이
-		// 다시 대기열로 들어가는 일이 없다 — 순서가 뒤바뀌면 영영 처리되지 않는다.
-		FlushPendingDeaths();
 		break;
 	}
+}
+
+void ABGGameState::ScheduleCinematicStep(float DelaySeconds, TFunction<void()>&& Step)
+{
+	if (DelaySeconds > 0.f)
+	{
+		GetWorldTimerManager().SetTimer(CinematicStageTimer, MoveTemp(Step), DelaySeconds, /*bLoop=*/false);
+		return;
+	}
+
+	//	길이가 0 이하면 기다리지 않고 즉시 넘어간다 — 연출을 끄고 규칙만 돌릴 때 쓴다.
+	Step();
+}
+
+void ABGGameState::EndCardCinematic()
+{
+	//	이번 카드로 죽은 사람이 있으면 화면을 돌려주지 않고 곧장 사망 연출로 넘어간다.
+	if (TryBeginNextDeathCinematic())
+	{
+		return;
+	}
+
+	SetCinematicStage(EBGCinematicStage::None);
 }
 
 void ABGGameState::OnRep_CinematicStage()
@@ -887,50 +921,119 @@ void ABGGameState::HandleSeatDeath(int32 DeadSeat, int32 KillerSeat)
 		return;
 	}
 
-	//	연출 중이면 규칙 처리를 미룬다.
-	//	여기서 바로 처리하면 화면에서는 아직 공격 연출이 도는 중인데 카드가 버려지고
-	//	승패까지 나 버린다 — 연출이 결과를 "보여주기 전에" 결과가 확정되는 셈이다.
+	//	사망은 **반드시 대기열을 거친다.** 여기서 규칙을 바로 돌리면 화면에서는 아직 공격
+	//	연출이 도는 중인데 카드가 버려지고 승패까지 나 버린다 — 연출이 결과를 "보여주기 전에"
+	//	결과가 확정되는 셈이다. 연출 중이 아닌 사망(다이너마이트·밧줄)도 같은 줄에 세워
+	//	"사망은 언제나 사망 연출을 거친다" 를 한 경로로 보장한다.
+	//
+	//	같은 좌석이 두 번 들어오지 않는다 — ABGCharacter::NotifyHealthDepleted 의
+	//	bDead 플래그가 사망 통지 자체를 1회로 막는다. 그래도 방어적으로 확인한다.
+	const bool bAlreadyQueued = PendingDeaths.ContainsByPredicate(
+		[DeadSeat](const FBGPendingDeath& D) { return D.DeadSeat == DeadSeat; });
+
+	if (!bAlreadyQueued && ActiveDeath.DeadSeat != DeadSeat)
+	{
+		PendingDeaths.Add({ DeadSeat, KillerSeat });
+		UE_LOG(LogBGCard, Log, TEXT("[Death] 좌석 %d 사망 접수 (대기 %d 건)"),
+			DeadSeat, PendingDeaths.Num());
+	}
+
+	//	연출 중이면 그 연출이 끝나는 자리에서 이어서 재생된다(EndCardCinematic / FinishDeathCinematic).
 	if (IsCinematicPlaying())
 	{
-		//	같은 좌석이 두 번 들어오지 않는다 — ABGCharacter::NotifyHealthDepleted 의
-		//	bDead 플래그가 사망 통지 자체를 1회로 막는다. 그래도 방어적으로 확인한다.
-		const bool bAlreadyQueued = PendingDeaths.ContainsByPredicate(
-			[DeadSeat](const FBGPendingDeath& D) { return D.DeadSeat == DeadSeat; });
-
-		if (!bAlreadyQueued)
-		{
-			PendingDeaths.Add({ DeadSeat, KillerSeat });
-			UE_LOG(LogBGCard, Log,
-				TEXT("[Death] 좌석 %d 사망 처리를 연출 후로 미룸 (대기 %d 건)"),
-				DeadSeat, PendingDeaths.Num());
-		}
 		return;
 	}
 
-	ProcessSeatDeath(DeadSeat, KillerSeat);
+	TryBeginNextDeathCinematic();
 }
 
-void ABGGameState::FlushPendingDeaths()
+bool ABGGameState::TryBeginNextDeathCinematic()
 {
-	if (!HasAuthority() || PendingDeaths.IsEmpty())
+	if (!HasAuthority())
+	{
+		return false;
+	}
+
+	while (!PendingDeaths.IsEmpty())
+	{
+		//	판이 끝났으면 남은 사망은 버린다. 규칙적으로 이미 의미가 없고(보상도 승패도 확정),
+		//	처리하면 종료 연출이 도는 동안 덱에서 카드가 빠진다.
+		//	죽지 않은 사람의 역할도 CheckWinCondition 이 전원 공개하므로 잃는 정보가 없다.
+		if (!bMatchRunning)
+		{
+			UE_LOG(LogBGCard, Log, TEXT("[Death] 판 종료 — 남은 사망 %d 건을 버립니다."),
+				PendingDeaths.Num());
+			PendingDeaths.Reset();
+			return false;
+		}
+
+		const FBGPendingDeath Death = PendingDeaths[0];
+		PendingDeaths.RemoveAt(0);
+
+		//	비출 대상이 없으면(이탈자가 두고 간 폰은 이미 파괴됐거나 애초에 없다) 연출이 성립하지 않는다.
+		ABGPlayerState* DeadPS = GetPlayerStateBySeat(Death.DeadSeat);
+		ABGCharacter*   DeadChar = DeadPS ? Cast<ABGCharacter>(DeadPS->GetPawn()) : nullptr;
+
+		const bool bHasLength = (DeathPrimarySeconds > 0.f || DeathSecondarySeconds > 0.f);
+
+		if (!DeadChar || !bHasLength)
+		{
+			UE_LOG(LogBGCard, Log, TEXT("[Death] 좌석 %d 사망 연출 생략 (%s) — 규칙만 처리합니다."),
+				Death.DeadSeat, DeadChar ? TEXT("길이 0") : TEXT("캐릭터 없음"));
+
+			RevealDeadRole(Death.DeadSeat);
+			ProcessSeatDeath(Death.DeadSeat, Death.KillerSeat);
+			continue;   // 다음 사망자를 본다
+		}
+
+		ActiveDeath = Death;
+
+		//	사망 연출에는 "대상" 이 없다. 두 단계 모두 사망자를 비춘다(GetCinematicSubject).
+		CinematicInstigator = DeadChar;
+		CinematicTarget     = nullptr;
+		CinematicResolution = FBGCardResolution();
+
+		UE_LOG(LogBGCard, Log, TEXT("[Death] 좌석 %d 사망 연출 시작 (남은 대기 %d 건)"),
+			Death.DeadSeat, PendingDeaths.Num());
+
+		SetCinematicStage(EBGCinematicStage::DeathPrimary);
+		return true;
+	}
+
+	return false;
+}
+
+void ABGGameState::FinishDeathCinematic()
+{
+	//	먼저 꺼낸다. ProcessSeatDeath 안에서 연쇄 사망이 나면 HandleSeatDeath 가
+	//	ActiveDeath 와 좌석을 비교하므로, 비우기 전에 부르면 그 사망이 중복으로 걸린다.
+	const FBGPendingDeath Death = ActiveDeath;
+	ActiveDeath = FBGPendingDeath();
+
+	if (Death.DeadSeat != INDEX_NONE)
+	{
+		//	"역할 공개에 따른 결과" — 카드 정리·보상/벌칙·승패·턴이 전부 여기서 난다.
+		ProcessSeatDeath(Death.DeadSeat, Death.KillerSeat);
+	}
+
+	//	다음 사망자로 곧장 넘어간다. 없으면 연출을 닫는다.
+	if (!TryBeginNextDeathCinematic())
+	{
+		SetCinematicStage(EBGCinematicStage::None);
+	}
+}
+
+void ABGGameState::RevealDeadRole(int32 DeadSeat)
+{
+	if (!HasAuthority() || DeadSeat == INDEX_NONE)
 	{
 		return;
 	}
 
-	//	처리 도중 새 사망이 들어올 수 있다(보상 드로우가 다이너마이트를 터뜨리는 등).
-	//	원본을 비우고 사본을 돌려야 그 새 사망이 이번 순회에 섞이지 않는다.
-	TArray<FBGPendingDeath> Deaths = MoveTemp(PendingDeaths);
-	PendingDeaths.Reset();
-
-	UE_LOG(LogBGCard, Log, TEXT("[Death] 미뤄 둔 사망 %d 건 처리 시작"), Deaths.Num());
-
-	//	TODO: 사망 연출은 이 자리에 들어온다. 지금은 규칙 처리로 바로 넘어가지만,
-	//	   "사망자 확인 → 사망 연출(여럿이면 순차) → 규칙 처리" 순서가 되면
-	//	   이 반복문이 연출을 하나 재생하고 끝나기를 기다린 뒤 다음으로 넘어가는 형태가 된다.
-	//	   그때 ProcessSeatDeath 호출 시점은 각 사망 연출이 끝난 직후가 된다.
-	for (const FBGPendingDeath& Death : Deaths)
+	//	뱅 규칙: 죽으면 역할이 공개된다. 이 시점부터 전원이 볼 수 있다.
+	if (ABGPlayerState* PS = GetPlayerStateBySeat(DeadSeat))
 	{
-		ProcessSeatDeath(Death.DeadSeat, Death.KillerSeat);
+		PS->SetPublicRole(GetSeatRole(DeadSeat));
 	}
 }
 
@@ -961,12 +1064,13 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 		}
 	}
 
-	// ── 1. 사망자의 역할을 공개하고 손패·장비를 전부 버린 패로 ──
+	// ── 1. 사망자의 손패·장비를 전부 버린 패로 ──
+	//	역할 공개는 여기가 아니라 DeathSecondary 진입 시점에 이미 끝나 있다(RevealDeadRole).
+	//	그래도 한 번 더 부른다 — 연출을 건너뛴 경로로 들어와도 역할이 반드시 공개되게.
+	RevealDeadRole(DeadSeat);
+
 	if (ABGPlayerState* DeadPS = GetPlayerStateBySeat(DeadSeat))
 	{
-		//	뱅 규칙: 죽으면 역할이 공개된다. 이 시점부터 전원이 볼 수 있다.
-		DeadPS->SetPublicRole(DeadRole);
-
 		//	걸려 있던 "다음 1회" 상태는 사라진다(발동될 다음 카드가 없다).
 		DeadPS->ClearPendingStatuses();
 

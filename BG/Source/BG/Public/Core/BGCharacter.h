@@ -53,8 +53,18 @@ enum class EBGCharacterAnimState : uint8
 	//	쓸 동작이 없으면 ABP 에서 Idle 과 같은 상태로 묶어도 된다.
 	Watch UMETA(DisplayName = "관전"),
 
-	//	죽었다. 연출보다 우선한다 — 시체가 시전 동작을 하면 안 된다.
-	Dead  UMETA(DisplayName = "사망")
+	//	사망 연출이 모두 끝난 뒤의 시체. 포즈를 유지한다.
+	Dead  UMETA(DisplayName = "사망"),
+
+	// ⚠️ 아래는 나중에 추가된 값이다. **순서를 바꾸지 말 것** — ABP 가 이미 위 다섯을 참조한다.
+
+	//	사망 연출 1단계 — 내가 이번 사망자다. 쓰러지는 동작.
+	//	피격(React)과 다르다: 피격은 카드 연출에서 죽든 말든 재생되고,
+	//	쓰러지는 것은 그 카드 연출이 다 끝난 뒤 별도 연출로 온다.
+	Dying UMETA(DisplayName = "쓰러짐"),
+
+	//	사망 연출 2단계 — 역할 공개. 이 상태에 들어온 시점에 PublicRoleTag 가 이미 채워져 있다.
+	RoleReveal UMETA(DisplayName = "역할 공개")
 };
 
 /** 연출 상태가 바뀌었다. 몽타주처럼 "한 번만" 재생해야 하는 것은 이걸 구독한다. */
@@ -201,6 +211,21 @@ public:
 	/** 지금 연출 카메라가 나를 비추고 있는가. 얼굴 표정·상체 강조처럼 화면에 잡힐 때만 켤 것에 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "BG|Anim")
 	bool IsCinematicSubject() const { return bCinematicSubject; }
+
+	/**
+	 * 쓰러져 있어야 하는가 (사망 연출 중 포함).
+	 *
+	 * ABP 의 사망 상태 전이 조건으로 이걸 쓸 것. `AnimState == Dead` 로만 걸면
+	 * 쓰러지는 몽타주가 끝나는 순간(Dying / RoleReveal 구간) 블렌드 아웃되어
+	 * **시체가 일어섰다가 다시 눕는다.**
+	 */
+	UFUNCTION(BlueprintPure, Category = "BG|Anim")
+	bool IsDownedPose() const
+	{
+		return AnimState == EBGCharacterAnimState::Dying
+			|| AnimState == EBGCharacterAnimState::RoleReveal
+			|| AnimState == EBGCharacterAnimState::Dead;
+	}
 
 	/** 상태 진입 통지. 몽타주 재생용 — 상태 머신은 이걸 쓰지 말고 GetAnimState() 를 폴링할 것. */
 	UPROPERTY(BlueprintAssignable, Category = "BG|Anim")
