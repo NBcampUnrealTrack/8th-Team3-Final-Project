@@ -1207,6 +1207,15 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	EBGDiceOutcome ResolvedOutcome = EBGDiceOutcome::Success;
 	bool bResolved = false;
 
+	//	판정 결과 1건. 전원 통지(Multicast_CardResolved)와 연출(BeginCardCinematic)이 같은 값을 쓴다 —
+	//	따로 채우면 화면에 뜬 결과와 애니메이션의 성패가 어긋날 수 있다.
+	//	Roll 이 INDEX_NONE 으로 남아 있으면 "판정을 굴리지 않은 카드" 라는 뜻이다.
+	FBGCardResolution Resolution;
+	Resolution.CardId    = CardId;
+	Resolution.SeatIndex = GetPlayerState<ABGPlayerState>()
+		? GetPlayerState<ABGPlayerState>()->GetSeatIndex()
+		: INDEX_NONE;
+
 	// ── 4단계 판정 (GDD §4.2 / §9.1) ──
 	//	판정은 서버가 여기서 한 번만 한다. GA 는 "결과 실행" 만 담당한다 —
 	//	GA 마다 각자 굴리면 중복 판정과 "같은 판정을 두 번 적용" 위험이 생긴다(GDD §9.2).
@@ -1317,18 +1326,13 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 			//	전원에게 판정 결과를 알린다 (GDD §4.1 "모든 플레이어에게 동일한 결과를 표시").
 			//	위의 BGDebug::Screen 은 서버 화면에만 찍히므로 클라는 아무것도 보지 못한다.
+			Resolution.Outcome = Outcome;
+			Resolution.Roll    = Roll;
+			Resolution.bForced = bForcedOutcome;
+			Resolution.Weights = Weights;
+
 			if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
 			{
-				FBGCardResolution Resolution;
-				Resolution.CardId    = CardId;
-				Resolution.Outcome   = Outcome;
-				Resolution.Roll      = Roll;
-				Resolution.bForced   = bForcedOutcome;
-				Resolution.SeatIndex = GetPlayerState<ABGPlayerState>()
-					? GetPlayerState<ABGPlayerState>()->GetSeatIndex()
-					: INDEX_NONE;
-				Resolution.Weights   = Weights;
-
 				MutableGS->Multicast_CardResolved(Resolution);
 			}
 		}
@@ -1423,9 +1427,11 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		{
 			//	Primary 주인공은 카드를 쓴 사람, Secondary 는 대상이다.
 			//	대상이 없는 카드(회복 등)는 GameState 가 사용자를 계속 비춘다.
+			//	판정 결과를 함께 넘겨야 애니메이션이 카드 종류와 성패로 갈라진다.
 			MutableGS->BeginCardCinematic(
 				Cast<ABGCharacter>(GetPawn()),
-				Cast<ABGCharacter>(ResolveTargetActor(TargetSeat)));
+				Cast<ABGCharacter>(ResolveTargetActor(TargetSeat)),
+				Resolution);
 		}
 	}
 }

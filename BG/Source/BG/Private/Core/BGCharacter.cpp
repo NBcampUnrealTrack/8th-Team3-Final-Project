@@ -148,6 +148,151 @@ void ABGCharacter::BeginPlay()
 	// 늦게 관련성이 생긴 클라(또는 리슨서버 호스트)는 JobTag 가 이미 채워진 채로 시작한다 —
 	// 그 경우 OnRep 이 오지 않으므로 여기서 한 번 외형을 맞춘다.
 	ApplyJobVisual();
+
+	BindCinematicDelegate();
+}
+
+void ABGCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ABGGameState* GS = BoundCinematicGameState.Get())
+	{
+		GS->OnCinematicStageChanged.RemoveAll(this);
+	}
+	BoundCinematicGameState.Reset();
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GameStateSetEvent.RemoveAll(this);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+//  연출 애니메이션 상태
+//
+//  캐릭터는 아무것도 복제하지 않는다. ABGGameState 의 복제된 연출 상태를 읽어
+//  "그래서 나는 지금 뭘 해야 하나" 하나만 유도한다.
+// ══════════════════════════════════════════════════════════════════════════════════════
+
+void ABGCharacter::BindCinematicDelegate()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	ABGGameState* GS = World->GetGameState<ABGGameState>();
+	if (!GS)
+	{
+		//	폰이 GameState 보다 먼저 도착했다(클라에서 흔하다). 도착하면 다시 부른다 —
+		//	타이머로 폴링하지 않는 이유는 이 이벤트가 정확히 그 순간을 알려주기 때문이다.
+		World->GameStateSetEvent.AddWeakLambda(this,
+			[this](AGameStateBase*) { BindCinematicDelegate(); });
+		return;
+	}
+
+	if (BoundCinematicGameState.Get() == GS)
+	{
+		return;   // 이미 구독 중 — GameStateSetEvent 와 BeginPlay 가 겹쳐 불릴 수 있다.
+	}
+
+	if (ABGGameState* Previous = BoundCinematicGameState.Get())
+	{
+		Previous->OnCinematicStageChanged.RemoveAll(this);
+	}
+
+	GS->OnCinematicStageChanged.AddUObject(this, &ABGCharacter::HandleCinematicStageChanged);
+	BoundCinematicGameState = GS;
+
+	//	구독보다 연출이 먼저 시작됐을 수 있다(늦게 접속·리스폰). 현재 상태를 즉시 한 번 반영한다 —
+	//	연출을 "이벤트가 아니라 상태" 로 둔 것의 값어치가 여기서 나온다.
+	RefreshAnimState();
+}
+
+void ABGCharacter::HandleCinematicStageChanged(EBGCinematicStage /*Stage*/, ABGCharacter* /*Subject*/)
+{
+	//	인자를 쓰지 않고 다시 읽는다. 사망(PlayerState 복제)처럼 이 통지 없이 바뀌는 축이 있어
+	//	"상태를 만드는 곳" 을 RefreshAnimState 하나로 유지하는 편이 어긋날 여지가 없다.
+	RefreshAnimState();
+}
+
+EBGCharacterAnimState ABGCharacter::ComputeAnimState(const ABGGameState* GS) const
+{
+	// ── 내가 이번 연출의 주인공인가 ──
+	//	주인공이면 사망 여부보다 **우선한다.** 체력이 0 이 된 순간 PlayerState::bIsDead 는
+	//	곧바로 켜지지만(NotifyHealthDepleted), 실제 사망 처리는 연출이 끝난 뒤로 미뤄진다
+	//	(FlushPendingDeaths). 여기서 사망을 먼저 보면 나를 죽인 그 연출에서 맞는 동작을
+	//	건너뛰고 바로 쓰러져 버린다 — "연출 → 사망" 순서가 그림에서 깨진다.
+	if (GS)
+	{
+		switch (GS->GetCinematicStage())
+		{
+		case EBGCinematicStage::Primary:
+			if (GS->GetCinematicInstigator() == this)
+			{
+				return EBGCharacterAnimState::Cast;
+			}
+			break;
+
+		case EBGCinematicStage::Secondary:
+			//	Subject 로 비교한다 — 대상이 없는 카드(회복 등)는 사용자가 그대로 대상이 되므로
+			//	CinematicTarget 으로 비교하면 자기 회복 연출에서 아무도 반응하지 않는다.
+			if (GS->GetCinematicSubject() == this)
+			{
+				return EBGCharacterAnimState::React;
+			}
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	//	주인공이 아니다. 이미 죽어 있으면 계속 쓰러져 있는다 —
+	//	남의 연출이 돈다고 시체가 일어나 구경하면 안 된다.
+	if (const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
+	{
+		if (PS->IsDead())
+		{
+			return EBGCharacterAnimState::Dead;
+		}
+	}
+
+	return (GS && GS->IsCinematicPlaying())
+		? EBGCharacterAnimState::Watch
+		: EBGCharacterAnimState::Idle;
+}
+
+void ABGCharacter::RefreshAnimState()
+{
+	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+
+	const FBGCardResolution EmptyResolution;
+	const FBGCardResolution& Resolution = GS ? GS->GetCinematicResolution() : EmptyResolution;
+
+	CinematicStage    = GS ? GS->GetCinematicStage() : EBGCinematicStage::None;
+	CinematicCardId   = Resolution.CardId;
+	CinematicOutcome  = Resolution.Outcome;
+	//	Roll 이 비어 있으면 판정을 굴리지 않은 카드다 — Outcome 의 기본값(성공)을 믿으면 안 된다.
+	bHasCinematicOutcome = (Resolution.Roll != INDEX_NONE);
+	bCinematicSubject = GS && (GS->GetCinematicSubject() == this);
+
+	const EBGCharacterAnimState NewState = ComputeAnimState(GS);
+	if (NewState == AnimState)
+	{
+		return;   // 몽타주가 매번 처음부터 다시 시작하지 않도록 진짜 바뀔 때만 알린다.
+	}
+
+	AnimState = NewState;
+
+	UE_LOG(LogBGCard, Verbose, TEXT("[Anim] %s → 상태 %d (카드 %s, 단계 %d)"),
+		*GetName(), static_cast<int32>(AnimState),
+		CinematicCardId.IsValid() ? *CinematicCardId.ToString() : TEXT("없음"),
+		static_cast<int32>(CinematicStage));
+
+	OnAnimStateChanged.Broadcast(AnimState);
 }
 
 void ABGCharacter::InitializeAbilityActorInfo()

@@ -332,13 +332,16 @@ public:
 	/**
 	 * 서버 전용. 연출을 시작한다. 이미 연출 중이면 무시한다(카드 두 장이 겹쳐 들어오는 경우).
 	 *
-	 * Caster : 카드를 쓴 캐릭터 — Primary 단계의 주인공.
-	 * Victim : 피해자 — Secondary 단계의 주인공. 없으면(자기 대상 카드 등) Caster 를 다시 쓴다.
+	 * Caster     : 카드를 쓴 캐릭터 — Primary 단계의 주인공.
+	 * Victim     : 피해자 — Secondary 단계의 주인공. 없으면(자기 대상 카드 등) Caster 를 다시 쓴다.
+	 * Resolution : 이 카드의 판정 결과. 애니메이션이 카드 종류와 성패로 분기하는 데 쓴다
+	 *              (ABGCharacter::GetCinematicCardId / GetCinematicOutcome).
 	 *
 	 * 주의: 인자 이름을 Instigator 로 쓸 수 없다 — AActor::Instigator 와 겹쳐 UHT 가 거부한다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Cinematic")
-	void BeginCardCinematic(class ABGCharacter* Caster, class ABGCharacter* Victim);
+	void BeginCardCinematic(class ABGCharacter* Caster, class ABGCharacter* Victim,
+		const FBGCardResolution& Resolution);
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
@@ -350,6 +353,23 @@ public:
 	/** 현재 단계의 주인공. 연출 중이 아니면 nullptr. */
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	class ABGCharacter* GetCinematicSubject() const;
+
+	/** 카드를 쓴 캐릭터 (Primary 단계의 주인공). 연출 중이 아니면 nullptr. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	class ABGCharacter* GetCinematicInstigator() const { return CinematicInstigator; }
+
+	/** 연출 대상 (Secondary 단계의 주인공). 대상 없는 카드면 nullptr. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	class ABGCharacter* GetCinematicTarget() const { return CinematicTarget; }
+
+	/**
+	 * 지금 연출 중인 카드의 판정 결과.
+	 *
+	 * Roll == INDEX_NONE 이면 판정을 굴리지 않은 카드다 — 그때 Outcome 은 의미가 없다.
+	 * 연출이 끝나면 비워진다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	const FBGCardResolution& GetCinematicResolution() const { return CinematicResolution; }
 
 	/** 단계 전환 통지. 위젯·사운드 등이 구독한다. */
 	FOnBGCinematicStageChanged OnCinematicStageChanged;
@@ -494,6 +514,12 @@ protected:
 
 	UPROPERTY(Replicated)
 	TObjectPtr<class ABGCharacter> CinematicTarget;
+
+	//	연출 중인 카드의 판정 결과. 위 둘과 같은 번들로 복제되므로 OnRep 시점에 이미 채워져 있다.
+	//	애니메이션이 "무슨 카드를 / 성공했는지" 로 분기하려면 이 정보가 클라에도 있어야 한다 —
+	//	Multicast_CardResolved 는 그 순간 한 번뿐이라 늦게 들어온 클라는 받지 못한다.
+	UPROPERTY(Replicated)
+	FBGCardResolution CinematicResolution;
 
 	//	복제 재전송으로 같은 델리게이트가 두 번 나가는 것을 막는다(BroadcastedStage 와 같은 이유).
 	EBGCinematicStage BroadcastedCinematicStage = EBGCinematicStage::None;

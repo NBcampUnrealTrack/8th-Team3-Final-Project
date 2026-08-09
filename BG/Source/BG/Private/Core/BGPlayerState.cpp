@@ -4,6 +4,7 @@
 #include "Card/BGCardType.h"
 #include "Card/BGDataSubsystem.h"
 #include "Card/BGGameDataTypes.h"
+#include "Core/BGCharacter.h"       // OnRep_IsDead 가 폰의 애니메이션 상태를 갱신한다
 #include "BGGameplayTags.h"
 #include "GAS/BGAttributeSet.h"
 #include "GAS/Effect/GE_BGDamage.h"
@@ -307,9 +308,27 @@ void ABGPlayerState::SetPublicRole(const FGameplayTag& InRole)
 
 void ABGPlayerState::SetDead(bool bInDead)
 {
-	if (HasAuthority())
+	if (!HasAuthority() || bIsDead == bInDead)
 	{
-		bIsDead = bInDead;
+		return;
+	}
+
+	bIsDead = bInDead;
+
+	//	리슨서버 호스트는 자기 OnRep 을 받지 못한다 — 값을 바꾼 자리에서 직접 부른다.
+	OnRep_IsDead();
+}
+
+void ABGPlayerState::OnRep_IsDead()
+{
+	//	좌석 이름표의 사망 표시.
+	BroadcastPublicInfoChanged();
+
+	//	쓰러지는 애니메이션. 폰이 아직 붙지 않았으면 손댈 것이 없다 —
+	//	그 폰은 BeginPlay 에서 이 상태를 스스로 읽어 간다.
+	if (ABGCharacter* Char = Cast<ABGCharacter>(GetPawn()))
+	{
+		Char->RefreshAnimState();
 	}
 }
 

@@ -47,6 +47,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, CinematicStage);
 	DOREPLIFETIME(ABGGameState, CinematicInstigator);
 	DOREPLIFETIME(ABGGameState, CinematicTarget);
+	DOREPLIFETIME(ABGGameState, CinematicResolution);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -67,7 +68,8 @@ ABGCharacter* ABGGameState::GetCinematicSubject() const
 	}
 }
 
-void ABGGameState::BeginCardCinematic(ABGCharacter* Caster, ABGCharacter* Victim)
+void ABGGameState::BeginCardCinematic(ABGCharacter* Caster, ABGCharacter* Victim,
+	const FBGCardResolution& Resolution)
 {
 	if (!HasAuthority())
 	{
@@ -93,6 +95,7 @@ void ABGGameState::BeginCardCinematic(ABGCharacter* Caster, ABGCharacter* Victim
 
 	CinematicInstigator = Caster;
 	CinematicTarget     = Victim;
+	CinematicResolution = Resolution;
 
 	SetCinematicStage(EBGCinematicStage::Primary);
 }
@@ -105,6 +108,17 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 	}
 
 	CinematicStage = NewStage;
+
+	//	연출 종료 — 주인공과 판정 참조를 놓아준다. 남겨 두면 죽은 캐릭터를 계속 붙들고 있게 된다.
+	//	⚠️ 아래 HandleCinematicStage(통지)보다 **먼저** 비운다. 클라는 이 값들을 단계와 같은
+	//	   번들로 받으므로 OnRep 시점에 이미 비어 있다 — 서버만 옛 값을 들고 통지하면
+	//	   같은 순간에 서버와 클라의 애니메이션 분기가 어긋난다.
+	if (NewStage == EBGCinematicStage::None)
+	{
+		CinematicInstigator = nullptr;
+		CinematicTarget     = nullptr;
+		CinematicResolution = FBGCardResolution();
+	}
 
 	//	연출이 도는 동안 밧줄을 멈춘다. 안 그러면 연출 시간만큼 자기 턴을 깎아 먹는다.
 	//	단계가 Primary → Secondary 로 넘어갈 때는 같은 이유라 잡은 상태가 그대로 유지된다.
@@ -155,11 +169,7 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 		break;
 
 	case EBGCinematicStage::None:
-		//	연출 종료 — 주인공 참조를 놓아준다. 남겨 두면 죽은 캐릭터를 계속 붙들고 있게 된다.
-		CinematicInstigator = nullptr;
-		CinematicTarget     = nullptr;
-
-		//	주의: 참조를 놓은 **뒤에** 부른다. 사망 처리 안에서 승패가 나면 판이 끝나는데,
+		//	주의: 참조를 놓은(위쪽) **뒤에** 부른다. 사망 처리 안에서 승패가 나면 판이 끝나는데,
 		// 그 전에 연출 상태가 완전히 정리돼 있어야 한다.
 		// 또한 IsCinematicPlaying() 이 이미 false 라 여기서 처리하는 사망이
 		// 다시 대기열로 들어가는 일이 없다 — 순서가 뒤바뀌면 영영 처리되지 않는다.

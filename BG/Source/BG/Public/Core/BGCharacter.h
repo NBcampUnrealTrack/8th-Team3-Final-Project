@@ -18,6 +18,7 @@
 #include "GameplayTagContainer.h"
 #include "ActiveGameplayEffectHandle.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "Core/BGGameState.h"   // EBGCinematicStage / FBGCardResolution — ABP 에 노출하는 값이라 완전한 타입이 필요하다
 #include "BGCharacter.generated.h"
 
 class UBGAbilitySystemComponent;
@@ -25,6 +26,40 @@ class UBGAttributeSet;
 class UCameraComponent;
 class UGameplayAbility;
 class UGameplayEffect;
+
+/**
+ * ABP 가 읽는 이 캐릭터의 연출 상태 (아트 기획서 "전투 연출").
+ *
+ * ⚠️ 규칙에 관여하지 않는다. 판정·효과·카드 소비는 이 값이 바뀌기 전에 이미 서버에서 끝나 있다.
+ *    애니메이션이 하나도 없어도 게임은 똑같이 돌아간다.
+ *
+ * 값은 복제되지 않는다 — ABGGameState 의 복제된 연출 상태에서 **각자 유도한다.**
+ * 캐릭터마다 따로 복제하면 7인분이 중복되고, 무엇보다 GameState 와 어긋난 순간이 생긴다.
+ */
+UENUM(BlueprintType)
+enum class EBGCharacterAnimState : uint8
+{
+	//	연출 중이 아니다. 평상시 상태.
+	Idle  UMETA(DisplayName = "대기"),
+
+	//	내가 카드를 쓴 사람이고 지금이 Primary 단계다 — 공격/시전 동작.
+	Cast  UMETA(DisplayName = "카드 사용"),
+
+	//	내가 이번 연출의 대상이고 지금이 Secondary 단계다 — 피격/회피 동작.
+	//	성패는 GetCinematicOutcome() 으로 갈라 쓴다(성공이면 맞고, 실패면 흘린다).
+	React UMETA(DisplayName = "결과 반응"),
+
+	//	연출 중이지만 내 차례가 아니다 — 주인공 쪽을 보는 등의 방관 동작.
+	//	쓸 동작이 없으면 ABP 에서 Idle 과 같은 상태로 묶어도 된다.
+	Watch UMETA(DisplayName = "관전"),
+
+	//	죽었다. 연출보다 우선한다 — 시체가 시전 동작을 하면 안 된다.
+	Dead  UMETA(DisplayName = "사망")
+};
+
+/** 연출 상태가 바뀌었다. 몽타주처럼 "한 번만" 재생해야 하는 것은 이걸 구독한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGCharacterAnimStateChanged,
+	EBGCharacterAnimState, NewState);
 
 UCLASS()
 class BG_API ABGCharacter : public ACharacter, public IAbilitySystemInterface
@@ -39,8 +74,11 @@ public:
 	// 클라(소유): 컨트롤러 복제 도착 시 ASC ActorInfo 초기화 (UI 가 어트리뷰트를 읽을 수 있게).
 	virtual void OnRep_Controller() override;
 
-	// 이미 직업이 정해진 뒤에 관련성이 생긴 클라를 위한 외형 보정.
+	// 이미 직업이 정해진 뒤에 관련성이 생긴 클라를 위한 외형 보정 + 연출 상태 구독.
 	virtual void BeginPlay() override;
+
+	// GameState 구독을 끊는다. 약참조라 없어도 크래시는 안 나지만 죽은 항목이 남는다.
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// IAbilitySystemInterface
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -120,10 +158,101 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Seating")
 	void SetBodyFacing(FRotator NewRotation);
 
+	// ══════════════════════════════════════════════════════════════════
+	//  연출 애니메이션 상태 (ABP 가 읽는 면)
+	//
+	//  ── 왜 캐릭터가 들고 있나 ─────────────────────────────────────
+	//  ABP 는 매 프레임 자기 폰만 본다. GameState 를 직접 찾아 "내가 시전자인가" 를
+	//  매번 따지게 하면 그 판단이 ABP 마다 복제되고, 직업별 ABP 가 늘어날수록 어긋난다.
+	//  판단은 여기 한 곳에서 하고 ABP 는 결과만 읽는다.
+	//
+	//  ── 두 가지 읽는 법 ──────────────────────────────────────────
+	//    상태 머신 : GetAnimState() 를 매 프레임 읽어 전이 조건으로 쓴다.
+	//    몽타주    : OnAnimStateChanged 를 구독해 진입 순간에 한 번 재생한다.
+	//                (매 프레임 읽어 재생하면 몽타주가 계속 처음부터 다시 시작한다)
+	//
+	//  값은 서버·클라 양쪽에서 같은 시점에 갱신된다 — GameState 의 연출 단계 통지가
+	//  두 곳 모두에서 오기 때문이다.
+	// ══════════════════════════════════════════════════════════════════
+
+	UFUNCTION(BlueprintPure, Category = "BG|Anim")
+	EBGCharacterAnimState GetAnimState() const { return AnimState; }
+
+	/** 지금 판 전체의 연출 단계. 내 역할과 무관하다 — 그건 GetAnimState() 가 답한다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Anim")
+	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
+
+	/** 연출을 일으킨 카드 (Card.Id.*). 카드별로 다른 동작을 고를 때 쓴다. 연출 밖에서는 무효 태그. */
+	UFUNCTION(BlueprintPure, Category = "BG|Anim")
+	FGameplayTag GetCinematicCardId() const { return CinematicCardId; }
+
+	/**
+	 * 그 카드의 판정 결과. 피격이냐 회피냐를 여기서 가른다.
+	 *
+	 * ⚠️ HasCinematicOutcome() 이 false 면 이 값은 의미가 없다(판정을 굴리지 않은 카드).
+	 *    검사 없이 쓰면 장비 카드가 항상 "성공" 으로 보인다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "BG|Anim")
+	EBGDiceOutcome GetCinematicOutcome() const { return CinematicOutcome; }
+
+	UFUNCTION(BlueprintPure, Category = "BG|Anim")
+	bool HasCinematicOutcome() const { return bHasCinematicOutcome; }
+
+	/** 지금 연출 카메라가 나를 비추고 있는가. 얼굴 표정·상체 강조처럼 화면에 잡힐 때만 켤 것에 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Anim")
+	bool IsCinematicSubject() const { return bCinematicSubject; }
+
+	/** 상태 진입 통지. 몽타주 재생용 — 상태 머신은 이걸 쓰지 말고 GetAnimState() 를 폴링할 것. */
+	UPROPERTY(BlueprintAssignable, Category = "BG|Anim")
+	FOnBGCharacterAnimStateChanged OnAnimStateChanged;
+
+	/**
+	 * 연출 상태를 GameState·PlayerState 에서 다시 읽어 온다.
+	 *
+	 * 평소에는 알아서 불린다(연출 단계 변경·사망 복제). 직접 부를 일은
+	 * 애니메이션 디버깅이나 폰을 늦게 붙였을 때뿐이다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Anim")
+	void RefreshAnimState();
+
 protected:
 	/** 소유 클라에서 몸 방향을 맞춘다. 서버의 SetBodyFacing 이 호출한다. */
 	UFUNCTION(Client, Reliable)
 	void Client_SetBodyFacing(FRotator NewRotation);
+
+	// ── 연출 애니메이션 내부 ──────────────────────────────────────
+
+	//	GameState 의 연출 단계 통지를 구독한다. GameState 가 이 폰보다 늦게 올 수 있어
+	//	BeginPlay 에서 실패하면 UWorld::GameStateSetEvent 로 한 번 더 노린다.
+	void BindCinematicDelegate();
+
+	//	GameState 통지 수신부. 단계와 주인공은 여기서 쓰지 않고 RefreshAnimState 가 다시 읽는다 —
+	//	사망 복제처럼 통지 없이 바뀌는 값도 같은 함수 하나로 반영하기 위해서다.
+	void HandleCinematicStageChanged(EBGCinematicStage Stage, ABGCharacter* Subject);
+
+	//	현재 GameState/PlayerState 로부터 상태 하나를 유도한다. 부수 효과 없음.
+	EBGCharacterAnimState ComputeAnimState(const class ABGGameState* GS) const;
+
+	//	중복 구독 방지 겸 해제 대상. 약참조라 GameState 가 사라져도 안전하다.
+	TWeakObjectPtr<class ABGGameState> BoundCinematicGameState;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Anim")
+	EBGCharacterAnimState AnimState = EBGCharacterAnimState::Idle;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Anim")
+	EBGCinematicStage CinematicStage = EBGCinematicStage::None;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Anim")
+	FGameplayTag CinematicCardId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Anim")
+	EBGDiceOutcome CinematicOutcome = EBGDiceOutcome::Success;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Anim")
+	bool bHasCinematicOutcome = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Anim")
+	bool bCinematicSubject = false;
 
 	/** 평상시 시점. 스폰 시 이쪽이 활성이다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Camera")

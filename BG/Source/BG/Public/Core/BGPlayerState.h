@@ -257,8 +257,13 @@ private:
 	//	리슨서버 호스트는 자기 OnRep 을 받지 못한다 — 값을 바꾼 자리에서 직접 부른다.
 	void BroadcastPublicInfoChanged() const;
 
-	UPROPERTY(Replicated)
-	bool bIsDead = false;                  // 전원 공개
+	//	전원 공개. 좌석 이름표와 **캐릭터의 쓰러지는 애니메이션**이 이 값을 본다 —
+	//	통지가 없으면 클라는 남이 죽어도 그 자리에 서 있는 것으로 보인다.
+	UPROPERTY(ReplicatedUsing = OnRep_IsDead)
+	bool bIsDead = false;
+
+	UFUNCTION()
+	void OnRep_IsDead();
 
 	//	전원 공개 — 좌석 UI 가 "접속 끊김" 을 표시하고, 그 자리를 기다린다는 것을 모두가 알아야 한다.
 	UPROPERTY(ReplicatedUsing = OnRep_Disconnected)
