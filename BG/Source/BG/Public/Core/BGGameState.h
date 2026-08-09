@@ -509,6 +509,14 @@ protected:
 	void ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat);
 
 	/**
+	 * 죽은 좌석을 **화면상으로도** 죽은 것으로 만든다. DeathPrimary 진입 직전에 불린다.
+	 *
+	 * 규칙상 사망(PlayerState::bIsDead)은 체력이 0 이 되는 즉시지만, 그때 쓰러뜨리면
+	 * 그 카드의 공격·피격 연출 전에 먼저 넘어간다. 두 시점을 가르는 것이 이 함수다.
+	 */
+	void RevealDeath(int32 DeadSeat);
+
+	/**
 	 * 죽은 좌석의 역할을 공개한다. DeathSecondary 진입 **직전**에 불린다 —
 	 * 역할 공개 연출이 무엇을 공개할지 알고 시작해야 하기 때문이다.
 	 */

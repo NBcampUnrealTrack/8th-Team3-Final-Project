@@ -156,6 +156,13 @@ public:
 	//	서버 전용. 사망 확정 시 한 번만 호출된다.
 	void SetDead(bool bInDead);
 
+	/** 사망 연출까지 나왔는가. **애니메이션은 이쪽을 봐야 한다** — 이유는 bDeathShown 주석 참고. */
+	UFUNCTION(BlueprintPure, Category = "BG|Player")
+	bool IsDeathShown() const { return bDeathShown; }
+
+	//	서버 전용. 사망 연출이 시작될 때 GameState 가 부른다(ABGGameState::RevealDeath).
+	void SetDeathShown();
+
 	/**
 	 * 서버 전용. 손패와 장비를 전부 비우고 그 카드들을 돌려준다(사망 처리용).
 	 * 호출자가 버린 패로 보내야 한다.
@@ -257,13 +264,27 @@ private:
 	//	리슨서버 호스트는 자기 OnRep 을 받지 못한다 — 값을 바꾼 자리에서 직접 부른다.
 	void BroadcastPublicInfoChanged() const;
 
-	//	전원 공개. 좌석 이름표와 **캐릭터의 쓰러지는 애니메이션**이 이 값을 본다 —
-	//	통지가 없으면 클라는 남이 죽어도 그 자리에 서 있는 것으로 보인다.
+	//	규칙상 사망. 체력이 0 이 되는 즉시 켜진다 — 승패 판정과 조준 검증이 이 값을 본다.
+	//	전원 공개. 좌석 이름표가 이 값으로 사망 표시를 한다.
 	UPROPERTY(ReplicatedUsing = OnRep_IsDead)
 	bool bIsDead = false;
 
 	UFUNCTION()
 	void OnRep_IsDead();
+
+	/**
+	 * 화면상 사망 — 사망 연출(DeathPrimary)이 시작된 시점에 켜진다.
+	 *
+	 * bIsDead 와 일부러 나눴다. 규칙은 체력이 0 이 되는 **즉시** 죽은 것으로 봐야
+	 * 승패와 조준 검증이 맞는데, 화면은 그 카드의 공격·피격 연출이 끝난 **뒤에야**
+	 * 쓰러져야 한다. 하나로 합치면 죽는 일격에서 피해자가 먼저 쓰러졌다가
+	 * 일어나서 맞는다 — 실제로 그렇게 보였다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_DeathShown)
+	bool bDeathShown = false;
+
+	UFUNCTION()
+	void OnRep_DeathShown();
 
 	//	전원 공개 — 좌석 UI 가 "접속 끊김" 을 표시하고, 그 자리를 기다린다는 것을 모두가 알아야 한다.
 	UPROPERTY(ReplicatedUsing = OnRep_Disconnected)

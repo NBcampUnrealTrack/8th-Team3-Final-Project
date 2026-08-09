@@ -267,11 +267,14 @@ EBGCharacterAnimState ABGCharacter::ComputeAnimState(const ABGGameState* GS) con
 		}
 	}
 
-	//	주인공이 아니다. 이미 죽어 있으면 계속 쓰러져 있는다 —
+	//	주인공이 아니다. 이미 쓰러진 뒤면 계속 쓰러져 있는다 —
 	//	남의 연출이 돈다고 시체가 일어나 구경하면 안 된다.
+	//
+	//	⚠️ IsDead() 가 아니라 IsDeathShown() 이다. 규칙상 사망은 체력이 0 이 되는 즉시 켜지는데,
+	//	   그걸 보면 죽는 일격의 피격 연출이 시작되기도 전에 먼저 쓰러진다(bDeathShown 주석).
 	if (const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
 	{
-		if (PS->IsDead())
+		if (PS->IsDeathShown())
 		{
 			return EBGCharacterAnimState::Dead;
 		}

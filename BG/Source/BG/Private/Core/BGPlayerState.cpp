@@ -32,6 +32,7 @@ void ABGPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(ABGPlayerState, HandCount);
 	DOREPLIFETIME(ABGPlayerState, Equipment);
 	DOREPLIFETIME(ABGPlayerState, bIsDead);
+	DOREPLIFETIME(ABGPlayerState, bDeathShown);
 	DOREPLIFETIME(ABGPlayerState, PublicRoleTag);
 	DOREPLIFETIME(ABGPlayerState, CardsUsedThisTurn);
 	DOREPLIFETIME(ABGPlayerState, PendingStatuses);
@@ -321,9 +322,26 @@ void ABGPlayerState::SetDead(bool bInDead)
 
 void ABGPlayerState::OnRep_IsDead()
 {
-	//	좌석 이름표의 사망 표시.
+	//	좌석 이름표의 사망 표시. 애니메이션은 여기가 아니라 OnRep_DeathShown 이 맡는다 —
+	//	규칙상 사망과 화면상 사망은 시점이 다르다(bDeathShown 주석).
 	BroadcastPublicInfoChanged();
+}
 
+void ABGPlayerState::SetDeathShown()
+{
+	if (!HasAuthority() || bDeathShown)
+	{
+		return;
+	}
+
+	bDeathShown = true;
+
+	//	리슨서버 호스트는 자기 OnRep 을 받지 못한다 — 값을 바꾼 자리에서 직접 부른다.
+	OnRep_DeathShown();
+}
+
+void ABGPlayerState::OnRep_DeathShown()
+{
 	//	쓰러지는 애니메이션. 폰이 아직 붙지 않았으면 손댈 것이 없다 —
 	//	그 폰은 BeginPlay 에서 이 상태를 스스로 읽어 간다.
 	if (ABGCharacter* Char = Cast<ABGCharacter>(GetPawn()))

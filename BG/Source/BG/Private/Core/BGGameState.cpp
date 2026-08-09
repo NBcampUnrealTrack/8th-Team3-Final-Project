@@ -130,6 +130,11 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 		ActiveDeath         = FBGPendingDeath();
 		break;
 
+	case EBGCinematicStage::DeathPrimary:
+		//	이 순간부터 화면에서도 죽은 것으로 본다 — 여기까지는 평소 포즈로 서 있었다.
+		RevealDeath(ActiveDeath.DeadSeat);
+		break;
+
 	case EBGCinematicStage::DeathSecondary:
 		//	역할 공개 연출이 시작되기 **전에** 실제로 공개한다.
 		//	공개가 통지보다 늦으면 연출이 도는 첫 순간에 UI 가 아직 빈 역할을 읽는다.
@@ -944,7 +949,26 @@ void ABGGameState::HandleSeatDeath(int32 DeadSeat, int32 KillerSeat)
 		return;
 	}
 
-	TryBeginNextDeathCinematic();
+	//	⚠️ 여기서 곧바로 열지 않는다. 사망은 GA 가 효과를 적용하는 **도중에** 통지되는데,
+	//	   그 카드의 연출은 HandlePlayCard 의 마지막 줄에서야 열린다. 지금 열면 사망 연출이
+	//	   먼저 서 버려 BeginCardCinematic 이 "이미 연출 중" 으로 튕기고, 공격·피격 연출 없이
+	//	   사망 연출만 재생된다.
+	//
+	//	   한 틱 미루면 그 사이에 카드 처리가 전부 끝나 있다 — 연출 카드면 이미 Primary 가
+	//	   서 있어 아래 검사에 걸리고(카드 연출이 끝날 때 이어받는다), 연출 없는 카드나
+	//	   카드와 무관한 사망(밧줄 만료 등)이면 그대로 사망 연출이 열린다.
+	//	   호출자마다 "지금이 카드 처리 중인가" 를 알 필요가 없어지는 것이 이 방식의 값어치다.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				if (!IsCinematicPlaying())
+				{
+					TryBeginNextDeathCinematic();
+				}
+			}));
+	}
 }
 
 bool ABGGameState::TryBeginNextDeathCinematic()
@@ -963,6 +987,14 @@ bool ABGGameState::TryBeginNextDeathCinematic()
 		{
 			UE_LOG(LogBGCard, Log, TEXT("[Death] 판 종료 — 남은 사망 %d 건을 버립니다."),
 				PendingDeaths.Num());
+
+			//	연출은 버려도 "쓰러진 모습" 은 남겨야 한다. 안 하면 종료 화면에서
+			//	죽은 사람이 멀쩡히 서 있다.
+			for (const FBGPendingDeath& Skipped : PendingDeaths)
+			{
+				RevealDeath(Skipped.DeadSeat);
+			}
+
 			PendingDeaths.Reset();
 			return false;
 		}
@@ -981,6 +1013,7 @@ bool ABGGameState::TryBeginNextDeathCinematic()
 			UE_LOG(LogBGCard, Log, TEXT("[Death] 좌석 %d 사망 연출 생략 (%s) — 규칙만 처리합니다."),
 				Death.DeadSeat, DeadChar ? TEXT("길이 0") : TEXT("캐릭터 없음"));
 
+			RevealDeath(Death.DeadSeat);
 			RevealDeadRole(Death.DeadSeat);
 			ProcessSeatDeath(Death.DeadSeat, Death.KillerSeat);
 			continue;   // 다음 사망자를 본다
@@ -1020,6 +1053,19 @@ void ABGGameState::FinishDeathCinematic()
 	if (!TryBeginNextDeathCinematic())
 	{
 		SetCinematicStage(EBGCinematicStage::None);
+	}
+}
+
+void ABGGameState::RevealDeath(int32 DeadSeat)
+{
+	if (!HasAuthority() || DeadSeat == INDEX_NONE)
+	{
+		return;
+	}
+
+	if (ABGPlayerState* PS = GetPlayerStateBySeat(DeadSeat))
+	{
+		PS->SetDeathShown();
 	}
 }
 
@@ -1065,8 +1111,10 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 	}
 
 	// ── 1. 사망자의 손패·장비를 전부 버린 패로 ──
-	//	역할 공개는 여기가 아니라 DeathSecondary 진입 시점에 이미 끝나 있다(RevealDeadRole).
-	//	그래도 한 번 더 부른다 — 연출을 건너뛴 경로로 들어와도 역할이 반드시 공개되게.
+	//	쓰러짐과 역할 공개는 여기가 아니라 사망 연출의 각 단계 진입 시점에 이미 끝나 있다.
+	//	그래도 한 번 더 부른다 — 연출을 건너뛴 경로로 들어와도 둘 다 반드시 반영되게.
+	//	(둘 다 1회 걸쇠가 있어 중복 호출은 무해하다)
+	RevealDeath(DeadSeat);
 	RevealDeadRole(DeadSeat);
 
 	if (ABGPlayerState* DeadPS = GetPlayerStateBySeat(DeadSeat))

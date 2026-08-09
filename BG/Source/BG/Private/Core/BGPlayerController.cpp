@@ -1027,6 +1027,24 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 				FColor::Orange, /*Time=*/5.f);
 			return;
 		}
+
+		//	죽은 좌석은 대상이 될 수 없다.
+		//
+		//	클라의 대상 목록(GetSelectableSeats → CollectAliveSeats)이 이미 산 사람만 보여 주지만,
+		//	그건 힌트일 뿐이다. 조작 없이도 재현된다 — 대상 선택 UI 를 열어 둔 사이에 그 좌석이
+		//	다이너마이트로 죽으면, 목록이 갱신돼도 이미 잡고 있던 선택은 그대로 전송된다.
+		//	막지 않으면 시체에 판정이 굴러가고 연출까지 돈 뒤 카드만 사라진다
+		//	(보상은 NotifyHealthDepleted 의 bDead 걸쇠가 막으므로 이중으로 나가지는 않는다).
+		//
+		//	턴 순서 무시(GBGIgnoreTurnOrder)와 무관하게 항상 막는다 — 죽은 대상은 순서 문제가 아니다.
+		if (TargetSeat != INDEX_NONE && GS && !GS->IsSeatAlive(TargetSeat))
+		{
+			BGDebug::Screen(
+				FString::Printf(TEXT("[서버] 좌석 %d 은 이미 사망했습니다. 카드 #%d 거부."),
+					TargetSeat, InstanceId),
+				FColor::Orange, /*Time=*/5.f);
+			return;
+		}
 	}
 
 	// 시전자의 ASC 를 얻는다 (현재 ASC 는 캐릭터 소유).
