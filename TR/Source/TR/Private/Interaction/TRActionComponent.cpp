@@ -3,6 +3,7 @@
 
 #include "Interaction/TRActionComponent.h"
 
+#include "Interaction/TRInteractionComponent.h"
 #include "Core/TRGameState.h"
 #include "Core/TRPlayerState.h"
 #include "Net/UnrealNetwork.h"
@@ -133,12 +134,12 @@ void UTRActionComponent::CompleteAction()
 
 					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 					{
-						Part->ApplyRepair(Part->GetMaxHP() * HealPercent);
+						Part->ApplyRepair(Part->GetMaxHP() * (HealPercent / 100.f));
 						UE_LOG(LogTemp, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
 					}
 					else if (ATRTrain* Train = Cast<ATRTrain>(Target))
 					{
-						Train->ApplyRepair(Train->GetMaxHullHealth() * HealPercent);
+						Train->ApplyRepair(Train->GetMaxHullHealth() * (HealPercent / 100.f));
 						UE_LOG(LogTemp, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
 					}
 
@@ -203,6 +204,15 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 	if (!Target)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: target is null"));
+		return false;
+	}
+
+	// 클라이언트가 임의의 액터를 Target으로 넘길 수 있으므로, 실제 상호작용 대상과 일치하는지 서버에서 재검증
+	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	const UTRInteractionComponent* Interaction = IsValid(OwnerPawn) ? OwnerPawn->FindComponentByClass<UTRInteractionComponent>() : nullptr;
+	if (!IsValid(Interaction) || Interaction->GetCurrentTarget() != Target)
+	{
+		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: target=%s is not current interaction target"), *Target->GetName());
 		return false;
 	}
 

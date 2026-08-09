@@ -83,8 +83,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))
 	float LookInterpolationSpeed = 12.5f;
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Action")
-	float HealPercent = 0.1f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Action", meta = (ClampMin = "0.0", ClampMax = "100.0"))
+	float HealPercent = 10.f;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> CameraComp;

@@ -22,8 +22,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Turret")
 	ATRTurret* GetMountedTurret() const { return MountedTurret; }
 
-	UFUNCTION(Server, Reliable, BlueprintCallable, Category="Turret")
+	UFUNCTION(Server, Reliable, WithValidation, BlueprintCallable, Category="Turret")
 	void ServerMount(ATRTurret* Turret);
+	bool ServerMount_Validate(ATRTurret* Turret);
 	void ServerMount_Implementation(ATRTurret* Turret);
 	
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category="Turret")
@@ -52,7 +53,7 @@ private:
 	
 	UPROPERTY(EditDefaultsOnly, Category="Turret")
 	float MountDelay = 0.5f;
-	
+
 	float LastFireTime = -1.f;
 	
 	FTimerHandle MountTimerHandle;

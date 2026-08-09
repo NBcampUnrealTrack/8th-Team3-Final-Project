@@ -6,6 +6,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
 #include "Interaction/TRActionComponent.h"
+#include "Interaction/TRInteractionComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Core/TRPlayerState.h"
 #include "Kismet/GameplayStatics.h"
@@ -24,6 +25,11 @@ void UTRTurretControlComponent::GetLifetimeReplicatedProps(TArray<FLifetimePrope
 	DOREPLIFETIME(UTRTurretControlComponent, MountedTurret);
 }
 
+bool UTRTurretControlComponent::ServerMount_Validate(ATRTurret* Turret)
+{
+	return Turret != nullptr;
+}
+
 void UTRTurretControlComponent::ServerMount_Implementation(ATRTurret* Turret)
 {
 	if (!IsValid(Turret) || IsMounted() || Turret->IsOccupied() || Turret->IsDestroyed())
@@ -35,6 +41,14 @@ void UTRTurretControlComponent::ServerMount_Implementation(ATRTurret* Turret)
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	if (!IsValid(OwnerPawn))
 	{
+		return;
+	}
+
+	// 클라이언트가 임의의 터렛 레퍼런스를 넘길 수 있으므로, 실제 상호작용 대상과 일치하는지 서버에서 재검증
+	const UTRInteractionComponent* Interaction = OwnerPawn->FindComponentByClass<UTRInteractionComponent>();
+	if (!IsValid(Interaction) || Interaction->GetCurrentTarget() != Turret)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Mount rejected: %s is not %s's current interaction target"), *Turret->GetName(), *OwnerPawn->GetName());
 		return;
 	}
 

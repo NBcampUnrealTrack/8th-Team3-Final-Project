@@ -40,7 +40,6 @@ private:
 	// 타이머 완료 시 서버에서 호출 (수리 반영, 자원 차감 등 실제 효과 적용)
 	void CompleteAction();
 
-	// TODO: 대상과의 거리/상호작용 반경
 	bool ValidateActionTarget(ETRActionType ActionType, AActor* Target) const;
 
 	bool RequiresMonsterResource(ETRActionType ActionType) const { return ActionType == ETRActionType::Build; }

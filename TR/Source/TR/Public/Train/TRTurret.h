@@ -9,6 +9,7 @@
 class UStaticMeshComponent;
 class UDataTable;
 class APawn;
+struct FTRTurretLevelRow;
 
 UCLASS()
 class TR_API ATRTurret : public ATRInstallablePart
@@ -60,6 +61,8 @@ protected:
 
 private:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+
+	const FTRTurretLevelRow* GetCurrentLevelRow(const TCHAR* ContextName) const;
 
 	UPROPERTY(VisibleAnywhere, Category = "Turret")
 	TObjectPtr<UStaticMeshComponent> TurretMesh;

@@ -28,86 +28,77 @@ void ATRTurret::BeginPlay()
 	InstallPitch = InstallRotation.Pitch;
 }
 
+const FTRTurretLevelRow* ATRTurret::GetCurrentLevelRow(const TCHAR* ContextName) const
+{
+	if (!ensureMsgf(LevelTable, TEXT("%s: LevelTable not assigned"), *GetName()))
+	{
+		return nullptr;
+	}
+
+	const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), ContextName);
+	ensureMsgf(Row, TEXT("%s: level row %d not found in LevelTable"), *GetName(), CurrentLevel);
+	return Row;
+}
+
 float ATRTurret::GetManualRange() const
 {
-	if (LevelTable)
+	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
 	{
-		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetManualRange")))
-		{
-			return Row->ManualRange;
-		}
+		return Row->ManualRange;
 	}
 	return 0.f;
 }
 
 float ATRTurret::GetManualDamage() const
 {
-	if (LevelTable)
+	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
 	{
-		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetManualDamage")))
-		{
-			return Row->ManualDamage;
-		}
+		return Row->ManualDamage;
 	}
 	return 0.f;
 }
 
 int32 ATRTurret::GetManualAmmoPerResource() const
 {
-	if (LevelTable)
+	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
 	{
-		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetManualAmmoPerResource")))
-		{
-			return Row->ManualAmmoPerResource;
-		}
+		return Row->ManualAmmoPerResource;
 	}
 	return 0;
 }
 
 float ATRTurret::GetMaxHP() const
 {
-	if (LevelTable)
+	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
 	{
-		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetMaxHP")))
-		{
-			return Row->MaxHP;
-		}
+		return Row->MaxHP;
 	}
 	return 0.f;
 }
 
 int32 ATRTurret::GetInstallCost() const
 {
-	if (LevelTable)
+	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
 	{
-		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetInstallCost")))
-		{
-			return Row->InstallCost;
-		}
+		return Row->InstallCost;
 	}
 	return 0;
 }
 
 float ATRTurret::GetManualFireRate() const
 {
-	if (LevelTable)
+	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
 	{
-		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetManualFireRate")))
-		{
-			return Row->ManualFireRate;
-		}
+		return Row->ManualFireRate;
 	}
 	return 0.f;
 }
 
 int32 ATRTurret::GetMaxAmmo() const
 {
-	if (LevelTable)
+	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
 	{
-		if (const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), TEXT("GetMaxAmmo")))
-		{
-			return Row->AutoMagazine;
-		}
+		return Row->AutoMagazine;
 	}
 	return 0;
 }

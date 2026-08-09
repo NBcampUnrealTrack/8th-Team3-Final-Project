@@ -366,7 +366,7 @@ void ATRPlayerCharacter::TriggerReleased_Implementation()
 		return;
 	}
 
-	if (!IsValid(TurretControlComp) || !IsValid(ActionComp))
+	if (!IsValid(ActionComp))
 	{
 		return;
 	}
