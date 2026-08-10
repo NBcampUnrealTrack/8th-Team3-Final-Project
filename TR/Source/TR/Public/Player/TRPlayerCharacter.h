@@ -35,6 +35,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Action")
 	float GetHealPercent() const { return HealPercent; }
+
+	UFUNCTION(BlueprintPure, Category = "Turret")
+	UTRTurretControlComponent* GetTurretControlComponent() const { return TurretControlComp; }
+
+	UFUNCTION(BlueprintPure, Category = "Action")
+	UTRActionComponent* GetActionComponent() const { return ActionComp; }
 	
 	//--- 입력 액션--- 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")

@@ -14,6 +14,7 @@
 #include "Train/TRSupplyPoint.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
+#include "GameFramework/GameStateBase.h"
 
 UTRActionComponent::UTRActionComponent()
 {
@@ -25,6 +26,7 @@ void UTRActionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UTRActionComponent, CurrentActionType);
+	DOREPLIFETIME(UTRActionComponent, ActionStartServerTime);
 }
 
 bool UTRActionComponent::ServerStartAction_Validate(ETRActionType ActionType, AActor* Target)
@@ -89,6 +91,7 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 	
 	CurrentActionType = ActionType;
 	CurrentTarget = Target;
+	ActionStartServerTime = World->GetTimeSeconds();
 
 	World->GetTimerManager().SetTimer(
 		ActionTimerHandle,
@@ -195,8 +198,26 @@ void UTRActionComponent::CompleteAction()
 
 float UTRActionComponent::GetActionProgress01() const
 {
-	// TODO: UI 붙을 때 구현 (서버 전용 타이머라 클라 표시하려면 시작 시각 복제 또는 별도 방식 필요 — 그때 다시 설계)
-	return 0.f;
+	if (CurrentActionType == ETRActionType::None)
+	{
+		return 0.f;
+	}
+
+	const FTRActionDef* Def = ActionDefs.Find(CurrentActionType);
+	if (!Def || Def->CycleDuration <= 0.f)
+	{
+		return 0.f;
+	}
+
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = IsValid(World) ? World->GetGameState() : nullptr;
+	if (!IsValid(GameState))
+	{
+		return 0.f;
+	}
+
+	const float Elapsed = GameState->GetServerWorldTimeSeconds() - ActionStartServerTime;
+	return FMath::Clamp(Elapsed / Def->CycleDuration, 0.f, 1.f);
 }
 
 bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* Target) const

@@ -28,7 +28,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Action")
 	bool IsActionInProgress() const { return CurrentActionType != ETRActionType::None; }
 
-	// TODO: UI 붙을 때 구현. 지금은 0 반환.
+	UFUNCTION(BlueprintPure, Category="Action")
+	ETRActionType GetCurrentActionType() const { return CurrentActionType; }
+
 	UFUNCTION(BlueprintPure, Category="Action")
 	float GetActionProgress01() const;
 
@@ -46,6 +48,9 @@ private:
 	
 	UPROPERTY(Replicated)
 	ETRActionType CurrentActionType = ETRActionType::None;
+
+	UPROPERTY(Replicated)
+	float ActionStartServerTime = 0.f;
 
 	UPROPERTY()
 	TWeakObjectPtr<AActor> CurrentTarget;
