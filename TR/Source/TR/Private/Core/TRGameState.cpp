@@ -9,3 +9,8 @@ void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ATRGameState, MonsterResource);
 }
+
+void ATRGameState::ConsumeMonsterResource(int32 Amount)
+{
+	MonsterResource = FMath::Max(0, MonsterResource - Amount);
+}

@@ -8,6 +8,7 @@
 
 class UBoxComponent;
 class UDataTable;
+struct FTRArmorLevelRow;
 
 UCLASS()
 class TR_API ATRArmor : public ATRInstallablePart
@@ -21,6 +22,8 @@ public:
 	virtual int32 GetInstallCost() const override;
 
 private:
+	const FTRArmorLevelRow* GetCurrentLevelRow(const TCHAR* ContextName) const;
+
 	UPROPERTY(VisibleAnywhere, Category = "Part")
 	TObjectPtr<UBoxComponent> CollisionBox;
 
