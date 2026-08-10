@@ -38,9 +38,6 @@ protected:
 	virtual void BeginPlay() override;
 	
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	
-	UPROPERTY(EditDefaultsOnly, Category = "Part")
-	int32 CurrentLevel = 1;
 
 	// 테스트용 — 데미지 시스템(적 등) 생기면 EditInstanceOnly 제거 검토
 	UPROPERTY(EditInstanceOnly, Replicated)
