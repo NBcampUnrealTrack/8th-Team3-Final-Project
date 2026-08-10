@@ -295,8 +295,11 @@ UWidgetComponent* UBGSeatInfoDisplayComponent::EnsureWidgetFor(ABGCharacter* Cha
 		? Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
 		: 0.f;
 
+	//	둘 다 같은 월드 지점에 걸고 위아래는 픽셀로 나눈다. Pivot.Y=1 이면 아래 끝이 그 지점이다.
+	const float AnchorZ = CapsuleTop + HeightAboveCapsule;
+
 	UWidgetComponent* Widget = MakeWidgetOn(Character, InfoWidgetClass, WidgetDrawSize,
-		CapsuleTop + HeightAboveCapsule);
+		AnchorZ, FVector2D(0.5f, 1.f));
 	if (!Widget)
 	{
 		return nullptr;
@@ -304,10 +307,13 @@ UWidgetComponent* UBGSeatInfoDisplayComponent::EnsureWidgetFor(ABGCharacter* Cha
 	WidgetsBySeat.Add(SeatIndex, Widget);
 
 	//	상세는 이름표 위에 얹는다. 평소에는 숨어 있다가 커서를 올렸을 때만 켜진다.
-	if (DetailWidgetClass)
+	if (DetailWidgetClass && DetailDrawSize.Y > 0.f)
 	{
+		//	이름표 높이와 틈만큼 Pivot 을 더 밀어 올린다. 크기가 바뀌어도 간격이 따라온다.
+		const float LiftRatio = (WidgetDrawSize.Y + DetailGap) / DetailDrawSize.Y;
+
 		if (UWidgetComponent* Detail = MakeWidgetOn(Character, DetailWidgetClass, DetailDrawSize,
-				CapsuleTop + HeightAboveCapsule + DetailHeightAboveName))
+				AnchorZ, FVector2D(0.5f, 1.f + LiftRatio)))
 		{
 			Detail->SetVisibility(false);
 			DetailsBySeat.Add(SeatIndex, Detail);
@@ -318,7 +324,8 @@ UWidgetComponent* UBGSeatInfoDisplayComponent::EnsureWidgetFor(ABGCharacter* Cha
 }
 
 UWidgetComponent* UBGSeatInfoDisplayComponent::MakeWidgetOn(
-	ABGCharacter* Character, TSubclassOf<UUserWidget> WidgetClass, const FVector2D& DrawSize, float HeightZ)
+	ABGCharacter* Character, TSubclassOf<UUserWidget> WidgetClass, const FVector2D& DrawSize,
+	float HeightZ, const FVector2D& Pivot)
 {
 	UWidgetComponent* Widget = NewObject<UWidgetComponent>(Character);
 	if (!Widget)
@@ -336,6 +343,10 @@ UWidgetComponent* UBGSeatInfoDisplayComponent::MakeWidgetOn(
 	Widget->SetGenerateOverlapEvents(false);
 	Widget->SetCullDistance(MaxDrawDistance);
 	Widget->SetRelativeLocation(FVector(0.f, 0.f, HeightZ));
+
+	//	화면 공간 위젯은 픽셀 크기가 고정이라 세로 간격도 픽셀로 줘야 한다.
+	//	월드 Z 로 벌리면 멀어질수록 화면상 간격이 줄어 이름표와 겹친다.
+	Widget->SetPivot(Pivot);
 
 	Widget->RegisterComponent();
 	Widget->InitWidget();   //	위젯 인스턴스를 지금 만들어 둔다 — 바로 값을 밀어넣기 위해서다.

@@ -61,12 +61,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
 	TSubclassOf<UBGSeatDetailWidget> DetailWidgetClass;
 
+	// 상세가 그려질 픽셀 크기. 네 줄(직업·손패·역할·장비)이 들어갈 만큼만 잡는다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
-	FVector2D DetailDrawSize = FVector2D(300.f, 200.f);
+	FVector2D DetailDrawSize = FVector2D(300.f, 140.f);
 
-	/** 상세 패널을 이름표보다 이만큼 더 올린다. 이름표를 가리지 않게 하려는 것이다. */
+	/** 상세와 이름표 사이 틈(픽셀). 월드 거리가 아니라 화면 픽셀이라 거리와 무관하게 일정하다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
-	float DetailHeightAboveName = 110.f;
+	float DetailGap = 8.f;
 
 	/** 캡슐 꼭대기에서 이만큼 더 올린다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
@@ -140,7 +141,7 @@ private:
 
 	/** 캐릭터에 붙는 위젯 컴포넌트 하나를 만든다. 이름표와 상세가 같은 설정을 쓴다. */
 	UWidgetComponent* MakeWidgetOn(ABGCharacter* Character, TSubclassOf<class UUserWidget> WidgetClass,
-		const FVector2D& DrawSize, float HeightZ);
+		const FVector2D& DrawSize, float HeightZ, const FVector2D& Pivot);
 
 	void DestroyAllWidgets();
 
