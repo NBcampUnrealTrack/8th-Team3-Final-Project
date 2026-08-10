@@ -61,6 +61,14 @@ public:
 	//	UFUNCTION(BlueprintCallable, Category = "TR|Session")
 	//	void SetAllowJoinInProgress(bool bAllow);
 
+	// 세션 메뉴를 여닫는다. 디버그 키가 막혔을 때 콘솔로 확인하는 용도.
+	UFUNCTION(Exec)
+	void TR_SessionUI();
+
+	// 방 코드로 참가한다. 메뉴에 입력칸이 없을 때 콘솔로 대신한다.
+	UFUNCTION(Exec)
+	void TR_JoinCode(const FString& RoomCode);
+
 	// ── 조회 ──
 
 	UFUNCTION(BlueprintPure, Category = "TR|Session")
@@ -126,12 +134,13 @@ private:
 	bool StartListenInPlace();
 
 	// 세션이 열리는 게임 맵. 메인메뉴에서 호스트할 때 이 맵으로 이동한다.
-	// 맵이 정해지면 DefaultGame.ini [/Script/TR.TRGameInstance] 에서 덮어쓴다.
+	// 다른 맵을 쓰려면 DefaultGame.ini [/Script/TR.TRGameInstance] 에서 덮어쓴다.
 	UPROPERTY(Config)
-	FString GameMapPath = TEXT("/Game/Developers/rkdxh/TestMap");
+	FString GameMapPath = TEXT("/Game/Levels/L_NetTestMap");
 
+	// 메인메뉴 맵이 아직 없다. 생기기 전까지는 게임 맵과 같게 두어 복귀가 헛돌지 않게 한다.
 	UPROPERTY(Config)
-	FString MainMenuMapPath = TEXT("/Game/Developers/rkdxh/TestMap");
+	FString MainMenuMapPath = TEXT("/Game/Levels/L_NetTestMap");
 
 	// 재접속 식별용 열쇠. 처음 한 번 만들어 사용자 설정에 저장하고 계속 쓴다.
 	UPROPERTY(Config)
