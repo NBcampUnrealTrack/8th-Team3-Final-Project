@@ -28,6 +28,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Action")
 	bool IsActionInProgress() const { return CurrentActionType != ETRActionType::None; }
 
+	UFUNCTION(BlueprintPure, Category="Action")
+	ETRActionType GetCurrentActionType() const { return CurrentActionType; }
+
 	// TODO: UI 붙을 때 구현. 지금은 0 반환.
 	UFUNCTION(BlueprintPure, Category="Action")
 	float GetActionProgress01() const;
