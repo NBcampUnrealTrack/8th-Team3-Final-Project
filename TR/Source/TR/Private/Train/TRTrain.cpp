@@ -32,3 +32,8 @@ int32 ATRTrain::GetActiveArmorCount() const
 	}
 	return Count;
 }
+
+void ATRTrain::ApplyRepair(float Amount)
+{
+	CurrentHullHealth = FMath::Clamp(CurrentHullHealth + Amount, 0.f, MaxHullHealth);
+}

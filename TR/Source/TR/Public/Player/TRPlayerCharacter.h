@@ -9,6 +9,7 @@
 #include "InputMappingContext.h"
 #include "TRPlayerCharacter.generated.h"
 
+class UTRTurretControlComponent;
 class UTRActionComponent;
 class UTRInteractionComponent;
 class UCameraComponent;
@@ -21,19 +22,19 @@ class TR_API ATRPlayerCharacter : public ACharacter
 	GENERATED_BODY()
 
 public:
-	// Sets default values for this character's properties
 	ATRPlayerCharacter();
 
 protected:
-	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
 public:	
-	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
 	UFUNCTION(BlueprintPure, Category = "Camera")
 	UCameraComponent* GetCameraComponent() const { return CameraComp; }
+
+	UFUNCTION(BlueprintPure, Category = "Action")
+	float GetHealPercent() const { return HealPercent; }
 	
 	//--- 입력 액션--- 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -48,7 +49,6 @@ public:
 	TObjectPtr<UInputAction> IA_Interact;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_Trigger;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_Reload;
 	
@@ -68,18 +68,23 @@ protected:
 	UFUNCTION(Server, Unreliable)
 	virtual void Trigger(const FInputActionValue& Input);
 	virtual void Trigger_Implementation(const FInputActionValue& Input);
-
+	
+	UFUNCTION(Server, Unreliable)
+	void Reload(const FInputActionValue& Input);
+	void Reload_Implementation(const FInputActionValue& Input);
+	
 	UFUNCTION(Server, Reliable)
 	void TriggerReleased();
 	void TriggerReleased_Implementation();
 	
-	UFUNCTION(Server, Reliable)
-	void Reload(const FInputActionValue& Input);
-	void Reload_Implementation(const FInputActionValue& Input);
+	void TriggerPressed(const FInputActionValue& Input);
 	
 	// Local look input smoothing. Character Movement Component sends final ControlRotation to server.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))
 	float LookInterpolationSpeed = 12.5f;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Action", meta = (ClampMin = "0.0", ClampMax = "100.0"))
+	float HealPercent = 10.f;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> CameraComp;
@@ -90,9 +95,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Action")
 	TObjectPtr<UTRActionComponent> ActionComp;
 	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Action")
+	TObjectPtr<UTRTurretControlComponent> TurretControlComp;
+	
 	FVector2D PendingLookInput = FVector2D::ZeroVector;
 	FVector2D SmoothedLookInput = FVector2D::ZeroVector;
-
 
 	//--- VFX ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")

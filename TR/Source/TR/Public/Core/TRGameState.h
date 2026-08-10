@@ -10,6 +10,11 @@ UCLASS()
 class TR_API ATRGameState : public AGameStateBase
 {
 	GENERATED_BODY()
+
+public:
+	int32 GetMonsterResource() const { return MonsterResource; }
+
+	void ConsumeMonsterResource(int32 Amount);
 	
 protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
