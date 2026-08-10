@@ -3,16 +3,25 @@
 #include "UI/TRPlayerHUDWidget.h"
 #include "Components/Widget.h"
 #include "Components/TextBlock.h"
+#include "Components/Image.h"
+#include "Components/PanelWidget.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Core/TRPlayerState.h"
 
 void UTRPlayerHUDWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	ensureMsgf(IsValid(SupplySlotBox) && SupplySlotBox->GetChildrenCount() == ATRPlayerState::MaxCarriedSupply,
+		TEXT("자원 슬롯 개수(%d)와 MaxCarriedSupply(%d)가 다릅니다."),
+		IsValid(SupplySlotBox) ? SupplySlotBox->GetChildrenCount() : 0,
+		ATRPlayerState::MaxCarriedSupply);
+
 	SetInteractionPrompts(FText::GetEmpty(), FText::GetEmpty(), FText::GetEmpty());
 	SetRepairProgressVisible(false);
+	SetCarriedSupply(0);
 }
 
-// 한 줄을 문구에 맞춰 켜고 끈다. 빈 문구면 그 줄만 숨김.
 static void ApplyPromptLine(UWidget* Line, UTextBlock* Text, const FText& Prompt)
 {
 	if (!IsValid(Line))
@@ -52,4 +61,37 @@ void UTRPlayerHUDWidget::SetRepairProgressVisible(bool bVisible)
 	}
 
 	RepairProgressPanel->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+void UTRPlayerHUDWidget::SetRepairProgress(float Progress01)
+{
+	if (IsValid(RepairPercent))
+	{
+		RepairPercent->SetText(FText::AsPercent(Progress01));
+	}
+
+	if (IsValid(RepairProgressValue))
+	{
+		if (UMaterialInstanceDynamic* FillMaterial = RepairProgressValue->GetDynamicMaterial())
+		{
+			static const FName PercentParam(TEXT("Percent"));
+			FillMaterial->SetScalarParameterValue(PercentParam, Progress01);
+		}
+	}
+}
+
+void UTRPlayerHUDWidget::SetCarriedSupply(int32 Count)
+{
+	if (!IsValid(SupplySlotBox))
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < SupplySlotBox->GetChildrenCount(); ++Index)
+	{
+		if (UWidget* SupplyIcon = SupplySlotBox->GetChildAt(Index))
+		{
+			SupplyIcon->SetVisibility(Index < Count ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+		}
+	}
 }

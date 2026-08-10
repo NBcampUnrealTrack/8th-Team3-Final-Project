@@ -8,6 +8,7 @@
 #include "UI/TRPlayerHUDWidget.h"
 #include "Interaction/TRTurretControlComponent.h"
 #include "Interaction/TRActionComponent.h"
+#include "Core/TRPlayerState.h"
 #include "Train/TRInstallablePart.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
@@ -24,7 +25,11 @@ UTRInteractionComponent::UTRInteractionComponent()
 void UTRInteractionComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	if (!Cast<ATRPlayerCharacter>(GetOwner()))
+	{
+		UE_LOG(LogTemp, Error, TEXT("%s: Owner가 ATRPlayerCharacter가 아니라 상호작용 트레이스와 HUD가 동작하지 않습니다."), *GetName());
+	}
 }
 
 
@@ -70,84 +75,97 @@ void UTRInteractionComponent::UpdateTrace()
 	LastTraceResult = Hit.GetActor();
 }
 
-void UTRInteractionComponent::UpdateInteractionWidget()
+static void BuildPrompts(const AActor* Target, FText& OutRepair, FText& OutReload, FText& OutInteract)
 {
-	const ATRPlayerCharacter* OwnerCharacter = Cast<ATRPlayerCharacter>(GetOwner());
-	if (!IsValid(OwnerCharacter))
-	{
-		UE_LOG(LogTemp, Error, TEXT("Owner is not a valid APawn"));
-		return;
-	}
-
-	const APlayerController* PC = Cast<APlayerController>(OwnerCharacter->GetController());
-	if (!IsValid(PC))
-	{
-		return;
-	}
-
-	const ATRPlayerHUD* PlayerHUD = Cast<ATRPlayerHUD>(PC->GetHUD());
-	if (!IsValid(PlayerHUD))
-	{
-		return;
-	}
-
-	UTRPlayerHUDWidget* HUDWidget = PlayerHUD->GetPlayerHUDWidget();
-	if (!IsValid(HUDWidget))
-	{
-		return;
-	}
-
-	// 수리 진행 패널은 조준 대상과 무관하게 액션 상태만 따른다.
-	const UTRActionComponent* ActionComp = OwnerCharacter->GetActionComponent();
-	HUDWidget->SetRepairProgressVisible(IsValid(ActionComp) && ActionComp->GetCurrentActionType() == ETRActionType::Repair);
-
-	// 터렛에 탑승 중이면 수리도 재장전도 못 하므로 프롬프트를 전부 숨긴다.
-	const UTRTurretControlComponent* TurretControlComp = OwnerCharacter->GetTurretControlComponent();
-	if (IsValid(TurretControlComp) && TurretControlComp->IsMounted())
-	{
-		HUDWidget->SetInteractionPrompts(FText::GetEmpty(), FText::GetEmpty(), FText::GetEmpty());
-		return;
-	}
-
-	const AActor* Target = LastTraceResult.Get();
 	if (!IsValid(Target))
 	{
-		HUDWidget->SetInteractionPrompts(FText::GetEmpty(), FText::GetEmpty(), FText::GetEmpty());
 		return;
 	}
 
+	// 파괴된 파츠는 수리가 아니라 제작(Build) 대상이므로 제외
 	const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
 	const ATRTrain* Train = Cast<ATRTrain>(Target);
-	const bool bNeedsRepair =
-		(IsValid(Part) && !Part->IsDestroyed() && !Part->IsFullHP()) ||
-		(IsValid(Train) && !Train->IsDestroyed() && !Train->IsFullHP());
-
-	FText RepairPrompt;
-	FText ReloadPrompt;
-	FText InteractPrompt;
-
-	if (bNeedsRepair)
+	if ((Part && !Part->IsDestroyed() && !Part->IsFullHP()) ||
+		(Train && !Train->IsDestroyed() && !Train->IsFullHP()))
 	{
-		RepairPrompt = FText::FromString(TEXT("클릭해서 수리"));
+		OutRepair = FText::FromString(TEXT("클릭해서 수리"));
 	}
 
 	if (const ATRTurret* Turret = Cast<ATRTurret>(Target))
 	{
 		if (Turret->GetCurrentAmmo() < Turret->GetMaxAmmo())
 		{
-			ReloadPrompt = FText::FromString(TEXT("R 키를 눌러 재장전"));
+			OutReload = FText::FromString(TEXT("R 키를 눌러 재장전"));
 		}
 
 		if (!Turret->IsDestroyed() && !Turret->IsOccupied())
 		{
-			InteractPrompt = FText::FromString(TEXT("E 키를 눌러 포탑 탑승"));
+			OutInteract = FText::FromString(TEXT("E 키를 눌러 포탑 탑승"));
 		}
 	}
 	else if (Target->IsA<ATRSupplyPoint>())
 	{
-		InteractPrompt = FText::FromString(TEXT("E 키를 눌러 자원 획득"));
+		OutInteract = FText::FromString(TEXT("E 키를 눌러 자원 획득"));
+	}
+}
+
+UTRPlayerHUDWidget* UTRInteractionComponent::GetHUDWidget() const
+{
+	const APawn* OwnerPawn = GetOwner<APawn>();
+	if (!IsValid(OwnerPawn))
+	{
+		return nullptr;
+	}
+
+	const APlayerController* PC = Cast<APlayerController>(OwnerPawn->GetController());
+	if (!IsValid(PC))
+	{
+		return nullptr;
+	}
+
+	const ATRPlayerHUD* PlayerHUD = Cast<ATRPlayerHUD>(PC->GetHUD());
+	if (!IsValid(PlayerHUD))
+	{
+		return nullptr;
+	}
+
+	return PlayerHUD->GetPlayerHUDWidget();
+}
+
+void UTRInteractionComponent::UpdateInteractionWidget()
+{
+	const ATRPlayerCharacter* OwnerCharacter = Cast<ATRPlayerCharacter>(GetOwner());
+	UTRPlayerHUDWidget* HUDWidget = GetHUDWidget();
+	if (!IsValid(OwnerCharacter) || !IsValid(HUDWidget))
+	{
+		return;
+	}
+
+	const UTRActionComponent* ActionComp = OwnerCharacter->GetActionComponent();
+	const bool bRepairing = IsValid(ActionComp) && ActionComp->GetCurrentActionType() == ETRActionType::Repair;
+	HUDWidget->SetRepairProgressVisible(bRepairing);
+	if (bRepairing)
+	{
+		HUDWidget->SetRepairProgress(ActionComp->GetActionProgress01());
+	}
+
+	const ATRPlayerState* PlayerState = OwnerCharacter->GetPlayerState<ATRPlayerState>();
+	if (IsValid(PlayerState))
+	{
+		HUDWidget->SetCarriedSupply(PlayerState->GetCarriedSupply());
+	}
+
+	// 터렛에 탑승 중이면 수리도 재장전도 못 함
+	const UTRTurretControlComponent* TurretControlComp = OwnerCharacter->GetTurretControlComponent();
+	const bool bMounted = IsValid(TurretControlComp) && TurretControlComp->IsMounted();
+
+	FText RepairPrompt;
+	FText ReloadPrompt;
+	FText InteractPrompt;
+	if (!bMounted)
+	{
+		BuildPrompts(LastTraceResult.Get(), RepairPrompt, ReloadPrompt, InteractPrompt);
 	}
 
 	HUDWidget->SetInteractionPrompts(RepairPrompt, ReloadPrompt, InteractPrompt);
 }
-
