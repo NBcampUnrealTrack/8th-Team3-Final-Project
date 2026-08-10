@@ -7,6 +7,7 @@
 #include "TRTrain.generated.h"
 
 class ATRArmor;
+class ATRTurret;
 class UStaticMeshComponent;
 
 UCLASS()
@@ -34,6 +35,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Train")
 	float GetCurrentHullHealth() const { return CurrentHullHealth; }
 
+	UFUNCTION(BlueprintPure, Category = "Train")
+	TArray<ATRArmor*> GetDestroyedArmor() const;
+
+	UFUNCTION(BlueprintPure, Category = "Train")
+	TArray<ATRTurret*> GetDestroyedTurrets() const;
+	
 	void ApplyRepair(float Amount);
 	
 private:
@@ -52,4 +59,6 @@ private:
 	UPROPERTY(EditInstanceOnly, Category = "Train")
 	TArray<TObjectPtr<ATRArmor>> ArmorSlots;  // 4칸, 레벨에서 각 슬롯에 배치된 장갑 액터 할당
 
+	UPROPERTY(EditInstanceOnly, Category = "Train")
+	TArray<TObjectPtr<ATRTurret>> TurretSlots;  // 5칸, 레벨에서 각 슬롯에 배치된 포탑 액터 할당
 };

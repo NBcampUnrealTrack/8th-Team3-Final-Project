@@ -2,7 +2,6 @@
 
 
 #include "Interaction/TRActionComponent.h"
-
 #include "Interaction/TRInteractionComponent.h"
 #include "Core/TRGameState.h"
 #include "Core/TRPlayerState.h"
@@ -14,6 +13,7 @@
 #include "Train/TRSupplyPoint.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
+#include "Train/TRControlConsole.h"
 
 UTRActionComponent::UTRActionComponent()
 {
@@ -66,10 +66,13 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 	}
 	else if (RequiresMonsterResource(ActionType))
 	{
+		const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
+		const int32 InstallCost = Part ? Part->GetInstallCost() : 0;
+
 		ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>();
-		if (!GS || GS->GetMonsterResource() < Def.ResourceAmount)
+		if (!GS || GS->GetMonsterResource() < InstallCost)
 		{
-		    return;
+			return;
 		}
 	}
 	else
@@ -166,12 +169,14 @@ void UTRActionComponent::CompleteAction()
 				{
 					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 					{
+						const int32 InstallCost = Part->GetInstallCost();
 						Part->ApplyInstall();
-						UE_LOG(LogTemp, Verbose, TEXT("Build complete: %s"), *Part->GetName());
-					}
-					if (ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>())
-					{
-						GS->ConsumeMonsterResource(Def->ResourceAmount);
+						UE_LOG(LogTemp, Verbose, TEXT("Build complete: %s (cost %d)"), *Part->GetName(), InstallCost);
+
+						if (ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>())
+						{
+							GS->ConsumeMonsterResource(InstallCost);
+						}
 					}
 					break;
 				}
@@ -210,7 +215,22 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 	// 클라이언트가 임의의 액터를 Target으로 넘길 수 있으므로, 실제 상호작용 대상과 일치하는지 서버에서 재검증
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	const UTRInteractionComponent* Interaction = IsValid(OwnerPawn) ? OwnerPawn->FindComponentByClass<UTRInteractionComponent>() : nullptr;
-	if (!IsValid(Interaction) || Interaction->GetCurrentTarget() != Target)
+	if (!IsValid(Interaction))
+	{
+		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: no InteractionComponent"));
+		return false;
+	}
+
+	if (ActionType == ETRActionType::Build)
+	{
+		// Build(재설치)는 관제석 UI에서 원격으로 대상을 고르므로, 실제 조준 대상은 파츠가 아니라 ControlConsole이어야 한다
+		if (!Cast<ATRControlConsole>(Interaction->GetCurrentTarget()))
+		{
+			UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: Build requires looking at ControlConsole"));
+			return false;
+		}
+	}
+	else if (Interaction->GetCurrentTarget() != Target)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: target=%s is not current interaction target"), *Target->GetName());
 		return false;
@@ -245,7 +265,8 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 			}
 		case ETRActionType::Restock:
 			{
-				bValid = Cast<ATRSupplyPoint>(Target) != nullptr;
+				const ATRPlayerState* PS = IsValid(OwnerPawn) ? Cast<ATRPlayerState>(OwnerPawn->GetPlayerState()) : nullptr;
+				bValid = Cast<ATRSupplyPoint>(Target) != nullptr && IsValid(PS) && PS->HasSupplySpace();
 				break;
 			}
 		default:
