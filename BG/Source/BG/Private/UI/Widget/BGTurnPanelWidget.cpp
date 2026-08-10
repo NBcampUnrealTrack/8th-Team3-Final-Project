@@ -157,3 +157,50 @@ void UBGTurnPanelWidget::RefreshVisual()
 			: ESlateVisibility::Collapsed);
 	}
 }
+
+void UBGTurnPanelWidget::SetLocalSeatInfo(const FBGSeatView& InView)
+{
+	LocalSeatView = InView;
+
+	//	이름과 직업은 판이 시작되기 전에도 보여 준다. 자리에 앉은 것만으로 정해지는 값이다.
+	if (Text_Name) { Text_Name->SetText(LocalSeatView.PlayerName); }
+	if (Text_Job)  { Text_Job->SetText(LocalSeatView.JobName); }
+
+	//	판 시작 전에는 값이 없다. 0/0 을 그대로 보여주면 죽은 것처럼 읽힌다.
+	const bool bShowStats = ShouldShowLocalStats();
+
+	if (Text_Health)
+	{
+		Text_Health->SetVisibility(bShowStats ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		if (bShowStats)
+		{
+			Text_Health->SetText(FText::Format(NSLOCTEXT("BG", "LocalHealth", "체력 {0} / {1}"),
+				LocalSeatView.Health, LocalSeatView.MaxHealth));
+		}
+	}
+
+	if (Text_Equipment)
+	{
+		Text_Equipment->SetVisibility(bShowStats ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		if (bShowStats)
+		{
+			Text_Equipment->SetText(LocalSeatView.EquipmentNames.IsEmpty()
+				? NSLOCTEXT("BG", "LocalNoEquipment", "장비 없음")
+				: FText::Join(NSLOCTEXT("BG", "LocalEquipSeparator", ", "), LocalSeatView.EquipmentNames));
+		}
+	}
+
+	//	역할은 판이 시작돼야 배정된다. 본인 것이라 숨기지 않되, 오기 전에는 줄째로 감춘다.
+	if (Text_Role)
+	{
+		const bool bHasRole = !LocalSeatView.RoleName.IsEmpty();
+
+		Text_Role->SetVisibility(bHasRole ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		if (bHasRole)
+		{
+			Text_Role->SetText(LocalSeatView.RoleName);
+		}
+	}
+
+	OnLocalSeatInfoChanged(LocalSeatView);
+}

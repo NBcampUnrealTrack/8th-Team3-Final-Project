@@ -16,6 +16,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "TimerManager.h"
 #include "UI/View/BGSeatViewLibrary.h"
+#include "UI/Widget/BGTurnPanelWidget.h"
 
 UBGSeatInfoDisplayComponent::UBGSeatInfoDisplayComponent()
 {
@@ -420,13 +421,23 @@ void UBGSeatInfoDisplayComponent::SyncWidgets()
 void UBGSeatInfoDisplayComponent::RefreshWidgets()
 {
 	const ABGPlayerController* PC = GetOwningController();
-	if (!PC || WidgetsBySeat.IsEmpty())
+	if (!PC)
 	{
 		return;
 	}
 
 	for (const FBGSeatView& View : UBGSeatViewLibrary::MakeSeatViews(PC))
 	{
+		//	본인 것은 머리 위가 아니라 좌하단 턴 패널이 맡는다.
+		if (View.bIsLocalPlayer)
+		{
+			if (UBGTurnPanelWidget* Panel = PC->GetTurnPanelWidget())
+			{
+				Panel->SetLocalSeatInfo(View);
+			}
+			continue;
+		}
+
 		const TObjectPtr<UWidgetComponent>* Found = WidgetsBySeat.Find(View.SeatIndex);
 		if (!Found || !*Found)
 		{

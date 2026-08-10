@@ -68,6 +68,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|UI")
 	void SetTurnPanelWidget(UBGTurnPanelWidget* InTurnPanel);
 
+	/** 좌하단 본인 정보도 이 패널이 맡는다. 좌석 정보 표시 컴포넌트가 값을 밀어넣는다. */
+	UFUNCTION(BlueprintPure, Category = "BG|UI")
+	UBGTurnPanelWidget* GetTurnPanelWidget() const { return TurnPanelWidget; }
+
 	/**
 	 * 판정 결과 위젯을 등록한다. HUD 가 만들면서 넘긴다.
 	 * 등록하지 않아도 게임은 그대로 돌아간다 — 결과가 화면에 안 뜰 뿐이다.

@@ -5,6 +5,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/View/BGSeatView.h"
 #include "UI/View/BGTurnView.h"
 #include "BGTurnPanelWidget.generated.h"
 
@@ -19,6 +20,14 @@ class UTextBlock;
  *   Text_Deck      (TextBlock, 선택 — 남은 덱 장수)
  *   Text_CardUse   (TextBlock, 선택 — "카드 1 / 2")
  *   Text_Rope      (TextBlock, 선택 — "밧줄 37초" 턴 제한 시간)
+ *
+ * 좌하단 본인 정보도 이 패널이 맡는다. 머리 위 이름표는 남만 띄우기 때문이다:
+ *   Text_Name      (TextBlock, 선택 — 내 이름)
+ *   Text_Job       (TextBlock, 선택 — 캐릭터 이름)
+ *   Text_Health    (TextBlock, 선택 — "체력 5 / 5")
+ *   Text_Role      (TextBlock, 선택 — 내 역할. 본인 것이라 숨기지 않는다)
+ *   Text_Equipment (TextBlock, 선택 — 장비 목록)
+ *   손패 장수는 Text_HandLimit 이 이미 보여주므로 따로 두지 않는다.
  *
  * ── 게임 로직과의 연결 지점 ──
  *   들어오는 방향: SetTurnView()      — PlayerController 가 주기적으로 밀어넣는다
@@ -39,6 +48,17 @@ public:
 	/** 턴 종료 버튼이 눌렸다. PlayerController 가 구독한다. */
 	UPROPERTY(BlueprintAssignable, Category = "BG|Turn")
 	FOnBGEndTurnRequested OnEndTurnRequested;
+
+	/** 좌하단에 띄울 내 좌석 정보. BGSeatInfoDisplayComponent 가 밀어넣는다. */
+	UFUNCTION(BlueprintCallable, Category = "BG|Turn")
+	void SetLocalSeatInfo(const FBGSeatView& InView);
+
+	UFUNCTION(BlueprintPure, Category = "BG|Turn")
+	const FBGSeatView& GetLocalSeatView() const { return LocalSeatView; }
+
+	/** 체력·장비처럼 판 중에만 뜻이 있는 값을 보여줄 때인가. */
+	UFUNCTION(BlueprintPure, Category = "BG|Turn")
+	bool ShouldShowLocalStats() const { return LocalSeatView.bMatchRunning && LocalSeatView.MaxHealth > 0; }
 
 protected:
 	virtual void NativeConstruct() override;
@@ -76,6 +96,28 @@ protected:
 	/** 밧줄(턴 제한 시간). 남은 초는 매 틱 줄어들므로 델리게이트가 아니라 여기서 직접 읽는다. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Rope;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Name;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Job;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Health;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Role;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Equipment;
+
+	UPROPERTY()
+	FBGSeatView LocalSeatView;
+
+	/** 값이 들어왔다. 초상화·하트 아이콘처럼 텍스트 말고 더 할 것이 있으면 여기서 한다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Turn")
+	void OnLocalSeatInfoChanged(const FBGSeatView& InView);
 
 	//	밧줄이 붙고 꺼지는 순간만 델리게이트로 받는다. 남은 초는 NativeTick 이 읽는다.
 	UFUNCTION()

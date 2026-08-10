@@ -54,15 +54,12 @@ public:
 	FText GetEquipmentLine() const;
 
 protected:
+	//	이름과 체력은 머리 위 이름표가 이미 띄우고 있어 여기서는 묶지 않는다.
+	//	겹쳐 보이길 원하면 WBP 에 Text 를 두고 GetNameText·GetHealthText 를 쓰면 된다.
+
 	//	WBP 가 같은 이름으로 만들어 두면 자동으로 연결된다. 없어도 동작한다.
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<class UTextBlock> Text_Name;
-
-	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<class UTextBlock> Text_Job;
-
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<class UTextBlock> Text_Health;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<class UTextBlock> Text_Hand;

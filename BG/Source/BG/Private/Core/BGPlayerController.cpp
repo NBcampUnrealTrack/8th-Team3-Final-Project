@@ -834,8 +834,15 @@ void ABGPlayerController::RefreshTurnPanel()
 	}
 	else if (View.bMatchRunning)
 	{
-		View.StatusText = FText::FromString(
-			FString::Printf(TEXT("좌석 %d 진행 중"), View.CurrentSeat));
+		//	좌석 번호는 누구인지 바로 안 읽힌다. 이름을 쓰고, 못 찾을 때만 번호로 되돌린다.
+		const ABGPlayerState* TurnPS =
+			UBGSeatViewLibrary::FindPlayerStateBySeat(this, View.CurrentSeat);
+
+		const FString TurnName = TurnPS ? TurnPS->GetPlayerName() : FString();
+
+		View.StatusText = TurnName.IsEmpty()
+			? FText::FromString(FString::Printf(TEXT("좌석 %d 차례"), View.CurrentSeat))
+			: FText::FromString(FString::Printf(TEXT("%s 차례"), *TurnName));
 	}
 	else
 	{

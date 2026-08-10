@@ -6,21 +6,19 @@ void UBGSeatDetailWidget::SetSeatInfo(const FBGSeatView& InView)
 {
 	View = InView;
 
-	if (Text_Name)      { Text_Name->SetText(GetNameText()); }
 	if (Text_Job)       { Text_Job->SetText(GetJobText()); }
-	if (Text_Hand)      { Text_Hand->SetText(GetHandText()); }
 	if (Text_Role)      { Text_Role->SetText(GetRoleText()); }
 	if (Text_Equipment) { Text_Equipment->SetText(GetEquipmentLine()); }
 
-	//	체력은 판이 시작돼야 값이 생긴다. 그 전에는 줄째로 감춘다.
-	if (Text_Health)
+	//	손패는 판이 시작돼야 값이 생긴다. 그 전에는 줄째로 감춘다.
+	if (Text_Hand)
 	{
 		const bool bShow = ShouldShowStats();
 
-		Text_Health->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		Text_Hand->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 		if (bShow)
 		{
-			Text_Health->SetText(GetHealthText());
+			Text_Hand->SetText(GetHandText());
 		}
 	}
 
