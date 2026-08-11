@@ -47,6 +47,12 @@ public:
 	
 	UFUNCTION(BlueprintPure, Category = "Turret")
 	bool IsWithinFireArc(float CameraYaw, float CameraPitch) const;
+
+	UFUNCTION(BlueprintPure, Category = "Turret")
+	bool CanBeReloaded() const { return !IsDestroyed() && GetCurrentAmmo() < GetMaxAmmo(); }
+
+	UFUNCTION(BlueprintPure, Category = "Turret")
+	bool CanBeMounted() const { return !IsDestroyed() && !IsOccupied(); }
 	
 	void SetOccupant(APawn* NewOccupant) { Occupant = NewOccupant; }
 	

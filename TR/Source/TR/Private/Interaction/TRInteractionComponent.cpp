@@ -37,6 +37,13 @@ void UTRInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickType
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	const APawn* OwnerPawn = GetOwner<APawn>();
+	const bool bNeedsTrace = IsValid(OwnerPawn) && (OwnerPawn->HasAuthority() || OwnerPawn->IsLocallyControlled());
+	if (!bNeedsTrace)
+	{
+		return;
+	}
+
 	UpdateTrace();
 	UpdateInteractionWidget();
 }
@@ -85,20 +92,19 @@ static void BuildPrompts(const AActor* Target, FText& OutRepair, FText& OutReloa
 	// 파괴된 파츠는 수리가 아니라 제작(Build) 대상이므로 제외
 	const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
 	const ATRTrain* Train = Cast<ATRTrain>(Target);
-	if ((Part && !Part->IsDestroyed() && !Part->IsFullHP()) ||
-		(Train && !Train->IsDestroyed() && !Train->IsFullHP()))
+	if ((Part && Part->CanBeRepaired()) || (Train && Train->CanBeRepaired()))
 	{
 		OutRepair = FText::FromString(TEXT("클릭해서 수리"));
 	}
 
 	if (const ATRTurret* Turret = Cast<ATRTurret>(Target))
 	{
-		if (Turret->GetCurrentAmmo() < Turret->GetMaxAmmo())
+		if (Turret->CanBeReloaded())
 		{
 			OutReload = FText::FromString(TEXT("R 키를 눌러 재장전"));
 		}
 
-		if (!Turret->IsDestroyed() && !Turret->IsOccupied())
+		if (Turret->CanBeMounted())
 		{
 			OutInteract = FText::FromString(TEXT("E 키를 눌러 포탑 탑승"));
 		}

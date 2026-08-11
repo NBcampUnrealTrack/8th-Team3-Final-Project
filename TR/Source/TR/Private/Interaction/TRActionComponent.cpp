@@ -139,18 +139,35 @@ void UTRActionComponent::CompleteAction()
 					ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
 					const float HealPercent = IsValid(Character) ? Character->GetHealPercent() : 0.f;
 
+					bool bRepaired = false;
 					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 					{
-						Part->ApplyRepair(Part->GetMaxHP() * (HealPercent / 100.f));
-						UE_LOG(LogTemp, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
+						if (Part->CanBeRepaired())
+						{
+							Part->ApplyRepair(Part->GetMaxHP() * (HealPercent / 100.f));
+							UE_LOG(LogTemp, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
+							bRepaired = true;
+						}
+						else
+						{
+							UE_LOG(LogTemp, Verbose, TEXT("Repair skipped: %s no longer repairable"), *Part->GetName());
+						}
 					}
 					else if (ATRTrain* Train = Cast<ATRTrain>(Target))
 					{
-						Train->ApplyRepair(Train->GetMaxHullHealth() * (HealPercent / 100.f));
-						UE_LOG(LogTemp, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
+						if (Train->CanBeRepaired())
+						{
+							Train->ApplyRepair(Train->GetMaxHullHealth() * (HealPercent / 100.f));
+							UE_LOG(LogTemp, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
+							bRepaired = true;
+						}
+						else
+						{
+							UE_LOG(LogTemp, Verbose, TEXT("Repair skipped: Train no longer repairable"));
+						}
 					}
 
-					if (PS)
+					if (bRepaired && PS)
 					{
 						PS->ConsumeCarriedSupply(Def->ResourceAmount);
 					}
@@ -265,11 +282,11 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 			{
 				if (const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 				{
-					bValid = !Part->IsDestroyed() && !Part->IsFullHP();
+					bValid = Part->CanBeRepaired();
 				}
 				else if (const ATRTrain* Train = Cast<ATRTrain>(Target))
 				{
-					bValid = !Train->IsDestroyed() && !Train->IsFullHP();
+					bValid = Train->CanBeRepaired();
 				}
 				break;
 			}
@@ -282,7 +299,7 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 		case ETRActionType::Reload:
 			{
 				const ATRTurret* Turret = Cast<ATRTurret>(Target);
-				bValid = Turret && Turret->GetCurrentAmmo() < Turret->GetMaxAmmo();
+				bValid = Turret && Turret->CanBeReloaded();
 				break;
 			}
 		case ETRActionType::Restock:

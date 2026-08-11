@@ -27,7 +27,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Part")
 	float GetCurrentHP() const { return CurrentHP; }
-	
+
+	UFUNCTION(BlueprintPure, Category = "Part")
+	bool CanBeRepaired() const { return !IsDestroyed() && !IsFullHP(); }
+
 	// 수리 로직 — 공통
 	void ApplyRepair(float Amount);
 

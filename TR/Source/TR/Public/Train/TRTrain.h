@@ -36,6 +36,9 @@ public:
 	float GetCurrentHullHealth() const { return CurrentHullHealth; }
 
 	UFUNCTION(BlueprintPure, Category = "Train")
+	bool CanBeRepaired() const { return !IsDestroyed() && !IsFullHP(); }
+
+	UFUNCTION(BlueprintPure, Category = "Train")
 	TArray<ATRArmor*> GetDestroyedArmor() const;
 
 	UFUNCTION(BlueprintPure, Category = "Train")
