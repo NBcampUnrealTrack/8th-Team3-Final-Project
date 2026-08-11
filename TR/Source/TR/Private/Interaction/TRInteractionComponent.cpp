@@ -2,6 +2,7 @@
 
 
 #include "Interaction/TRInteractionComponent.h"
+#include "Debug/TRGameplayLog.h"
 #include "Player/TRPlayerCharacter.h"
 #include "Camera/CameraComponent.h"
 #include "UI/TRPlayerHUD.h"
@@ -28,7 +29,7 @@ void UTRInteractionComponent::BeginPlay()
 
 	if (!Cast<ATRPlayerCharacter>(GetOwner()))
 	{
-		UE_LOG(LogTemp, Error, TEXT("%s: Owner가 ATRPlayerCharacter가 아니라 상호작용 트레이스와 HUD가 동작하지 않습니다."), *GetName());
+		UE_LOG(LogTRGameplay, Error, TEXT("%s: Owner가 ATRPlayerCharacter가 아니라 상호작용 트레이스와 HUD가 동작하지 않습니다."), *GetName());
 	}
 }
 
