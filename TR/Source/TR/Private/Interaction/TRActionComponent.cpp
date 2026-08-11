@@ -14,6 +14,7 @@
 #include "Train/TRSupplyPoint.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
+#include "Train/TRControlConsole.h"
 #include "GameFramework/GameStateBase.h"
 
 UTRActionComponent::UTRActionComponent()
@@ -68,10 +69,18 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 	}
 	else if (RequiresMonsterResource(ActionType))
 	{
-		ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>();
-		if (!GS || GS->GetMonsterResource() < Def.ResourceAmount)
+		const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
+		if (!IsValid(Part))
 		{
-		    return;
+			UE_LOG(LogTemp, Log, TEXT("StartAction rejected: target is not an installable part"));
+			return;
+		}
+		const int32 InstallCost = Part ? Part->GetInstallCost() : 0;
+
+		ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>();
+		if (!GS || GS->GetMonsterResource() < InstallCost)
+		{
+			return;
 		}
 	}
 	else
@@ -135,18 +144,35 @@ void UTRActionComponent::CompleteAction()
 					ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
 					const float HealPercent = IsValid(Character) ? Character->GetHealPercent() : 0.f;
 
+					bool bRepaired = false;
 					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 					{
-						Part->ApplyRepair(Part->GetMaxHP() * (HealPercent / 100.f));
-						UE_LOG(LogTemp, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
+						if (Part->CanBeRepaired())
+						{
+							Part->ApplyRepair(Part->GetMaxHP() * (HealPercent / 100.f));
+							UE_LOG(LogTemp, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
+							bRepaired = true;
+						}
+						else
+						{
+							UE_LOG(LogTemp, Verbose, TEXT("Repair skipped: %s no longer repairable"), *Part->GetName());
+						}
 					}
 					else if (ATRTrain* Train = Cast<ATRTrain>(Target))
 					{
-						Train->ApplyRepair(Train->GetMaxHullHealth() * (HealPercent / 100.f));
-						UE_LOG(LogTemp, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
+						if (Train->CanBeRepaired())
+						{
+							Train->ApplyRepair(Train->GetMaxHullHealth() * (HealPercent / 100.f));
+							UE_LOG(LogTemp, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
+							bRepaired = true;
+						}
+						else
+						{
+							UE_LOG(LogTemp, Verbose, TEXT("Repair skipped: Train no longer repairable"));
+						}
 					}
 
-					if (PS)
+					if (bRepaired && PS)
 					{
 						PS->ConsumeCarriedSupply(Def->ResourceAmount);
 					}
@@ -169,12 +195,22 @@ void UTRActionComponent::CompleteAction()
 				{
 					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 					{
+						const int32 InstallCost = Part->GetInstallCost();
+						
+						ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
+						if (!IsValid(GameState) || !GameState->TryConsumeMonsterResource(InstallCost))
+						{
+							UE_LOG(LogTemp, Log, TEXT("Build aborted: not enough resource for %s (cost %d)"), *Part->GetName(), InstallCost);
+							break;
+						}
+						
 						Part->ApplyInstall();
-						UE_LOG(LogTemp, Verbose, TEXT("Build complete: %s"), *Part->GetName());
-					}
-					if (ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>())
-					{
-						GS->ConsumeMonsterResource(Def->ResourceAmount);
+						UE_LOG(LogTemp, Verbose, TEXT("Build complete: %s (cost %d)"), *Part->GetName(), InstallCost);
+
+						if (ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>())
+						{
+							GS->ConsumeMonsterResource(InstallCost);
+						}
 					}
 					break;
 				}
@@ -231,7 +267,22 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 	// 클라이언트가 임의의 액터를 Target으로 넘길 수 있으므로, 실제 상호작용 대상과 일치하는지 서버에서 재검증
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	const UTRInteractionComponent* Interaction = IsValid(OwnerPawn) ? OwnerPawn->FindComponentByClass<UTRInteractionComponent>() : nullptr;
-	if (!IsValid(Interaction) || Interaction->GetCurrentTarget() != Target)
+	if (!IsValid(Interaction))
+	{
+		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: no InteractionComponent"));
+		return false;
+	}
+
+	if (ActionType == ETRActionType::Build)
+	{
+		// Build(재설치)는 관제석 UI에서 원격으로 대상을 고르므로, 실제 조준 대상은 파츠가 아니라 ControlConsole이어야 한다
+		if (!Cast<ATRControlConsole>(Interaction->GetCurrentTarget()))
+		{
+			UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: Build requires looking at ControlConsole"));
+			return false;
+		}
+	}
+	else if (Interaction->GetCurrentTarget() != Target)
 	{
 		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: target=%s is not current interaction target"), *Target->GetName());
 		return false;
@@ -244,11 +295,11 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 			{
 				if (const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 				{
-					bValid = !Part->IsDestroyed() && !Part->IsFullHP();
+					bValid = Part->CanBeRepaired();
 				}
 				else if (const ATRTrain* Train = Cast<ATRTrain>(Target))
 				{
-					bValid = !Train->IsDestroyed() && !Train->IsFullHP();
+					bValid = Train->CanBeRepaired();
 				}
 				break;
 			}
@@ -261,12 +312,13 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 		case ETRActionType::Reload:
 			{
 				const ATRTurret* Turret = Cast<ATRTurret>(Target);
-				bValid = Turret && Turret->GetCurrentAmmo() < Turret->GetMaxAmmo();
+				bValid = Turret && Turret->CanBeReloaded();
 				break;
 			}
 		case ETRActionType::Restock:
 			{
-				bValid = Cast<ATRSupplyPoint>(Target) != nullptr;
+				const ATRPlayerState* PS = IsValid(OwnerPawn) ? Cast<ATRPlayerState>(OwnerPawn->GetPlayerState()) : nullptr;
+				bValid = Cast<ATRSupplyPoint>(Target) != nullptr && IsValid(PS) && PS->HasSupplySpace();
 				break;
 			}
 		default:

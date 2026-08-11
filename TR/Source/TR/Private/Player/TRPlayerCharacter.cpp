@@ -12,6 +12,7 @@
 #include "Interaction/TRActionComponent.h"
 #include "Interaction/TRInteractionComponent.h"
 #include "Interaction/TRTurretControlComponent.h"
+#include "Train/TRControlConsole.h"
 #include "Train/TRInstallablePart.h"
 #include "Train/TRSupplyPoint.h"
 #include "Train/TRTrain.h"
@@ -129,7 +130,8 @@ void ATRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		}
 		if (IsValid(IA_Interact))
 		{
-			EIC->BindAction(IA_Interact, ETriggerEvent::Started, this, &ATRPlayerCharacter::Interact);
+			EIC->BindAction(IA_Interact, ETriggerEvent::Started, this, &ATRPlayerCharacter::OnInteractPressed);
+			EIC->BindAction(IA_Interact, ETriggerEvent::Completed, this, &ATRPlayerCharacter::TriggerReleased);
 		}
 		if (IsValid(IA_Trigger))
 		{
@@ -260,6 +262,18 @@ void ATRPlayerCharacter::MulticastPlayJumpLandEffect_Implementation(const FVecto
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), JumpLandEffect, Location);
 	}
+}
+
+void ATRPlayerCharacter::OnInteractPressed(const FInputActionValue& Input)
+{
+	if (IsValid(InteractionComp) && Cast<ATRControlConsole>(InteractionComp->GetCurrentTarget()))
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("OnControlConsoleInteract fired"));
+		OnControlConsoleInteract();
+		return;
+	}
+
+	Interact(Input);   // 관제석이 아니면 원래대로 서버 RPC 호출
 }
 
 // 상호작용 RPC 함수, E키 - 포탑 탑승/하차 vs 물자실 자원 획득

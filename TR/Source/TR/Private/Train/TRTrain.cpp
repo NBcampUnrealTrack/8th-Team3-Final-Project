@@ -1,6 +1,7 @@
 // TRTrain.cpp
 
 #include "Train/TRTrain.h"
+#include "Train/TRTurret.h" 
 #include "Train/TRArmor.h"
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -36,4 +37,30 @@ int32 ATRTrain::GetActiveArmorCount() const
 void ATRTrain::ApplyRepair(float Amount)
 {
 	CurrentHullHealth = FMath::Clamp(CurrentHullHealth + Amount, 0.f, MaxHullHealth);
+}
+
+TArray<ATRArmor*> ATRTrain::GetDestroyedArmor() const
+{
+	TArray<ATRArmor*> Result;
+	for (const TObjectPtr<ATRArmor>& Armor : ArmorSlots)
+	{
+		if (Armor && Armor->IsDestroyed())
+		{
+			Result.Add(Armor);
+		}
+	}
+	return Result;
+}
+
+TArray<ATRTurret*> ATRTrain::GetDestroyedTurrets() const
+{
+	TArray<ATRTurret*> Result;
+	for (const TObjectPtr<ATRTurret>& Turret : TurretSlots)
+	{
+		if (Turret && Turret->IsDestroyed())
+		{
+			Result.Add(Turret);
+		}
+	}
+	return Result;
 }

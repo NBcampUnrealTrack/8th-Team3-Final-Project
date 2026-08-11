@@ -28,5 +28,5 @@ protected:
 
 private:
 	UPROPERTY(Replicated)
-	int32 CarriedSupply = 0;
+	int32 CarriedSupply = 6;
 };
