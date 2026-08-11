@@ -71,16 +71,31 @@ void UTRGameInstance::Init()
 			this, &UTRGameInstance::HandleNetworkFailure);
 	}
 
-	// 친구 초대 수락(오버레이의 "게임 참가") — 이 구독이 없으면 초대가 조용히 무시된다.
-	if (IOnlineSubsystem* OSS = Online::GetSubsystem(GetWorld()))
+	// 초대 구독은 월드가 생긴 뒤에 건다 — Init 시점의 GetWorld() 는 신뢰할 수 없고,
+	// PIE 는 인스턴스마다 별도 서브시스템을 갖는다.
+	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(
+		this, &UTRGameInstance::HandleFirstWorldReady);
+}
+
+void UTRGameInstance::HandleFirstWorldReady(UWorld* LoadedWorld)
+{
+	if (InviteAcceptedHandle.IsValid())
 	{
-		if (IOnlineSessionPtr Sessions = OSS->GetSessionInterface())
-		{
-			InviteAcceptedHandle = Sessions->AddOnSessionUserInviteAcceptedDelegate_Handle(
-				FOnSessionUserInviteAcceptedDelegate::CreateUObject(
-					this, &UTRGameInstance::HandleSessionUserInviteAccepted));
-		}
+		return;   // 한 번만 구독한다.
 	}
+
+	IOnlineSubsystem* OSS = Online::GetSubsystem(LoadedWorld);
+	IOnlineSessionPtr Sessions = OSS ? OSS->GetSessionInterface() : nullptr;
+	if (!Sessions.IsValid())
+	{
+		UE_LOG(LogTRNet, Warning, TEXT("초대 수락 구독 실패 — SessionInterface 없음"));
+		return;
+	}
+
+	// 이 구독이 없으면 오버레이의 "게임 참가" 가 조용히 무시된다.
+	InviteAcceptedHandle = Sessions->AddOnSessionUserInviteAcceptedDelegate_Handle(
+		FOnSessionUserInviteAcceptedDelegate::CreateUObject(
+			this, &UTRGameInstance::HandleSessionUserInviteAccepted));
 }
 
 void UTRGameInstance::Shutdown()
@@ -89,6 +104,12 @@ void UTRGameInstance::Shutdown()
 	{
 		GEngine->OnNetworkFailure().Remove(NetworkFailureHandle);
 		NetworkFailureHandle.Reset();
+	}
+
+	if (PostLoadMapHandle.IsValid())
+	{
+		FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadMapHandle);
+		PostLoadMapHandle.Reset();
 	}
 
 	if (IOnlineSessionPtr Sessions = GetSessionInterface())

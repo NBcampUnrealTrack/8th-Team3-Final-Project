@@ -3,7 +3,6 @@
 #include "Session/TRNetLog.h"
 #include "UI/Session/TRSessionMenuWidget.h"
 
-#include "Components/InputComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
@@ -94,35 +93,27 @@ void UTRSessionMenuController::HandlePostLoadMap(UWorld* LoadedWorld)
 		return;
 	}
 
-	// PlayerController 는 맵 로드 직후에는 아직 없다. 한 틱 뒤에 처리한다.
+	//	세션에 들어왔으면 메뉴는 할 일을 마쳤다. 게임 화면 위에 다시 띄우지 않는다.
+	const ENetMode NetMode = LoadedWorld->GetNetMode();
+	if (NetMode == NM_Client || NetMode == NM_ListenServer)
+	{
+		bWasOpen = false;
+		return;
+	}
+
+	//	여는 키는 DebugExecBindings 가 맡으므로 여기서 다시 걸 것이 없다.
+	//	PlayerController 는 맵 로드 직후에는 아직 없어 위젯 복구만 한 틱 미룬다.
+	if (!bWasOpen)
+	{
+		return;
+	}
+
 	LoadedWorld->GetTimerManager().SetTimerForNextTick(
 		FTimerDelegate::CreateWeakLambda(this, [this]()
 		{
-			BindDebugKey();
-
 			if (bWasOpen && !Menu)
 			{
 				Open();
 			}
 		}));
-}
-
-void UTRSessionMenuController::BindDebugKey()
-{
-	if (!DebugToggleKey.IsValid())
-	{
-		return;
-	}
-
-	UGameInstance* GI = GetGameInstance();
-	APlayerController* PC = GI ? GI->GetFirstLocalPlayerController() : nullptr;
-	if (!PC || !PC->InputComponent)
-	{
-		return;   // 아직 없다. 다음 맵 로드에서 다시 시도한다.
-	}
-
-	// 컨트롤러는 맵마다 새로 만들어지므로 중복 바인딩 걱정은 없다.
-	PC->InputComponent->BindKey(DebugToggleKey, IE_Pressed, this, &UTRSessionMenuController::Toggle);
-
-	UE_LOG(LogTRNet, Log, TEXT("[SessionMenu] 디버그 키 %s 연결"), *DebugToggleKey.ToString());
 }

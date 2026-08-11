@@ -1,18 +1,18 @@
 // TR 세션 플로우 — UI 와 UTRGameInstance 사이의 단일 바인딩 계층.
-// UI 는 ITRSessionInterface 로만 접근한다. 레벨 트래블은 다루지 않는다.
+// UI 는 IInterface_TRSession 로만 접근한다. 레벨 트래블은 다루지 않는다.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Session/TRSessionTypes.h"
-#include "Session/TRSessionInterface.h"
+#include "Session/Interface_TRSession.h"
 #include "TRSessionFlow.generated.h"
 
 class UTRGameInstance;
 
 UCLASS(Config = Game)
-class TR_API UTRSessionFlow : public UGameInstanceSubsystem, public ITRSessionInterface
+class TR_API UTRSessionFlow : public UGameInstanceSubsystem, public IInterface_TRSession
 {
 	GENERATED_BODY()
 
@@ -20,7 +20,7 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
-	// ── ITRSessionInterface ──
+	// ── IInterface_TRSession ──
 
 	UFUNCTION(BlueprintCallable, Category = "TR|Session")
 	virtual void HostCreateRoom(const FString& RoomName) override;

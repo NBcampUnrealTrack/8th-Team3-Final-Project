@@ -33,6 +33,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TR|UI")
 	bool IsOpen() const { return Menu != nullptr; }
 
+	/** 위젯이 Escape 말고 어떤 키로도 닫히게 하려면 이 값을 본다. */
+	UFUNCTION(BlueprintPure, Category = "TR|UI")
+	FKey GetDebugToggleKey() const { return DebugToggleKey; }
+
 protected:
 	// 띄울 WBP. 다른 것을 쓰려면 DefaultGame.ini 나 에디터에서 이 값만 바꾸면 된다.
 	UPROPERTY(Config, EditAnywhere, BlueprintReadOnly, Category = "TR|UI")
@@ -41,8 +45,9 @@ protected:
 			TEXT("/Game/UI/WBP_TRSessionMenu.WBP_TRSessionMenu_C")));
 
 	/**
-	 * 단말 없이 메뉴를 여는 디버그 키. 배포 전에 비우면 꺼진다.
-	 * 정식 진입은 기차 구조물의 UTRSessionTerminalComponent 다.
+	 * 열린 메뉴를 닫는 키. 실제로 여는 것은 DefaultInput.ini 의 DebugExecBindings 가
+	 * TR_SessionUI 명령에 걸어 준다 — 코드가 직접 키를 잡지 않는다.
+	 * 개인적으로 끄려면 그 ini 한 줄만 지우면 된다.
 	 */
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "TR|UI|Debug")
 	FKey DebugToggleKey = EKeys::F9;
@@ -50,12 +55,6 @@ protected:
 private:
 	// 트래블로 위젯이 사라지면 여기서 되살린다. 게임 레벨에서는 되살리지 않는다.
 	void HandlePostLoadMap(UWorld* LoadedWorld);
-
-	/**
-	 * 디버그 키를 로컬 컨트롤러에 건다. 인풋 컴포넌트는 맵마다 새로 만들어지므로
-	 * 맵이 바뀔 때마다 다시 걸어야 한다.
-	 */
-	void BindDebugKey();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTRSessionMenuWidget> Menu;

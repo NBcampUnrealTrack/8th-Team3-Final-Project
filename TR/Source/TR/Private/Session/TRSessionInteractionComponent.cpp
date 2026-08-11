@@ -73,12 +73,6 @@ bool UTRSessionInteractionComponent::TryBindInput()
 		return false;
 	}
 
-	if (DebugToggleKey.IsValid())
-	{
-		PC->InputComponent->BindKey(DebugToggleKey, IE_Pressed, this,
-			&UTRSessionInteractionComponent::ToggleMenu);
-	}
-
 	// 조작 키는 Enhanced Input 이라 인풋 컴포넌트 종류가 맞아야 건다.
 	if (IA_UseTerminal)
 	{
@@ -149,16 +143,4 @@ void UTRSessionInteractionComponent::TryOpenFromTerminal()
 
 	UE_LOG(LogTRNet, Log, TEXT("[SessionTerminal] %s 조작 — 메뉴 열기"), *GetOwner()->GetName());
 	Controller->Open();
-}
-
-void UTRSessionInteractionComponent::ToggleMenu()
-{
-	UGameInstance* GI = GetOwner() ? GetOwner()->GetGameInstance() : nullptr;
-	UTRSessionMenuController* Controller = GI ? GI->GetSubsystem<UTRSessionMenuController>() : nullptr;
-	if (!ensure(Controller))
-	{
-		return;
-	}
-
-	Controller->Toggle();
 }

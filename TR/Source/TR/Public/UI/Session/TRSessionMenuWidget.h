@@ -1,6 +1,6 @@
 // TR 세션 메뉴 — 방 만들기 · 코드로 참가 · 목록에서 참가 · 친구 초대.
 //
-// 이 위젯은 세션 구현을 모른다. ITRSessionInterface 로만 이야기한다.
+// 이 위젯은 세션 구현을 모른다. IInterface_TRSession 로만 이야기한다.
 // WBP 에서 아래 이름으로 위젯을 만들면 자동으로 연결된다. 없어도 동작한다.
 
 #pragma once
@@ -10,7 +10,7 @@
 #include "Session/TRSessionTypes.h"
 #include "TRSessionMenuWidget.generated.h"
 
-class ITRSessionInterface;
+class IInterface_TRSession;
 class UButton;
 class UEditableTextBox;
 class UScrollBox;
@@ -29,6 +29,12 @@ public:
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+
+	/**
+	 * 메뉴가 떠 있는 동안은 게임 입력을 막는다(UIOnly). 그러면 컨트롤러의 디버그 키가
+	 * 안 들어오므로 닫는 키는 여기서 직접 받는다.
+	 */
+	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	//	WBP 가 같은 이름으로 만들어 두면 자동으로 연결된다. 없어도 동작한다.
 
@@ -141,15 +147,6 @@ private:
 	UFUNCTION()
 	void HandleJoinSlot3();
 
-	/** 자리 하나를 결과로 채운다. Result 가 없으면 그 줄을 숨긴다. */
-	void ApplySlot(int32 SlotIndex, const FTRSessionSearchResult* Result);
-
-	/** 자리 번호를 검색 인덱스로 바꿔 참가한다. */
-	void JoinBySlot(int32 SlotIndex);
-
-	/** 지금 화면에 올라간 목록. 자리 번호 → 검색 인덱스. */
-	TArray<int32> SlotResultIndices;
-
 	// 세션 플로우 통지.
 
 	UFUNCTION()
@@ -159,14 +156,32 @@ private:
 	void HandleListReady(const TArray<FTRSessionSearchResult>& Results);
 
 	/** 세션 규약을 들고 있는 서브시스템. 없으면 nullptr. */
-	ITRSessionInterface* GetSession() const;
+	IInterface_TRSession* GetSession() const;
 
 	void BindButtons();
 	void BindSessionEvents();
 	void UnbindSessionEvents();
 
+	/** 자리 하나를 결과로 채운다. Result 가 없으면 그 줄을 숨긴다. */
+	void ApplySlot(int32 SlotIndex, const FTRSessionSearchResult* Result);
+
+	/** 자리 번호를 검색 인덱스로 바꿔 참가한다. */
+	void JoinBySlot(int32 SlotIndex);
+
 	/** 방 코드와 로비 인원 표시를 지금 값으로 맞춘다. */
 	void RefreshStatusTexts();
 
 	void SetStatus(const FString& Message);
+
+	/** 메뉴를 닫는다. 여닫는 판단은 컨트롤러 몫이라 그쪽에 넘긴다. */
+	void RequestClose();
+
+	/** 지금 화면에 올라간 목록. 자리 번호 → 검색 인덱스. */
+	TArray<int32> SlotResultIndices;
+
+	/** 열기 전 커서 상태. 닫을 때 그대로 되돌린다 — 게임 쪽 설정을 짐작하지 않는다. */
+	bool bPrevShowMouseCursor = false;
+
+	/** 시점·이동을 막아 두었는가. 카운터 방식이라 정확히 한 번만 되돌려야 한다. */
+	bool bInputSuppressed = false;
 };

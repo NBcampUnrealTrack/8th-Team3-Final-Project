@@ -2,7 +2,7 @@
 
 #include "Session/TRNetLog.h"
 #include "Session/TRSessionFlow.h"
-#include "Session/TRSessionInterface.h"
+#include "Session/Interface_TRSession.h"
 #include "UI/Session/TRSessionMenuController.h"
 
 #include "Components/Button.h"
@@ -19,33 +19,78 @@ void UTRSessionMenuWidget::NativeConstruct()
 	BindSessionEvents();
 	RefreshStatusTexts();
 
-	// 메뉴가 떠 있는 동안은 마우스로 조작한다. 게임 입력도 살려 둔다.
+	SetIsFocusable(true);
+
 	if (APlayerController* PC = GetOwningPlayer())
 	{
+		bPrevShowMouseCursor = PC->bShowMouseCursor;
+
+		//	GameAndUI 로 둔다. UIOnly 면 컨트롤러가 키를 못 받아, 트래블 뒤 포커스가
+		//	위젯에 안 들어왔을 때 여는 키로 닫을 방법이 사라진다.
 		FInputModeGameAndUI Mode;
 		Mode.SetWidgetToFocus(TakeWidget());
 		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 
 		PC->SetInputMode(Mode);
 		PC->SetShowMouseCursor(true);
+
+		//	대신 시점·이동만 막는다. 안 그러면 마우스가 카메라까지 돌려 화면이 휙휙 튄다.
+		//	카운터 방식이라 닫을 때 정확히 한 번 되돌린다.
+		PC->SetIgnoreLookInput(true);
+		PC->SetIgnoreMoveInput(true);
+		bInputSuppressed = true;
 	}
+}
+
+FReply UTRSessionMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	const FKey Pressed = InKeyEvent.GetKey();
+
+	FKey ToggleKey = EKeys::F9;
+	if (const UGameInstance* GI = GetGameInstance())
+	{
+		if (const UTRSessionMenuController* Controller = GI->GetSubsystem<UTRSessionMenuController>())
+		{
+			ToggleKey = Controller->GetDebugToggleKey();
+		}
+	}
+
+	if (Pressed == EKeys::Escape || (ToggleKey.IsValid() && Pressed == ToggleKey))
+	{
+		RequestClose();
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
 }
 
 void UTRSessionMenuWidget::NativeDestruct()
 {
 	UnbindSessionEvents();
 
-	// 게임 화면으로 돌려준다. 커서는 게임플레이 쪽 판단이라 여기서 켜 두지 않는다.
+	// 게임 화면으로 돌려준다. 커서는 열기 전 상태를 그대로 되돌린다.
 	if (APlayerController* PC = GetOwningPlayer())
 	{
-		PC->SetInputMode(FInputModeGameOnly());
-		PC->SetShowMouseCursor(false);
+		if (bInputSuppressed)
+		{
+			PC->SetIgnoreLookInput(false);
+			PC->SetIgnoreMoveInput(false);
+			bInputSuppressed = false;
+		}
+
+		// 기본 캡처 모드(CapturePermanently_IncludingInitialMouseDown)로 맞춘다.
+		// 이걸 빼면 닫은 뒤 첫 클릭이 씹혀 마우스가 튀는 것처럼 보인다.
+		FInputModeGameOnly Mode;
+		Mode.SetConsumeCaptureMouseDown(true);
+
+		PC->SetInputMode(Mode);
+		PC->SetShowMouseCursor(bPrevShowMouseCursor);
 	}
 
 	Super::NativeDestruct();
 }
 
-ITRSessionInterface* UTRSessionMenuWidget::GetSession() const
+IInterface_TRSession* UTRSessionMenuWidget::GetSession() const
 {
 	const UGameInstance* GI = GetGameInstance();
 	return GI ? GI->GetSubsystem<UTRSessionFlow>() : nullptr;
@@ -54,17 +99,55 @@ ITRSessionInterface* UTRSessionMenuWidget::GetSession() const
 void UTRSessionMenuWidget::BindButtons()
 {
 	// WBP 가 만들지 않은 버튼은 그냥 없는 기능이 된다. 있는 것만 잇는다.
-	if (Button_Host)       { Button_Host->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleHostClicked); }
-	if (Button_JoinByCode) { Button_JoinByCode->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleJoinByCodeClicked); }
-	if (Button_Refresh)    { Button_Refresh->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleRefreshClicked); }
-	if (Button_Invite)     { Button_Invite->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleInviteClicked); }
-	if (Button_Leave)      { Button_Leave->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleLeaveClicked); }
-	if (Button_Close)      { Button_Close->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleCloseClicked); }
+	if (Button_Host)
+	{
+		Button_Host->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleHostClicked);
+	}
 
-	if (Button_JoinSlot0) { Button_JoinSlot0->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleJoinSlot0); }
-	if (Button_JoinSlot1) { Button_JoinSlot1->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleJoinSlot1); }
-	if (Button_JoinSlot2) { Button_JoinSlot2->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleJoinSlot2); }
-	if (Button_JoinSlot3) { Button_JoinSlot3->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleJoinSlot3); }
+	if (Button_JoinByCode)
+	{
+		Button_JoinByCode->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleJoinByCodeClicked);
+	}
+
+	if (Button_Refresh)
+	{
+		Button_Refresh->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleRefreshClicked);
+	}
+
+	if (Button_Invite)
+	{
+		Button_Invite->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleInviteClicked);
+	}
+
+	if (Button_Leave)
+	{
+		Button_Leave->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleLeaveClicked);
+	}
+
+	if (Button_Close)
+	{
+		Button_Close->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleCloseClicked);
+	}
+
+	if (Button_JoinSlot0)
+	{
+		Button_JoinSlot0->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleJoinSlot0);
+	}
+
+	if (Button_JoinSlot1)
+	{
+		Button_JoinSlot1->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleJoinSlot1);
+	}
+
+	if (Button_JoinSlot2)
+	{
+		Button_JoinSlot2->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleJoinSlot2);
+	}
+
+	if (Button_JoinSlot3)
+	{
+		Button_JoinSlot3->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleJoinSlot3);
+	}
 
 	// 검색 전에는 빈 자리를 보여줄 이유가 없다.
 	for (int32 SlotIndex = 0; SlotIndex < 4; ++SlotIndex)
@@ -75,7 +158,7 @@ void UTRSessionMenuWidget::BindButtons()
 
 void UTRSessionMenuWidget::BindSessionEvents()
 {
-	ITRSessionInterface* Session = GetSession();
+	IInterface_TRSession* Session = GetSession();
 	if (!ensure(Session))
 	{
 		return;
@@ -87,7 +170,7 @@ void UTRSessionMenuWidget::BindSessionEvents()
 
 void UTRSessionMenuWidget::UnbindSessionEvents()
 {
-	if (ITRSessionInterface* Session = GetSession())
+	if (IInterface_TRSession* Session = GetSession())
 	{
 		Session->GetSessionPhaseChangedEvent().RemoveDynamic(this, &UTRSessionMenuWidget::HandlePhaseChanged);
 		Session->GetSessionListReadyEvent().RemoveDynamic(this, &UTRSessionMenuWidget::HandleListReady);
@@ -100,7 +183,7 @@ void UTRSessionMenuWidget::UnbindSessionEvents()
 
 void UTRSessionMenuWidget::HandleHostClicked()
 {
-	ITRSessionInterface* Session = GetSession();
+	IInterface_TRSession* Session = GetSession();
 	if (!ensure(Session))
 	{
 		return;
@@ -112,7 +195,7 @@ void UTRSessionMenuWidget::HandleHostClicked()
 
 void UTRSessionMenuWidget::HandleJoinByCodeClicked()
 {
-	ITRSessionInterface* Session = GetSession();
+	IInterface_TRSession* Session = GetSession();
 	if (!ensure(Session))
 	{
 		return;
@@ -125,7 +208,7 @@ void UTRSessionMenuWidget::HandleJoinByCodeClicked()
 
 void UTRSessionMenuWidget::HandleRefreshClicked()
 {
-	ITRSessionInterface* Session = GetSession();
+	IInterface_TRSession* Session = GetSession();
 	if (!ensure(Session))
 	{
 		return;
@@ -136,7 +219,7 @@ void UTRSessionMenuWidget::HandleRefreshClicked()
 
 void UTRSessionMenuWidget::HandleInviteClicked()
 {
-	if (ITRSessionInterface* Session = GetSession())
+	if (IInterface_TRSession* Session = GetSession())
 	{
 		Session->OpenInviteOverlay();
 	}
@@ -144,7 +227,7 @@ void UTRSessionMenuWidget::HandleInviteClicked()
 
 void UTRSessionMenuWidget::HandleLeaveClicked()
 {
-	if (ITRSessionInterface* Session = GetSession())
+	if (IInterface_TRSession* Session = GetSession())
 	{
 		Session->LeaveSession();
 	}
@@ -153,6 +236,11 @@ void UTRSessionMenuWidget::HandleLeaveClicked()
 }
 
 void UTRSessionMenuWidget::HandleCloseClicked()
+{
+	RequestClose();
+}
+
+void UTRSessionMenuWidget::RequestClose()
 {
 	// 위젯이 스스로 사라지지 않는다. 여닫는 판단은 컨트롤러 몫이다.
 	if (UGameInstance* GI = GetGameInstance())
@@ -166,7 +254,7 @@ void UTRSessionMenuWidget::HandleCloseClicked()
 
 void UTRSessionMenuWidget::JoinByIndex(int32 ResultIndex)
 {
-	if (ITRSessionInterface* Session = GetSession())
+	if (IInterface_TRSession* Session = GetSession())
 	{
 		Session->JoinSessionByIndex(ResultIndex);
 	}
@@ -213,11 +301,28 @@ void UTRSessionMenuWidget::ApplySlot(int32 SlotIndex, const FTRSessionSearchResu
 
 	switch (SlotIndex)
 	{
-	case 0: Label = Text_Slot0; JoinButton = Button_JoinSlot0; break;
-	case 1: Label = Text_Slot1; JoinButton = Button_JoinSlot1; break;
-	case 2: Label = Text_Slot2; JoinButton = Button_JoinSlot2; break;
-	case 3: Label = Text_Slot3; JoinButton = Button_JoinSlot3; break;
-	default: return;
+	case 0:
+		Label = Text_Slot0;
+		JoinButton = Button_JoinSlot0;
+		break;
+
+	case 1:
+		Label = Text_Slot1;
+		JoinButton = Button_JoinSlot1;
+		break;
+
+	case 2:
+		Label = Text_Slot2;
+		JoinButton = Button_JoinSlot2;
+		break;
+
+	case 3:
+		Label = Text_Slot3;
+		JoinButton = Button_JoinSlot3;
+		break;
+
+	default:
+		return;
 	}
 
 	const ESlateVisibility RowVisibility = Result ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
@@ -241,10 +346,25 @@ void UTRSessionMenuWidget::ApplySlot(int32 SlotIndex, const FTRSessionSearchResu
 	}
 }
 
-void UTRSessionMenuWidget::HandleJoinSlot0() { JoinBySlot(0); }
-void UTRSessionMenuWidget::HandleJoinSlot1() { JoinBySlot(1); }
-void UTRSessionMenuWidget::HandleJoinSlot2() { JoinBySlot(2); }
-void UTRSessionMenuWidget::HandleJoinSlot3() { JoinBySlot(3); }
+void UTRSessionMenuWidget::HandleJoinSlot0()
+{
+	JoinBySlot(0);
+}
+
+void UTRSessionMenuWidget::HandleJoinSlot1()
+{
+	JoinBySlot(1);
+}
+
+void UTRSessionMenuWidget::HandleJoinSlot2()
+{
+	JoinBySlot(2);
+}
+
+void UTRSessionMenuWidget::HandleJoinSlot3()
+{
+	JoinBySlot(3);
+}
 
 void UTRSessionMenuWidget::JoinBySlot(int32 SlotIndex)
 {
@@ -258,7 +378,7 @@ void UTRSessionMenuWidget::JoinBySlot(int32 SlotIndex)
 
 void UTRSessionMenuWidget::RefreshStatusTexts()
 {
-	ITRSessionInterface* Session = GetSession();
+	IInterface_TRSession* Session = GetSession();
 	if (!Session)
 	{
 		return;

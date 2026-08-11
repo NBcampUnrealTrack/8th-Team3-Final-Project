@@ -23,7 +23,10 @@ public:
 	bool CanUse() const { return bEnabled; }
 
 	UFUNCTION(BlueprintCallable, Category = "TR|Session")
-	void SetEnabled(bool bInEnabled) { bEnabled = bInEnabled; }
+	void SetEnabled(bool bInEnabled)
+	{
+		bEnabled = bInEnabled;
+	}
 
 	/** 조준했을 때 띄울 안내 문구. */
 	UFUNCTION(BlueprintPure, Category = "TR|Session")

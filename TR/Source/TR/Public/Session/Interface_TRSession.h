@@ -1,20 +1,20 @@
 // TR 세션 규약 — UI·게임플레이는 세션 구현을 모르고 이 인터페이스에만 의존한다.
-// 획득: Cast<ITRSessionInterface>(GetGameInstance()->GetSubsystem<UTRSessionFlow>())
+// 획득: Cast<IInterface_TRSession>(GetGameInstance()->GetSubsystem<UTRSessionFlow>())
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/Interface.h"
 #include "Session/TRSessionTypes.h"
-#include "TRSessionInterface.generated.h"
+#include "Interface_TRSession.generated.h"
 
 UINTERFACE(MinimalAPI)
-class UTRSessionInterface : public UInterface
+class UInterface_TRSession : public UInterface
 {
 	GENERATED_BODY()
 };
 
-class TR_API ITRSessionInterface
+class TR_API IInterface_TRSession
 {
 	GENERATED_BODY()
 

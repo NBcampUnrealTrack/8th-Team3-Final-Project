@@ -97,18 +97,8 @@ public:
 	FTRSessionBoolEvent OnJoinSessionComplete;
 
 private:
-	IOnlineSessionPtr GetSessionInterface() const;
-
-	// 호스트가 이번 세션에 광고한 방 코드(6자 A-Z2-9). 호스트 전용.
-	FString HostRoomCode;
-
-	// 6자 방 코드 생성(혼동 문자 0/O/1/I 제외).
-	static FString GenerateRoomCode();
-
-	// 직전 검색 결과 보관(Join 시 참조).
-	TSharedPtr<FOnlineSessionSearch> SessionSearch;
-
-	// 기존 세션 파기 완료를 기다리는 방 생성 요청(파기는 비동기 — 즉시 생성하면 거부된다).
+	// 파기는 비동기다. 완료를 기다리는 동안 요청을 여기 담아 둔다.
+	// 즉시 다시 생성하면 "세션 이미 존재" 로 거부된다.
 	struct FPendingHostRequest
 	{
 		FString RoomName;
@@ -116,15 +106,18 @@ private:
 		bool    bLAN = false;
 		bool    bValid = false;
 	};
-	FPendingHostRequest PendingHostRequest;
 
-	// 파기 완료를 기다리는 조인 요청. 결과는 값으로 — 재검색하면 SessionSearch 가 갈린다.
+	// 결과는 값으로 들고 있는다 — 재검색하면 SessionSearch 가 갈린다.
 	struct FPendingJoinRequest
 	{
 		FOnlineSessionSearchResult Result;
 		bool bValid = false;
 	};
-	FPendingJoinRequest PendingJoinRequest;
+
+	IOnlineSessionPtr GetSessionInterface() const;
+
+	// 6자 방 코드 생성(혼동 문자 0/O/1/I 제외).
+	static FString GenerateRoomCode();
 
 	void StartHostSession(int32 MaxPlayers, bool bLAN, const FString& RoomName);
 	void StartJoinSession(const FOnlineSessionSearchResult& Result);
@@ -132,6 +125,23 @@ private:
 	// 리슨 시작. 이미 게임 맵이면 그 자리에서 열고, 메인메뉴면 게임 맵으로 한 번 이동한다.
 	bool StartListen();
 	bool StartListenInPlace();
+
+	// 월드가 생긴 뒤 초대 구독을 건다. Init 시점의 GetWorld() 는 신뢰할 수 없다.
+	void HandleFirstWorldReady(UWorld* LoadedWorld);
+
+	// 접속 끊김 시 남은 로컬 세션 파기 — 없으면 이후 방 생성이 계속 거부된다.
+	void HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver,
+		ENetworkFailure::Type FailureType, const FString& ErrorString);
+
+	// 친구 초대 수락 — 오버레이에서 "게임 참가" 를 누르면 여기로 온다.
+	void HandleSessionUserInviteAccepted(bool bWasSuccessful, int32 ControllerId,
+		FUniqueNetIdPtr UserId, const FOnlineSessionSearchResult& InviteResult);
+
+	// OSS 세션 콜백.
+	void HandleCreateSessionComplete(FName SessionName, bool bWasSuccessful);
+	void HandleFindSessionsComplete(bool bWasSuccessful);
+	void HandleJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result);
+	void HandleDestroySessionComplete(FName SessionName, bool bWasSuccessful);
 
 	// 세션이 열리는 게임 맵. 메인메뉴에서 호스트할 때 이 맵으로 이동한다.
 	// 다른 맵을 쓰려면 DefaultGame.ini [/Script/TR.TRGameInstance] 에서 덮어쓴다.
@@ -146,23 +156,20 @@ private:
 	UPROPERTY(Config)
 	mutable FString PlayerKey;
 
-	// 접속 끊김 시 남은 로컬 세션 파기 — 없으면 이후 방 생성이 계속 거부된다.
-	void HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver,
-		ENetworkFailure::Type FailureType, const FString& ErrorString);
-	FDelegateHandle NetworkFailureHandle;
+	// 호스트가 이번 세션에 광고한 방 코드(6자 A-Z2-9). 호스트 전용.
+	FString HostRoomCode;
 
-	// 친구 초대 수락 — 오버레이에서 "게임 참가" 를 누르면 여기로 온다.
-	void HandleSessionUserInviteAccepted(bool bWasSuccessful, int32 ControllerId,
-		FUniqueNetIdPtr UserId, const FOnlineSessionSearchResult& InviteResult);
+	// 직전 검색 결과 보관(Join 시 참조).
+	TSharedPtr<FOnlineSessionSearch> SessionSearch;
+
+	FPendingHostRequest PendingHostRequest;
+	FPendingJoinRequest PendingJoinRequest;
+
+	FDelegateHandle NetworkFailureHandle;
+	FDelegateHandle PostLoadMapHandle;
 	FDelegateHandle InviteAcceptedHandle;
 
-	// OSS 세션 콜백.
-	void HandleCreateSessionComplete(FName SessionName, bool bWasSuccessful);
-	void HandleFindSessionsComplete(bool bWasSuccessful);
-	void HandleJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result);
-	void HandleDestroySessionComplete(FName SessionName, bool bWasSuccessful);
-
-	// 델리게이트 핸들(콜백 1회 후 해제).
+	// 콜백 1회 후 해제하는 핸들.
 	FDelegateHandle CreateSessionCompleteHandle;
 	FDelegateHandle FindSessionsCompleteHandle;
 	FDelegateHandle JoinSessionCompleteHandle;
