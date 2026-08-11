@@ -88,6 +88,18 @@ void ATRLevelSceneChunk::RebuildInstanceComponents()
 		InstanceComponent->SetupAttachment(SceneRoot);
 		InstanceComponent->SetMobility(EComponentMobility::Movable);
 		InstanceComponent->SetStaticMesh(Definition.Mesh);
+
+		// Definition별 Material Override 적용. 배열 인덱스는 Static Mesh Material Slot 인덱스와 같다.
+		const int32 MaterialSlotCount = Definition.Mesh ? Definition.Mesh->GetStaticMaterials().Num() : 0;
+		const int32 OverrideCount = FMath::Min(MaterialSlotCount, Definition.MaterialOverrides.Num());
+		for (int32 MaterialIndex = 0; MaterialIndex < OverrideCount; ++MaterialIndex)
+		{
+			if (UMaterialInterface* MaterialOverride = Definition.MaterialOverrides[MaterialIndex])
+			{
+				InstanceComponent->SetMaterial(MaterialIndex, MaterialOverride);
+			}
+		}
+
 		InstanceComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		InstanceComponent->SetGenerateOverlapEvents(false);
 		InstanceComponent->SetCanEverAffectNavigation(false);
@@ -136,42 +148,79 @@ bool ATRLevelSceneChunk::CreateInstanceTransform(const FTRLevelSceneMeshDefiniti
 	const float MinScale = FMath::Max(0.001f, FMath::Min(Definition.UniformScaleRange.X, Definition.UniformScaleRange.Y));
 	const float MaxScale = FMath::Max(MinScale, FMath::Max(Definition.UniformScaleRange.X, Definition.UniformScaleRange.Y));
 
-	float LocalY = Stream.FRandRange(MinY, MaxY);
+	TArray<FVector2D, TInlineAllocator<4>> ExclusionRanges;
 	if (bExcludeRailAreaFromRandomPlacement && Definition.PlacementMode == ETRLevelScenePlacementMode::Random)
 	{
-		const float ExclusionMin = FMath::Min(RailLateralExclusionRange.X, RailLateralExclusionRange.Y);
-		const float ExclusionMax = FMath::Max(RailLateralExclusionRange.X, RailLateralExclusionRange.Y);
+		ExclusionRanges.Add(RailLateralExclusionRange);
+	}
+	ExclusionRanges.Append(Definition.LateralExclusionRanges);
 
-		if (FMath::IsNearlyEqual(MinY, MaxY))
+	for (FVector2D& ExclusionRange : ExclusionRanges)
+	{
+		const float ExclusionMin = FMath::Min(ExclusionRange.X, ExclusionRange.Y);
+		const float ExclusionMax = FMath::Max(ExclusionRange.X, ExclusionRange.Y);
+		ExclusionRange.X = FMath::Clamp(ExclusionMin, MinY, MaxY);
+		ExclusionRange.Y = FMath::Clamp(ExclusionMax, MinY, MaxY);
+	}
+	ExclusionRanges.Sort([](const FVector2D& Left, const FVector2D& Right)
+	{
+		return Left.X < Right.X;
+	});
+
+	float LocalY = MinY;
+	if (FMath::IsNearlyEqual(MinY, MaxY))
+	{
+		for (const FVector2D& ExclusionRange : ExclusionRanges)
 		{
-			if (LocalY >= ExclusionMin && LocalY <= ExclusionMax)
+			if (LocalY >= ExclusionRange.X && LocalY <= ExclusionRange.Y)
 			{
 				return false;
 			}
 		}
-		else
+	}
+	else if (ExclusionRanges.IsEmpty())
+	{
+		LocalY = Stream.FRandRange(MinY, MaxY);
+	}
+	else
+	{
+		float TotalAllowedWidth = 0.f;
+		float Cursor = MinY;
+		for (const FVector2D& ExclusionRange : ExclusionRanges)
 		{
-			const float OverlapMin = FMath::Max(MinY, ExclusionMin);
-			const float OverlapMax = FMath::Min(MaxY, ExclusionMax);
-			if (OverlapMin < OverlapMax)
+			if (ExclusionRange.X > Cursor)
 			{
-				const float LeftWidth = FMath::Max(0.f, OverlapMin - MinY);
-				const float RightWidth = FMath::Max(0.f, MaxY - OverlapMax);
-				const float TotalAllowedWidth = LeftWidth + RightWidth;
-				if (TotalAllowedWidth <= KINDA_SMALL_NUMBER)
-				{
-					return false;
-				}
-
-				if (Stream.FRandRange(0.f, TotalAllowedWidth) < LeftWidth)
-				{
-					LocalY = Stream.FRandRange(MinY, OverlapMin);
-				}
-				else
-				{
-					LocalY = Stream.FRandRange(OverlapMax, MaxY);
-				}
+				TotalAllowedWidth += ExclusionRange.X - Cursor;
 			}
+			Cursor = FMath::Max(Cursor, ExclusionRange.Y);
+		}
+		TotalAllowedWidth += FMath::Max(0.f, MaxY - Cursor);
+
+		if (TotalAllowedWidth <= KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		float SelectedDistance = Stream.FRandRange(0.f, TotalAllowedWidth);
+		Cursor = MinY;
+		bool bSelectedAllowedRange = false;
+		for (const FVector2D& ExclusionRange : ExclusionRanges)
+		{
+			const float AllowedWidth = FMath::Max(0.f, ExclusionRange.X - Cursor);
+			if (SelectedDistance < AllowedWidth)
+			{
+				LocalY = Cursor + SelectedDistance;
+				bSelectedAllowedRange = true;
+				break;
+			}
+
+			SelectedDistance -= AllowedWidth;
+			Cursor = FMath::Max(Cursor, ExclusionRange.Y);
+		}
+
+		if (!bSelectedAllowedRange)
+		{
+			LocalY = Cursor + SelectedDistance;
 		}
 	}
 

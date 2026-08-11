@@ -6,6 +6,7 @@
 #include "TRLevelSceneTypes.generated.h"
 
 class UStaticMesh;
+class UMaterialInterface;
 
 // 레벨 메시 배치 방식 - 랜덤하게 초기화, 혹은 반복시 X좌표 일정하게 배치. 필요시 LongitudinalJitter 활용해 오차 추가 가능.
 UENUM(BlueprintType)
@@ -25,6 +26,10 @@ struct TR_API FTRLevelSceneMeshDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Level Scene")
 	TObjectPtr<UStaticMesh> Mesh = nullptr;
 
+	//메시 Material Slot별 Override. 비워 두거나 비어 있는 항목은 Static Mesh 기본 머티리얼을 사용.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Level Scene")
+	TArray<TObjectPtr<UMaterialInterface>> MaterialOverrides;
+
 	//배치 방식
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Level Scene")
 	ETRLevelScenePlacementMode PlacementMode = ETRLevelScenePlacementMode::Random;
@@ -40,6 +45,10 @@ struct TR_API FTRLevelSceneMeshDefinition
 	//좌우 배치 너비, 얼마나 멀리까지 배치할지
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Level Scene")
 	FVector2D LateralRange = FVector2D(-15000.f, 15000.f);
+
+	//이 Definition이 생성되지 않을 로컬 Y축 구간 목록. 각 원소의 X=최소 Y, Y=최대 Y.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Level Scene")
+	TArray<FVector2D> LateralExclusionRanges;
 
 	//회전값 설정
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Level Scene")
