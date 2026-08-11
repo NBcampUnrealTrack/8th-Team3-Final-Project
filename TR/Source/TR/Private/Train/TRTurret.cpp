@@ -5,6 +5,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "TRTypes.h"
+#include "Core/TRGameState.h"
 
 ATRTurret::ATRTurret()
 {
@@ -35,8 +36,12 @@ const FTRTurretLevelRow* ATRTurret::GetCurrentLevelRow(const TCHAR* ContextName)
 		return nullptr;
 	}
 
-	const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(CurrentLevel)), ContextName);
-	ensureMsgf(Row, TEXT("%s: level row %d not found in LevelTable"), *GetName(), CurrentLevel);
+	const UWorld* World = GetWorld();
+	const ATRGameState* GS = IsValid(World) ? World->GetGameState<ATRGameState>() : nullptr;
+	const int32 Level = IsValid(GS) ? GS->GetTurretLevel() : 1;
+
+	const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(Level)), ContextName);
+	ensureMsgf(Row, TEXT("%s: level row %d not found in LevelTable"), *GetName(), Level);
 	return Row;
 }
 
