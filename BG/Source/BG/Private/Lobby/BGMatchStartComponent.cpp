@@ -1,7 +1,6 @@
 ﻿#include "Lobby/BGMatchStartComponent.h"
 
 #include "Core/BGGameMode.h"
-#include "Core/BGGameInstance.h"
 #include "Lobby/BGReadyComponent.h"
 #include "Lobby/BGSeatComponent.h"
 #include "Core/BGGameState.h"
@@ -108,12 +107,8 @@ bool UBGMatchStartComponent::StartMatch()
 
 	bMatchStarted = true;
 
-	// 난입 차단은 여기서 한다 — 시작 경로가 늘어나도 동일하게 걸려야 한다.
-	// 빠지면 시작 후 들어온 플레이어가 역할 없이 판에 남는다.
-	if (UBGGameInstance* GI = GM->GetGameInstance<UBGGameInstance>())
-	{
-		GI->SetAllowJoinInProgress(false);
-	}
+	//	세션은 참여 가능 상태로 둔다. 막으면 검색에서 빠져 복귀도 못 한다.
+	//	난입 차단은 ABGGameMode::PreLogin 이 한다.
 
 	TArray<APlayerController*> Players;
 	GM->CollectPlayers(Players);

@@ -152,10 +152,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Config, Category = "BG|Rope")
 	float TurnSeconds = 20.f;
 
-	// 자리를 비운 사람의 턴 길이(초). 0 으로 두면 턴이 같은 프레임에 연쇄로 넘어가고,
-	// 돌아오는 중이던 사람이 자기 턴을 통째로 잃는다.
+	// 자리를 비운 사람의 턴 길이(초). 짧게 두면 돌아올 틈도 없이 두 턴이 지나 죽는다 —
+	// 접속 중인 사람과 같은 길이를 줘서, 한 바퀴 도는 동안 복귀할 기회를 남긴다.
 	UPROPERTY(EditDefaultsOnly, Config, Category = "BG|Rope")
-	float AbsentTurnSeconds = 3.f;
+	float AbsentTurnSeconds = 20.f;
 
 	/** 자리를 비운 채 밧줄이 이만큼 타면 그 좌석을 죽인다. */
 	UPROPERTY(EditDefaultsOnly, Config, Category = "BG|Rope")

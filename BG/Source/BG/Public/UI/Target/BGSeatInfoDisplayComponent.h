@@ -159,6 +159,10 @@ private:
 	//	지금 열려 있는 상세의 좌석. 없으면 INDEX_NONE.
 	int32 VisibleDetailSeat = INDEX_NONE;
 
+	//	폰 → 좌석. 이탈로 컨트롤러가 떨어지면 폰에서 PlayerState 를 못 읽으므로,
+	//	미리 기억해 둔 좌석으로 되찾아 이름표를 계속 띄운다.
+	TMap<TWeakObjectPtr<ABGCharacter>, int32> SeatByCharacter;
+
 	//	체력 통지를 걸어 둔 ASC. 폰이 바뀌면 여기서 떼고 다시 건다.
 	TMap<int32, TWeakObjectPtr<class UAbilitySystemComponent>> BoundHealthASCs;
 

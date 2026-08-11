@@ -375,13 +375,29 @@ void UBGSeatInfoDisplayComponent::SyncWidgets()
 	{
 		ABGCharacter* Character = *It;
 
-		//	이탈자가 두고 간 폰은 PlayerState 가 없다. 그 자리는 비워 둔다 —
-		//	없는 사람의 정보를 띄우는 것보다 낫다.
-		const ABGPlayerState* PS = Character ? Character->GetPlayerState<ABGPlayerState>() : nullptr;
+		if (!Character)
+		{
+			continue;
+		}
+
+		const ABGPlayerState* PS = Character->GetPlayerState<ABGPlayerState>();
+
+		//	폰에서 PlayerState 를 못 읽으면 기억해 둔 좌석으로 되찾는다.
+		if (!PS)
+		{
+			if (const int32* Remembered = SeatByCharacter.Find(Character))
+			{
+				PS = UBGSeatViewLibrary::FindPlayerStateBySeat(PC, *Remembered);
+			}
+		}
+
 		if (!PS || PS->GetSeatIndex() == INDEX_NONE)
 		{
 			continue;
 		}
+
+		//	폰과 좌석의 짝을 기억해 둔다. 나중에 컨트롤러가 떨어져도 이 값으로 되찾는다.
+		SeatByCharacter.Add(Character, PS->GetSeatIndex());
 
 		//	자기 머리 위에는 띄우지 않는다. 자기 정보는 화면 좌하단 전용 패널이 맡는다.
 		if (PS == LocalState)
@@ -534,11 +550,17 @@ void UBGSeatInfoDisplayComponent::UpdateHover()
 			Hit, Origin, Origin + Direction * HoverTraceDistance, ECC_Pawn, Params))
 	{
 		//	캡슐이 맞든 메시가 맞든 주인은 같은 캐릭터다 — 컴포넌트가 아니라 액터로 판단한다.
-		if (const ABGCharacter* Character = Cast<ABGCharacter>(Hit.GetActor()))
+		if (ABGCharacter* Character = Cast<ABGCharacter>(Hit.GetActor()))
 		{
 			if (const ABGPlayerState* PS = Character->GetPlayerState<ABGPlayerState>())
 			{
 				NewSeat = PS->GetSeatIndex();
+			}
+			else if (const int32* Remembered = SeatByCharacter.Find(Character))
+			{
+				//	이탈자가 두고 간 폰은 PlayerState 가 비어 있다. 기억해 둔 좌석으로 잡아
+				//	상세도 뜨고 대상으로도 고를 수 있게 한다.
+				NewSeat = *Remembered;
 			}
 		}
 	}
@@ -578,6 +600,7 @@ void UBGSeatInfoDisplayComponent::DestroyAllWidgets()
 		if (Pair.Value) { Pair.Value->DestroyComponent(); }
 	}
 	DetailsBySeat.Reset();
+	SeatByCharacter.Reset();
 
 	VisibleDetailSeat = INDEX_NONE;
 }

@@ -66,7 +66,15 @@ private:
 	void RefreshHeader();
 
 	// 접속 인원 표시는 통지가 없어 짧은 주기로 갱신한다.
+	UFUNCTION()
 	void RefreshLobbyStatus();
+
+	/**
+	 * 페이즈 통지를 구독한다. GameState 는 클라에 늦게 오므로 여러 진입점에서 재시도한다.
+	 * 준비 통지만으로는 부족하다 — 판이 시작되면 준비 상태가 더는 안 바뀌어
+	 * 클라이언트가 로비를 벗어난 것을 알아챌 기회가 없다.
+	 */
+	void TryBindPhaseDelegate();
 
 	UFUNCTION()
 	void HandleHostClicked();
@@ -129,6 +137,10 @@ private:
 
 	//	인원·준비 변화 구독. 폴링을 대신한다.
 	FDelegateHandle LobbyChangedHandle;
+
+	//	중복 구독을 막기 위해 현재 구독 중인 GameState 를 기억한다.
+	UPROPERTY()
+	TWeakObjectPtr<class ABGGameState> BoundGameState;
 
 	// 로비를 벗어난 페이즈를 본 뒤 한 번만 닫는다. 다시 F9 로 열면 그대로 둔다.
 	bool bClosedOnMatchStart = false;

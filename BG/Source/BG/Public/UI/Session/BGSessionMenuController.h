@@ -37,6 +37,20 @@ protected:
 private:
 	void HandlePostLoadMap(UWorld* LoadedWorld);
 
+	/**
+	 * 트래블 뒤 메뉴를 되살릴지 판단한다. 열려 있었으면 그대로 되살리고,
+	 * 판이 끝나 로비로 돌아온 것이면 준비를 다시 눌러야 하므로 새로 띄운다.
+	 */
+	void TryRestoreAfterTravel(UWorld* World);
+
+	/** 뷰포트에 남은 세션 메뉴를 전부 걷어낸다. Menu 가 놓친 고아를 위한 안전망이다. */
+	void RemoveStrayMenus();
+
+	//	GameState 가 늦게 와도 몇 번만 두드린다. 무한히 도는 타이머를 남기지 않는다.
+	static constexpr int32 MaxRestoreAttempts = 25;
+
+	int32 RestoreAttempts = 0;
+
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBGSessionMenuWidget> Menu;
