@@ -8,6 +8,6 @@ ATRControlConsole::ATRControlConsole()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	
-	CollisionBox = CreateDefaultSubobject<UBoxComponent>(TEXT("CollisionBox"));
-	RootComponent = CollisionBox;
+	ConsoleMeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ConsoleMeshComp"));
+	RootComponent = ConsoleMeshComp;
 }

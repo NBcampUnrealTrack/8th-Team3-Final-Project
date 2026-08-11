@@ -18,5 +18,5 @@ public:
 
 private:
 	UPROPERTY(VisibleAnywhere, Category="ControlConsole")
-	TObjectPtr<UBoxComponent> CollisionBox;
+	TObjectPtr<UStaticMeshComponent> ConsoleMeshComp;
 };

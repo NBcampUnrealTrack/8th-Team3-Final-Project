@@ -268,6 +268,7 @@ void ATRPlayerCharacter::OnInteractPressed(const FInputActionValue& Input)
 {
 	if (IsValid(InteractionComp) && Cast<ATRControlConsole>(InteractionComp->GetCurrentTarget()))
 	{
+		UE_LOG(LogTemp, Verbose, TEXT("OnControlConsoleInteract fired"));
 		OnControlConsoleInteract();
 		return;
 	}
