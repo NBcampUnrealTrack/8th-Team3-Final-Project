@@ -70,6 +70,11 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 	else if (RequiresMonsterResource(ActionType))
 	{
 		const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
+		if (!IsValid(Part))
+		{
+			UE_LOG(LogTemp, Log, TEXT("StartAction rejected: target is not an installable part"));
+			return;
+		}
 		const int32 InstallCost = Part ? Part->GetInstallCost() : 0;
 
 		ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>();
@@ -191,6 +196,14 @@ void UTRActionComponent::CompleteAction()
 					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 					{
 						const int32 InstallCost = Part->GetInstallCost();
+						
+						ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
+						if (!IsValid(GameState) || !GameState->TryConsumeMonsterResource(InstallCost))
+						{
+							UE_LOG(LogTemp, Log, TEXT("Build aborted: not enough resource for %s (cost %d)"), *Part->GetName(), InstallCost);
+							break;
+						}
+						
 						Part->ApplyInstall();
 						UE_LOG(LogTemp, Verbose, TEXT("Build complete: %s (cost %d)"), *Part->GetName(), InstallCost);
 

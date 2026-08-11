@@ -8,7 +8,6 @@
 
 class ATRArmor;
 class ATRTurret;
-class UStaticMeshComponent;
 
 UCLASS()
 class TR_API ATRTrain : public AActor
