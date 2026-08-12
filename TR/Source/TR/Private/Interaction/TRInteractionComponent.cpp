@@ -82,7 +82,7 @@ void UTRInteractionComponent::UpdateTrace()
 	LastTraceResult = Hit.GetActor();
 }
 
-static void BuildPrompts(const AActor* Target, FText& OutRepair, FText& OutReload, FText& OutInteract)
+static void BuildPrompts(const AActor* Target, bool bHasSupplySpace, FText& OutRepair, FText& OutReload, FText& OutInteract)
 {
 	if (!IsValid(Target))
 	{
@@ -109,7 +109,7 @@ static void BuildPrompts(const AActor* Target, FText& OutRepair, FText& OutReloa
 			OutInteract = FText::FromString(TEXT("E 키를 눌러 포탑 탑승"));
 		}
 	}
-	else if (Target->IsA<ATRSupplyPoint>())
+	else if (Target->IsA<ATRSupplyPoint>() && bHasSupplySpace)
 	{
 		OutInteract = FText::FromString(TEXT("E 키를 눌러 자원 획득"));
 	}
@@ -148,18 +148,16 @@ void UTRInteractionComponent::UpdateInteractionWidget()
 	}
 
 	const UTRActionComponent* ActionComp = OwnerCharacter->GetActionComponent();
-	const bool bRepairing = IsValid(ActionComp) && ActionComp->GetCurrentActionType() == ETRActionType::Repair;
-	HUDWidget->SetRepairProgressVisible(bRepairing);
-	if (bRepairing)
-	{
-		HUDWidget->SetRepairProgress(ActionComp->GetActionProgress01());
-	}
+	const ETRActionType CurrentAction = IsValid(ActionComp) ? ActionComp->GetCurrentActionType() : ETRActionType::None;
+	HUDWidget->SetActionProgress(CurrentAction, IsValid(ActionComp) ? ActionComp->GetActionProgress01() : 0.f);
 
 	const ATRPlayerState* PlayerState = OwnerCharacter->GetPlayerState<ATRPlayerState>();
 	if (IsValid(PlayerState))
 	{
 		HUDWidget->SetCarriedSupply(PlayerState->GetCarriedSupply());
 	}
+
+	HUDWidget->SetTargetInfo(LastTraceResult.Get());
 
 	// 터렛에 탑승 중이면 수리도 재장전도 못 함
 	const UTRTurretControlComponent* TurretControlComp = OwnerCharacter->GetTurretControlComponent();
@@ -170,7 +168,8 @@ void UTRInteractionComponent::UpdateInteractionWidget()
 	FText InteractPrompt;
 	if (!bMounted)
 	{
-		BuildPrompts(LastTraceResult.Get(), RepairPrompt, ReloadPrompt, InteractPrompt);
+		const bool bHasSupplySpace = IsValid(PlayerState) && PlayerState->HasSupplySpace();
+		BuildPrompts(LastTraceResult.Get(), bHasSupplySpace, RepairPrompt, ReloadPrompt, InteractPrompt);
 	}
 
 	HUDWidget->SetInteractionPrompts(RepairPrompt, ReloadPrompt, InteractPrompt);
