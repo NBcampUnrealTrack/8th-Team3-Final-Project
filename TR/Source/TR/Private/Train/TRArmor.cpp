@@ -4,6 +4,7 @@
 #include "Train/TRArmor.h"
 #include "Components/BoxComponent.h"
 #include "TRTypes.h"
+#include "Core/TRGameState.h"
 
 ATRArmor::ATRArmor()
 {
@@ -18,10 +19,15 @@ const FTRArmorLevelRow* ATRArmor::GetCurrentLevelRow(const TCHAR* ContextName) c
 		return nullptr;
 	}
 
-	const FTRArmorLevelRow* Row = LevelTable->FindRow<FTRArmorLevelRow>(FName(*FString::FromInt(CurrentLevel)), ContextName);
-	ensureMsgf(Row, TEXT("%s: level row %d not found in LevelTable"), *GetName(), CurrentLevel);
+	const UWorld* World = GetWorld();
+	const ATRGameState* GS = IsValid(World) ? World->GetGameState<ATRGameState>() : nullptr;
+	const int32 Level = IsValid(GS) ? GS->GetArmorLevel() : 1;
+
+	const FTRArmorLevelRow* Row = LevelTable->FindRow<FTRArmorLevelRow>(FName(*FString::FromInt(Level)), ContextName);
+	ensureMsgf(Row, TEXT("%s: level row %d not found in LevelTable"), *GetName(), Level);
 	return Row;
 }
+
 
 float ATRArmor::GetMaxHP() const
 {

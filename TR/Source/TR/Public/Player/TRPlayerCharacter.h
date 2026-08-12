@@ -15,6 +15,7 @@ class UTRInteractionComponent;
 class UCameraComponent;
 class UNiagaraComponent;
 class UNiagaraSystem;
+class ATRControlConsole;
 
 UCLASS()
 class TR_API ATRPlayerCharacter : public ACharacter
@@ -35,6 +36,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Action")
 	float GetHealPercent() const { return HealPercent; }
+
+	UFUNCTION(BlueprintPure, Category = "Turret")
+	UTRTurretControlComponent* GetTurretControlComponent() const { return TurretControlComp; }
+
+	UFUNCTION(BlueprintPure, Category = "Action")
+	UTRActionComponent* GetActionComponent() const { return ActionComp; }
 	
 	//--- 입력 액션--- 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -51,6 +58,10 @@ public:
 	TObjectPtr<UInputAction> IA_Trigger;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_Reload;
+	
+	// UI - 이걸 오버라이드/바인드해서 HUD 쪽 로직을 붙이면 됨
+	UFUNCTION(BlueprintImplementableEvent, Category = "Interaction")
+	void OnControlConsoleInteract();
 	
 protected:
 	//--- 플레이어 조작 관련함수 ---
@@ -78,6 +89,8 @@ protected:
 	void TriggerReleased_Implementation();
 	
 	void TriggerPressed(const FInputActionValue& Input);
+	
+	void OnInteractPressed(const FInputActionValue& Input);
 	
 	// Local look input smoothing. Character Movement Component sends final ControlRotation to server.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))

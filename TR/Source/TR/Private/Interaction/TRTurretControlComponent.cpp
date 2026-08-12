@@ -32,7 +32,7 @@ bool UTRTurretControlComponent::ServerMount_Validate(ATRTurret* Turret)
 
 void UTRTurretControlComponent::ServerMount_Implementation(ATRTurret* Turret)
 {
-	if (!IsValid(Turret) || IsMounted() || Turret->IsOccupied() || Turret->IsDestroyed())
+	if (!IsValid(Turret) || IsMounted() || !Turret->CanBeMounted())
 	{
 		UE_LOG(LogTemp, Verbose, TEXT("Mount ignored: invalid/occupied/destroyed"));
 		return;
@@ -73,7 +73,7 @@ void UTRTurretControlComponent::CompleteMount()
 	ATRTurret* Turret = PendingMountTurret.Get();
 	PendingMountTurret = nullptr;
 
-	if (!IsValid(Turret) || Turret->IsOccupied() || Turret->IsDestroyed())
+	if (!IsValid(Turret) || !Turret->CanBeMounted())
 	{
 		UE_LOG(LogTemp, Verbose, TEXT("Mount failed after delay: target no longer valid"));
 		return;
