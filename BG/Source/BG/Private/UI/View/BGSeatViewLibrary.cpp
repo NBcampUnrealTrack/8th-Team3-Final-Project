@@ -43,9 +43,25 @@ namespace
 		});
 	}
 
+	/**
+	 * 이 좌석의 폰. 이탈자는 UnPossess 로 폰을 월드에 남겨 두므로 PlayerState 의
+	 * 역참조가 끊긴다 — 서버에서만 그렇고 클라에서는 남아 있어, 호스트 화면에서만
+	 * 직업·체력이 사라지는 것으로 보인다. 두고 간 폰을 폴백으로 본다.
+	 */
+	APawn* GetSeatPawn(const ABGPlayerState* PS)
+	{
+		if (!PS)
+		{
+			return nullptr;
+		}
+
+		APawn* Live = PS->GetPawn();
+		return Live ? Live : PS->GetAbandonedPawn();
+	}
+
 	const UAbilitySystemComponent* GetSeatASC(const ABGPlayerState* PS)
 	{
-		return PS ? UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PS->GetPawn()) : nullptr;
+		return UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(GetSeatPawn(PS));
 	}
 
 	FString RoleDisplayName(const FGameplayTag& Role)
@@ -188,7 +204,7 @@ TArray<FBGSeatView> UBGSeatViewLibrary::MakeSeatViews(const APlayerController* V
 		View.bIsAlive = GS ? GS->IsSeatAlive(View.SeatIndex) : true;
 
 		//	직업은 역할과 달리 조건 없이 전원에게 복제된다(GDD §7) — 숨김 처리가 필요 없다.
-		if (const ABGCharacter* Character = Cast<ABGCharacter>(PS->GetPawn()))
+		if (const ABGCharacter* Character = Cast<ABGCharacter>(GetSeatPawn(PS)))
 		{
 			View.JobName = JobDisplayName(Character->GetJobTag(), Data);
 		}

@@ -1019,6 +1019,11 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 					GS ? *GS->GetPhaseTag().ToString() : TEXT("-"),
 					InstanceId),
 				FColor::Orange, /*Time=*/5.f);
+
+			//	화면 메시지는 서버 창에만 뜬다 — 거부 사유를 로그에도 남긴다.
+			UE_LOG(LogBGCard, Warning, TEXT("[BG] 카드 #%d 거부 — 좌석 %d 의 차례가 아니다 (현재 %d / %s)"),
+				InstanceId, MySeat, GS ? GS->GetCurrentSeat() : INDEX_NONE,
+				GS ? *GS->GetPhaseTag().ToString() : TEXT("-"));
 			return;
 		}
 
@@ -1032,6 +1037,9 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 					GS->GetCardUseLimitForSeat(MySeat),
 					InstanceId),
 				FColor::Orange, /*Time=*/5.f);
+
+			UE_LOG(LogBGCard, Warning, TEXT("[BG] 카드 #%d 거부 — 좌석 %d 사용 한도 소진"),
+				InstanceId, MySeat);
 			return;
 		}
 
@@ -1050,6 +1058,9 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 				FString::Printf(TEXT("[서버] 좌석 %d 은 이미 사망했습니다. 카드 #%d 거부."),
 					TargetSeat, InstanceId),
 				FColor::Orange, /*Time=*/5.f);
+
+			UE_LOG(LogBGCard, Warning, TEXT("[BG] 카드 #%d 거부 — 대상 좌석 %d 은 사망"),
+				InstanceId, TargetSeat);
 			return;
 		}
 	}
@@ -1098,6 +1109,8 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			FString::Printf(TEXT("[서버] 카드 Instance=%d 를 손패에서 못 찾음(또는 Row 의 CardIdTag 비어있음)."),
 				InstanceId),
 			FColor::Red, 8.f);
+
+		UE_LOG(LogBGCard, Warning, TEXT("[BG] 카드 #%d 거부 — 손패에 없거나 CardIdTag 가 비었다"), InstanceId);
 		return;
 	}
 
@@ -1123,6 +1136,9 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 				*CardId.ToString(), AbilityByCardId.Num(),
 				Dump.IsEmpty() ? TEXT("(비어있음)") : *Dump),
 			FColor::Red, 10.f);
+
+		UE_LOG(LogBGCard, Warning, TEXT("[BG] 카드 #%d 거부 — %s 의 GA 매핑 없음 (맵 %d개)"),
+			InstanceId, *CardId.ToString(), AbilityByCardId.Num());
 		return;
 	}
 	TSubclassOf<UGameplayAbility> AbilityClass = *Found;
@@ -1566,7 +1582,9 @@ AActor* ABGPlayerController::ResolveTargetActor(int32 TargetSeat) const
 		const ABGPlayerState* BPS = Cast<ABGPlayerState>(PS);
 		if (BPS && BPS->GetSeatIndex() == TargetSeat)
 		{
-			return PS->GetPawn();
+			//	역참조가 비면 두고 간 폰을 대상으로 준다.
+			APawn* Live = PS->GetPawn();
+			return Live ? Live : BPS->GetAbandonedPawn();
 		}
 	}
 	return nullptr;

@@ -1002,9 +1002,16 @@ bool ABGGameState::TryBeginNextDeathCinematic()
 		const FBGPendingDeath Death = PendingDeaths[0];
 		PendingDeaths.RemoveAt(0);
 
-		//	비출 대상이 없으면(이탈자가 두고 간 폰은 이미 파괴됐거나 애초에 없다) 연출이 성립하지 않는다.
+		//	연출에 비출 폰을 고른다. 역참조가 비면 두고 간 폰을 쓴다.
 		ABGPlayerState* DeadPS = GetPlayerStateBySeat(Death.DeadSeat);
-		ABGCharacter*   DeadChar = DeadPS ? Cast<ABGCharacter>(DeadPS->GetPawn()) : nullptr;
+
+		APawn* DeadPawn = DeadPS ? DeadPS->GetPawn() : nullptr;
+		if (!DeadPawn && DeadPS)
+		{
+			DeadPawn = DeadPS->GetAbandonedPawn();
+		}
+
+		ABGCharacter* DeadChar = Cast<ABGCharacter>(DeadPawn);
 
 		const bool bHasLength = (DeathPrimarySeconds > 0.f || DeathSecondarySeconds > 0.f);
 
@@ -1099,16 +1106,7 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 		SeatComp->ClearReservation(DeadSeat);
 	}
 
-	//	이탈자가 두고 간 폰은 주인이 없어 아무도 치우지 않는다. 죽었으니 여기서 내보낸다 —
-	//	안 그러면 시체가 자리에 계속 서 있는다.
-	if (ABGPlayerState* DeadPS = GetPlayerStateBySeat(DeadSeat))
-	{
-		if (APawn* Abandoned = DeadPS->GetAbandonedPawn())
-		{
-			DeadPS->ClearAbandonedPawn();
-			Abandoned->Destroy();
-		}
-	}
+	//	두고 간 폰은 파괴하지 않는다 — 시체로 남겨 좌석·직업을 계속 볼 수 있게 한다.
 
 	// ── 1. 사망자의 손패·장비를 전부 버린 패로 ──
 	//	쓰러짐과 역할 공개는 여기가 아니라 사망 연출의 각 단계 진입 시점에 이미 끝나 있다.

@@ -233,10 +233,27 @@ void UBGSessionMenuWidget::NativeConstruct()
 	// 인원·준비 변화는 준비 컴포넌트가 알려 준다 — 폴링하지 않는다.
 	LobbyChangedHandle = UBGReadyComponent::OnAnyReadyChanged.AddUObject(
 		this, &UBGSessionMenuWidget::RefreshLobbyStatus);
+
+	TryBindPhaseDelegate();
+}
+
+void UBGSessionMenuWidget::TryBindPhaseDelegate()
+{
+	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	if (!GS || BoundGameState.Get() == GS)
+	{
+		return;
+	}
+
+	GS->OnTurnStateChanged.AddUniqueDynamic(this, &UBGSessionMenuWidget::RefreshLobbyStatus);
+	BoundGameState = GS;
 }
 
 void UBGSessionMenuWidget::RefreshLobbyStatus()
 {
+	//	GameState 는 클라에 늦게 온다. 갱신이 돌 때마다 다시 시도해 붙인다.
+	TryBindPhaseDelegate();
+
 	IBGSessionInterface* Session = GetSession();
 	if (!Session)
 	{
@@ -309,6 +326,12 @@ void UBGSessionMenuWidget::NativeDestruct()
 {
 	UBGReadyComponent::OnAnyReadyChanged.Remove(LobbyChangedHandle);
 	LobbyChangedHandle.Reset();
+
+	if (ABGGameState* GS = BoundGameState.Get())
+	{
+		GS->OnTurnStateChanged.RemoveDynamic(this, &UBGSessionMenuWidget::RefreshLobbyStatus);
+	}
+	BoundGameState = nullptr;
 
 	if (IBGSessionInterface* Session = GetSession())
 	{

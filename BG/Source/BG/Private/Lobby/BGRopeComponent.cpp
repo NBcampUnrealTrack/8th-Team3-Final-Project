@@ -72,7 +72,9 @@ void UBGRopeComponent::BeginRope(int32 Seat)
 	Rope.Seat            = Seat;
 	Rope.EndServerTime   = GS->GetServerWorldTimeSeconds() + Rope.Length;
 	Rope.bPaused         = false;
-	Rope.PausedRemaining = 0.f;
+
+	//	멈춘 채로 붙는 경우를 위해 전체 길이를 미리 넣어 둔다.
+	Rope.PausedRemaining = Rope.Length;
 
 	UE_LOG(LogBGCard, Log, TEXT("[Rope] 좌석 %d 밧줄 점화 — %.0f초%s"),
 		Seat, Rope.Length, bAbsent ? TEXT(" (이탈 중)") : TEXT(""));
@@ -167,6 +169,8 @@ void UBGRopeComponent::ApplyPauseState()
 		return;
 	}
 
+	//	남은 시간을 다시 잴지는 직전 상태로 정한다.
+	const bool bWasPaused = Rope.bPaused;
 	const bool bShouldPause = (PauseHolders.Num() > 0);
 	Rope.bPaused = bShouldPause;
 
@@ -185,11 +189,21 @@ void UBGRopeComponent::ApplyPauseState()
 
 	if (bShouldPause)
 	{
+		//	이미 멈춰 있으면 다시 재지 않는다. 타이머가 없어 전체 길이로 되돌아간다.
+		if (bWasPaused)
+		{
+			return;
+		}
+
 		//	남은 시간은 타이머에게 직접 묻는다. EndServerTime 은 복제용 시계라 실제보다
 		//	뒤처져 있어서, 그걸로 계산하면 멈출 때마다 시간이 조금씩 늘어난다.
 		const float Remaining = World->GetTimerManager().GetTimerRemaining(RopeTimer);
+		if (Remaining > 0.f)
+		{
+			Rope.PausedRemaining = Remaining;
+		}
+		//	타이머가 없으면 방금 붙은 밧줄이다 — BeginRope 가 넣어 둔 전체 길이를 그대로 둔다.
 
-		Rope.PausedRemaining = FMath::Max(0.f, Remaining);
 		World->GetTimerManager().ClearTimer(RopeTimer);
 		return;
 	}
