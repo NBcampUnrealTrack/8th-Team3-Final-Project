@@ -14,11 +14,13 @@ class TR_API ATRPlayerHUD : public AHUD
 	GENERATED_BODY()
 
 public:
+	// 생성된 플레이어 HUD 위젯 반환
 	UTRPlayerHUDWidget* GetPlayerHUDWidget() const { return PlayerHUDWidget; }
 
 protected:
 	virtual void BeginPlay() override;
-	
+
+	//--- 플레이어 HUD 위젯 ---
 	UPROPERTY(Transient)
 	TObjectPtr<UTRPlayerHUDWidget> PlayerHUDWidget;
 

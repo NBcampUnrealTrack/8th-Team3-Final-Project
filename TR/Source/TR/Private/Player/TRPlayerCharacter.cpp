@@ -17,6 +17,7 @@
 #include "Train/TRSupplyPoint.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
+#include "Settings/TRSettingsSubsystem.h"
 
 // Sets default values
 ATRPlayerCharacter::ATRPlayerCharacter()
@@ -194,6 +195,14 @@ void ATRPlayerCharacter::Look(const FInputActionValue& Input)
 	if (!IsLocallyControlled())
 	{
 		return;
+	}
+
+	if (const UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (const UTRSettingsSubsystem* SettingsSubsystem = GameInstance->GetSubsystem<UTRSettingsSubsystem>())
+		{
+			InputVector *= SettingsSubsystem->GetLookSensitivity();
+		}
 	}
 	PendingLookInput += InputVector;
 }

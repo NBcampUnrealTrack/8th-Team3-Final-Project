@@ -13,7 +13,12 @@ public class TR : ModuleRules
             "UMG",
             "Slate",
             "SlateCore",
-            "CommonUI"
+            "RenderCore",
+            "RHI",
+            "ApplicationCore",
+            "DeveloperSettings",
+            "CommonUI",
+            "CommonInput"
 			});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
