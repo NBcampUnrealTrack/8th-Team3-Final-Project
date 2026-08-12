@@ -27,8 +27,14 @@ public:
 		bool bInExcludeRailAreaFromRandomPlacement, const FVector2D& InRailLateralExclusionRange);
 	void GenerateChunk(int32 InChunkSeed, int32 InSegmentIndex);
 
-	int32 GetSegmentIndex() const { return SegmentIndex; }
-	FVector2D GetChunkSize() const { return ChunkSize; }
+	int32 GetSegmentIndex() const 
+	{
+		return SegmentIndex;
+	}
+	FVector2D GetChunkSize() const 
+	{
+		return ChunkSize;
+	}
 
 private:
 	void RebuildInstanceComponents();
@@ -42,6 +48,7 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> SceneInstanceComponents;
 
+	UPROPERTY(Transient)
 	TArray<FTRLevelSceneMeshDefinition> MeshDefinitions;
 
 	FVector2D ChunkSize = FVector2D(10000.f, 20000.f);
