@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+//TRPlayerCharacter.h
 
 #pragma once
 
@@ -9,30 +9,41 @@
 #include "InputMappingContext.h"
 #include "TRPlayerCharacter.generated.h"
 
+class UTRTurretControlComponent;
 class UTRActionComponent;
 class UTRInteractionComponent;
 class UCameraComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
+class ATRControlConsole;
+
 UCLASS()
 class TR_API ATRPlayerCharacter : public ACharacter
 {
 	GENERATED_BODY()
 
 public:
-	// Sets default values for this character's properties
 	ATRPlayerCharacter();
 
 protected:
-	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
 public:	
-	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
 	UFUNCTION(BlueprintPure, Category = "Camera")
 	UCameraComponent* GetCameraComponent() const { return CameraComp; }
+
+	UFUNCTION(BlueprintPure, Category = "Action")
+	float GetHealPercent() const { return HealPercent; }
+
+	UFUNCTION(BlueprintPure, Category = "Turret")
+	UTRTurretControlComponent* GetTurretControlComponent() const { return TurretControlComp; }
+
+	UFUNCTION(BlueprintPure, Category = "Action")
+	UTRActionComponent* GetActionComponent() const { return ActionComp; }
 	
-	//입력 액션
+	//--- 입력 액션--- 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputMappingContext> IMC_Character;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -48,7 +59,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_Reload;
 	
+	// UI - 이걸 오버라이드/바인드해서 HUD 쪽 로직을 붙이면 됨
+	UFUNCTION(BlueprintImplementableEvent, Category = "Interaction")
+	void OnControlConsoleInteract();
+	
 protected:
+	//--- 플레이어 조작 관련함수 ---
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void NotifyControllerChanged() override;
 
@@ -63,18 +79,25 @@ protected:
 	UFUNCTION(Server, Unreliable)
 	virtual void Trigger(const FInputActionValue& Input);
 	virtual void Trigger_Implementation(const FInputActionValue& Input);
-
+	
+	UFUNCTION(Server, Unreliable)
+	void Reload(const FInputActionValue& Input);
+	void Reload_Implementation(const FInputActionValue& Input);
+	
 	UFUNCTION(Server, Reliable)
 	void TriggerReleased();
 	void TriggerReleased_Implementation();
 	
-	UFUNCTION(Server, Reliable)
-	void Reload(const FInputActionValue& Input);
-	void Reload_Implementation(const FInputActionValue& Input);
+	void TriggerPressed(const FInputActionValue& Input);
+	
+	void OnInteractPressed(const FInputActionValue& Input);
 	
 	// Local look input smoothing. Character Movement Component sends final ControlRotation to server.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))
-	float LookInterpolationSpeed = 50.0f;
+	float LookInterpolationSpeed = 12.5f;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Action", meta = (ClampMin = "0.0", ClampMax = "100.0"))
+	float HealPercent = 10.f;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> CameraComp;
@@ -85,6 +108,31 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Action")
 	TObjectPtr<UTRActionComponent> ActionComp;
 	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Action")
+	TObjectPtr<UTRTurretControlComponent> TurretControlComp;
+	
 	FVector2D PendingLookInput = FVector2D::ZeroVector;
 	FVector2D SmoothedLookInput = FVector2D::ZeroVector;
+
+	//--- VFX ---
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraComponent> WalkEffect;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraSystem> JumpLandEffect;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	float JumpLandOffset = -90.f;
+
+
+	FTimerHandle MoveUpdateTimerHandle;
+	void UpdateMoveEffect();
+
+	//이펙트&연출용 함수
+	virtual void Landed(const FHitResult& Hit) override;
+	UFUNCTION(Server, Unreliable)
+	void ServerPlayJumpLandEffect();
+	void ServerPlayJumpLandEffect_Implementation();
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayJumpLandEffect(const FVector& Location);
+	void MulticastPlayJumpLandEffect_Implementation(const FVector& Location);
 };

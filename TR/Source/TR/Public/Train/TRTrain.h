@@ -7,7 +7,7 @@
 #include "TRTrain.generated.h"
 
 class ATRArmor;
-class UStaticMeshComponent;
+class ATRTurret;
 
 UCLASS()
 class TR_API ATRTrain : public AActor
@@ -25,6 +25,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Train")
 	bool HasActiveArmor() const { return GetActiveArmorCount() > 0; }
 
+	UFUNCTION(BlueprintPure, Category = "Train")
+	float GetMaxHullHealth() const { return MaxHullHealth; }
+
+	UFUNCTION(BlueprintPure, Category = "Train")
+	bool IsFullHP() const { return CurrentHullHealth >= MaxHullHealth; }
+
+	UFUNCTION(BlueprintPure, Category = "Train")
+	float GetCurrentHullHealth() const { return CurrentHullHealth; }
+
+	UFUNCTION(BlueprintPure, Category = "Train")
+	bool CanBeRepaired() const { return !IsDestroyed() && !IsFullHP(); }
+
+	UFUNCTION(BlueprintPure, Category = "Train")
+	TArray<ATRArmor*> GetDestroyedArmor() const;
+
+	UFUNCTION(BlueprintPure, Category = "Train")
+	TArray<ATRTurret*> GetDestroyedTurrets() const;
+	
+	void ApplyRepair(float Amount);
+	
 private:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -34,10 +54,13 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Train")
 	float MaxHullHealth = 2000.f;
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category = "Train", meta = (AllowPrivateAccess = "true"))
+	// 테스트용 — 데미지 시스템(적 등) 생기면 EditInstanceOnly 제거 검토
+	UPROPERTY(EditInstanceOnly, Replicated, BlueprintReadOnly, Category = "Train", meta = (AllowPrivateAccess = "true"))
 	float CurrentHullHealth = 2000.f;
 
 	UPROPERTY(EditInstanceOnly, Category = "Train")
 	TArray<TObjectPtr<ATRArmor>> ArmorSlots;  // 4칸, 레벨에서 각 슬롯에 배치된 장갑 액터 할당
 
+	UPROPERTY(EditInstanceOnly, Category = "Train")
+	TArray<TObjectPtr<ATRTurret>> TurretSlots;  // 5칸, 레벨에서 각 슬롯에 배치된 포탑 액터 할당
 };

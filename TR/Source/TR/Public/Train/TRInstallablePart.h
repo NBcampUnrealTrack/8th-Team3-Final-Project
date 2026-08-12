@@ -24,7 +24,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Part")
 	bool IsFullHP() const { return CurrentHP >= GetMaxHP(); }
-	
+
+	UFUNCTION(BlueprintPure, Category = "Part")
+	float GetCurrentHP() const { return CurrentHP; }
+
+	UFUNCTION(BlueprintPure, Category = "Part")
+	bool CanBeRepaired() const { return !IsDestroyed() && !IsFullHP(); }
+
 	// 수리 로직 — 공통
 	void ApplyRepair(float Amount);
 
@@ -35,10 +41,8 @@ protected:
 	virtual void BeginPlay() override;
 	
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-	
-	UPROPERTY(EditDefaultsOnly, Category = "Part")
-	int32 CurrentLevel = 1;
 
-	UPROPERTY(Replicated)
+	// 테스트용 — 데미지 시스템(적 등) 생기면 EditInstanceOnly 제거 검토
+	UPROPERTY(EditInstanceOnly, Replicated)
 	float CurrentHP = 0.f;
 };

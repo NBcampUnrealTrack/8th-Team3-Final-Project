@@ -1,15 +1,22 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+//TRPlayerCharacter.cpp
 
 
 #include "Player/TRPlayerCharacter.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Camera/CameraComponent.h"
+#include "NiagaraSystem.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Interaction/TRActionComponent.h"
 #include "Interaction/TRInteractionComponent.h"
+#include "Interaction/TRTurretControlComponent.h"
+#include "Train/TRControlConsole.h"
 #include "Train/TRInstallablePart.h"
 #include "Train/TRSupplyPoint.h"
+#include "Train/TRTrain.h"
+#include "Train/TRTurret.h"
 
 // Sets default values
 ATRPlayerCharacter::ATRPlayerCharacter()
@@ -27,16 +34,29 @@ ATRPlayerCharacter::ATRPlayerCharacter()
 	CameraComp->bEnableFirstPersonScale = true;
 	CameraComp->FirstPersonFieldOfView = 70.0f;
 	CameraComp->FirstPersonScale = 0.6f;
+
+	WalkEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("WalkEffect"));
+	WalkEffect->SetupAttachment(RootComponent);
+	WalkEffect->bAutoActivate = false;
 	
 	// ActorComponent
 	InteractionComp = CreateDefaultSubobject<UTRInteractionComponent>(TEXT("InteractionComp"));
 	ActionComp = CreateDefaultSubobject<UTRActionComponent>(TEXT("ActionComp"));
+	TurretControlComp = CreateDefaultSubobject<UTRTurretControlComponent>(TEXT("TurretControlComp"));
 }
 
 // Called when the game starts or when spawned
 void ATRPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	//이동 이펙트 활성화
+	if (IsValid(WalkEffect) && IsValid(WalkEffect->GetAsset()))
+	{
+		WalkEffect->Activate();
+		GetWorld()->GetTimerManager().SetTimer(MoveUpdateTimerHandle, this, &ATRPlayerCharacter::UpdateMoveEffect, 0.2f, true);
+		UpdateMoveEffect();
+	}
 	
 }
 
@@ -110,16 +130,19 @@ void ATRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 		}
 		if (IsValid(IA_Interact))
 		{
-			EIC->BindAction(IA_Interact, ETriggerEvent::Started, this, &ATRPlayerCharacter::Interact);
+			EIC->BindAction(IA_Interact, ETriggerEvent::Started, this, &ATRPlayerCharacter::OnInteractPressed);
+			EIC->BindAction(IA_Interact, ETriggerEvent::Completed, this, &ATRPlayerCharacter::TriggerReleased);
 		}
 		if (IsValid(IA_Trigger))
 		{
+			EIC->BindAction(IA_Trigger, ETriggerEvent::Started, this, &ATRPlayerCharacter::TriggerPressed);
 			EIC->BindAction(IA_Trigger, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Trigger);
 			EIC->BindAction(IA_Trigger, ETriggerEvent::Completed, this, &ATRPlayerCharacter::TriggerReleased);
 		}
 		if (IsValid(IA_Reload))
 		{
-			EIC->BindAction(IA_Reload, ETriggerEvent::Started, this, &ATRPlayerCharacter::Reload);
+			EIC->BindAction(IA_Reload, ETriggerEvent::Triggered, this, &ATRPlayerCharacter::Reload);
+			EIC->BindAction(IA_Reload, ETriggerEvent::Completed, this, &ATRPlayerCharacter::TriggerReleased);
 		}
 	}
 }
@@ -127,6 +150,11 @@ void ATRPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 // 캐릭터 이동 함수, UCharacterMovementComponent사용으로 RPC 구현 불필요.
 void ATRPlayerCharacter::Move(const FInputActionValue& Input)
 {
+	if (IsValid(TurretControlComp) && TurretControlComp->IsMounted())
+	{
+		return;
+	}
+	
 	FVector2D InputVector = Input.Get<FVector2D>().GetSafeNormal();
 	if (FMath::IsNearlyZero(InputVector.X) && FMath::IsNearlyZero(InputVector.Y))
 	{
@@ -138,10 +166,10 @@ void ATRPlayerCharacter::Move(const FInputActionValue& Input)
 	{
 		return;
 	}
-
+	
 	if (IsValid(ActionComp) && ActionComp->IsActionInProgress())
 	{
-		ActionComp->RequestCancelAction();
+		ActionComp->ServerCancelAction();
 	}
 	
 	if (!FMath::IsNearlyZero(InputVector.X))
@@ -167,13 +195,17 @@ void ATRPlayerCharacter::Look(const FInputActionValue& Input)
 	{
 		return;
 	}
-
 	PendingLookInput += InputVector;
 }
 
-// 캐릭터 점프 함수, UCharacterMovementComponent사용으로 RPC 구현 불필요.
+// 캐릭터 점프 함수, UCharacterMovementComponent사용으로 RPC 구현 불필요. 이펙트 전파만 서버 RPC 호출
 void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 {
+	if (IsValid(TurretControlComp) && TurretControlComp->IsMounted())
+	{
+		return;
+	}
+	
 	bool InputBoolean = Input.Get<bool>();
 	if (!InputBoolean)
 	{
@@ -187,6 +219,61 @@ void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 	}
 
 	Jump();
+
+	if (!GetCharacterMovement()->IsFalling())
+	{
+		ServerPlayJumpLandEffect();
+	}
+}
+
+//이동속도 및 지면 접촉 여부 이동 이펙트에 전달
+void ATRPlayerCharacter::UpdateMoveEffect()
+{
+	WalkEffect->SetVariableVec3(FName(TEXT("MovementVelocity")), GetVelocity());
+	WalkEffect->SetVariableBool(FName(TEXT("IsOnFloor")), !GetCharacterMovement()->IsFalling());
+}
+
+//착지 함수, VFX/SFX 임시 연동 (추후 애니메이션 추가시 AnimNotify 기반으로 변경 필요)
+void ATRPlayerCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	if (HasAuthority())
+	{
+		ServerPlayJumpLandEffect();
+	}
+}
+
+//서버 RPC 점프 및 착지 이팩트 전파 호출
+void ATRPlayerCharacter::ServerPlayJumpLandEffect_Implementation()
+{
+	UCharacterMovementComponent* MovementComp = GetCharacterMovement();
+	if (!IsValid(WalkEffect) || !IsValid(MovementComp))
+	{
+		return;
+	}
+	MulticastPlayJumpLandEffect(GetActorLocation() + FVector(0, 0, JumpLandOffset));
+}
+
+//멀티캐스트 RPC 점프 및 착지 이펙트 각 클라이언트로 전파
+void ATRPlayerCharacter::MulticastPlayJumpLandEffect_Implementation(const FVector& Location)
+{
+	if (IsValid(JumpLandEffect))
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), JumpLandEffect, Location);
+	}
+}
+
+void ATRPlayerCharacter::OnInteractPressed(const FInputActionValue& Input)
+{
+	if (IsValid(InteractionComp) && Cast<ATRControlConsole>(InteractionComp->GetCurrentTarget()))
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("OnControlConsoleInteract fired"));
+		OnControlConsoleInteract();
+		return;
+	}
+
+	Interact(Input);   // 관제석이 아니면 원래대로 서버 RPC 호출
 }
 
 // 상호작용 RPC 함수, E키 - 포탑 탑승/하차 vs 물자실 자원 획득
@@ -197,11 +284,17 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	if (!IsValid(InteractionComp) || !IsValid(ActionComp))
+	if (!IsValid(InteractionComp) || !IsValid(ActionComp) || !IsValid(TurretControlComp))
 	{
 		return;
 	}
 
+	if (TurretControlComp->IsMounted())
+	{
+		TurretControlComp->ServerDismount();
+		return;
+	}
+	
 	AActor* Target = InteractionComp->GetCurrentTarget();
 	if (!Target)
 	{
@@ -209,16 +302,15 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	// TODO: 터렛 탑승 분기 — TurretControlComponent 생기면 추가
-	// if (ATRTurret* Turret = Cast<ATRTurret>(Target))
-	// {
-	//     TurretControlComp->RequestMount(Turret);
-	//     return;
-	// }
+	if (ATRTurret* Turret = Cast<ATRTurret>(Target))
+	{
+	    TurretControlComp->ServerMount(Turret);
+	    return;
+	}
 
 	if (Cast<ATRSupplyPoint>(Target))
 	{
-		ActionComp->RequestStartAction(ETRActionType::Restock, Target);
+		ActionComp->ServerStartAction(ETRActionType::Restock, Target);
 	}
 	else
 	{
@@ -226,9 +318,28 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 	}
 }
 
-// 트리거 RPC 함수, 좌클릭 - 제작/수리 vs 수동사격
+// 좌클릭 - 수동사격
+void ATRPlayerCharacter::TriggerPressed(const FInputActionValue& Input)
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (IsValid(TurretControlComp) && TurretControlComp->IsMounted())
+	{
+		TurretControlComp->ServerFire();
+	}
+}
+
+// 트리거 RPC 함수, 좌클릭 - 수리
 void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 {
+	if (IsValid(TurretControlComp) && TurretControlComp->IsMounted())
+	{
+		return;
+	}
+	
 	if (!HasAuthority())
 	{
 		return;
@@ -239,30 +350,29 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	// TODO: 탑승 중이면 사격으로 분기 — TurretControlComponent 생기면 추가
-	// if (TurretControlComp->IsMounted())
-	// {
-	//     TurretControlComp->RequestFire();
-	//     return;
-	// }
-
 	AActor* Target = InteractionComp->GetCurrentTarget();
-	ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
-	if (!Part)
+
+	if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("Trigger ignored: target=%s is not InstallablePart"), Target ? *Target->GetName() : TEXT("null"));
+		if (Part->IsDestroyed())
+		{
+			UE_LOG(LogTemp, Log, TEXT("Trigger ignored: %s is destroyed — install from Control Room"), *Part->GetName());
+			return;
+		}
+		ActionComp->ServerStartAction(ETRActionType::Repair, Target);
 		return;
 	}
 
-	if (Part->IsDestroyed())
+	if (Cast<ATRTrain>(Target))
 	{
-		UE_LOG(LogTemp, Log, TEXT("Trigger ignored: %s is destroyed — install from Control Room"), *Part->GetName());
+		ActionComp->ServerStartAction(ETRActionType::Repair, Target);
 		return;
 	}
 
-	ActionComp->RequestStartAction(ETRActionType::Repair, Target);
+	UE_LOG(LogTemp, Verbose, TEXT("Trigger ignored: target=%s is not repairable"), Target ? *Target->GetName() : TEXT("null"));
 }
 
+// 좌클릭 뗌 - 진행 중이던 Repair 액션 취소
 void ATRPlayerCharacter::TriggerReleased_Implementation()
 {
 	if (!HasAuthority())
@@ -274,8 +384,8 @@ void ATRPlayerCharacter::TriggerReleased_Implementation()
 	{
 		return;
 	}
-
-	ActionComp->RequestCancelAction();
+	
+	ActionComp->ServerCancelAction();
 }
 
 void ATRPlayerCharacter::Reload_Implementation(const FInputActionValue& Input)
@@ -297,6 +407,6 @@ void ATRPlayerCharacter::Reload_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	ActionComp->RequestStartAction(ETRActionType::Reload, Target);
+	ActionComp->ServerStartAction(ETRActionType::Reload, Target);
 }
 
