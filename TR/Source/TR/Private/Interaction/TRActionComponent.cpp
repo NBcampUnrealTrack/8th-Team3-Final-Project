@@ -3,6 +3,7 @@
 
 #include "Interaction/TRActionComponent.h"
 
+#include "Debug/TRGameplayLog.h"
 #include "Interaction/TRInteractionComponent.h"
 #include "Core/TRGameState.h"
 #include "Core/TRPlayerState.h"
@@ -72,7 +73,7 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 		const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
 		if (!IsValid(Part))
 		{
-			UE_LOG(LogTemp, Log, TEXT("StartAction rejected: target is not an installable part"));
+			UE_LOG(LogTRGameplay, Log, TEXT("StartAction rejected: target is not an installable part"));
 			return;
 		}
 		const int32 InstallCost = Part ? Part->GetInstallCost() : 0;
@@ -109,7 +110,7 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 		Def.CycleDuration,
 		false
 	);
-	UE_LOG(LogTemp, Verbose, TEXT("Action Started: %.1fs"), Def.CycleDuration);
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Action Started: %.1fs"), Def.CycleDuration);
 }
 
 void UTRActionComponent::ServerCancelAction_Implementation()
@@ -150,12 +151,12 @@ void UTRActionComponent::CompleteAction()
 						if (Part->CanBeRepaired())
 						{
 							Part->ApplyRepair(Part->GetMaxHP() * (HealPercent / 100.f));
-							UE_LOG(LogTemp, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
+							UE_LOG(LogTRGameplay, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
 							bRepaired = true;
 						}
 						else
 						{
-							UE_LOG(LogTemp, Verbose, TEXT("Repair skipped: %s no longer repairable"), *Part->GetName());
+							UE_LOG(LogTRGameplay, Verbose, TEXT("Repair skipped: %s no longer repairable"), *Part->GetName());
 						}
 					}
 					else if (ATRTrain* Train = Cast<ATRTrain>(Target))
@@ -163,12 +164,12 @@ void UTRActionComponent::CompleteAction()
 						if (Train->CanBeRepaired())
 						{
 							Train->ApplyRepair(Train->GetMaxHullHealth() * (HealPercent / 100.f));
-							UE_LOG(LogTemp, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
+							UE_LOG(LogTRGameplay, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
 							bRepaired = true;
 						}
 						else
 						{
-							UE_LOG(LogTemp, Verbose, TEXT("Repair skipped: Train no longer repairable"));
+							UE_LOG(LogTRGameplay, Verbose, TEXT("Repair skipped: Train no longer repairable"));
 						}
 					}
 
@@ -183,7 +184,7 @@ void UTRActionComponent::CompleteAction()
 					if (ATRTurret* Turret = Cast<ATRTurret>(Target))
 					{
 						Turret->AddAmmo(Def->ResourceAmount * Turret->GetManualAmmoPerResource());
-						UE_LOG(LogTemp, Verbose, TEXT("Reload complete: %s Ammo %d / %d"), *Turret->GetName(), Turret->GetCurrentAmmo(), Turret->GetMaxAmmo());
+						UE_LOG(LogTRGameplay, Verbose, TEXT("Reload complete: %s Ammo %d / %d"), *Turret->GetName(), Turret->GetCurrentAmmo(), Turret->GetMaxAmmo());
 					}
 					if (PS)
 					{
@@ -197,20 +198,17 @@ void UTRActionComponent::CompleteAction()
 					{
 						const int32 InstallCost = Part->GetInstallCost();
 						
+						// TryConsumeMonsterResource 는 검사와 차감을 함께 한다. 여기서 이미 자원이 빠지므로
+						// 아래에서 다시 차감하면 안 된다.
 						ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
 						if (!IsValid(GameState) || !GameState->TryConsumeMonsterResource(InstallCost))
 						{
-							UE_LOG(LogTemp, Log, TEXT("Build aborted: not enough resource for %s (cost %d)"), *Part->GetName(), InstallCost);
+							UE_LOG(LogTRGameplay, Log, TEXT("Build aborted: not enough resource for %s (cost %d)"), *Part->GetName(), InstallCost);
 							break;
 						}
-						
-						Part->ApplyInstall();
-						UE_LOG(LogTemp, Verbose, TEXT("Build complete: %s (cost %d)"), *Part->GetName(), InstallCost);
 
-						if (ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>())
-						{
-							GS->ConsumeMonsterResource(InstallCost);
-						}
+						Part->ApplyInstall();
+						UE_LOG(LogTRGameplay, Verbose, TEXT("Build complete: %s (cost %d, resource left %d)"), *Part->GetName(), InstallCost, GameState->GetMonsterResource());
 					}
 					break;
 				}
@@ -219,7 +217,7 @@ void UTRActionComponent::CompleteAction()
 					if (PS)
 					{
 						PS->AddCarriedSupply(Def->ResourceAmount);
-						UE_LOG(LogTemp, Verbose, TEXT("Restock complete: CarriedSupply %d / %d"), PS->GetCarriedSupply(), ATRPlayerState::MaxCarriedSupply);
+						UE_LOG(LogTRGameplay, Verbose, TEXT("Restock complete: CarriedSupply %d / %d"), PS->GetCarriedSupply(), ATRPlayerState::MaxCarriedSupply);
 					}
 					break;
 				}
@@ -260,7 +258,7 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 {
 	if (!Target)
 	{
-		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: target is null"));
+		UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: target is null"));
 		return false;
 	}
 
@@ -269,7 +267,7 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 	const UTRInteractionComponent* Interaction = IsValid(OwnerPawn) ? OwnerPawn->FindComponentByClass<UTRInteractionComponent>() : nullptr;
 	if (!IsValid(Interaction))
 	{
-		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: no InteractionComponent"));
+		UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: no InteractionComponent"));
 		return false;
 	}
 
@@ -278,13 +276,13 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 		// Build(재설치)는 관제석 UI에서 원격으로 대상을 고르므로, 실제 조준 대상은 파츠가 아니라 ControlConsole이어야 한다
 		if (!Cast<ATRControlConsole>(Interaction->GetCurrentTarget()))
 		{
-			UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: Build requires looking at ControlConsole"));
+			UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: Build requires looking at ControlConsole"));
 			return false;
 		}
 	}
 	else if (Interaction->GetCurrentTarget() != Target)
 	{
-		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: target=%s is not current interaction target"), *Target->GetName());
+		UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: target=%s is not current interaction target"), *Target->GetName());
 		return false;
 	}
 
@@ -306,7 +304,7 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 		case ETRActionType::Build:
 			{
 				const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
-				bValid = Part && Part->IsDestroyed();
+				bValid = Part && Part->IsPartDestroyed();
 				break;
 			}
 		case ETRActionType::Reload:
@@ -327,7 +325,7 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 
 	if (!bValid)
 	{
-		UE_LOG(LogTemp, Log, TEXT("ValidateActionTarget failed: action=%d target=%s"), static_cast<int32>(ActionType), *Target->GetName());
+		UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: action=%d target=%s"), static_cast<int32>(ActionType), *Target->GetName());
 	}
 	return bValid;
 }

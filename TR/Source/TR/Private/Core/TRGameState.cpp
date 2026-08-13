@@ -12,16 +12,6 @@ void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ATRGameState, TurretLevel);
 }
 
-void ATRGameState::ConsumeMonsterResource(int32 Amount)
-{
-	if (!HasAuthority())
-	{
-		return;
-	}
-	
-	MonsterResource = FMath::Max(0, MonsterResource - Amount);
-}
-
 bool ATRGameState::TryConsumeMonsterResource(int32 Amount)
 {
 	if (!HasAuthority())

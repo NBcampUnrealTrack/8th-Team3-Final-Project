@@ -35,6 +35,8 @@ public:
 	void ServerFire();
 	void ServerFire_Implementation();
 	
+	void ForceDismount();
+	
 private:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -43,7 +45,6 @@ private:
 	void OnRep_MountedTurret();
 	
 	void CompleteMount();
-	void ForceDismount();
 
 	bool TraceFireTarget(FHitResult& OutHit) const;
 	bool TryAutoRefillFromInventory();
