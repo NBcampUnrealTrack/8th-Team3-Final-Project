@@ -12,8 +12,17 @@
 
 ATRTurret::ATRTurret()
 {
+	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	RootComponent = Root;
+
 	TurretMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TurretMesh"));
-	RootComponent = TurretMesh;
+	TurretMesh->SetupAttachment(Root);
+	// 조준선에 안 걸리게 한다. 탑승은 실내 ConsoleMesh 로만.
+	TurretMesh->SetCollisionProfileName(TRCollisionProfile::ExteriorPart);
+
+	// 메시 기본 프로파일(BlockAll)이 Visibility 를 막으므로 상호작용에 그대로 잡힌다.
+	ConsoleMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ConsoleMesh"));
+	ConsoleMesh->SetupAttachment(Root);
 }
 
 void ATRTurret::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -27,9 +36,19 @@ void ATRTurret::BeginPlay()
 {
 	Super::BeginPlay();
 
-	const FRotator InstallRotation = GetActorRotation();
-	InstallYaw = InstallRotation.Yaw;
-	InstallPitch = InstallRotation.Pitch;
+	// 액터가 아니라 메시 기준. 루트가 형태 없는 SceneComponent 라 액터 회전은 포탑이 향한 방향이 아니다.
+	if (IsValid(TurretMesh))
+	{
+		const FRotator InstallRotation = TurretMesh->GetComponentRotation();
+		InstallYaw = InstallRotation.Yaw;
+		InstallPitch = InstallRotation.Pitch;
+	}
+
+	// TurretMesh 는 조준선을 무시하므로 상호작용을 잡아주는 건 ConsoleMesh 뿐이다.
+	// 메시가 비면 콜리전 형상 자체가 없어 탑승·수리가 조용히 불가능해진다.
+	ensureMsgf(IsValid(ConsoleMesh) && ConsoleMesh->GetStaticMesh(),
+		TEXT("%s: ConsoleMesh has no static mesh. Interaction is impossible — assign one in the Blueprint."),
+		*GetName());
 }
 
 const FTRTurretLevelRow* ATRTurret::GetCurrentLevelRow(const TCHAR* ContextName) const

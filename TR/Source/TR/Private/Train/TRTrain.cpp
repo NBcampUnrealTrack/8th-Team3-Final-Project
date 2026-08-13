@@ -38,24 +38,19 @@ static FString FindMissingSlots(const TMap<TSlotEnum, TObjectPtr<TPart>>& Slots)
 	return FString::Join(Missing, TEXT(", "));
 }
 
-// 폭발 구가 액터에 조금이라도 걸치면 맞은 것으로 본다.
-static bool IsWithinBlast(const AActor* Actor, const FVector& ImpactPoint, float RadiusSq)
+// 폭발 구가 대상 컴포넌트에 조금이라도 걸치면 맞은 것으로 본다.
+// 액터 전체 바운드를 쓰면 안 된다 — 포탑은 외부 메시와 실내 조종 구조물을 함께 갖고 있어
+// 합친 박스가 차체를 가로지르고, 반대편에서 터진 폭발까지 걸리게 된다.
+static bool IsWithinBlast(const UPrimitiveComponent* Target, const FVector& ImpactPoint, float RadiusSq)
 {
-	if (!IsValid(Actor))
+	if (!IsValid(Target))
 	{
 		return false;
 	}
 
-	// 콜리전이 있는 컴포넌트들의 월드 바운딩 박스. 축 정렬이라 회전한 메시는 약간 넉넉하게 잡힌다.
-	const FBox Bounds = Actor->GetComponentsBoundingBox();
-	if (!Bounds.IsValid)
-	{
-		// 콜리전 컴포넌트가 하나도 없으면 피벗 거리로 대체
-		return FVector::DistSquared(Actor->GetActorLocation(), ImpactPoint) <= RadiusSq;
-	}
-
-	// 점이 박스 안이면 0 을 반환하므로 "박스를 포함하는 폭발" 도 그대로 걸린다.
-	return Bounds.ComputeSquaredDistanceToPoint(ImpactPoint) <= RadiusSq;
+	// 점이 박스 안이면 0 을 반환하므로 "박스를 통째로 삼키는 폭발" 도 그대로 걸린다.
+	// 축 정렬 박스라 회전한 메시는 약간 넉넉하게 잡힌다.
+	return Target->Bounds.GetBox().ComputeSquaredDistanceToPoint(ImpactPoint) <= RadiusSq;
 }
 
 ATRTrain::ATRTrain()
@@ -163,7 +158,7 @@ void ATRTrain::ApplyImpactDamage(const FVector& ImpactPoint, float Damage, float
 	{
 		ATRTurret* Turret = Slot.Value;
 		if (IsValid(Turret) && !Turret->IsPartDestroyed()
-			&& IsWithinBlast(Turret, ImpactPoint, EffectiveRadiusSq))
+			&& IsWithinBlast(Turret->GetTurretMesh(), ImpactPoint, EffectiveRadiusSq))
 		{
 			UGameplayStatics::ApplyDamage(Turret, Damage, EventInstigator, DamageCauser, nullptr);
 		}

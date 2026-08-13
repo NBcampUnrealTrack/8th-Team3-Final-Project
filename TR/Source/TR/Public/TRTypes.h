@@ -58,6 +58,9 @@ namespace TRCollisionProfile
 
 	// Visibility 만 Block — 상호작용 트레이스에 걸리되 이동은 막지 않는다.
 	constexpr const TCHAR* Interactable = TEXT("TRInteractable");
+
+	// Visibility 만 Ignore — 조준선에 안 걸려 실내 구조물로만 상호작용된다.
+	constexpr const TCHAR* ExteriorPart = TEXT("TRExteriorPart");
 }
 
 // ATRTrain 의 슬롯 맵 키. 값을 추가하면 레벨에서 해당 칸도 채워야 한다 (BeginPlay 에서 ensure).
