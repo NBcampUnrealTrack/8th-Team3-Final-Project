@@ -88,6 +88,6 @@ Desktop.ini
 # ---------------------------------------------
 # 마켓 애셋 (Fab — Polygon Fantasy Kingdom)
 # ---------------------------------------------
-# 저장소에 넣지 않는다. 각자 받아서 BG/Content/ 아래에 두어야
-# TestMap 의 지형·메시 참조가 살아난다.
-Content/PolygonFantasyKingdom/
+Content/ParagonShinbi
+Content/CR
+
