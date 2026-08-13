@@ -1,6 +1,7 @@
 // TRPlayerHUD.cpp
 
 #include "UI/TRPlayerHUD.h"
+#include "Debug/TRGameplayLog.h"
 #include "UI/TRPlayerHUDWidget.h"
 
 void ATRPlayerHUD::BeginPlay()
@@ -9,7 +10,7 @@ void ATRPlayerHUD::BeginPlay()
 
 	if (!IsValid(PlayerHUDWidgetClass))
 	{
-		UE_LOG(LogTemp, Warning, TEXT("PlayerHUDWidgetClass is not set"));
+		UE_LOG(LogTRGameplay, Warning, TEXT("PlayerHUDWidgetClass is not set"));
 		return;
 	}
 

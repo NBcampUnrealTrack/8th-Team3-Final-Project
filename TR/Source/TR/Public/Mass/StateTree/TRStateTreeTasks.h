@@ -1,0 +1,100 @@
+﻿// TRStateTreeTasks.h
+
+#pragma once
+
+#include "MassStateTreeTypes.h"
+#include "Mass/Core/TRMassFragments.h"
+#include "TRStateTreeTasks.generated.h"
+
+struct FStateTreeExecutionContext;
+class UMassSignalSubsystem;
+
+// 주의: 커스텀 신호 이름을 만들어 쓸 수 없다.
+// UMassStateTreeProcessor는 생성 시점에 정해진 엔진 신호 목록에만 구독하므로
+// (StateTreeActivate / NewStateTreeTaskRequired / StandTaskFinished / ...),
+// 그 목록에 없는 이름으로 신호를 보내면 트리가 깨어나지 않는다.
+// 재평가 요청에는 UE::Mass::Signals::NewStateTreeTaskRequired 를 쓴다.
+
+//----------------------------------------------------------------------//
+//  MoveToTarget
+//----------------------------------------------------------------------//
+
+USTRUCT()
+struct FTRMoveToTargetTaskInstanceData
+{
+	GENERATED_BODY()
+};
+
+/**
+ * 목표를 향해 이동하는 상태.
+ *
+ * 이 태스크는 **이동 계산을 하지 않는다.** 행동 상태만 기록하고 끝난다.
+ * 실제 이동은 UTRTargetSyncProcessor와 UTRChaseSteeringProcessor가 청크 단위로 처리한다.
+ * 태스크 안에서 개체별 계산을 돌리면 Mass를 쓰는 의미가 사라진다.
+ */
+USTRUCT(meta = (DisplayName = "TR Move To Target"))
+struct FTRMoveToTargetTask : public FMassStateTreeTaskBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FTRMoveToTargetTaskInstanceData;
+
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+
+protected:
+	virtual bool Link(FStateTreeLinker& Linker) override;
+	virtual void GetDependencies(UE::MassBehavior::FStateTreeDependencyBuilder& Builder) const override;
+
+	virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context,
+		const FStateTreeTransitionResult& Transition) const override;
+
+	TStateTreeExternalDataHandle<FTREnemyStateFragment> EnemyStateHandle;
+};
+
+//----------------------------------------------------------------------//
+//  Detonate
+//----------------------------------------------------------------------//
+
+USTRUCT()
+struct FTRDetonateTaskInstanceData
+{
+	GENERATED_BODY()
+
+	/**
+	 * 폭발까지의 준비 시간(초). 플레이어가 반응할 여지를 주는 값이다.
+	 * 이 태스크로 폭발을 걸면 이 값이 FTREnemyCombatParams::DetonationWindup보다 우선한다.
+	 */
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float WindupDuration = 0.4f;
+};
+
+/**
+ * 자폭 예약.
+ *
+ * **여기서 터뜨리지 않는다.** 준비 시간을 기록하고 FTRDetonatingTag만 붙인다.
+ * 실제 폭발(피해 큐 삽입 + 엔티티 제거)은 UTREnemyAttackProcessor가 한다.
+ *
+ * 폭발의 주인이 둘이면 안 되기 때문이다. StateTree를 붙인 적과 붙이지 않은 적이
+ * 섞여 있어도 결과가 같아야 하고, 트리를 잘못 구성했을 때 "적이 기차에 붙은 채로
+ * 영원히 안 터지는" 상태가 생기면 안 된다. 그래서 프로세서가 단독 실행자이고,
+ * 이 태스크는 연출 타이밍을 트리에서 조정하기 위한 입구로만 남는다.
+ */
+USTRUCT(meta = (DisplayName = "TR Detonate"))
+struct FTRDetonateTask : public FMassStateTreeTaskBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FTRDetonateTaskInstanceData;
+
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+
+protected:
+	virtual bool Link(FStateTreeLinker& Linker) override;
+	virtual void GetDependencies(UE::MassBehavior::FStateTreeDependencyBuilder& Builder) const override;
+
+	virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context,
+		const FStateTreeTransitionResult& Transition) const override;
+
+	TStateTreeExternalDataHandle<FTREnemyStateFragment> EnemyStateHandle;
+	TStateTreeExternalDataHandle<FTREnemyCombatFragment> CombatHandle;
+};

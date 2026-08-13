@@ -2,6 +2,7 @@
 
 
 #include "Interaction/TRTurretControlComponent.h"
+#include "Debug/TRGameplayLog.h"
 #include "Net/UnrealNetwork.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
@@ -11,7 +12,15 @@
 #include "Core/TRPlayerState.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/TRPlayerCharacter.h"
+#include "Train/TRInstallablePart.h"
+#include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
+
+// 아군 구조물 — 기차 선체와 설치 파츠(장갑·포탑).
+static bool IsFriendlyStructure(const AActor* Actor)
+{
+	return IsValid(Actor) && (Actor->IsA<ATRTrain>() || Actor->IsA<ATRInstallablePart>());
+}
 
 UTRTurretControlComponent::UTRTurretControlComponent()
 {
@@ -34,7 +43,7 @@ void UTRTurretControlComponent::ServerMount_Implementation(ATRTurret* Turret)
 {
 	if (!IsValid(Turret) || IsMounted() || !Turret->CanBeMounted())
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("Mount ignored: invalid/occupied/destroyed"));
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Mount ignored: invalid/occupied/destroyed"));
 		return;
 	}
 
@@ -48,7 +57,7 @@ void UTRTurretControlComponent::ServerMount_Implementation(ATRTurret* Turret)
 	const UTRInteractionComponent* Interaction = OwnerPawn->FindComponentByClass<UTRInteractionComponent>();
 	if (!IsValid(Interaction) || Interaction->GetCurrentTarget() != Turret)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Mount rejected: %s is not %s's current interaction target"), *Turret->GetName(), *OwnerPawn->GetName());
+		UE_LOG(LogTRGameplay, Warning, TEXT("Mount rejected: %s is not %s's current interaction target"), *Turret->GetName(), *OwnerPawn->GetName());
 		return;
 	}
 
@@ -75,7 +84,7 @@ void UTRTurretControlComponent::CompleteMount()
 
 	if (!IsValid(Turret) || !Turret->CanBeMounted())
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("Mount failed after delay: target no longer valid"));
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Mount failed after delay: target no longer valid"));
 		return;
 	}
 
@@ -88,7 +97,7 @@ void UTRTurretControlComponent::CompleteMount()
 	Turret->SetOccupant(OwnerPawn);
 	MountedTurret = Turret;
 	OnRep_MountedTurret();
-	UE_LOG(LogTemp, Verbose, TEXT("Mounted: %s"), *Turret->GetName());
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Mounted: %s"), *Turret->GetName());
 }
 
 void UTRTurretControlComponent::ServerDismount_Implementation()
@@ -98,11 +107,13 @@ void UTRTurretControlComponent::ServerDismount_Implementation()
 
 void UTRTurretControlComponent::ForceDismount()
 {
-	if (!GetOwner()->HasAuthority())
+	// public 함수라 외부 액터(파괴된 포탑 등)에서도 불린다. EndPlay 경로에서는 오너가 이미 정리 중일 수 있다.
+	const AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
 	{
 		return;
 	}
-	
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(MountTimerHandle);
@@ -111,7 +122,7 @@ void UTRTurretControlComponent::ForceDismount()
 
 	if (IsValid(MountedTurret))
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("Dismounted: %s"), *MountedTurret->GetName());
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Dismounted: %s"), *MountedTurret->GetName());
 		MountedTurret->SetOccupant(nullptr);
 	}
 	MountedTurret = nullptr;
@@ -129,7 +140,7 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	{
 		if (!TryAutoRefillFromInventory())
 		{
-			UE_LOG(LogTemp, Verbose, TEXT("Fire blocked: out of ammo"));
+			UE_LOG(LogTRGameplay, Verbose, TEXT("Fire blocked: out of ammo"));
 			return;
 		}
 	}
@@ -144,7 +155,7 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	const FRotator CamRot = Controller->GetControlRotation();
 	if (!MountedTurret->IsWithinFireArc(CamRot.Yaw, CamRot.Pitch))
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("Fire blocked: out of arc"));
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Fire blocked: out of arc"));
 		return;
 	}
 
@@ -159,19 +170,26 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	MountedTurret->ConsumeAmmo(1);
 
 	FHitResult Hit;
-	if (TraceFireTarget(Hit))
+	if (!TraceFireTarget(Hit))
 	{
-		AActor* HitActor = Hit.GetActor();
-		if (IsValid(HitActor))
-		{
-			UGameplayStatics::ApplyDamage(HitActor, MountedTurret->GetManualDamage(), Controller, MountedTurret, nullptr);
-			UE_LOG(LogTemp, Verbose, TEXT("Fire hit: %s"), *HitActor->GetName());
-		}
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Fire missed"));
+		return;
 	}
-	else
+
+	AActor* HitActor = Hit.GetActor();
+	if (!IsValid(HitActor))
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("Fire missed"));
+		return;
 	}
+
+	if (IsFriendlyStructure(HitActor))
+	{
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Fire ignored: friendly structure %s"), *HitActor->GetName());
+		return;
+	}
+
+	UGameplayStatics::ApplyDamage(HitActor, MountedTurret->GetManualDamage(), Controller, MountedTurret, nullptr);
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Fire hit: %s"), *HitActor->GetName());
 }
 
 bool UTRTurretControlComponent::TraceFireTarget(FHitResult& OutHit) const
@@ -189,8 +207,10 @@ bool UTRTurretControlComponent::TraceFireTarget(FHitResult& OutHit) const
 
 	const FVector TraceEnd = ViewLocation + ViewRotation.Vector() * MountedTurret->GetManualRange();
 
+	// 카메라가 포탑 메시에 붙어 있어 시작점이 포탑 안이다. 무시하지 않으면 자기가 탄 포탑을 맞춘다.
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(OwnerPawn);
+	QueryParams.AddIgnoredActor(MountedTurret);
 
 	return GetWorld()->LineTraceSingleByChannel(OutHit, ViewLocation, TraceEnd, ECC_Pawn, QueryParams);
 }
@@ -211,7 +231,7 @@ bool UTRTurretControlComponent::TryAutoRefillFromInventory()
 
 	PS->ConsumeCarriedSupply(1);
 	MountedTurret->AddAmmo(MountedTurret->GetManualAmmoPerResource());
-	UE_LOG(LogTemp, Verbose, TEXT("Auto-refilled ammo: +%d"), MountedTurret->GetManualAmmoPerResource());
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Auto-refilled ammo: +%d"), MountedTurret->GetManualAmmoPerResource());
 	return true;
 }
 

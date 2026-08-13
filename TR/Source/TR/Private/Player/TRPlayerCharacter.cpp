@@ -2,6 +2,7 @@
 
 
 #include "Player/TRPlayerCharacter.h"
+#include "Debug/TRGameplayLog.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Camera/CameraComponent.h"
@@ -268,7 +269,7 @@ void ATRPlayerCharacter::OnInteractPressed(const FInputActionValue& Input)
 {
 	if (IsValid(InteractionComp) && Cast<ATRControlConsole>(InteractionComp->GetCurrentTarget()))
 	{
-		UE_LOG(LogTemp, Verbose, TEXT("OnControlConsoleInteract fired"));
+		UE_LOG(LogTRGameplay, Verbose, TEXT("OnControlConsoleInteract fired"));
 		OnControlConsoleInteract();
 		return;
 	}
@@ -298,7 +299,7 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 	AActor* Target = InteractionComp->GetCurrentTarget();
 	if (!Target)
 	{
-		UE_LOG(LogTemp, Log, TEXT("Interact ignored: no target"));
+		UE_LOG(LogTRGameplay, Log, TEXT("Interact ignored: no target"));
 		return;
 	}
 
@@ -314,7 +315,7 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 	}
 	else
 	{
-		UE_LOG(LogTemp, Log, TEXT("Interact ignored: target=%s is not SupplyPoint"), *Target->GetName());
+		UE_LOG(LogTRGameplay, Log, TEXT("Interact ignored: target=%s is not SupplyPoint"), *Target->GetName());
 	}
 }
 
@@ -354,9 +355,9 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 
 	if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 	{
-		if (Part->IsDestroyed())
+		if (Part->IsPartDestroyed())
 		{
-			UE_LOG(LogTemp, Log, TEXT("Trigger ignored: %s is destroyed — install from Control Room"), *Part->GetName());
+			UE_LOG(LogTRGameplay, Log, TEXT("Trigger ignored: %s is destroyed — install from Control Room"), *Part->GetName());
 			return;
 		}
 		ActionComp->ServerStartAction(ETRActionType::Repair, Target);
@@ -369,7 +370,7 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	UE_LOG(LogTemp, Verbose, TEXT("Trigger ignored: target=%s is not repairable"), Target ? *Target->GetName() : TEXT("null"));
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Trigger ignored: target=%s is not repairable"), Target ? *Target->GetName() : TEXT("null"));
 }
 
 // 좌클릭 뗌 - 진행 중이던 Repair 액션 취소
@@ -403,7 +404,7 @@ void ATRPlayerCharacter::Reload_Implementation(const FInputActionValue& Input)
 	AActor* Target = InteractionComp->GetCurrentTarget();
 	if (!Target)
 	{
-		UE_LOG(LogTemp, Log, TEXT("Reload ignored: no target"));
+		UE_LOG(LogTRGameplay, Log, TEXT("Reload ignored: no target"));
 		return;
 	}
 
