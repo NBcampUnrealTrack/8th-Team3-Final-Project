@@ -15,8 +15,8 @@ class TR_API ATRGameState : public AGameStateBase
 public:
 	int32 GetMonsterResource() const { return MonsterResource; }
 
-	void ConsumeMonsterResource(int32 Amount);
-	
+	// 검사와 차감을 함께 한다. 부족하면 아무것도 깎지 않고 false.
+	// 호출부에서 따로 차감하지 말 것 — 이중 차감 버그의 원인이었다.
 	bool TryConsumeMonsterResource(int32 Amount);
 	
 	int32 GetArmorLevel() const { return ArmorLevel; }

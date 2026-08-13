@@ -198,20 +198,17 @@ void UTRActionComponent::CompleteAction()
 					{
 						const int32 InstallCost = Part->GetInstallCost();
 						
+						// TryConsumeMonsterResource 는 검사와 차감을 함께 한다. 여기서 이미 자원이 빠지므로
+						// 아래에서 다시 차감하면 안 된다.
 						ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
 						if (!IsValid(GameState) || !GameState->TryConsumeMonsterResource(InstallCost))
 						{
 							UE_LOG(LogTRGameplay, Log, TEXT("Build aborted: not enough resource for %s (cost %d)"), *Part->GetName(), InstallCost);
 							break;
 						}
-						
-						Part->ApplyInstall();
-						UE_LOG(LogTRGameplay, Verbose, TEXT("Build complete: %s (cost %d)"), *Part->GetName(), InstallCost);
 
-						if (ATRGameState* GS = GetWorld()->GetGameState<ATRGameState>())
-						{
-							GS->ConsumeMonsterResource(InstallCost);
-						}
+						Part->ApplyInstall();
+						UE_LOG(LogTRGameplay, Verbose, TEXT("Build complete: %s (cost %d, resource left %d)"), *Part->GetName(), InstallCost, GameState->GetMonsterResource());
 					}
 					break;
 				}
