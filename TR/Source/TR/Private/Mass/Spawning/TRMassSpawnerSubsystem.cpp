@@ -198,26 +198,11 @@ int32 UTRMassSpawnerSubsystem::DespawnChasers(int32 Count)
 	return NumToRemove;
 }
 
-int32 UTRMassSpawnerSubsystem::GetSpawnedCount() const
+int32 UTRMassSpawnerSubsystem::GetSpawnedCount()
 {
-	UWorld* World = GetWorld();
-	if (World == nullptr)
-	{
-		return 0;
-	}
+	CompactSpawnedEntities();
 
-	const FMassEntityManager& EntityManager = UE::Mass::Utils::GetEntityManagerChecked(*World);
-
-	int32 AliveCount = 0;
-	for (const FMassEntityHandle& Entity : SpawnedEntities)
-	{
-		if (EntityManager.IsEntityValid(Entity))
-		{
-			++AliveCount;
-		}
-	}
-
-	return AliveCount;
+	return SpawnedEntities.Num();
 }
 
 void UTRMassSpawnerSubsystem::CompactSpawnedEntities()

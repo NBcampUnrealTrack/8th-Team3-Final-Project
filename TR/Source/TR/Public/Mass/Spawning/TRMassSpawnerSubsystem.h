@@ -71,9 +71,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "TR|Mass")
 	int32 DespawnChasers(int32 Count = 0);
 
-	/** 이 서브시스템이 스폰해서 아직 살아 있는 엔티티 수. */
-	UFUNCTION(BlueprintPure, Category = "TR|Mass")
-	int32 GetSpawnedCount() const;
+	/**
+	 * 이 서브시스템이 스폰해서 아직 살아 있는 엔티티 수.
+	 *
+	 * 세는 김에 죽은 핸들을 걷어낸다. 적은 대부분 프로세서가 지우므로
+	 * 정리를 여기서 하지 않으면 배열이 누적 스폰 수만큼 자란다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "TR|Mass")
+	int32 GetSpawnedCount();
 
 	/**
 	 * C++용 — 스폰된 핸들을 직접 받고 싶을 때.

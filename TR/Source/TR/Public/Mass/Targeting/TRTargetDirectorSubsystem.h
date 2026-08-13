@@ -83,11 +83,14 @@ struct FTRResolvedTarget
  * 엔티티는 채널만 알고 목표는 모른다. 여기서 채널의 목표를 바꾸면
  * 이미 소환된 엔티티까지 전부 다음 틱에 새 목표를 따라간다.
  *
+ * 액터에서 읽은 위치·형상은 게임 스레드에서 스냅샷으로 떠 둔다. 프로세서는 워커
+ * 스레드에서 돌 수 있으므로 액터를 직접 만지면 안 되고, 그 스냅샷만 읽는다.
+ *
  * 주의: 목표 변경은 서버에서만 호출할 것. Mass 시뮬레이션은 서버 권위로 돌리고
  * 클라이언트는 표현(액터)만 복제받는 구조를 전제로 한다.
  */
 UCLASS(BlueprintType)
-class TR_API UTRTargetDirectorSubsystem : public UWorldSubsystem
+class TR_API UTRTargetDirectorSubsystem : public UTickableWorldSubsystem
 {
 	GENERATED_BODY()
 
@@ -117,7 +120,8 @@ public:
 	AActor* GetTargetActor(ETRTargetChannel Channel) const;
 
 	/**
-	 * 목표 조회. 액터 목표면 현재 위치·트랜스폼·형상을 해석해서 돌려준다.
+	 * 목표 조회. 게임 스레드가 떠 둔 스냅샷을 그대로 돌려준다 — 액터를 만지지 않으므로
+	 * 워커 스레드에서 불러도 안전하다.
 	 *
 	 * 청크당 한 번만 호출하면 되므로 엔티티 수와 무관하게 저렴하다.
 	 * 표면 최근접점은 결과 구조체의 GetClosestSurfacePoint로 개체마다 구한다.
@@ -131,6 +135,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "TR|Mass")
 	void RefreshTargetBounds(ETRTargetChannel Channel);
 
+	// UTickableWorldSubsystem — 매 틱 스냅샷을 갱신한다.
+
+	virtual void Tick(float DeltaTime) override;
+	virtual TStatId GetStatId() const override;
+
 protected:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
@@ -142,9 +151,21 @@ private:
 		return static_cast<int32>(Channel) >= 0 && static_cast<int32>(Channel) < ChannelCount;
 	}
 
+	/**
+	 * 액터에서 현재 위치·트랜스폼을 읽어 스냅샷에 옮긴다. 게임 스레드 전용.
+	 * 목표를 바꾼 직후에도 부른다 — 첫 틱 전에 조회하는 쪽이 있다.
+	 */
+	void RefreshSnapshot();
+
 	/** 채널 enum을 인덱스로 쓰는 고정 배열 — 해시 조회 없이 O(1). */
 	UPROPERTY()
 	TArray<FTRTargetChannelState> Channels;
+
+	/**
+	 * 프로세서가 읽는 값. 액터 포인터가 들어 있지 않은 순수 데이터라 스레드를 가리지 않는다.
+	 * Channels와 인덱스가 1:1로 대응한다.
+	 */
+	TArray<FTRResolvedTarget> Snapshot;
 };
 
 /**

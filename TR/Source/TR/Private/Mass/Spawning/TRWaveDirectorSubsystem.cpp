@@ -177,7 +177,7 @@ int32 UTRWaveDirectorSubsystem::GetRemainingBatches() const
 int32 UTRWaveDirectorSubsystem::GetAliveCount() const
 {
 	const UWorld* World = GetWorld();
-	const UTRMassSpawnerSubsystem* Spawner = World ? World->GetSubsystem<UTRMassSpawnerSubsystem>() : nullptr;
+	UTRMassSpawnerSubsystem* Spawner = World ? World->GetSubsystem<UTRMassSpawnerSubsystem>() : nullptr;
 
 	return Spawner ? Spawner->GetSpawnedCount() : 0;
 }
@@ -325,7 +325,8 @@ void UTRWaveDirectorSubsystem::FinishGroup(int32 GroupIndex)
 		return;
 	}
 
-	if (UWorld* World = GetWorld())
+	UWorld* World = GetWorld();
+	if (World)
 	{
 		World->GetTimerManager().ClearTimer(GroupStates[GroupIndex].TimerHandle);
 	}
@@ -342,7 +343,16 @@ void UTRWaveDirectorSubsystem::FinishGroup(int32 GroupIndex)
 
 	// 모든 그룹이 배치를 다 냈다. 적이 다 죽은 시점이 아니라는 점에 주의.
 	bWaveActive = false;
-	OnWaveFinished.Broadcast();
+
+	// 알림은 다음 틱에 보낸다. 받은 쪽이 곧바로 다음 웨이브를 시작하면
+	// 아직 스택에 남아 있는 스폰 루프가 갈아엎힌 GroupStates 를 옛 인덱스로 다시 만진다.
+	if (!ensureMsgf(World, TEXT("웨이브 종료 알림 실패 — 월드가 없습니다.")))
+	{
+		return;
+	}
+
+	World->GetTimerManager().SetTimerForNextTick(
+		FTimerDelegate::CreateWeakLambda(this, [this]() { OnWaveFinished.Broadcast(); }));
 }
 
 void UTRWaveDirectorSubsystem::ResolveSpawnShape(const FTRWaveGroup& Group, FTRSpawnAreaParams& OutParams) const

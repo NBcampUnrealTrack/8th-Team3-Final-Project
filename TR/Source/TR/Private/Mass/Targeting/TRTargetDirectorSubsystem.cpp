@@ -68,6 +68,66 @@ void UTRTargetDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection
 	Super::Initialize(Collection);
 
 	Channels.SetNum(ChannelCount);
+	Snapshot.SetNum(ChannelCount);
+}
+
+TStatId UTRTargetDirectorSubsystem::GetStatId() const
+{
+	RETURN_QUICK_DECLARE_CYCLE_STAT(UTRTargetDirectorSubsystem, STATGROUP_Tickables);
+}
+
+void UTRTargetDirectorSubsystem::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	RefreshSnapshot();
+}
+
+void UTRTargetDirectorSubsystem::RefreshSnapshot()
+{
+	for (int32 Index = 0; Index < ChannelCount; ++Index)
+	{
+		const FTRTargetChannelState& State = Channels[Index];
+		FTRResolvedTarget& Resolved = Snapshot[Index];
+
+		Resolved = FTRResolvedTarget();
+
+		if (!State.bHasTarget)
+		{
+			continue;
+		}
+
+		if (const AActor* TargetActor = State.TargetActor.Get())
+		{
+			Resolved.Center = TargetActor->GetActorLocation();
+			Resolved.Transform = TargetActor->GetActorTransform();
+			Resolved.bHasBounds = State.bHasBounds;
+			Resolved.bValid = true;
+
+			if (State.bHasBounds)
+			{
+				// 콘솔 여유는 저장된 값을 고치지 않고 여기서 얹는다. 그래야 값을 이리저리
+				// 바꿔봐도 원래 실측값이 남아 있고, 0으로 되돌리면 그대로 복원된다.
+				//
+				// 음수 여유가 반크기를 넘으면 박스가 뒤집혀 최근접점이 엉뚱한 곳으로 간다.
+				const FVector Center = State.LocalBounds.GetCenter();
+				const FVector Extent = (State.LocalBounds.GetExtent() + FVector(GTargetBoundsPadding))
+					.ComponentMax(FVector::ZeroVector);
+
+				Resolved.LocalBounds = FBox(Center - Extent, Center + Extent);
+			}
+
+			continue;
+		}
+
+		// 액터 목표였는데 파괴된 경우 — 고정 위치 목표와 구분해야 하므로 여기서 걸러낸다.
+		if (State.TargetActor.IsExplicitlyNull())
+		{
+			Resolved.Center = State.TargetLocation;
+			Resolved.Transform = FTransform(State.TargetLocation);
+			Resolved.bValid = true;
+		}
+	}
 }
 
 void UTRTargetDirectorSubsystem::SetTargetActor(ETRTargetChannel Channel, AActor* NewTarget)
@@ -95,6 +155,9 @@ void UTRTargetDirectorSubsystem::SetTargetActor(ETRTargetChannel Channel, AActor
 	{
 		State.bHasBounds = MeasureLocalBounds(*NewTarget, State.LocalBounds);
 	}
+
+	// 첫 틱 전에 조회하는 쪽이 있다(웨이브 스포너의 BeginPlay 검사).
+	RefreshSnapshot();
 }
 
 void UTRTargetDirectorSubsystem::RefreshTargetBounds(ETRTargetChannel Channel)
@@ -113,6 +176,8 @@ void UTRTargetDirectorSubsystem::RefreshTargetBounds(ETRTargetChannel Channel)
 
 	// SetTargetActor는 같은 대상이면 조기 반환하므로, 재계산은 이 경로로만 가능하다.
 	State.bHasBounds = MeasureLocalBounds(*TargetActor, State.LocalBounds);
+
+	RefreshSnapshot();
 }
 
 void UTRTargetDirectorSubsystem::SetTargetLocation(ETRTargetChannel Channel, FVector NewLocation)
@@ -127,6 +192,8 @@ void UTRTargetDirectorSubsystem::SetTargetLocation(ETRTargetChannel Channel, FVe
 	State.TargetLocation = NewLocation;
 	State.bHasTarget = true;
 	State.bHasBounds = false;
+
+	RefreshSnapshot();
 }
 
 void UTRTargetDirectorSubsystem::ClearTarget(ETRTargetChannel Channel)
@@ -140,6 +207,8 @@ void UTRTargetDirectorSubsystem::ClearTarget(ETRTargetChannel Channel)
 	State.TargetActor = nullptr;
 	State.bHasTarget = false;
 	State.bHasBounds = false;
+
+	RefreshSnapshot();
 }
 
 bool UTRTargetDirectorSubsystem::HasTarget(ETRTargetChannel Channel) const
@@ -162,48 +231,12 @@ bool UTRTargetDirectorSubsystem::GetResolvedTarget(ETRTargetChannel Channel, FTR
 {
 	OutTarget = FTRResolvedTarget();
 
-	if (!IsValidChannel(Channel) || !Channels.IsValidIndex(static_cast<int32>(Channel)))
+	if (!IsValidChannel(Channel) || !Snapshot.IsValidIndex(static_cast<int32>(Channel)))
 	{
 		return false;
 	}
 
-	const FTRTargetChannelState& State = Channels[static_cast<int32>(Channel)];
-	if (!State.bHasTarget)
-	{
-		return false;
-	}
+	OutTarget = Snapshot[static_cast<int32>(Channel)];
 
-	if (const AActor* TargetActor = State.TargetActor.Get())
-	{
-		OutTarget.Center = TargetActor->GetActorLocation();
-		OutTarget.Transform = TargetActor->GetActorTransform();
-		OutTarget.bHasBounds = State.bHasBounds;
-		OutTarget.bValid = true;
-
-		if (State.bHasBounds)
-		{
-			// 콘솔 여유는 저장된 값을 고치지 않고 여기서 얹는다. 그래야 값을 이리저리
-			// 바꿔봐도 원래 실측값이 남아 있고, 0으로 되돌리면 그대로 복원된다.
-			//
-			// 음수 여유가 반크기를 넘으면 박스가 뒤집혀 최근접점이 엉뚱한 곳으로 간다.
-			const FVector Center = State.LocalBounds.GetCenter();
-			const FVector Extent = (State.LocalBounds.GetExtent() + FVector(GTargetBoundsPadding))
-				.ComponentMax(FVector::ZeroVector);
-
-			OutTarget.LocalBounds = FBox(Center - Extent, Center + Extent);
-		}
-
-		return true;
-	}
-
-	// 액터 목표였는데 파괴된 경우 — 고정 위치 목표와 구분해야 하므로 여기서 걸러낸다.
-	if (State.TargetActor.IsExplicitlyNull())
-	{
-		OutTarget.Center = State.TargetLocation;
-		OutTarget.Transform = FTransform(State.TargetLocation);
-		OutTarget.bValid = true;
-		return true;
-	}
-
-	return false;
+	return OutTarget.bValid;
 }

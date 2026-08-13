@@ -189,8 +189,20 @@ const FTRWaveRow* ATRWaveSpawner::FindWaveRow(int32 WaveNumber, int32& OutSource
 
 	for (const TPair<FName, uint8*>& Pair : WaveTable->GetRowMap())
 	{
-		const int32 RowNumber = FCString::Atoi(*Pair.Key.ToString());
-		if (RowNumber <= 0 || RowNumber > WaveNumber || RowNumber <= BestNumber)
+		const FString RowName = Pair.Key.ToString();
+		const int32 RowNumber = FCString::Atoi(*RowName);
+
+		// 행 이름이 곧 웨이브 번호다. 숫자가 아니면 어느 웨이브인지 알 수 없어 쓸 수 없다.
+		if (RowNumber <= 0)
+		{
+			UE_LOG(LogTRMass, Warning,
+				TEXT("웨이브 테이블 '%s': 행 이름 '%s'을(를) 웨이브 번호로 읽을 수 없어 건너뜁니다. ")
+				TEXT("행 이름은 '1', '2' 처럼 웨이브 번호만 적으세요."),
+				*GetNameSafe(WaveTable), *RowName);
+			continue;
+		}
+
+		if (RowNumber > WaveNumber || RowNumber <= BestNumber)
 		{
 			continue;
 		}

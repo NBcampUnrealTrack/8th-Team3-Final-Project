@@ -164,6 +164,14 @@ void UTREnemyAttackProcessor::Execute(FMassEntityManager& EntityManager, FMassEx
 			case ETREnemyType::Melee:
 			default:
 			{
+				// StateTree 의 Detonate 태스크가 이미 걸어 두었으면 그 값을 그대로 둔다.
+				// 태그 부착이 Defer 로 미뤄져 같은 프레임에는 쿼리 필터에 걸리지 않으므로,
+				// 여기서 한 번 더 확인해야 준비 시간이 두 번 덮어써지지 않는다.
+				if (State.ActionState == ETREnemyActionState::Attack)
+				{
+					break;
+				}
+
 				// 접촉. 준비 시간을 재고 폭발 예약 상태로 넘긴다.
 				Combatant.NextActionTime = WorldTime + Params.DetonationWindup;
 				EnterActionState(State, ETREnemyActionState::Attack, WorldTime);
