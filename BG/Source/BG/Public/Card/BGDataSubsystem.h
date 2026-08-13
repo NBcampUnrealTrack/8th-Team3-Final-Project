@@ -36,6 +36,15 @@ public:
 	/** DT_BGCard 의 QuantityOfCard 을 읽어 종류별 매수만큼 카드를 전개. InstanceId 는 1부터. */
 	void BuildDeck(TArray<FBGCardInstance>& OutDeck) const;
 
+	/**
+	 * 지속 이펙트 Row 조회. Key 는 장비 CardId 이거나 상태 태그 이름이다 — 둘 다 FName 이라
+	 * 표 하나로 받는다 (FBGStatusFXRow 주석 참고).
+	 *
+	 * 없으면 nullptr 이고 그게 정상이다. 이펙트를 안 만든 장비·상태가 훨씬 많으므로
+	 * 못 찾았다고 경고하지 않는다.
+	 */
+	const struct FBGStatusFXRow* GetStatusFXRow(FName Key) const;
+
 protected:
 	// DT 경로. 에디터에서 이 경로에 DT_BGCharacterRow(FBGCharacterRow) 를 만들어 둔다.
 	static const FString CharacterTablePath;
@@ -51,4 +60,8 @@ protected:
 	
 	UPROPERTY()
 	TObjectPtr<UDataTable> CardTable;
+
+	//	버프/디버프 이펙트 표. 없어도 된다 — 그때는 이펙트가 안 뜰 뿐이다.
+	UPROPERTY()
+	TObjectPtr<UDataTable> StatusFXTable;
 };

@@ -16,6 +16,9 @@ public class BG : ModuleRules
 			"GameplayTags",        // NativeGameplayTags (UE_DEFINE_GAMEPLAY_TAG)
 			"GameplayTasks",        // UAbilityTask (응답 창 WaitForResolution 등)
 			"UMG",
+			//	버프/디버프 이펙트와 연출 이펙트. Public/ 헤더가 UNiagaraSystem(DT 행) 과
+			//	UNiagaraComponent(부착 핸들)를 직접 들고 있어 Private 로는 부족하다.
+			"Niagara",
 			// --- 세션(방코드 온라인, M6) ---
 			"OnlineSubsystem",      // IOnlineSessionPtr / FOnlineSessionSettings 를 헤더에서 사용
 			"DeveloperSettings"

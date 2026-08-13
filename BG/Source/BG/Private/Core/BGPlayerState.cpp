@@ -188,6 +188,11 @@ void ABGPlayerState::CopyProperties(APlayerState* NewPlayerState)
 
 // ══════════════════════════════════════════════════════════════════════════════════════
 //  "다음 1회" 대기 상태
+//
+//  ⚠️ PendingStatuses 를 바꾸는 함수는 반드시 BroadcastPublicInfoChanged() 로 끝낼 것.
+//     클라는 OnRep_PublicInfo 로 받지만 **리슨서버 호스트는 자기 OnRep 을 받지 못한다** —
+//     빠뜨리면 "클라에서는 상태 이펙트가 켜지는데 호스트만 안 켜진다" 가 된다.
+//     손패(AddCardToHand)·장비(EquipCard)가 같은 이유로 같은 처리를 하고 있다.
 // ══════════════════════════════════════════════════════════════════════════════════════
 
 bool ABGPlayerState::HasPendingStatus(FGameplayTag StatusTag) const
@@ -235,6 +240,8 @@ bool ABGPlayerState::AddPendingStatus(FGameplayTag StatusTag, int32 Amount)
 
 	UE_LOG(LogBGCard, Log, TEXT("[Status] 좌석 %d 에 %s (수치 %d) 부여"),
 		SeatIndex, *StatusTag.ToString(), Amount);
+
+	BroadcastPublicInfoChanged();       //	리슨 호스트는 자기 OnRep 을 받지 못한다
 	return true;
 }
 
@@ -258,15 +265,22 @@ bool ABGPlayerState::ConsumePendingStatus(FGameplayTag StatusTag, int32& OutAmou
 
 	UE_LOG(LogBGCard, Log, TEXT("[Status] 좌석 %d 의 %s 소모 (수치 %d)"),
 		SeatIndex, *StatusTag.ToString(), OutAmount);
+
+	BroadcastPublicInfoChanged();       //	리슨 호스트는 자기 OnRep 을 받지 못한다
 	return true;
 }
 
 void ABGPlayerState::ClearPendingStatuses()
 {
-	if (HasAuthority())
+	//	이미 비어 있으면 통지하지 않는다. 사망 처리는 걸린 상태가 없어도 이 함수를 부르므로,
+	//	거르지 않으면 매번 좌석 전체가 이펙트를 다시 유도한다.
+	if (!HasAuthority() || PendingStatuses.IsEmpty())
 	{
-		PendingStatuses.Reset();
+		return;
 	}
+
+	PendingStatuses.Reset();
+	BroadcastPublicInfoChanged();       //	리슨 호스트는 자기 OnRep 을 받지 못한다
 }
 
 void ABGPlayerState::ResetCardsUsedThisTurn()
@@ -348,6 +362,11 @@ void ABGPlayerState::OnRep_DeathShown()
 	{
 		Char->RefreshAnimState();
 	}
+
+	//	버프 이펙트도 이 시점에 꺼져야 한다. 규칙 쪽 정리(ClearPendingStatuses / TakeAllCards)는
+	//	사망 연출이 다 끝난 뒤 ProcessSeatDeath 에서 일어나므로, 여기서 알리지 않으면
+	//	쓰러지고 역할을 공개하는 내내 장비 오라가 켜져 있다.
+	BroadcastPublicInfoChanged();
 }
 
 void ABGPlayerState::TakeAllCards(TArray<FBGCardInstance>& OutCards)

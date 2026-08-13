@@ -27,7 +27,8 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGDisconnectChanged,
 	int32 /*Seat*/, bool /*bDisconnected*/);
 
 /**
- * 남에게 보이는 정보(손패 장수·장비)가 바뀌었다. 머리 위 이름표가 이걸 보고 갱신한다.
+ * 남에게 보이는 정보(손패 장수·장비·상태)가 바뀌었다. 머리 위 이름표와 버프 이펙트가
+ * 이걸 보고 갱신한다.
  * 이탈 통지와 같은 이유로 정적이다 — 구독자가 좌석마다 다시 붙지 않아도 된다.
  */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGSeatPublicInfoChanged, int32 /*Seat*/);
@@ -185,7 +186,7 @@ public:
 	// 위젯이 늦게 생기면 통지를 놓치므로, 구독 직후 IsDisconnected() 로 한 번 맞출 것.
 	static FOnBGDisconnectChanged OnAnyDisconnectChanged;
 
-	// 누군가의 공개 정보(손패 장수·장비)가 바뀌었다. 서버·클라 양쪽에서 발사된다.
+	// 누군가의 공개 정보(손패 장수·장비·"다음 1회" 상태)가 바뀌었다. 서버·클라 양쪽에서 발사된다.
 	// 손패 "내용" 은 COND_OwnerOnly 라 남에게 안 간다 — 여기 실리는 것은 장수뿐이다.
 	static FOnBGSeatPublicInfoChanged OnAnySeatPublicInfoChanged;
 
@@ -251,13 +252,23 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_Hand)
 	TArray<FBGCardInstance> Hand;       // COND_OwnerOnly
 
-	//	전원 공개. 남의 이름표가 이 둘을 보고 갱신되므로 OnRep 으로 통지까지 한다.
+	//	전원 공개. 남의 이름표와 버프 이펙트가 이 셋을 보고 갱신되므로 OnRep 으로 통지까지 한다.
 	UPROPERTY(ReplicatedUsing = OnRep_PublicInfo)
 	int32 HandCount = 0;
 	UPROPERTY(ReplicatedUsing = OnRep_PublicInfo)
 	TArray<FBGCardInstance> Equipment;   // 파란 카드
 
-	//	둘 중 무엇이 와도 하는 일이 같아 OnRep 을 공유한다.
+	/**
+	 * 걸려 있는 "다음 1회" 상태. 전원 공개다 — 상대가 함정을 걸어 뒀다는 사실은 숨기지 않는다.
+	 *
+	 * ⚠️ 값만 복제하고 끝내면 안 된다. 버프/디버프 이펙트는 "지금 켜져 있어야 할 집합" 을
+	 *    이 배열에서 유도하므로, 바뀌었다는 통지가 없으면 **값은 맞는데 화면만 낡는다.**
+	 *    장비는 처음부터 통지가 있었고 이쪽만 없어서 실제로 그런 상태였다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_PublicInfo)
+	TArray<FBGPendingStatus> PendingStatuses;
+
+	//	셋 중 무엇이 와도 하는 일이 같아 OnRep 을 공유한다.
 	UFUNCTION()
 	void OnRep_PublicInfo();
 
@@ -319,10 +330,6 @@ private:
 
 	UPROPERTY(Replicated)
 	int32 CardsUsedThisTurn = 0;           // 전원 공개 (턴 UI 표시용)
-
-	//	전원 공개 — 상대가 어떤 상태를 걸고 있는지는 공개 정보다(함정을 걸었다는 사실 등).
-	UPROPERTY(Replicated)
-	TArray<FBGPendingStatus> PendingStatuses;
 
 	//	장비 GE 핸들. 서버 전용 — 복제하지 않는다(클라는 Equipment 배열만 보면 된다).
 	TMap<FName, FActiveGameplayEffectHandle> EquipEffectHandles;
