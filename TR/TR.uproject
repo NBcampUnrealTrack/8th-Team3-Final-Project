@@ -39,6 +39,9 @@
 		},
 		{
 			"Name": "StateTree",
+			"Enabled": true
+		},
+		{
 			"Name": "OnlineSubsystem",
 			"Enabled": true
 		},
