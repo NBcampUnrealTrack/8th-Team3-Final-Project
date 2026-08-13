@@ -12,7 +12,15 @@
 #include "Core/TRPlayerState.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/TRPlayerCharacter.h"
+#include "Train/TRInstallablePart.h"
+#include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
+
+// 아군 구조물 — 기차 선체와 설치 파츠(장갑·포탑).
+static bool IsFriendlyStructure(const AActor* Actor)
+{
+	return IsValid(Actor) && (Actor->IsA<ATRTrain>() || Actor->IsA<ATRInstallablePart>());
+}
 
 UTRTurretControlComponent::UTRTurretControlComponent()
 {
@@ -99,11 +107,13 @@ void UTRTurretControlComponent::ServerDismount_Implementation()
 
 void UTRTurretControlComponent::ForceDismount()
 {
-	if (!GetOwner()->HasAuthority())
+	// public 함수라 외부 액터(파괴된 포탑 등)에서도 불린다. EndPlay 경로에서는 오너가 이미 정리 중일 수 있다.
+	const AActor* OwnerActor = GetOwner();
+	if (!IsValid(OwnerActor) || !OwnerActor->HasAuthority())
 	{
 		return;
 	}
-	
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(MountTimerHandle);
@@ -160,19 +170,26 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	MountedTurret->ConsumeAmmo(1);
 
 	FHitResult Hit;
-	if (TraceFireTarget(Hit))
-	{
-		AActor* HitActor = Hit.GetActor();
-		if (IsValid(HitActor))
-		{
-			UGameplayStatics::ApplyDamage(HitActor, MountedTurret->GetManualDamage(), Controller, MountedTurret, nullptr);
-			UE_LOG(LogTRGameplay, Verbose, TEXT("Fire hit: %s"), *HitActor->GetName());
-		}
-	}
-	else
+	if (!TraceFireTarget(Hit))
 	{
 		UE_LOG(LogTRGameplay, Verbose, TEXT("Fire missed"));
+		return;
 	}
+
+	AActor* HitActor = Hit.GetActor();
+	if (!IsValid(HitActor))
+	{
+		return;
+	}
+
+	if (IsFriendlyStructure(HitActor))
+	{
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Fire ignored: friendly structure %s"), *HitActor->GetName());
+		return;
+	}
+
+	UGameplayStatics::ApplyDamage(HitActor, MountedTurret->GetManualDamage(), Controller, MountedTurret, nullptr);
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Fire hit: %s"), *HitActor->GetName());
 }
 
 bool UTRTurretControlComponent::TraceFireTarget(FHitResult& OutHit) const
@@ -190,8 +207,10 @@ bool UTRTurretControlComponent::TraceFireTarget(FHitResult& OutHit) const
 
 	const FVector TraceEnd = ViewLocation + ViewRotation.Vector() * MountedTurret->GetManualRange();
 
+	// 카메라가 포탑 메시에 붙어 있어 시작점이 포탑 안이다. 무시하지 않으면 자기가 탄 포탑을 맞춘다.
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(OwnerPawn);
+	QueryParams.AddIgnoredActor(MountedTurret);
 
 	return GetWorld()->LineTraceSingleByChannel(OutHit, ViewLocation, TraceEnd, ECC_Pawn, QueryParams);
 }

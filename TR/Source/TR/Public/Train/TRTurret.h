@@ -20,8 +20,9 @@ public:
 	ATRTurret();
 
 	virtual float GetMaxHP() const override;
-	virtual int32 GetInstallCost() const override;
 
+	virtual int32 GetInstallCost() const override;
+	
 	UFUNCTION(BlueprintPure, Category = "Turret")
 	bool IsOccupied() const { return Occupant != nullptr; }
 	
@@ -49,10 +50,10 @@ public:
 	bool IsWithinFireArc(float CameraYaw, float CameraPitch) const;
 
 	UFUNCTION(BlueprintPure, Category = "Turret")
-	bool CanBeReloaded() const { return !IsDestroyed() && GetCurrentAmmo() < GetMaxAmmo(); }
+	bool CanBeReloaded() const { return !IsPartDestroyed() && GetCurrentAmmo() < GetMaxAmmo(); }
 
 	UFUNCTION(BlueprintPure, Category = "Turret")
-	bool CanBeMounted() const { return !IsDestroyed() && !IsOccupied(); }
+	bool CanBeMounted() const { return !IsPartDestroyed() && !IsOccupied(); }
 	
 	void SetOccupant(APawn* NewOccupant) { Occupant = NewOccupant; }
 	
@@ -61,6 +62,8 @@ public:
 	
 protected:
 	virtual void BeginPlay() override;
+	
+	virtual void OnPartDestroyed() override;
 	
 	UPROPERTY(Replicated)
 	TObjectPtr<APawn> Occupant;

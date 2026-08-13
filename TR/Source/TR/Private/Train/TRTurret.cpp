@@ -6,6 +6,9 @@
 #include "Net/UnrealNetwork.h"
 #include "TRTypes.h"
 #include "Core/TRGameState.h"
+#include "Debug/TRGameplayLog.h"
+#include "GameFramework/Pawn.h"
+#include "Interaction/TRTurretControlComponent.h"
 
 ATRTurret::ATRTurret()
 {
@@ -88,6 +91,29 @@ int32 ATRTurret::GetInstallCost() const
 		return Row->InstallCost;
 	}
 	return 0;
+}
+
+void ATRTurret::OnPartDestroyed()
+{
+	Super::OnPartDestroyed();
+	
+	// 아래 어느 경로로 빠지든 점유는 해제한다. 남으면 재설치 후에도 CanBeMounted() 가 false 다.
+	APawn* CurrentOccupant = Occupant;
+	SetOccupant(nullptr);
+
+	if (!IsValid(CurrentOccupant))
+	{
+		return;
+	}
+	
+	UTRTurretControlComponent* TurretControl = CurrentOccupant->FindComponentByClass<UTRTurretControlComponent>();
+	if (!IsValid(TurretControl))
+	{
+		UE_LOG(LogTRGameplay, Warning, TEXT("Turret destroyed but occupant %s has no TurretControlComponent"), *CurrentOccupant->GetName());
+		return;
+	}
+	
+	TurretControl->ForceDismount();
 }
 
 float ATRTurret::GetManualFireRate() const

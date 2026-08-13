@@ -307,7 +307,7 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 		case ETRActionType::Build:
 			{
 				const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target);
-				bValid = Part && Part->IsDestroyed();
+				bValid = Part && Part->IsPartDestroyed();
 				break;
 			}
 		case ETRActionType::Reload:

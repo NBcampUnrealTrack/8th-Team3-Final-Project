@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataTable.h"
+#include "Engine/EngineTypes.h"
 #include "TRTypes.generated.h"
 
 #pragma region Character
@@ -40,6 +41,44 @@ struct FTRActionDef
 
 
 #pragma region Train
+
+namespace TRCollisionChannel
+{
+	// 적 → 기차 피해 판정 전용. DefaultEngine.ini 의 채널 등록 순서와 인덱스가 일치해야 한다
+	// (ATRTrain::BeginPlay 에서 ensure 로 검증).
+	constexpr ECollisionChannel Damage = ECC_GameTraceChannel1;
+	constexpr const TCHAR* DamageName = TEXT("TRDamage");
+}
+
+// DefaultEngine.ini 의 +Profiles 에 등록된 이름과 일치해야 한다.
+namespace TRCollisionProfile
+{
+	// TRDamage 트레이스에만 반응. 장갑 DamageVolume 용.
+	constexpr const TCHAR* ArmorDamageVolume = TEXT("TRDamageVolume");
+
+	// Visibility 만 Block — 상호작용 트레이스에 걸리되 이동은 막지 않는다.
+	constexpr const TCHAR* Interactable = TEXT("TRInteractable");
+}
+
+// ATRTrain 의 슬롯 맵 키. 값을 추가하면 레벨에서 해당 칸도 채워야 한다 (BeginPlay 에서 ensure).
+UENUM(BlueprintType)
+enum class ETRArmorSlot : uint8
+{
+	Car1Left,
+	Car1Right,
+	Car2Left,
+	Car2Right
+};
+
+UENUM(BlueprintType)
+enum class ETRTurretSlot : uint8
+{
+	Car1Left,
+	Car1Right,
+	Car2Left,
+	Car2Right,
+	Car2Rear
+};
 
 USTRUCT(BlueprintType)
 struct FTRArmorLevelRow : public FTableRowBase

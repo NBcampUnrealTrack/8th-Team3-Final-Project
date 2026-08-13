@@ -355,7 +355,7 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 
 	if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 	{
-		if (Part->IsDestroyed())
+		if (Part->IsPartDestroyed())
 		{
 			UE_LOG(LogTRGameplay, Log, TEXT("Trigger ignored: %s is destroyed — install from Control Room"), *Part->GetName());
 			return;
