@@ -49,22 +49,38 @@ void ATRTurret::BeginPlay()
 	ensureMsgf(IsValid(ConsoleMesh) && ConsoleMesh->GetStaticMesh(),
 		TEXT("%s: ConsoleMesh has no static mesh. Interaction is impossible — assign one in the Blueprint."),
 		*GetName());
+
+	// CurrentHP 는 서버가 정하고 복제된다. 클라이언트가 붙을 이유가 없다.
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ATRGameState* GS = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
+	if (IsValid(GS))
+	{
+		GS->OnTurretLevelUpgraded.AddUObject(this, &ATRTurret::ApplyLevelUpgrade);
+	}
+}
+
+void ATRTurret::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ATRGameState* GS = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
+	if (IsValid(GS))
+	{
+		GS->OnTurretLevelUpgraded.RemoveAll(this);
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 const FTRTurretLevelRow* ATRTurret::GetCurrentLevelRow(const TCHAR* ContextName) const
 {
-	if (!ensureMsgf(LevelTable, TEXT("%s: LevelTable not assigned"), *GetName()))
-	{
-		return nullptr;
-	}
-
+	// GameState 가 아직 복제되지 않은 클라이언트에서는 잠시 nullptr 이다.
+	// CurrentHP·CurrentAmmo 는 복제되고 설치는 서버에서만 하므로 이 창에서 판단이 뒤집히지는 않는다.
 	const UWorld* World = GetWorld();
 	const ATRGameState* GS = IsValid(World) ? World->GetGameState<ATRGameState>() : nullptr;
-	const int32 Level = IsValid(GS) ? GS->GetTurretLevel() : 1;
-
-	const FTRTurretLevelRow* Row = LevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(Level)), ContextName);
-	ensureMsgf(Row, TEXT("%s: level row %d not found in LevelTable"), *GetName(), Level);
-	return Row;
+	return IsValid(GS) ? GS->GetTurretLevelRow(ContextName) : nullptr;
 }
 
 float ATRTurret::GetManualRange() const

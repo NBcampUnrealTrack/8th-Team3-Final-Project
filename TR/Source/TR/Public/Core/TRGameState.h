@@ -6,7 +6,13 @@
 #include "GameFramework/GameStateBase.h"
 #include "TRGameState.generated.h"
 
+class UDataTable;
 class UTRActionComponent;
+struct FTRArmorLevelRow;
+struct FTRTurretLevelRow;
+
+// 파츠 업그레이드 시 CurrentHP의 비율 유지를 위한 델리게이트
+DECLARE_MULTICAST_DELEGATE_OneParam(FTRPartLevelUpgraded, float /*PrevMaxHP*/);
 
 UCLASS()
 class TR_API ATRGameState : public AGameStateBase
@@ -23,9 +29,23 @@ public:
 	
 	int32 GetArmorLevel() const { return ArmorLevel; }
 	int32 GetTurretLevel() const { return TurretLevel; }
-	
-	bool UpgradeArmorLevel();
-	bool UpgradeTurretLevel();
+
+	// 레벨별 수치 조회
+	const FTRArmorLevelRow* GetArmorLevelRow(const TCHAR* ContextName) const;
+	const FTRTurretLevelRow* GetTurretLevelRow(const TCHAR* ContextName) const;
+
+	// 현재 레벨에서 다음 레벨로 올리는 비용
+	int32 GetArmorUpgradeCost() const;
+	int32 GetTurretUpgradeCost() const;
+
+	// 비용 검사·차감·레벨 상승을 함께 한다. 하나라도 실패하면 아무것도 바뀌지 않는다.
+	bool TryUpgradeArmorLevel();
+	bool TryUpgradeTurretLevel();
+
+	// 서버에서 레벨이 오른 직후 1회. 파츠가 새 MaxHP에 맞춰 자기 HP 비율을 유지하는 데 사용.
+	// 인자는 오르기 전 최대 HP
+	FTRPartLevelUpgraded OnArmorLevelUpgraded;
+	FTRPartLevelUpgraded OnTurretLevelUpgraded;
 
 	static constexpr int32 MaxArmorLevel = 4;
 	static constexpr int32 MaxTurretLevel = 3;
@@ -52,4 +72,11 @@ private:
 
 	UPROPERTY(Replicated)
 	TObjectPtr<UTRActionComponent> BuildingComponent;
+
+	// 파츠 레벨별 수치. EditDefaultsOnly 라 복제 없이 클라이언트도 같은 값을 갖는다.
+	UPROPERTY(EditDefaultsOnly, Category = "Level")
+	TObjectPtr<UDataTable> ArmorLevelTable;    // FTRArmorLevelRow, RowName = 레벨
+
+	UPROPERTY(EditDefaultsOnly, Category = "Level")
+	TObjectPtr<UDataTable> TurretLevelTable;   // FTRTurretLevelRow, RowName = 레벨
 };
