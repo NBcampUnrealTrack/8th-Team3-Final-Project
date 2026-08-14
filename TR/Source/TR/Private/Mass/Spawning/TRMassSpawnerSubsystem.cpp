@@ -60,12 +60,24 @@ namespace
 	 *                            같은 경고가 마릿수만큼 찍히는 걸 막는다.
 	 */
 	void InitializeSpawnedEntity(FMassEntityManager& EntityManager, const FMassEntityHandle& Entity,
-		const FTRChaserSpawnParams& Params, const FVector& Location,
+		const FTRChaserSpawnParams& Params, const FVector& Location, FRandomStream& RandomStream,
 		bool bReportConfigIssues, const UMassEntityConfigAsset* Config)
 	{
 		if (FTransformFragment* TransformFragment = EntityManager.GetFragmentDataPtr<FTransformFragment>(Entity))
 		{
 			TransformFragment->GetMutableTransform().SetLocation(Location);
+		}
+
+		// 개체별 속도 배수. 이걸 안 뽑으면 한 무리가 통째로 같은 속도로 움직여서
+		// 대열이 얼어붙은 것처럼 보인다. 스폰 시 한 번만 정하고 이후 바꾸지 않는다.
+		{
+			FTRApproachFragment* ApproachFragment = EntityManager.GetFragmentDataPtr<FTRApproachFragment>(Entity);
+			const FTRChaseParams* ChaseParams = EntityManager.GetConstSharedFragmentDataPtr<FTRChaseParams>(Entity);
+
+			if (ApproachFragment != nullptr && ChaseParams != nullptr)
+			{
+				ApproachFragment->SpeedScale = UE::TR::Enemy::MakeSpeedScale(*ChaseParams, RandomStream);
+			}
 		}
 
 		// 스폰 시점에 채널을 덮어써서, 같은 Config로 서로 다른 대상을 쫓는 무리를 만들 수 있다.
@@ -160,7 +172,7 @@ int32 UTRMassSpawnerSubsystem::SpawnChasersWithHandles(const FTRChaserSpawnParam
 		for (int32 Index = 0; Index < OutEntities.Num(); ++Index)
 		{
 			InitializeSpawnedEntity(EntityManager, OutEntities[Index], Params,
-				Locations.IsValidIndex(Index) ? Locations[Index] : Params.Area.Origin,
+				Locations.IsValidIndex(Index) ? Locations[Index] : Params.Area.Origin, RandomStream,
 				/*bReportConfigIssues=*/Index == 0, Config);
 		}
 	}

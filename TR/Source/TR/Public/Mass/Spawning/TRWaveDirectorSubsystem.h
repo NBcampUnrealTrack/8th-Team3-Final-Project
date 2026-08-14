@@ -118,6 +118,22 @@ struct FTRWaveGroup
 	/** 웨이브 번호마다 총량에 더할 수. 기획서의 "사격형 W10=3, 이후 웨이브당 +1"용. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Group")
 	int32 TotalCountPerWave = 0;
+
+	/**
+	 * 동시 상한에 막혀 못 낸 물량을 **몇 배치분까지 쌓아 뒀다가** 나중에 낼지.
+	 *
+	 * 예전에는 상한에 걸리면 그 배치를 그냥 소진시켰다. 그러면 밀리는 플레이어일수록
+	 * 적이 덜 나오는 암묵적인 난이도 감면이 된다 — 성능 예산이 난이도 조절 장치로
+	 * 새는 셈이라, 웨이브 총량이 기획서와 조용히 달라진다.
+	 *
+	 * 이제 못 낸 물량은 빚으로 남고 여유가 생기면 마저 나간다. 이 값은 그 빚의
+	 * 상한이다. 없으면 오래 밀린 뒤 한숨 돌리는 순간 수백 마리가 쏟아져
+	 * 프레임도 플레이어도 못 버틴다.
+	 *
+	 * **0이면 이월하지 않는다(예전 동작).** 2면 두 배치분까지 밀렸다가 나간다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Group", meta = (ClampMin = "0"))
+	int32 MaxPendingBatches = 2;
 };
 
 /**
@@ -152,6 +168,18 @@ struct FTRWaveDefinition
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Wave")
 	float StatScale = 1.f;
+
+	/**
+	 * 배치를 다 낸 뒤, 밀린 물량(MaxPendingBatches)을 마저 내보내려고 기다리는 최대 시간(초).
+	 *
+	 * 플레이어가 끝내 처리하지 못하면 빚이 영원히 안 빠지고 웨이브가 끝나지 않는다.
+	 * 그러면 휴식도 다음 웨이브도 오지 않아 게임이 멈춘 것처럼 보인다. 그 상황을 막는
+	 * 안전장치이며, 시간이 지나면 남은 빚을 버리고 웨이브를 마친다.
+	 *
+	 * 0이면 기다리지 않는다 — 배치를 다 내는 순간 빚을 버리고 끝낸다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float PendingDrainTime = 30.f;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTROnWaveFinished);
@@ -173,6 +201,22 @@ struct FTRWaveGroupRuntime
 	/** 이 그룹의 총량 상한(웨이브 번호 보정이 반영된 값). 0이면 제한 없음. */
 	UPROPERTY()
 	int32 TotalLimit = 0;
+
+	/**
+	 * 스케줄상 나왔어야 하는데 동시 상한에 막혀 못 낸 물량.
+	 *
+	 * 이 값이 있어야 "배치를 냈다"와 "적이 실제로 나왔다"를 분리할 수 있다.
+	 * 둘을 같은 것으로 두면 상한이 곧 난이도 감면 장치가 된다.
+	 */
+	UPROPERTY()
+	int32 PendingSpawns = 0;
+
+	/**
+	 * 빚을 마저 내보내기를 포기할 월드 시각(초). 0이면 아직 정해지지 않음.
+	 * 배치를 다 낸 시점에 한 번 정해진다.
+	 */
+	UPROPERTY()
+	float DrainDeadline = 0.f;
 
 	UPROPERTY()
 	bool bFinished = false;

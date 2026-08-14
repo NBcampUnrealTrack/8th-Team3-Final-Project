@@ -155,15 +155,13 @@ void UTRChaseSteeringProcessor::Execute(FMassEntityManager& EntityManager, FMass
 			const FTRApproachFragment& Approach = ApproachList[EntityIt];
 
 			// 속도는 보통 Mass Movement가 정하고, 사출형처럼 단계마다 달라지는 개체만
-			// 자기 값을 갖는다. 명시된 값에는 비율을 곱하지 않는다 — 이미 "얼마로 달릴지"가
-			// 정해진 수치라 또 곱하면 기획 수치(상체 25 m/s)와 어긋난다.
+			// 자기 값을 갖는다. 거기에 스폰 때 뽑은 개체별 배수가 곱해진다.
 			//
-			// 어느 쪽이든 엔진의 UMassApplyForceProcessor가 마지막에
+			// 엔진의 UMassApplyForceProcessor가 마지막에
 			// FMassMovementParameters::MaxSpeed로 클램프한다. 그 값이 이 엔티티가 낼 수 있는
 			// 천장이므로, 단계 속도를 쓰는 Config는 Max Speed를 그중 최댓값으로 잡아야 한다.
-			const float DesiredSpeed = (Approach.MaxSpeed > 0.f)
-				? Approach.MaxSpeed
-				: MovementParams.MaxSpeed * ChaseParams.SpeedRatio;
+			const float DesiredSpeed = UE::TR::Enemy::ComputeDesiredSpeed(
+				Approach, MovementParams.MaxSpeed, ChaseParams);
 
 			// 도착 몇 초 전부터 회전 기준을 바꿀지를 거리로 환산해 둔다.
 			const float OrientationFadeDistance = ChaseParams.OrientationFadeTime * DesiredSpeed;

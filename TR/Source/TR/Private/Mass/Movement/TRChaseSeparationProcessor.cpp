@@ -94,10 +94,17 @@ void UTRChaseSeparationProcessor::Execute(FMassEntityManager& EntityManager, FMa
 			const FVector SelfLocation = TransformList[EntityIt].GetTransform().GetLocation();
 			const float SelfRadius = RadiusList[EntityIt].Radius;
 
-			// 가장 큰 이웃까지 고려해 넉넉히 잡는다. 반지름이 제각각이면 여기서 놓칠 수 있다.
-			const float SearchRadius = SelfRadius * 2.f * ChaseParams.SeparationRadiusScale;
+			// 밀어낼 거리. 질의 범위이자 판정 반경이다.
+			//
+			// 이웃 반지름을 따로 조회하지 않고 자기 반지름을 두 배로 쓴다. 임의 접근
+			// 조회는 캐시를 크게 흔들어서 이 프로세서에서 가장 비싼 부분인데, 같은 종류의
+			// 적은 반지름이 같으므로 결과가 사실상 동일하다. 크기가 크게 다른 적을 섞을
+			// 때는 이 근사를 다시 봐야 한다.
+			//
+			// 질의는 축 정렬 박스라 이 반경의 원을 완전히 덮는다. 놓치는 이웃은 없다.
+			const float SeparationRadius = SelfRadius * 2.f * ChaseParams.SeparationRadiusScale;
 
-			const FVector Extent(SearchRadius, SearchRadius, 0.f);
+			const FVector Extent(SeparationRadius, SeparationRadius, 0.f);
 			Neighbors.Reset();
 			Grid.Query(FBox(SelfLocation - Extent, SelfLocation + Extent), Neighbors);
 
@@ -125,18 +132,12 @@ void UTRChaseSeparationProcessor::Execute(FMassEntityManager& EntityManager, FMa
 					continue;
 				}
 
-				// 이웃 반지름을 따로 조회하지 않고 자기 반지름을 두 배로 쓴다.
-				// 임의 접근 조회는 캐시를 크게 흔들어서 이 프로세서에서 가장 비싼 부분인데,
-				// 같은 종류의 적은 반지름이 같으므로 결과가 사실상 동일하다.
-				// 크기가 크게 다른 적을 섞을 때는 이 근사를 다시 봐야 한다.
-				const float CombinedRadius = SelfRadius * 2.f * ChaseParams.SeparationRadiusScale;
-
 				// 수평 거리로만 민다. 높이차로 밀면 지면에서 튀어오른다.
 				FVector Delta = SelfLocation - NeighborTransform->GetTransform().GetLocation();
 				Delta.Z = 0.f;
 
 				const float DistanceSq = Delta.SizeSquared();
-				if (DistanceSq >= FMath::Square(CombinedRadius))
+				if (DistanceSq >= FMath::Square(SeparationRadius))
 				{
 					continue;
 				}
@@ -155,7 +156,7 @@ void UTRChaseSeparationProcessor::Execute(FMassEntityManager& EntityManager, FMa
 				const float Distance = FMath::Sqrt(DistanceSq);
 
 				// 가까울수록 강하게. 경계에서 0이 되어야 힘이 튀지 않는다.
-				const float Falloff = 1.f - (Distance / CombinedRadius);
+				const float Falloff = 1.f - (Distance / SeparationRadius);
 				PushDirection += (Delta / Distance) * Falloff;
 			}
 

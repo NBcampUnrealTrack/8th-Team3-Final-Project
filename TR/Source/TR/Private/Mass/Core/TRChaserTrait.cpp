@@ -50,4 +50,8 @@ void UTRChaserTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildContext
 
 	const FConstSharedStruct CombatParamsFragment = EntityManager.GetOrCreateConstSharedFragment(CombatParams);
 	BuildContext.AddConstSharedFragment(CombatParamsFragment);
+
+	// 상태 → 시퀀스 인덱스 매핑. UTRMassAnimSelectProcessor가 이걸 보고 애니메이션을 고른다.
+	const FConstSharedStruct AnimParamsFragment = EntityManager.GetOrCreateConstSharedFragment(AnimParams);
+	BuildContext.AddConstSharedFragment(AnimParamsFragment);
 }
