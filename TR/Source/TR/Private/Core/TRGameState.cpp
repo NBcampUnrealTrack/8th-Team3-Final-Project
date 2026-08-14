@@ -46,6 +46,15 @@ bool ATRGameState::TryConsumeMonsterResource(int32 Amount)
 	return true;
 }
 
+void ATRGameState::AddMonsterResource(int32 Amount)
+{
+	if (!HasAuthority() || Amount <= 0)
+	{
+		return;
+	}
+	MonsterResource += Amount;
+}
+
 bool ATRGameState::UpgradeArmorLevel()
 {
 	if (!HasAuthority())
