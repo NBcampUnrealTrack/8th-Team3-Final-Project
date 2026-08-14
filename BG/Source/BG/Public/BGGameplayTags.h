@@ -82,6 +82,21 @@ namespace BG
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Reaction)        // 응답 창에서만 사용 (Missed! 등)
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(RangeLimited)    // 사거리(WeaponRange) 제약을 받음
 
+			/**
+			 * 공격 카드 — 남을 해치는 것이 주 목적인 카드.
+			 *
+			 * "대상을 지정한다"(NeedsTargetSeat)와 다르다. 함정은 대상을 고르지만 공격이 아니고,
+			 * 광역기는 공격이지만 대상을 고르지 않는다. 그래서 태그를 따로 둔다.
+			 *
+			 * 이 태그를 읽는 곳 (직업 패시브의 적용 범위를 가른다):
+			 *   · 용병   — AttackWeightBonusFailure  (공격 카드만 실패하지 않는다)
+			 *   · 무투가 — AttackKeepCardUseChance   (공격 카드만 사용한도를 아낀다)
+			 *
+			 * ⚠️ DT_BGCard 의 TraitTags 에 넣지 않으면 그 카드는 공격으로 취급되지 않는다.
+			 *    태그를 빼도 카드 자체는 멀쩡히 동작하므로 조용히 어긋난다 — BG_DumpDeck 으로 확인할 것.
+			 */
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Attack)
+
 			//	사용 시 연출을 재생한다 (아트 기획서 "전투 연출" — 사용자 공격 연출을 확대해
 			//	보여주고, 판정 결과에 따라 피해자 연출로 이어진다).
 			//

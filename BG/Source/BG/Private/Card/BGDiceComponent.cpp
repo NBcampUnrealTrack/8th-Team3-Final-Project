@@ -148,7 +148,7 @@ FBGOutcomeWeights UBGDiceComponent::ApplyLuck(const FBGOutcomeWeights& Base, int
 }
 
 FBGOutcomeWeights UBGDiceComponent::ApplyModifiers(const FBGOutcomeWeights& Base,
-	const UAbilitySystemComponent* SourceASC) const
+	const UAbilitySystemComponent* SourceASC, bool bAttackCard) const
 {
 	FBGOutcomeWeights Out = Base;
 	if (!SourceASC)
@@ -174,9 +174,14 @@ FBGOutcomeWeights UBGDiceComponent::ApplyModifiers(const FBGOutcomeWeights& Base
 	//	      DT 비율이 곧 표시 확률이어야 §10 "최종 확률 표시" 와 §11 "설정 확률 vs 실측" 비교가
 	//	      성립한다. 행운을 섞으면 카드 UI 의 확률이 플레이어마다 달라진다.
 	//	      행운을 다시 쓰려면 ApplyLuck 을 명시적으로 호출하거나 WeightBonus* 로 환산할 것.
+	//	공격 카드 한정 가산(용병)은 여기서만 더해진다. 회복·상태 카드에는 걸리지 않는다.
+	//	실패 가산에 합쳐 넣는 이유: 등급별 가산은 ApplyBonusAll 한 번으로 끝나야
+	//	0 클램프와 정규화가 두 번 일어나지 않는다.
+	const float AttackFailureBonus = bAttackCard ? AS->GetAttackWeightBonusFailure() : 0.f;
+
 	Out.ApplyBonusAll(
 		FMath::RoundToInt(AS->GetWeightBonusCriticalFailure()),
-		FMath::RoundToInt(AS->GetWeightBonusFailure()),
+		FMath::RoundToInt(AS->GetWeightBonusFailure() + AttackFailureBonus),
 		FMath::RoundToInt(AS->GetWeightBonusSuccess()),
 		FMath::RoundToInt(AS->GetWeightBonusCriticalSuccess()));
 

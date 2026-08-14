@@ -1,0 +1,14 @@
+﻿직업태그,이름,컨셉,구현,MaxHealth,CardUseLimit,DrawCount,가산_대실패,가산_실패,가산_성공,가산_대성공,승산_대실패,승산_대성공,DamageNegateChance,AttackWeightBonusFailure,AttackKeepCardUseChance,DefaultAttributeGE,PassiveEffects,SkeletalMesh,비고
+(기본값),—,아무 보정도 없는 상태.,—,4,2,2,0,0,0,0,1,1,0,0,0,—,—,—,MaxHealth 는 GDD 기준 4 / 용사는 +1
+Character.Job.Knight,기사,체력이 높은 국밥 캐릭터,가능,5,2,2,0,0,0,0,1,1,0,0,0,GE_Stat_Knight,—,(미정),어트리뷰트만으로 성립한다. 패시브 GE 가 필요 없는 유일한 직업
+Character.Job.Mercenary,용병,공격 카드 한정 실패하지 않는다(우선순위 가장 높음),가능,4,2,2,0,0,0,0,1,1,0,-1000,0,GE_Stat_Mercenary,GE_Passive_Mercenary,(미정),"[연결 완료] Card.Trait.Attack 이 붙은 카드에만 걸린다. 실패 비율이 0 이 되어 함정(ForceFailure)도 자동으로 막힌다 — ""해당 등급 비율이 0 이면 강제할 수 없다""는 기존 규칙이 그대로 걸리므로 우선순위 규칙을 따로 만들지 않았다. ⚠️ DT_BGCard 의 공격 카드에 Card.Trait.Attack 을 넣어야 동작한다"
+Character.Job.Hunter,사냥꾼,매 턴 카드를 추가로 한 장 더 사용할 수 있다,가능,4,3,2,0,0,0,0,1,1,0,0,0,GE_Stat_Hunter,—,(미정),CardUseLimit 만 올리면 된다
+Character.Job.Scout,수색꾼,매 턴 카드를 추가로 한 장 더 받는다,가능,4,2,3,0,0,0,0,1,1,0,0,0,GE_Stat_Scout,—,(미정),DrawCount 만 올리면 된다
+Character.Job.Priest,사제,체력 회복 시 체력을 추가로 1 더 회복한다,미구현,4,2,2,0,0,0,0,1,1,0,0,0,GE_Stat_Priest,GE_Passive_Priest,(미정),회복 보정 어트리뷰트가 없다. HealBonus 를 신설하고 UGA_BGCardEffects 의 회복 경로에서 더해야 한다
+Character.Job.Healer,치유사,매 턴 시작 시 체력을 1 회복하지만 최대 체력이 1 낮다,일부,3,2,2,0,0,0,0,1,1,0,0,0,GE_Stat_Healer,GE_Passive_Healer,(미정),MaxHealth 3 은 지금 가능. 턴 시작 회복 훅이 없다 — BeginTurn 의 감옥/다이너마이트 TODO 자리(BGGameState.cpp:723)에 함께 들어간다
+Character.Job.Mage,마법사,공격 시 50%확률로 피해를 1 더 준다,미구현,4,2,2,0,0,0,0,1,1,0,0,0,GE_Stat_Mage,GE_Passive_Mage,(미정),공격 보정 어트리뷰트가 없다. DamageNegateChance 가 이미 피해 직전 서버에서 굴리는 구조라 그 대칭으로 DamageBonusChance 를 ApplyDamage 에 넣으면 된다
+Character.Job.Diviner,점술가,대성공과 대실패 확률이 높다,가능,4,2,2,0,0,0,0,2,2,0,0,0,GE_Stat_Diviner,GE_Passive_Diviner,(미정),⚠️ 마녀의 부적과 방식도 값도 같다 — 함께 장착하면 승산이 ×4 가 된다. 부적을 든 점술가를 허용할지 정해야 한다
+Character.Job.Monk,수도사,피해를 받을 때 마다 피해를 준 캐릭터에게 피해를 1 주지만 최대 체력이 1 낮다,일부,3,2,2,0,0,0,0,1,1,0,0,0,GE_Stat_Monk,GE_Passive_Monk,(미정),신규 직업 — 태그부터 만들어야 한다. MaxHealth 3 은 가능. 반사 훅은 PostGameplayEffectExecute 자리다(피해량과 Instigator 를 이미 알고 있다 · BGAttributeSet.cpp:128)
+Character.Job.Brawler,무투가,[공격]카드를 사용 할 때 50% 확률로 카드 사용 한도를 소모하지 않는다,가능,4,2,2,0,0,0,0,1,1,0,0,50,GE_Stat_Brawler,GE_Passive_Brawler,(미정),[연결 완료] 판정 결과를 보지 않는다 — 성공해도 아낀다. 대비(KeepCardUse)와 겹치면 한 장에 한 번만 환급된다. 굴림은 요정 갑옷과 같은 판정 스트림(RandomIndex). ⚠️ DT_BGCard 의 공격 카드에 Card.Trait.Attack 을 넣어야 동작한다
+Character.Job.Thief,도둑,피해를 받을 때 마다 피해를 준 캐릭터로부터 카드를 한 장 가져온다,미구현,4,2,2,0,0,0,0,1,1,0,0,0,GE_Stat_Thief,GE_Passive_Thief,(미정),신규 직업. 수도사와 같은 훅 자리. 실행부는 StealTargetRandom Op 를 그대로 쓸 수 있다
+Character.Job.Assassin,암살자,대성공 판정을 받을 때 마다 1회성 [공격] 카드를 받는다,미구현,4,2,2,0,0,0,0,1,1,0,0,0,GE_Stat_Assassin,GE_Passive_Assassin,(미정),1회성 카드는 카드 사용 한도를 소모하지 않고 사용 시 덱에 들어가거나 버려지지 않고 사라지는 카드를 말한다 · ⚠️ 그 개념 자체가 없다 — FBGCardInstance 에 소멸 표시와 사용한도 미소모 분기가 필요하다. 12종 중 가장 무겁다

@@ -63,6 +63,7 @@ namespace BG
 			UE_DEFINE_GAMEPLAY_TAG(NeedsTargetSeat, "Card.Trait.NeedsTargetSeat")
 			UE_DEFINE_GAMEPLAY_TAG(Reaction,        "Card.Trait.Reaction")
 			UE_DEFINE_GAMEPLAY_TAG(RangeLimited,    "Card.Trait.RangeLimited")
+			UE_DEFINE_GAMEPLAY_TAG(Attack,          "Card.Trait.Attack")
 			UE_DEFINE_GAMEPLAY_TAG(Cinematic,       "Card.Trait.Cinematic")
 		}
 	}

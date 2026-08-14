@@ -1,0 +1,14 @@
+﻿CardId,이름,타입,매수,대상지정,연출,비율_대실패,비율_실패,비율_성공,비율_대성공,효과_대실패,효과_실패,효과_성공,효과_대성공,장비GE,설명,비고
+Card.Id.Bang,뱅,Brown,12,O,?,5,20,65,10,-,-,DamageTarget 1,DamageTarget 2,-,사거리 제한 없이 대상 1명에게 피해를 준다.,판정 비율의 기준선
+Card.Id.Beer,맥주,Brown,6,,?,0,10,80,10,-,-,HealSelf 1,HealSelf 2,-,자신의 생명력을 회복한다.,자기 회복은 안정적으로
+Card.Id.CatBalou,위협,Brown,6,O,?,0,0,100,0,-,-,DiscardTargetRandom 1,-,-,상대의 손에서 카드 1장을 무작위로 버리게 한다.,성공 100% — 함정의 강제가 통하지 않는다
+Card.Id.QuickStrike,속공,Brown,8,O,?,5,20,65,10,-,DrawSelf 1,DrawSelf 1 + DamageTarget 1,DrawSelf 1 + DamageTarget 1 + RestoreCardUse 1,-,카드를 뽑으며 공격한다. 잘 되면 행동 기회까지 남는다.,실패해도 대상이 필요하다(대상 선택이 판정보다 먼저)
+Card.Id.Rest,휴식,Brown,6,,?,0,20,70,10,-,DrawSelf 1,DrawSelf 1 + RestoreCardUse 1,DrawSelf 1 + RestoreCardUse 2,-,카드를 뽑고 행동 기회를 되찾는다.,
+Card.Id.ExposeWeakness,약점 포착,Brown,6,,?,10,0,75,15,-,-,ApplyStatus Status.NextAttack.DamageBonus 1,ApplyStatus Status.NextAttack.DamageBonus 2,-,다음 공격의 피해를 늘린다.,대실패는 일어나지만 효과가 없다(비율 10)
+Card.Id.Trap,함정,Brown,6,O,?,0,20,65,15,-,-,ApplyStatus Status.NextCard.ForceFailure (bToTarget),ApplyStatus Status.NextCard.ForceCriticalFailure (bToTarget),-,상대가 다음에 쓰는 카드를 실패하게 만든다.,유일하게 bToTarget=true 인 카드
+Card.Id.Prepare,준비,Brown,5,,?,0,0,85,15,-,-,ApplyStatus Status.NextCard.ForceSuccess,ApplyStatus Status.NextCard.ForceCriticalSuccess,-,다음에 쓰는 카드를 반드시 성공시킨다.,
+Card.Id.Brace,대비,Brown,5,,?,0,0,100,0,-,-,ApplyStatus Status.NextCard.KeepCardUse,-,-,다음 카드가 실패해도 행동 기회를 잃지 않는다.,성공 100%
+Card.Id.DwarfGloves,드워프 장갑,Blue,2,,-,-,-,-,-,-,-,-,-,GE_Equip_DwarfGloves,장착 중 내 카드가 실패하지 않는다.,판정하지 않는다 — 장착 경로로 빠진다
+Card.Id.WitchCharm,마녀의 부적,Blue,2,,-,-,-,-,-,-,-,-,-,GE_Equip_WitchCharm,장착 중 대성공과 대실패 확률이 두 배가 된다.,승산 보정(WeightMult) 방식
+Card.Id.FairyArmor,요정 갑옷,Blue,0,,-,-,-,-,-,-,-,-,-,GE_Equip_FairyArmor,나에게 들어오는 공격이 25% 확률로 무효화된다.,매수 0 — 넣으려면 다른 카드에서 그만큼 빼야 한다
+합계,,,64,,,,,,,,,,,,,BG.ExpectedDeckSize 64 와 반드시 일치해야 한다

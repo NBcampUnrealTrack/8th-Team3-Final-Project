@@ -135,10 +135,18 @@ public:
 	 *   기본 비율 × 승산(WeightMult*) + 가산(WeightBonus* + 행운) → 0 클램프
 	 *
 	 * 순수 계산이라 클라에서도 안전하다 — GDD §10 의 "최종 확률 표시" 에 그대로 쓴다.
+	 *
+	 * bAttackCard : 이 카드에 Card.Trait.Attack 이 붙어 있는가. 공격 한정 보정
+	 *               (AttackWeightBonusFailure — 용병)을 걸지 말지를 가른다.
+	 *
+	 * ⚠️ 기본값을 일부러 두지 않았다. 두면 넘기는 것을 잊은 호출부가 조용히 "공격 아님" 으로
+	 *    동작하는데, 그러면 표시 확률과 실제 판정이 어긋난 채 아무 경고도 나지 않는다.
+	 *    호출부는 둘뿐이고(판정: BGPlayerController / 표시: BGCardViewLibrary) **둘 다 같은 값을
+	 *    넘겨야 한다.**
 	 */
 	UFUNCTION(BlueprintPure, Category = "BG|Dice")
 	FBGOutcomeWeights ApplyModifiers(const FBGOutcomeWeights& Base,
-		const UAbilitySystemComponent* SourceASC) const;
+		const UAbilitySystemComponent* SourceASC, bool bAttackCard) const;
 
 	/**
 	 * 비율로 판정한다 (서버 전용). OutRoll 은 0~99 난수 원본.

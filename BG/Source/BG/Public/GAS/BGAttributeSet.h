@@ -132,8 +132,41 @@ public:
 	FGameplayAttributeData WeightMultCriticalSuccess;
 	ATTRIBUTE_ACCESSORS(UBGAttributeSet, WeightMultCriticalSuccess)
 
+	// ── 공격 카드 한정 보정 (직업 패시브) ────────────────────────
+	//
+	//  위 보정들이 "모든 카드" 에 걸리는 것과 달리, 이 둘은 Card.Trait.Attack 이 붙은
+	//  카드에만 걸린다. 범위를 어트리뷰트 이름에 박아 둔 이유는 같은 보정을 두 벌 두는
+	//  방식이 확장성이 낮기 때문이다 — 범위별 보정이 더 필요해지면 FBGCardRow::ModifierTags
+	//  (GDD §4.3 "보정 허용 태그", 아직 미구현)를 살려 일반화할 것.
+
 	/**
-	 * 위 6종 전부. UBGDiceComponent::ApplyModifiers 가 읽는 것과 같은 집합이다.
+	 * 공격 카드 판정에만 더해지는 실패 가산 (용병).
+	 *
+	 * 큰 음수(-1000)를 넣으면 공격 카드의 실패 비율이 0 이 된다. 그러면 함정
+	 * (Status.NextCard.ForceFailure)도 자동으로 막힌다 — "해당 등급 비율이 0 이면 강제할 수 없다"
+	 * 는 기존 규칙이 그대로 적용되기 때문이다. 우선순위 규칙을 따로 만들지 않은 이유가 이것이다.
+	 *
+	 * ⚠️ WeightBonusFailure 와 마찬가지로 음수를 허용해야 한다(PreAttributeChange 의 0 클램프 제외).
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_AttackWeightBonusFailure, Category = "BG|Outcome")
+	FGameplayAttributeData AttackWeightBonusFailure;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, AttackWeightBonusFailure)
+
+	/**
+	 * 공격 카드를 썼을 때 카드 사용 한도를 소모하지 않을 확률(%) (무투가). 0 = 항상 소모.
+	 *
+	 * DamageNegateChance 와 같은 방식이다 — 어트리뷰트에 확률을 담고 서버가 한 번 굴린다.
+	 * 굴림은 덱 셔플과 분리된 판정 스트림(UBGDiceComponent::RandomIndex)을 쓴다.
+	 *
+	 * ⚠️ 판정 비율이 아니라 사용한도 회계에 쓰인다 — GetOutcomeWeightAttributes() 에 넣지 말 것.
+	 *    넣으면 이 값이 바뀔 때마다 손패 확률 UI 가 이유 없이 다시 그려진다.
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_AttackKeepCardUseChance, Category = "BG|Outcome")
+	FGameplayAttributeData AttackKeepCardUseChance;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, AttackKeepCardUseChance)
+
+	/**
+	 * 위 6종 + 공격 한정 가산. UBGDiceComponent::ApplyModifiers 가 읽는 것과 같은 집합이다.
 	 *
 	 * 확률 UI 는 이 값이 바뀌면 손패를 다시 그려야 한다(ABGPlayerController). 목록을 손으로
 	 * 나열하면 보정을 하나 추가했을 때 UI 만 조용히 낡으므로 여기 한 곳에서만 관리한다.
@@ -197,6 +230,8 @@ protected:
 	UFUNCTION() void OnRep_WeightBonusCriticalSuccess(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_WeightMultCriticalFailure(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_WeightMultCriticalSuccess(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_AttackWeightBonusFailure(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_AttackKeepCardUseChance(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_Strength(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_Agility(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_Intelligence(const FGameplayAttributeData& OldValue);

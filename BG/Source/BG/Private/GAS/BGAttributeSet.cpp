@@ -26,6 +26,10 @@ UBGAttributeSet::UBGAttributeSet()
 	InitWeightMultCriticalFailure(1.f);
 	InitWeightMultCriticalSuccess(1.f);
 
+	// 공격 카드 한정 보정 — 둘 다 0(보정 없음). 직업 패시브 GE 가 채운다.
+	InitAttackWeightBonusFailure(0.f);
+	InitAttackKeepCardUseChance(0.f);
+
 	// 능력치 — 기본 0 (보정 없음). 실제 값은 캐릭터 Row 의 GE 로 세팅한다.
 	InitStrength(0.f);
 	InitAgility(0.f);
@@ -35,8 +39,12 @@ UBGAttributeSet::UBGAttributeSet()
 
 TArray<FGameplayAttribute> UBGAttributeSet::GetOutcomeWeightAttributes()
 {
-	//	UBGDiceComponent::ApplyModifiers 가 읽는 것과 같은 6종.
+	//	UBGDiceComponent::ApplyModifiers 가 읽는 것과 같은 집합.
+	//	AttackWeightBonusFailure 는 공격 카드에만 걸리지만, 손패에는 공격 카드도 함께 있으므로
+	//	이 값이 바뀌면 확률 표시를 다시 그려야 한다.
+	//	AttackKeepCardUseChance 는 판정 비율이 아니라 사용한도 회계라 넣지 않는다.
 	return {
+		GetAttackWeightBonusFailureAttribute(),
 		GetWeightBonusCriticalFailureAttribute(),
 		GetWeightBonusFailureAttribute(),
 		GetWeightBonusSuccessAttribute(),
@@ -68,6 +76,8 @@ void UBGAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, WeightBonusCriticalSuccess, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, WeightMultCriticalFailure,  COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, WeightMultCriticalSuccess,  COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, AttackWeightBonusFailure,   COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, AttackKeepCardUseChance,    COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, Strength,          COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, Agility,           COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, Intelligence,      COND_None, REPNOTIFY_Always);
@@ -90,11 +100,15 @@ void UBGAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, fl
 	else if (Attribute == GetWeightBonusCriticalFailureAttribute()
 		|| Attribute == GetWeightBonusFailureAttribute()
 		|| Attribute == GetWeightBonusSuccessAttribute()
-		|| Attribute == GetWeightBonusCriticalSuccessAttribute())
+		|| Attribute == GetWeightBonusCriticalSuccessAttribute()
+		|| Attribute == GetAttackWeightBonusFailureAttribute())
 	{
 		//	가산 비율 보정은 음수를 허용한다 — 큰 음수로 등급을 무효화하는 장비가 있다
 		//	(드워프 장갑: 실패 비율을 0 으로). 0 클램프하면 그 카드가 동작하지 않는다.
 		//	최종 비율은 정규화 단계에서 0 아래로 내려가지 않도록 처리된다.
+		//
+		//	⚠️ 공격 한정 가산(용병)도 반드시 여기 있어야 한다. 빠뜨리면 -1000 이 0 으로 잘려
+		//	   패시브가 붙어 있는데 아무 일도 일어나지 않는다 — 원인이 어디에도 보이지 않는다.
 	}
 	else
 	{
@@ -197,6 +211,14 @@ void UBGAttributeSet::OnRep_WeightMultCriticalFailure(const FGameplayAttributeDa
 void UBGAttributeSet::OnRep_WeightMultCriticalSuccess(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, WeightMultCriticalSuccess, OldValue);
+}
+void UBGAttributeSet::OnRep_AttackWeightBonusFailure(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, AttackWeightBonusFailure, OldValue);
+}
+void UBGAttributeSet::OnRep_AttackKeepCardUseChance(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, AttackKeepCardUseChance, OldValue);
 }
 void UBGAttributeSet::OnRep_Strength(const FGameplayAttributeData& OldValue)
 {

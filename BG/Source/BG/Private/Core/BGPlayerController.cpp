@@ -1276,7 +1276,12 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			//	주의: 장비 보정은 반드시 통과시켜야 한다. 이 호출을 빼면 드워프 장갑·마녀의 부적이
 			// GE 로 어트리뷰트를 바꿔도 판정이 읽지 않아 효과가 사라진다.
 			// GDD §10 도 "장비 효과가 적용된 최종 확률" 을 표시하라고 요구한다.
-			const FBGOutcomeWeights Weights = Dice->ApplyModifiers(CardRow->OutcomeWeights, ASC);
+			//	⚠️ 표시 쪽(UBGCardViewLibrary::MakeCardView)과 같은 방법으로 구한다.
+			//	   갈리면 손패에 뜬 확률과 실제 판정이 어긋난다.
+			const bool bIsAttackCard = CardRow->TraitTags.HasTag(BG::Card::Trait::Attack.GetTag());
+
+			const FBGOutcomeWeights Weights =
+				Dice->ApplyModifiers(CardRow->OutcomeWeights, ASC, bIsAttackCard);
 
 			int32 Roll = INDEX_NONE;
 			EBGDiceOutcome Outcome = Dice->RollOutcome(Weights, Roll);
@@ -1434,6 +1439,10 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	//	── 대비(Status.NextCard.KeepCardUse) ──
 	//	실패·대실패했다면 이 카드의 사용 횟수를 되돌린다. 상태는 결과와 무관하게 소모된다
 	//	("다음에 사용하는 카드" 를 이미 썼으므로).
+	//	이 카드의 사용 횟수를 이미 되돌렸는가. 대비와 무투가가 겹칠 수 있는데, 둘 다 환급하면
+	//	카드 한 장으로 사용한도를 두 번 돌려받는다.
+	bool bCardUseRefunded = false;
+
 	if (MyPS && bResolved && MyPS->HasPendingStatus(BG::Status::NextCard::KeepCardUse.GetTag()))
 	{
 		int32 Unused = 0;
@@ -1444,8 +1453,40 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 		if (bFailed && MyPS->DecrementCardsUsedThisTurn(1) > 0)
 		{
+			bCardUseRefunded = true;
 			BGDebug::Screen(TEXT("[대비] 실패했지만 카드 사용한도를 잃지 않았습니다."),
 				FColor(120, 220, 160), /*Time=*/5.f);
+		}
+	}
+
+	//	── 무투가 (AttackKeepCardUseChance) ──
+	//	공격 카드를 썼을 때 일정 확률로 사용한도를 아낀다. 대비와 달리 **판정 결과를 보지 않는다** —
+	//	성공해도 아낀다. 굴림은 방어 판정(요정 갑옷)과 같은 판정 스트림을 쓴다.
+	if (MyPS && !bCardUseRefunded && CardRow
+		&& CardRow->TraitTags.HasTag(BG::Card::Trait::Attack.GetTag()))
+	{
+		const float KeepChance = ASC
+			? ASC->GetNumericAttribute(UBGAttributeSet::GetAttackKeepCardUseChanceAttribute())
+			: 0.f;
+
+		if (KeepChance > 0.f)
+		{
+			UBGDiceComponent* Dice = UBGDiceComponent::Get(this);
+			const int32 Roll = Dice ? Dice->RandomIndex(100) : INDEX_NONE;
+
+			if (Roll != INDEX_NONE && static_cast<float>(Roll) < KeepChance
+				&& MyPS->DecrementCardsUsedThisTurn(1) > 0)
+			{
+				bCardUseRefunded = true;
+
+				//	GDD §10: 자동 판정은 원인·확률·결과를 로그에 남긴다.
+				UE_LOG(LogBGCard, Log,
+					TEXT("[무투가] 발동 — 눈 %d / 확률 %.0f%% → 카드 사용한도 유지"),
+					Roll, KeepChance);
+
+				BGDebug::Screen(TEXT("[무투가] 공격 카드의 사용한도를 소모하지 않았습니다."),
+					FColor(120, 220, 160), /*Time=*/5.f);
+			}
 		}
 	}
 

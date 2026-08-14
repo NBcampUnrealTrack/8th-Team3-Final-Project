@@ -308,9 +308,14 @@ FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, 
 
 		//	보정 합산은 순수 계산이라 클라에서 돌려도 안전하다.
 		//	GDD §9.2 — 확률 "표시" 는 클라, 확률 "판정" 은 서버. 여기는 표시다.
+		//	⚠️ 공격 여부는 판정하는 쪽(ABGPlayerController)과 **반드시 같은 방법으로** 구해야 한다.
+		//	   한쪽만 어긋나면 손패에 뜬 확률과 실제 판정이 달라지고, 그 차이는 용병처럼
+		//	   공격 한정 보정을 가진 직업에서만 나타나 재현이 어렵다.
+		const bool bIsAttack = Row->TraitTags.HasTag(BG::Card::Trait::Attack.GetTag());
+
 		const UBGDiceComponent* Dice = UBGDiceComponent::Get(WorldContextObject);
 		View.FinalChance = (Dice && SourceASC)
-			? ToChanceView(Dice->ApplyModifiers(Row->OutcomeWeights, SourceASC))
+			? ToChanceView(Dice->ApplyModifiers(Row->OutcomeWeights, SourceASC, bIsAttack))
 			: View.BaseChance;
 
 		View.bChanceModified = ChancesDiffer(View.BaseChance, View.FinalChance);
