@@ -178,14 +178,17 @@ void UTRControlConsoleWidget::RefreshResourceAndLevels()
 	LastArmorLevel = ArmorLevel;
 	LastTurretLevel = TurretLevel;
 
-	// 최대 레벨에 닿으면 서버가 거부하므로 미리 잠근다.
+	// 최대 레벨이면 비용이 INDEX_NONE 이라 레벨 검사가 Cost >= 0 에 함께 걸린다.
+	const int32 ArmorUpgradeCost = GameState->GetArmorUpgradeCost();
+	const int32 TurretUpgradeCost = GameState->GetTurretUpgradeCost();
+
 	if (IsValid(Btn_UpgradeArmor))
 	{
-		Btn_UpgradeArmor->SetIsEnabled(ArmorLevel < ATRGameState::MaxArmorLevel);
+		Btn_UpgradeArmor->SetIsEnabled(ArmorUpgradeCost >= 0 && MonsterResource >= ArmorUpgradeCost);
 	}
 	if (IsValid(Btn_UpgradeTurret))
 	{
-		Btn_UpgradeTurret->SetIsEnabled(TurretLevel < ATRGameState::MaxTurretLevel);
+		Btn_UpgradeTurret->SetIsEnabled(TurretUpgradeCost >= 0 && MonsterResource >= TurretUpgradeCost);
 	}
 }
 

@@ -95,7 +95,7 @@ struct FTRArmorLevelRow : public FTableRowBase
 	int32 InstallCost = 0;   // 재설치 비용
 
 	UPROPERTY(EditAnywhere)
-	int32 UpgradeCost = 0;   // 업그레이드 비용 (관제석용, 나중에 사용)
+	int32 UpgradeCost = 0;   // 이 레벨에서 '다음' 레벨로 올리는 비용. 최대 레벨 행은 0.
 };
 
 USTRUCT(BlueprintType)
@@ -107,10 +107,10 @@ struct FTRTurretLevelRow : public FTableRowBase
 	float MaxHP = 0.f;
 
 	UPROPERTY(EditAnywhere)
-	int32 InstallCost = 0;
+	int32 InstallCost = 0;   // 재설치 비용
 
 	UPROPERTY(EditAnywhere)
-	int32 UpgradeCost = 0;
+	int32 UpgradeCost = 0;   // 이 레벨에서 '다음' 레벨로 올리는 비용. 최대 레벨 행은 0.
 
 	UPROPERTY(EditAnywhere)
 	float ManualRange = 0.f;
