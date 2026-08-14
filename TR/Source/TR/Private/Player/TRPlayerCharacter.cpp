@@ -86,6 +86,8 @@ void ATRPlayerCharacter::Tick(float DeltaTime)
 
 	//회전 입력 후 소모
 	PendingLookInput = FVector2D::ZeroVector;
+
+	SyncControlConsoleWidget();
 }
 
 //컨트롤러 설정 - IMC 등록, 틱 활성화 결정
@@ -269,12 +271,19 @@ void ATRPlayerCharacter::MulticastPlayJumpLandEffect_Implementation(const FVecto
 
 void ATRPlayerCharacter::OnInteractPressed(const FInputActionValue& Input)
 {
-	// 팝업이 떠 있는 동안 E 는 닫기 전용 — 다른 상호작용으로 새지 않게 한다.
-	if (IsLookingAtControlConsole() || IsControlConsoleOpen())
+	// 점유 중이면 E 는 놓기 전용 — 다른 상호작용으로 새지 않게 한다.
+	if (IsOccupyingControlConsole())
 	{
-		if (ATRPlayerHUD* PlayerHUD = GetPlayerHUD())
+		ServerReleaseControlConsole();
+		return;
+	}
+
+	if (const ATRControlConsole* Console = GetLookedAtControlConsole())
+	{
+		// 남이 쓰는 중이면 아무 일도 일어나지 않는다. 실제 판정은 서버가 다시 한다.
+		if (!Console->IsOccupied())
 		{
-			PlayerHUD->ToggleControlConsole();
+			ServerRequestControlConsole();
 		}
 		return;
 	}
@@ -282,29 +291,54 @@ void ATRPlayerCharacter::OnInteractPressed(const FInputActionValue& Input)
 	Interact(Input);   // 관제석이 아니면 원래대로 서버 RPC 호출
 }
 
-ATRPlayerHUD* ATRPlayerCharacter::GetPlayerHUD() const
+void ATRPlayerCharacter::SyncControlConsoleWidget()
 {
 	const APlayerController* PC = Cast<APlayerController>(GetController());
-	return IsValid(PC) ? Cast<ATRPlayerHUD>(PC->GetHUD()) : nullptr;
+	ATRPlayerHUD* PlayerHUD = IsValid(PC) ? Cast<ATRPlayerHUD>(PC->GetHUD()) : nullptr;
+	if (!IsValid(PlayerHUD))
+	{
+		return;
+	}
+
+	if (IsOccupyingControlConsole() != PlayerHUD->IsControlConsoleOpen())
+	{
+		PlayerHUD->ToggleControlConsole();
+	}
 }
 
-bool ATRPlayerCharacter::IsControlConsoleOpen() const
+void ATRPlayerCharacter::ServerRequestControlConsole_Implementation()
 {
-	const ATRPlayerHUD* PlayerHUD = GetPlayerHUD();
-	return IsValid(PlayerHUD) && PlayerHUD->IsControlConsoleOpen();
+	if (ATRControlConsole* Console = GetLookedAtControlConsole())
+	{
+		Console->TryOccupy(this);
+	}
 }
 
-bool ATRPlayerCharacter::IsLookingAtControlConsole() const
+void ATRPlayerCharacter::ServerReleaseControlConsole_Implementation()
 {
-	return IsValid(InteractionComp) && Cast<ATRControlConsole>(InteractionComp->GetCurrentTarget()) != nullptr;
+	if (ATRControlConsole* Console = GetLookedAtControlConsole())
+	{
+		Console->Release(this);
+	}
+}
+
+ATRControlConsole* ATRPlayerCharacter::GetLookedAtControlConsole() const
+{
+	return IsValid(InteractionComp) ? Cast<ATRControlConsole>(InteractionComp->GetCurrentTarget()) : nullptr;
+}
+
+// 클라이언트가 아무 때나 부를 수 있으므로 관제석을 점유 중인지 서버에서 다시 확인한다.
+bool ATRPlayerCharacter::IsOccupyingControlConsole() const
+{
+	const ATRControlConsole* Console = GetLookedAtControlConsole();
+	return IsValid(Console) && Console->IsOccupiedBy(this);
 }
 
 void ATRPlayerCharacter::ServerUpgradeArmor_Implementation()
 {
-	// 클라이언트가 아무 때나 부를 수 있으므로 관제석 앞인지 서버에서 다시 확인한다.
-	if (!IsLookingAtControlConsole())
+	if (!IsOccupyingControlConsole())
 	{
-		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeArmor rejected: not looking at control console"));
+		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeArmor rejected: control console not occupied by this player"));
 		return;
 	}
 
@@ -316,9 +350,9 @@ void ATRPlayerCharacter::ServerUpgradeArmor_Implementation()
 
 void ATRPlayerCharacter::ServerUpgradeTurret_Implementation()
 {
-	if (!IsLookingAtControlConsole())
+	if (!IsOccupyingControlConsole())
 	{
-		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeTurret rejected: not looking at control console"));
+		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeTurret rejected: control console not occupied by this player"));
 		return;
 	}
 
@@ -436,7 +470,14 @@ void ATRPlayerCharacter::TriggerReleased_Implementation()
 	{
 		return;
 	}
-	
+
+	// 수리·재장전·보급은 키를 누르고 있는 동안만 진행하므로 떼면 취소한다.
+	// 재설치는 관제석 버튼으로 시작하는 액션이라 키와 무관하다 — E 로 관제석을 닫아도 계속 돈다.
+	if (ActionComp->GetCurrentActionType() == ETRActionType::Build)
+	{
+		return;
+	}
+
 	ActionComp->ServerCancelAction();
 }
 

@@ -45,7 +45,7 @@ public:
 	UTRActionComponent* GetActionComponent() const { return ActionComp; }
 
 	UFUNCTION(BlueprintPure, Category = "UI")
-	bool IsControlConsoleOpen() const;
+	bool IsOccupyingControlConsole() const;
 	
 	//--- 입력 액션--- 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -71,6 +71,15 @@ public:
 	UFUNCTION(Server, Reliable)
 	void ServerUpgradeTurret();
 	void ServerUpgradeTurret_Implementation();
+
+	// 관제석 점유
+	UFUNCTION(Server, Reliable)
+	void ServerRequestControlConsole();
+	void ServerRequestControlConsole_Implementation();
+
+	UFUNCTION(Server, Reliable)
+	void ServerReleaseControlConsole();
+	void ServerReleaseControlConsole_Implementation();
 
 protected:
 	//--- 플레이어 조작 관련함수 ---
@@ -101,11 +110,11 @@ protected:
 	
 	void OnInteractPressed(const FInputActionValue& Input);
 
-	// 로컬 플레이어의 HUD. 서버에서 원격 플레이어의 폰을 볼 때는 nullptr.
-	ATRPlayerHUD* GetPlayerHUD() const;
+	// 지금 조준 중인 관제석. 트레이스는 서버에서도 돌기 때문에 UI 요청 검증에도 쓸 수 있다.
+	ATRControlConsole* GetLookedAtControlConsole() const;
 
-	// 관제석 조준 여부. 트레이스는 서버에서도 돌기 때문에 UI 요청 검증에도 쓸 수 있다.
-	bool IsLookingAtControlConsole() const;
+	// 팝업은 서버가 정한 점유 상태를 따라 열리고 닫힌다.
+	void SyncControlConsoleWidget();
 	
 	// Local look input smoothing. Character Movement Component sends final ControlRotation to server.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))

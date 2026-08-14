@@ -4,6 +4,7 @@
 #include "Interaction/TRActionComponent.h"
 
 #include "Debug/TRGameplayLog.h"
+#include "EngineUtils.h"
 #include "Interaction/TRInteractionComponent.h"
 #include "Core/TRGameState.h"
 #include "Core/TRPlayerState.h"
@@ -29,6 +30,7 @@ void UTRActionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UTRActionComponent, CurrentActionType);
 	DOREPLIFETIME(UTRActionComponent, ActionStartServerTime);
+	DOREPLIFETIME(UTRActionComponent, CurrentTarget);
 }
 
 bool UTRActionComponent::ServerStartAction_Validate(ETRActionType ActionType, AActor* Target)
@@ -41,11 +43,37 @@ bool UTRActionComponent::ServerStartAction_Validate(ETRActionType ActionType, AA
 	return true;
 }
 
+UTRActionComponent* UTRActionComponent::FindBuildingComponent(UWorld* World)
+{
+	if (!IsValid(World))
+	{
+		return nullptr;
+	}
+
+	for (TActorIterator<ATRPlayerCharacter> It(World); It; ++It)
+	{
+		UTRActionComponent* ActionComp = It->GetActionComponent();
+		if (IsValid(ActionComp) && ActionComp->GetCurrentActionType() == ETRActionType::Build)
+		{
+			return ActionComp;
+		}
+	}
+
+	return nullptr;
+}
+
 void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionType, AActor* Target)
 {
 	// 이미 다른 액션 진행 중이면 무시 (동시 2개 방지)
 	if (CurrentActionType != ETRActionType::None)
 	{
+		return;
+	}
+
+	// 재설치는 열차 전체에서 한 번에 하나만 한다. 다른 플레이어가 짓는 중이면 거부
+	if (ActionType == ETRActionType::Build && FindBuildingComponent(GetWorld()))
+	{
+		UE_LOG(LogTRGameplay, Log, TEXT("Build rejected: another build is already in progress"));
 		return;
 	}
 
@@ -66,7 +94,7 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 	// 자원 체크 (제작=몬스터 자원, 수리/재장전=물자실 자원, 재보급=소모 없음)
 	if (ActionType == ETRActionType::Restock)
 	{
-		// 소모 없음 — 체크 스킵 (인벤토리 공간 여부는 ValidateActionTarget에서 처리)
+		// 소모 없음 - 체크 스킵 (인벤토리 공간 여부는 ValidateActionTarget에서 처리)
 	}
 	else if (RequiresMonsterResource(ActionType))
 	{

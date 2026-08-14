@@ -14,10 +14,13 @@ void UTRConsoleButton::NativePreConstruct()
 
 void UTRConsoleButton::SetStateText(const FText& StateText)
 {
-	if (!IsValid(Txt_Label))
+	// 첫 호출은 빈 텍스트라도 반영해야 디자이너에 적어 둔 제목이 올라온다.
+	if (!IsValid(Txt_Label) || (bStateTextApplied && StateText.EqualTo(LastStateText)))
 	{
 		return;
 	}
+	LastStateText = StateText;
+	bStateTextApplied = true;
 
 	Txt_Label->SetText(StateText.IsEmpty()
 		? LabelText
@@ -26,13 +29,19 @@ void UTRConsoleButton::SetStateText(const FText& StateText)
 
 void UTRConsoleButton::SetProgress(float Progress01)
 {
-	if (!IsValid(PB_Progress))
+	if (!IsValid(PB_Progress) || Progress01 == LastProgress01)
 	{
 		return;
 	}
 
+	const bool bWasVisible = LastProgress01 >= 0.f;
 	const bool bVisible = Progress01 >= 0.f;
-	PB_Progress->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	LastProgress01 = Progress01;
+
+	if (bVisible != bWasVisible)
+	{
+		PB_Progress->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
 
 	if (bVisible)
 	{

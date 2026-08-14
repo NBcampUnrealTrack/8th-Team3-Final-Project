@@ -67,8 +67,12 @@ void UTRInteractionComponent::UpdateTrace()
 		return;
 	}
 
+	// 방향은 카메라가 아니라 폰의 시점 회전에서 가져온다.
+	// bUsePawnControlRotation 은 로컬 플레이어 컨트롤러일 때만 카메라를 돌리므로,
+	// 서버에서 원격 클라의 카메라는 조준 방향이 아니라 머리 본 방향을 가리킨다.
+	// ControlRotation 은 서버로 복제되니 이쪽을 써야 서버 검증이 클라와 같은 대상을 본다.
 	const FVector Start = CameraComp->GetComponentLocation();
-	const FVector End = Start + CameraComp->GetForwardVector() * TraceDistance;
+	const FVector End = Start + OwnerCharacter->GetViewRotation().Vector() * TraceDistance;
 
 	FHitResult Hit;
 	FCollisionQueryParams QueryParams;
@@ -106,18 +110,25 @@ static void BuildPrompts(const AActor* Target, bool bHasSupplySpace, FText& OutR
 			OutReload = FText::FromString(TEXT("R 키를 눌러 재장전"));
 		}
 
+		// 남이 타고 있으면 서버가 탑승을 거부하므로, 조용히 비워두지 않고 이유를 보여 준다.
 		if (Turret->CanBeMounted())
 		{
 			OutInteract = FText::FromString(TEXT("E 키를 눌러 포탑 탑승"));
+		}
+		else if (Turret->IsOccupied())
+		{
+			OutInteract = FText::FromString(TEXT("포탑 탑승 중"));
 		}
 	}
 	else if (Target->IsA<ATRSupplyPoint>() && bHasSupplySpace)
 	{
 		OutInteract = FText::FromString(TEXT("E 키를 눌러 자원 획득"));
 	}
-	else if (Target->IsA<ATRControlConsole>())
+	else if (const ATRControlConsole* Console = Cast<ATRControlConsole>(Target))
 	{
-		OutInteract = FText::FromString(TEXT("E 키를 눌러 관제석 조작"));
+		OutInteract = Console->IsOccupied()
+			? FText::FromString(TEXT("관제석 사용 중"))
+			: FText::FromString(TEXT("E 키를 눌러 관제석 조작"));
 	}
 }
 
@@ -153,7 +164,7 @@ void UTRInteractionComponent::UpdateInteractionWidget()
 		return;
 	}
 
-	if (OwnerCharacter->IsControlConsoleOpen())
+	if (OwnerCharacter->IsOccupyingControlConsole())
 	{
 		HUDWidget->SetActionProgress(ETRActionType::None, 0.f);
 		HUDWidget->SetTargetInfo(nullptr);

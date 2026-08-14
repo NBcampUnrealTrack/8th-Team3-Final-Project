@@ -30,4 +30,12 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UProgressBar> PB_Progress;
+
+private:
+	// UTextBlock::SetText 과 UProgressBar::SetPercent 은 값이 같아도 Slate 를 무효화한다.
+	// 매 프레임 갱신되는 위젯이라 마지막 값을 들고 있다가 바뀔 때만 넘긴다.
+	FText LastStateText;
+	bool bStateTextApplied = false;
+
+	float LastProgress01 = MAX_flt;
 };

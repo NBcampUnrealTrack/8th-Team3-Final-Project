@@ -2,7 +2,6 @@
 
 #include "UI/TRControlConsoleWidget.h"
 #include "UI/TRConsoleButton.h"
-#include "UI/TRPlayerHUD.h"
 #include "Components/TextBlock.h"
 #include "Core/TRGameState.h"
 #include "Debug/TRGameplayLog.h"
@@ -23,16 +22,20 @@ void UTRControlConsoleWidget::NativeConstruct()
 	CollectSlotRow(StaticEnum<ETRArmorSlot>(), TEXT("Btn_Armor_"), true);
 	CollectSlotRow(StaticEnum<ETRTurretSlot>(), TEXT("Btn_Turret_"), false);
 
+	// 위젯이 재사용되어 NativeConstruct 가 다시 돌아도 중복으로 쌓이지 않게 내 것만 먼저 떼어 낸다.
 	if (IsValid(Btn_UpgradeArmor))
 	{
+		Btn_UpgradeArmor->OnClicked().RemoveAll(this);
 		Btn_UpgradeArmor->OnClicked().AddUObject(this, &UTRControlConsoleWidget::HandleUpgradeClicked, true);
 	}
 	if (IsValid(Btn_UpgradeTurret))
 	{
+		Btn_UpgradeTurret->OnClicked().RemoveAll(this);
 		Btn_UpgradeTurret->OnClicked().AddUObject(this, &UTRControlConsoleWidget::HandleUpgradeClicked, false);
 	}
 	if (IsValid(Btn_Close))
 	{
+		Btn_Close->OnClicked().RemoveAll(this);
 		Btn_Close->OnClicked().AddUObject(this, &UTRControlConsoleWidget::RequestClose);
 	}
 
@@ -126,6 +129,7 @@ void UTRControlConsoleWidget::CollectSlotRow(const UEnum* SlotEnum, const TCHAR*
 
 		const int32 SlotIndex = SlotButtons.Add({ Button, bArmor, static_cast<uint8>(SlotEnum->GetValueByIndex(EnumIndex)) });
 
+		Button->OnClicked().RemoveAll(this);
 		Button->OnClicked().AddUObject(this, &UTRControlConsoleWidget::BuildSlot, SlotIndex);
 	}
 
@@ -149,24 +153,30 @@ void UTRControlConsoleWidget::RefreshResourceAndLevels()
 		return;
 	}
 
+	const int32 MonsterResource = GameState->GetMonsterResource();
 	const int32 ArmorLevel = GameState->GetArmorLevel();
 	const int32 TurretLevel = GameState->GetTurretLevel();
 
-	if (IsValid(Txt_MonsterResource))
+	// SetText 은 값이 같아도 Slate 를 무효화하므로 바뀐 것만 넘긴다.
+	if (IsValid(Txt_MonsterResource) && MonsterResource != LastMonsterResource)
 	{
 		Txt_MonsterResource->SetText(FText::FromString(
-			FString::Printf(TEXT("MonsterResource: %d"), GameState->GetMonsterResource())));
+			FString::Printf(TEXT("MonsterResource: %d"), MonsterResource)));
 	}
-	if (IsValid(Txt_ArmorLevel))
+	if (IsValid(Txt_ArmorLevel) && ArmorLevel != LastArmorLevel)
 	{
 		Txt_ArmorLevel->SetText(FText::FromString(
 			FString::Printf(TEXT("장갑  LV. %d/%d"), ArmorLevel, ATRGameState::MaxArmorLevel)));
 	}
-	if (IsValid(Txt_TurretLevel))
+	if (IsValid(Txt_TurretLevel) && TurretLevel != LastTurretLevel)
 	{
 		Txt_TurretLevel->SetText(FText::FromString(
 			FString::Printf(TEXT("포탑  LV. %d/%d"), TurretLevel, ATRGameState::MaxTurretLevel)));
 	}
+
+	LastMonsterResource = MonsterResource;
+	LastArmorLevel = ArmorLevel;
+	LastTurretLevel = TurretLevel;
 
 	// 최대 레벨에 닿으면 서버가 거부하므로 미리 잠근다.
 	if (IsValid(Btn_UpgradeArmor))
@@ -181,12 +191,9 @@ void UTRControlConsoleWidget::RefreshResourceAndLevels()
 
 void UTRControlConsoleWidget::RefreshSlots()
 {
-	const UTRActionComponent* ActionComp = GetActionComponent();
-	const bool bBuilding = IsValid(ActionComp) && ActionComp->GetCurrentActionType() == ETRActionType::Build;
-	if (!bBuilding)
-	{
-		ActiveBuildButton = nullptr;
-	}
+	// 진행 상태가 모두에게 복제되므로 같은 진행률이 보인다.
+	const UTRActionComponent* BuildingComp = UTRActionComponent::FindBuildingComponent(GetWorld());
+	const bool bBuilding = BuildingComp != nullptr;
 
 	// 파츠 HP 가 복제되므로 파괴 여부는 클라이언트에서 그대로 판단할 수 있다.
 	const ATRTrain* Train = GetTrain();
@@ -194,8 +201,8 @@ void UTRControlConsoleWidget::RefreshSlots()
 	const ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
 	const int32 MonsterResource = IsValid(GameState) ? GameState->GetMonsterResource() : 0;
 
-	const float BuildProgress01 = bBuilding ? ActionComp->GetActionProgress01() : -1.f;
-	const UTRConsoleButton* Active = ActiveBuildButton.Get();
+	const float BuildProgress01 = bBuilding ? BuildingComp->GetActionProgress01() : -1.f;
+	const AActor* BuildTarget = bBuilding ? BuildingComp->GetCurrentActionTarget() : nullptr;
 
 	for (const FConsoleSlot& ConsoleSlot : SlotButtons)
 	{
@@ -208,10 +215,9 @@ void UTRControlConsoleWidget::RefreshSlots()
 		const ATRInstallablePart* Part = FindSlotPart(Train, ConsoleSlot);
 		const bool bDestroyed = IsValid(Part) && Part->IsPartDestroyed();
 
-		Button->SetIsEnabled(bDestroyed && MonsterResource >= Part->GetInstallCost());
+		Button->SetIsEnabled(!bBuilding && bDestroyed && MonsterResource >= Part->GetInstallCost());
 
-		// 자리 이름은 버튼이 들고 있으므로 상태만 넘긴다. 진행률 바는 누른 자리에만 그린다.
-		if (Button == Active)
+		if (Part == BuildTarget)
 		{
 			Button->SetProgress(BuildProgress01);
 			Button->SetStateText(FText::FromString(
@@ -246,14 +252,11 @@ void UTRControlConsoleWidget::BuildSlot(int32 SlotIndex)
 		return;
 	}
 
-	const FConsoleSlot& ConsoleSlot = SlotButtons[SlotIndex];
-	ATRInstallablePart* Part = FindSlotPart(Train, ConsoleSlot);
+	ATRInstallablePart* Part = FindSlotPart(Train, SlotButtons[SlotIndex]);
 	if (!IsValid(Part))
 	{
 		return;
 	}
-
-	ActiveBuildButton = ConsoleSlot.Button.Get();
 
 	// 자원 확인과 실제 설치는 서버가 다시 한다.
 	ActionComp->ServerStartAction(ETRActionType::Build, Part);
@@ -279,10 +282,9 @@ void UTRControlConsoleWidget::HandleUpgradeClicked(bool bArmor)
 
 void UTRControlConsoleWidget::RequestClose()
 {
-	const APlayerController* PC = GetOwningPlayer();
-	if (ATRPlayerHUD* PlayerHUD = IsValid(PC) ? Cast<ATRPlayerHUD>(PC->GetHUD()) : nullptr)
+	if (ATRPlayerCharacter* Character = GetOwnerCharacter())
 	{
-		PlayerHUD->CloseControlConsole();
+		Character->ServerReleaseControlConsole();
 	}
 }
 

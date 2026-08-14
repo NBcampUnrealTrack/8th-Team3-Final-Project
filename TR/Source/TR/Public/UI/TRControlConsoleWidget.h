@@ -47,9 +47,10 @@ protected:
 
 private:
 	// 버튼 하나 = 열차 슬롯 하나.
+	// UPROPERTY 가 아니라 GC 가 추적하지 않으므로 약참조로 잡는다. 버튼의 수명은 위젯 트리가 쥔다.
 	struct FConsoleSlot
 	{
-		TObjectPtr<UTRConsoleButton> Button;
+		TWeakObjectPtr<UTRConsoleButton> Button;
 		bool bArmor = false;
 		uint8 SlotValue = 0;
 	};
@@ -77,8 +78,10 @@ private:
 
 	TArray<FConsoleSlot> SlotButtons;
 
-	// 이 클라이언트가 누른 자리. 진행률 바를 그 자리 그린다.
-	TWeakObjectPtr<UTRConsoleButton> ActiveBuildButton;
+	// 매 프레임 갱신되는 위젯이라, 바뀐 값만 SetText 로 넘기려고 직전 값을 들고 있는다.
+	int32 LastMonsterResource = INDEX_NONE;
+	int32 LastArmorLevel = INDEX_NONE;
+	int32 LastTurretLevel = INDEX_NONE;
 
 	// 열차는 레벨에 하나뿐이므로 한 번 찾아 들고 있는다.
 	TWeakObjectPtr<ATRTrain> CachedTrain;
