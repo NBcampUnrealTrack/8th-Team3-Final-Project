@@ -16,6 +16,7 @@ class UCameraComponent;
 class UNiagaraComponent;
 class UNiagaraSystem;
 class ATRControlConsole;
+class ATRPlayerHUD;
 
 UCLASS()
 class TR_API ATRPlayerCharacter : public ACharacter
@@ -27,6 +28,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:	
 	virtual void Tick(float DeltaTime) override;
@@ -42,6 +44,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Action")
 	UTRActionComponent* GetActionComponent() const { return ActionComp; }
+
+	UFUNCTION(BlueprintPure, Category = "UI")
+	bool IsOccupyingControlConsole() const;
 	
 	//--- 입력 액션--- 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -59,10 +64,24 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_Reload;
 	
-	// UI - 이걸 오버라이드/바인드해서 HUD 쪽 로직을 붙이면 됨
-	UFUNCTION(BlueprintImplementableEvent, Category = "Interaction")
-	void OnControlConsoleInteract();
-	
+	// 관제석 팝업에서 호출. 레벨은 GameState가 들고 있어 서버만 올릴 수 있다.
+	UFUNCTION(Server, Reliable)
+	void ServerUpgradeArmor();
+	void ServerUpgradeArmor_Implementation();
+
+	UFUNCTION(Server, Reliable)
+	void ServerUpgradeTurret();
+	void ServerUpgradeTurret_Implementation();
+
+	// 관제석 점유
+	UFUNCTION(Server, Reliable)
+	void ServerRequestControlConsole();
+	void ServerRequestControlConsole_Implementation();
+
+	UFUNCTION(Server, Reliable)
+	void ServerReleaseControlConsole();
+	void ServerReleaseControlConsole_Implementation();
+
 protected:
 	//--- 플레이어 조작 관련함수 ---
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -91,6 +110,17 @@ protected:
 	void TriggerPressed(const FInputActionValue& Input);
 	
 	void OnInteractPressed(const FInputActionValue& Input);
+
+	// 지금 조준 중인 관제석. 조준은 순간값이라 점유를 시작할 때만 본다.
+	ATRControlConsole* GetLookedAtControlConsole() const;
+
+	// 점유 중인 관제석. 조준과 달리 계속 유지되는 상태라 따로 들고 있는다.
+	// 서버가 정하고 복제되므로 소유 클라이언트도 같은 답을 본다.
+	UPROPERTY(Replicated)
+	TObjectPtr<ATRControlConsole> OccupiedConsole;
+
+	// 팝업은 서버가 정한 점유 상태를 따라 열리고 닫힌다.
+	void SyncControlConsoleWidget();
 	
 	// Local look input smoothing. Character Movement Component sends final ControlRotation to server.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))

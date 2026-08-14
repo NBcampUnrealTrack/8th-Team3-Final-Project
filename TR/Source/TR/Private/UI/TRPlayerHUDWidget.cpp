@@ -7,6 +7,10 @@
 #include "Components/PanelWidget.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Core/TRPlayerState.h"
+#include "Core/TRGameState.h"
+#include "Train/TRArmor.h"
+#include "Train/TRTrain.h"
+#include "Train/TRTurret.h"
 
 void UTRPlayerHUDWidget::NativeConstruct()
 {
@@ -18,23 +22,25 @@ void UTRPlayerHUDWidget::NativeConstruct()
 		ATRPlayerState::MaxCarriedSupply);
 
 	SetInteractionPrompts(FText::GetEmpty(), FText::GetEmpty(), FText::GetEmpty());
-	SetRepairProgressVisible(false);
+	SetActionProgress(ETRActionType::None, 0.f);
 	SetCarriedSupply(0);
+	SetTargetInfo(nullptr);
 }
 
-static void ApplyPromptLine(UWidget* Line, UTextBlock* Text, const FText& Prompt)
+// 빈 텍스트면 줄을 접고, 아니면 표시 및 텍스트 갱신
+static void ApplyTextLine(UWidget* Line, UTextBlock* Text, const FText& Value)
 {
 	if (!IsValid(Line))
 	{
 		return;
 	}
 
-	const bool bVisible = !Prompt.IsEmpty();
+	const bool bVisible = !Value.IsEmpty();
 	Line->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 
 	if (bVisible && IsValid(Text))
 	{
-		Text->SetText(Prompt);
+		Text->SetText(Value);
 	}
 }
 
@@ -45,39 +51,99 @@ void UTRPlayerHUDWidget::SetInteractionPrompts(const FText& RepairPrompt, const 
 		return;
 	}
 
-	ApplyPromptLine(PlayerInteraction_Repair, Txt_Repair, RepairPrompt);
-	ApplyPromptLine(PlayerInteraction_Reload, Txt_Reload, ReloadPrompt);
-	ApplyPromptLine(PlayerInteraction_Interact, Txt_Interact, InteractPrompt);
+	ApplyTextLine(PlayerInteraction_Repair, Txt_Interact1, RepairPrompt);
+	ApplyTextLine(PlayerInteraction_Reload, Txt_Interact2, ReloadPrompt);
+	ApplyTextLine(PlayerInteraction_Interact, Txt_Interact3, InteractPrompt);
 
 	const bool bAnyVisible = !RepairPrompt.IsEmpty() || !ReloadPrompt.IsEmpty() || !InteractPrompt.IsEmpty();
 	PlayerInteraction_VerticalBox->SetVisibility(bAnyVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 }
 
-void UTRPlayerHUDWidget::SetRepairProgressVisible(bool bVisible)
+void UTRPlayerHUDWidget::SetActionProgress(ETRActionType ActionType, float Progress01)
 {
-	if (!IsValid(RepairProgressPanel))
+	FText ActionText;
+	switch (ActionType)
+	{
+		case ETRActionType::Repair:
+			ActionText = FText::FromString(TEXT("수리 중"));
+			break;
+		case ETRActionType::Reload:
+			ActionText = FText::FromString(TEXT("장전 중"));
+			break;
+		case ETRActionType::Restock:
+			ActionText = FText::FromString(TEXT("보급 중"));
+			break;
+		default:
+			break;
+	}
+
+	ApplyTextLine(ProgressPanel, InteractText, ActionText);
+	if (ActionText.IsEmpty())
 	{
 		return;
 	}
 
-	RepairProgressPanel->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
-}
-
-void UTRPlayerHUDWidget::SetRepairProgress(float Progress01)
-{
-	if (IsValid(RepairPercent))
+	if (IsValid(InteractPercent))
 	{
-		RepairPercent->SetText(FText::AsPercent(Progress01));
+		InteractPercent->SetText(FText::AsPercent(Progress01));
 	}
 
-	if (IsValid(RepairProgressValue))
+	if (IsValid(ProgressValue))
 	{
-		if (UMaterialInstanceDynamic* FillMaterial = RepairProgressValue->GetDynamicMaterial())
+		if (UMaterialInstanceDynamic* FillMaterial = ProgressValue->GetDynamicMaterial())
 		{
 			static const FName PercentParam(TEXT("Percent"));
 			FillMaterial->SetScalarParameterValue(PercentParam, Progress01);
 		}
 	}
+}
+
+static FText MakeLevelText(int32 Level)
+{
+	return Level > 0 ? FText::FromString(FString::Printf(TEXT("LV. %d"), Level)) : FText::GetEmpty();
+}
+
+static FText MakeHPText(float CurrentHP, float MaxHP)
+{
+	return FText::FromString(FString::Printf(TEXT("HP  %d/%d"), FMath::CeilToInt(CurrentHP), FMath::CeilToInt(MaxHP)));
+}
+
+void UTRPlayerHUDWidget::SetTargetInfo(const AActor* Target)
+{
+	if (!IsValid(PlayerInfoPanel))
+	{
+		return;
+	}
+
+	// 레벨은 각 파츠별 전체 공유
+	const ATRGameState* GameState = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
+
+	FText LevelText;
+	FText HPText;
+	FText AmmoText;
+
+	if (const ATRTurret* Turret = Cast<ATRTurret>(Target))
+	{
+		LevelText = MakeLevelText(IsValid(GameState) ? GameState->GetTurretLevel() : 0);
+		HPText = MakeHPText(Turret->GetCurrentHP(), Turret->GetMaxHP());
+		AmmoText = FText::FromString(FString::Printf(TEXT("AMMO  %d/%d"), Turret->GetCurrentAmmo(), Turret->GetMaxAmmo()));
+	}
+	else if (const ATRArmor* Armor = Cast<ATRArmor>(Target))
+	{
+		LevelText = MakeLevelText(IsValid(GameState) ? GameState->GetArmorLevel() : 0);
+		HPText = MakeHPText(Armor->GetCurrentHP(), Armor->GetMaxHP());
+	}
+	else if (const ATRTrain* Train = Cast<ATRTrain>(Target))
+	{
+		HPText = MakeHPText(Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
+	}
+
+	// HP를 기준으로 비어 있으면 정보 없는 대상
+	PlayerInfoPanel->SetVisibility(HPText.IsEmpty() ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+
+	ApplyTextLine(LevelPanel, Txt_Level, LevelText);
+	ApplyTextLine(HPPanel, Txt_HP, HPText);
+	ApplyTextLine(AMMOBorder, Txt_AMMO, AmmoText);
 }
 
 void UTRPlayerHUDWidget::SetCarriedSupply(int32 Count)
