@@ -72,46 +72,6 @@ namespace
 		return Part != nullptr && Part->IsPartDestroyed();
 	}
 
-	/** 목표 액터와 거기 붙은 액터들에서 TRMassTargetVolume 태그가 붙은 프리미티브를 모은다. */
-	void CollectZones(AActor& Actor, TArray<FTRTargetZoneState>& OutZones)
-	{
-		OutZones.Reset();
-
-		const FName VolumeTag = UE::TR::Mass::GetTargetVolumeTagName();
-
-		TArray<AActor*> Candidates;
-		Candidates.Add(&Actor);
-		Actor.GetAttachedActors(Candidates, /*bResetArray=*/false, /*bRecursivelyIncludeAttachedActors=*/true);
-
-		for (AActor* Candidate : Candidates)
-		{
-			if (!IsValid(Candidate))
-			{
-				continue;
-			}
-
-			for (UActorComponent* Component : Candidate->GetComponents())
-			{
-				UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component);
-				if (Primitive == nullptr || !Primitive->ComponentHasTag(VolumeTag))
-				{
-					continue;
-				}
-
-				if (OutZones.Num() >= FTRResolvedTarget::MaxZones)
-				{
-					UE_LOG(LogTRMass, Warning,
-						TEXT("'%s'의 추적 구역이 %d개를 넘어 나머지는 무시됩니다."),
-						*Actor.GetName(), FTRResolvedTarget::MaxZones);
-					return;
-				}
-
-				FTRTargetZoneState& Zone = OutZones.AddDefaulted_GetRef();
-				Zone.Volume = Primitive;
-				Zone.Owner = Candidate;
-			}
-		}
-	}
 }
 
 void UTRTargetDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -224,10 +184,10 @@ void UTRTargetDirectorSubsystem::SetTargetActor(ETRTargetChannel Channel, AActor
 	if (NewTarget != nullptr)
 	{
 		State.bHasBounds = MeasureLocalBounds(*NewTarget, State.LocalBounds);
-		CollectZones(*NewTarget, State.Zones);
 
-		UE_LOG(LogTRMass, Log, TEXT("채널[%d] 목표 '%s' — 추적 구역 %d개"),
-			static_cast<int32>(Channel), *NewTarget->GetName(), State.Zones.Num());
+		// 구역은 UTRMassTargetZoneComponent 등록이 유일한 출처다.
+		UE_LOG(LogTRMass, Log, TEXT("채널[%d] 목표 '%s' 등록"),
+			static_cast<int32>(Channel), *NewTarget->GetName());
 	}
 
 	// 첫 틱 전에 조회하는 쪽이 있다(웨이브 스포너의 BeginPlay 검사).
@@ -249,8 +209,8 @@ void UTRTargetDirectorSubsystem::RefreshTargetBounds(ETRTargetChannel Channel)
 	}
 
 	// SetTargetActor는 같은 대상이면 조기 반환하므로, 재계산은 이 경로로만 가능하다.
+	// 바운드만 다시 잰다. 구역은 건드리지 않는다.
 	State.bHasBounds = MeasureLocalBounds(*TargetActor, State.LocalBounds);
-	CollectZones(*TargetActor, State.Zones);
 
 	RefreshSnapshot();
 }
@@ -266,22 +226,33 @@ void UTRTargetDirectorSubsystem::RegisterTargetZone(ETRTargetChannel Channel, UP
 
 	FTRTargetChannelState& State = Channels[static_cast<int32>(Channel)];
 
-	for (const FTRTargetZoneState& Existing : State.Zones)
+	int32 FreeIndex = INDEX_NONE;
+	for (int32 Index = 0; Index < State.Zones.Num(); ++Index)
 	{
+		const FTRTargetZoneState& Existing = State.Zones[Index];
 		if (Existing.Volume.Get() == Volume)
 		{
 			return;
 		}
+
+		// 비워 둔 자리를 다시 쓴다.
+		if (FreeIndex == INDEX_NONE && Existing.Volume.Get() == nullptr)
+		{
+			FreeIndex = Index;
+		}
 	}
 
-	if (State.Zones.Num() >= FTRResolvedTarget::MaxZones)
+	if (FreeIndex == INDEX_NONE && State.Zones.Num() >= FTRResolvedTarget::MaxZones)
 	{
 		UE_LOG(LogTRMass, Warning, TEXT("채널[%d] 추적 구역이 %d개를 넘어 '%s'를 등록하지 않습니다."),
 			static_cast<int32>(Channel), FTRResolvedTarget::MaxZones, *GetNameSafe(Volume));
 		return;
 	}
 
-	FTRTargetZoneState& Zone = State.Zones.AddDefaulted_GetRef();
+	FTRTargetZoneState& Zone = (FreeIndex != INDEX_NONE)
+		? State.Zones[FreeIndex]
+		: State.Zones.AddDefaulted_GetRef();
+
 	Zone.Volume = Volume;
 	Zone.Owner = Volume->GetOwner();
 	Zone.Tier = Tier;

@@ -27,11 +27,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TR|Mass")
 	bool IsRegistered() const { return bRegistered; }
 
-	/** 구역을 표적 목록에서 뺀다. 장갑이 파괴되면 부른다. */
+	/** 구역을 표적에서 뺀다. 차량을 떼어낼 때만 쓴다. 파괴는 자동 처리된다. */
 	UFUNCTION(BlueprintCallable, Category = "TR|Mass")
 	void UnregisterZone();
 
-	/** 구역을 다시 표적으로 올린다. 장갑을 재설치하면 부른다. */
+	/** 구역을 표적에 올린다. 차량을 붙일 때만 쓴다. */
 	UFUNCTION(BlueprintCallable, Category = "TR|Mass")
 	void RegisterZone();
 

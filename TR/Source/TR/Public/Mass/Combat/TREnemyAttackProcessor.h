@@ -41,4 +41,7 @@ private:
 	 * 예약 뒤에 기차가 멀어져 도달이 풀려도 폭발은 진행되어야 한다.
 	 */
 	FMassEntityQuery DetonationQuery;
+
+	/** 탄을 소진한 사격형을 지운다. 도달 태그를 요구하지 않는다. */
+	FMassEntityQuery AmmoDepletedQuery;
 };

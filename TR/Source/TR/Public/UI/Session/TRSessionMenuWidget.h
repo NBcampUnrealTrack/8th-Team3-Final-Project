@@ -159,6 +159,7 @@ private:
 	// 직전에 반영한 값. 바뀐 것이 없으면 위젯을 건드리지 않는다.
 	bool bLastHost = false;
 	bool bLastCanStart = false;
+	bool bLastMatchStarted = false;
 	int32 LastReadyPlayers = -1;
 	int32 LastRequiredPlayers = -1;
 

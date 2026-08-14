@@ -462,6 +462,7 @@ void UTRSessionMenuWidget::RefreshLobbyControls()
 	// Slate 가 키보드 포커스를 놓아 버려서 F9·ESC 가 먹통이 된다.
 	if (bHost == bLastHost
 		&& Status.bCanStart == bLastCanStart
+		&& Status.bMatchStarted == bLastMatchStarted
 		&& Status.ReadyPlayers == LastReadyPlayers
 		&& Status.RequiredPlayers == LastRequiredPlayers)
 	{
@@ -470,6 +471,7 @@ void UTRSessionMenuWidget::RefreshLobbyControls()
 
 	bLastHost = bHost;
 	bLastCanStart = Status.bCanStart;
+	bLastMatchStarted = Status.bMatchStarted;
 	LastReadyPlayers = Status.ReadyPlayers;
 	LastRequiredPlayers = Status.RequiredPlayers;
 

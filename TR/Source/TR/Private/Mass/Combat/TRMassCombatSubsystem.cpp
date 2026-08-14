@@ -72,6 +72,12 @@ FTRMassHitResult UTRMassCombatSubsystem::FireHitscan(const FVector& Start, const
 			continue;
 		}
 
+		// 이미 죽었지만 아직 안 지워진 개체는 건너뛴다.
+		if (Combat->Health <= 0.f)
+		{
+			continue;
+		}
+
 		const FVector EntityLocation = Transform->GetTransform().GetLocation();
 		const FVector ClosestOnRay = FMath::ClosestPointOnSegment(EntityLocation, Start, End);
 
