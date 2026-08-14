@@ -77,6 +77,10 @@ struct FTRTargetFragment : public FMassFragment
 	// 도착여부
 	UPROPERTY()
 	bool bArrived = false;
+
+	/** 고정해 둔 표적 구역 번호. INDEX_NONE 이면 매 틱 가장 가까운 구역을 쓴다. */
+	UPROPERTY()
+	int32 LockedZone = INDEX_NONE;
 };
 
 /**
@@ -120,6 +124,10 @@ struct FTRApproachFragment : public FMassFragment
 	 */
 	UPROPERTY()
 	float SpeedScale = 1.f;
+
+	/** 표적 구역을 한 번 정하면 고정한다. 사격형이 쓴다. */
+	UPROPERTY()
+	bool bLockTargetZone = false;
 };
 
 //----------------------------------------------------------------------//

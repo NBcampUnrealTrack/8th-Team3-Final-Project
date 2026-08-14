@@ -3,7 +3,9 @@
 #pragma once
 
 #include "MassStateTreeTypes.h"
+#include "Mass/Combat/TRMassCombatSubsystem.h"
 #include "Mass/Core/TRMassFragments.h"
+#include "Mass/Core/TRMassParams.h"
 #include "TRStateTreeTasks.generated.h"
 
 struct FStateTreeExecutionContext;
@@ -97,4 +99,112 @@ protected:
 
 	TStateTreeExternalDataHandle<FTREnemyStateFragment> EnemyStateHandle;
 	TStateTreeExternalDataHandle<FTREnemyCombatFragment> CombatHandle;
+};
+
+USTRUCT()
+struct FTRLaunchTaskInstanceData
+{
+	GENERATED_BODY()
+};
+
+/**
+ * 사출형이 상체를 쏘아 보낸다. 새 엔티티를 만들지 않고 이 엔티티의 성격을 바꾼다.
+ *
+ * 기본 동작은 UTREnemyAttackProcessor 가 목표 거리에서 자동으로 한다.
+ * 이 태스크는 사출 시점을 트리에서 앞당기거나 늦추려 할 때 쓴다.
+ */
+USTRUCT(meta = (DisplayName = "TR Launch"))
+struct FTRLaunchTask : public FMassStateTreeTaskBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FTRLaunchTaskInstanceData;
+
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+
+protected:
+	virtual bool Link(FStateTreeLinker& Linker) override;
+	virtual void GetDependencies(UE::MassBehavior::FStateTreeDependencyBuilder& Builder) const override;
+
+	virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context,
+		const FStateTreeTransitionResult& Transition) const override;
+
+	TStateTreeExternalDataHandle<FTREnemyStateFragment> EnemyStateHandle;
+	TStateTreeExternalDataHandle<FTREnemyCombatFragment> CombatHandle;
+	TStateTreeExternalDataHandle<FTRApproachFragment> ApproachHandle;
+	TStateTreeExternalDataHandle<FTRTargetFragment> TargetHandle;
+	TStateTreeExternalDataHandle<FTREnemyCombatParams> CombatParamsHandle;
+};
+
+USTRUCT()
+struct FTRFireTaskInstanceData
+{
+	GENERATED_BODY()
+};
+
+/**
+ * 사격형이 유지 거리에서 조준한 표면을 쏜다. 탄을 다 쓰면 Succeeded 로 끝난다.
+ *
+ * 발사 간격·탄 수·피해는 FTREnemyCombatParams 를 쓴다.
+ */
+USTRUCT(meta = (DisplayName = "TR Fire"))
+struct FTRFireTask : public FMassStateTreeTaskBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FTRFireTaskInstanceData;
+
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+
+	FTRFireTask() { bShouldCallTick = true; }
+
+protected:
+	virtual bool Link(FStateTreeLinker& Linker) override;
+	virtual void GetDependencies(UE::MassBehavior::FStateTreeDependencyBuilder& Builder) const override;
+
+	virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context,
+		const FStateTreeTransitionResult& Transition) const override;
+
+	virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const override;
+
+	TStateTreeExternalDataHandle<FTREnemyStateFragment> EnemyStateHandle;
+	TStateTreeExternalDataHandle<FTREnemyCombatFragment> CombatHandle;
+	TStateTreeExternalDataHandle<FTRTargetFragment> TargetHandle;
+	TStateTreeExternalDataHandle<FTRChaseChannelFragment> ChannelHandle;
+	TStateTreeExternalDataHandle<FTREnemyCombatParams> CombatParamsHandle;
+	TStateTreeExternalDataHandle<UTRMassCombatSubsystem> CombatSubsystemHandle;
+};
+
+USTRUCT()
+struct FTRDeathTaskInstanceData
+{
+	GENERATED_BODY()
+
+	/** 엔티티를 지우기까지 기다리는 시간(초). 사망 연출 길이만큼 준다. */
+	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float LingerDuration = 0.f;
+};
+
+/** 사망 상태로 들어가고, 연출이 끝나면 엔티티를 지운다. */
+USTRUCT(meta = (DisplayName = "TR Death"))
+struct FTRDeathTask : public FMassStateTreeTaskBase
+{
+	GENERATED_BODY()
+
+	using FInstanceDataType = FTRDeathTaskInstanceData;
+
+	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
+
+	FTRDeathTask() { bShouldCallTick = true; }
+
+protected:
+	virtual bool Link(FStateTreeLinker& Linker) override;
+	virtual void GetDependencies(UE::MassBehavior::FStateTreeDependencyBuilder& Builder) const override;
+
+	virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context,
+		const FStateTreeTransitionResult& Transition) const override;
+
+	virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const override;
+
+	TStateTreeExternalDataHandle<FTREnemyStateFragment> EnemyStateHandle;
 };

@@ -16,13 +16,17 @@ DECLARE_CYCLE_STAT(TEXT("Enemy Attack"), STAT_TREnemyAttack, STATGROUP_TRMass);
 
 namespace
 {
-	/** 피해 한 건을 게임 스레드 큐로 보낸다. 자폭·상체 충돌·사격이 모두 이 경로를 쓴다. */
-	void EmitImpact(UTRMassCombatSubsystem& Combat, const FTransformFragment& Transform,
-		float Damage, ETREnemyType SourceType, bool bExplosion, ETRTargetChannel Channel)
+	/**
+	 * 피해 한 건을 게임 스레드 큐로 보낸다. 자폭·상체 충돌·사격이 모두 이 경로를 쓴다.
+	 * Location 은 기차 표면의 착탄점이다 — 받는 쪽이 이 점으로 장갑을 찾는다.
+	 */
+	void EmitImpact(UTRMassCombatSubsystem& Combat, const FVector& ImpactPoint,
+		float Damage, float Radius, ETREnemyType SourceType, bool bExplosion, ETRTargetChannel Channel)
 	{
 		FTRMassImpactEvent Impact;
-		Impact.Location = Transform.GetTransform().GetLocation();
+		Impact.Location = ImpactPoint;
 		Impact.Damage = Damage;
+		Impact.Radius = Radius;
 		Impact.SourceType = SourceType;
 		Impact.bExplosion = bExplosion;
 
@@ -37,6 +41,7 @@ namespace
 UTREnemyAttackProcessor::UTREnemyAttackProcessor()
 	: ArrivalQuery(*this)
 	, DetonationQuery(*this)
+	, AmmoDepletedQuery(*this)
 {
 	bAutoRegisterWithProcessingPhases = true;
 
@@ -71,6 +76,11 @@ void UTREnemyAttackProcessor::ConfigureQueries(const TSharedRef<FMassEntityManag
 	DetonationQuery.AddConstSharedRequirement<FTREnemyCombatParams>(EMassFragmentPresence::All);
 	DetonationQuery.AddTagRequirement<FTRDetonatingTag>(EMassFragmentPresence::All);
 	DetonationQuery.AddSubsystemRequirement<UTRMassCombatSubsystem>(EMassFragmentAccess::ReadWrite);
+
+	AmmoDepletedQuery.AddRequirement<FTREnemyCombatFragment>(EMassFragmentAccess::ReadOnly);
+	AmmoDepletedQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadWrite);
+	AmmoDepletedQuery.AddConstSharedRequirement<FTREnemyCombatParams>(EMassFragmentPresence::All);
+	AmmoDepletedQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 }
 
 void UTREnemyAttackProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
@@ -114,6 +124,12 @@ void UTREnemyAttackProcessor::Execute(FMassEntityManager& EntityManager, FMassEx
 			{
 			case ETREnemyType::Launcher:
 			{
+				// StateTree 의 Launch 태스크가 같은 프레임에 먼저 걸었으면 두 번 하지 않는다.
+				if (State.ActionState == ETREnemyActionState::Launch)
+				{
+					break;
+				}
+
 				// 상체를 사출한다. 새 엔티티를 만들지 않고 이 엔티티의 성격을 바꾼다.
 				// 하체는 그 자리에 버려진 뒤 즉시 소멸하는데(기획서), 그건 연출이므로
 				// 표현 쪽(액터/이펙트)이 ActionState == Launch를 보고 처리한다.
@@ -139,25 +155,26 @@ void UTREnemyAttackProcessor::Execute(FMassEntityManager& EntityManager, FMassEx
 
 			case ETREnemyType::Shooter:
 			{
+				// 탄 소진 처리는 AmmoDepletedQuery 가 맡는다.
+				if (Combatant.ShotsFired >= Params.ShotCount)
+				{
+					break;
+				}
+
 				// 유지 거리에서 나란히 달리며 사격. 첫 발은 도달 즉시 나간다.
 				if (Combatant.NextActionTime > 0.f && WorldTime < Combatant.NextActionTime)
 				{
 					break;
 				}
 
-				EmitImpact(Combat, TransformList[EntityIt], Combatant.ShotDamage,
-					ETREnemyType::Shooter, /*bExplosion=*/false, ChannelList[EntityIt].Channel);
+				// 착탄점은 사수 위치가 아니라 조준한 기차 표면이다.
+				EmitImpact(Combat, TargetList[EntityIt].TargetLocation, Combatant.ShotDamage,
+					UE::TR::Enemy::ShotImpactRadius, ETREnemyType::Shooter, /*bExplosion=*/false,
+					ChannelList[EntityIt].Channel);
 
 				++Combatant.ShotsFired;
 				Combatant.NextActionTime = WorldTime + Params.FireInterval;
 				EnterActionState(State, ETREnemyActionState::Fire, WorldTime);
-
-				if (Combatant.ShotsFired >= Params.ShotCount)
-				{
-					// 탄을 소진하면 자체 폭발로 사라진다. 기차에 피해도, 자원도 없다.
-					EnterActionState(State, ETREnemyActionState::Death, WorldTime);
-					Context.Defer().DestroyEntity(Entity);
-				}
 				break;
 			}
 
@@ -201,11 +218,35 @@ void UTREnemyAttackProcessor::Execute(FMassEntityManager& EntityManager, FMassEx
 				continue;
 			}
 
-			EmitImpact(Combat, TransformList[EntityIt], Combatant.ContactDamage,
-				Params.EnemyType, /*bExplosion=*/true, ChannelList[EntityIt].Channel);
+			EmitImpact(Combat, TransformList[EntityIt].GetTransform().GetLocation(),
+				Combatant.ContactDamage, Params.ContactRadius, Params.EnemyType,
+				/*bExplosion=*/true, ChannelList[EntityIt].Channel);
 
 			// 자폭한 적은 자원을 주지 않는다(기획서). 그래서 여기서 자원 처리를 하지 않고
 			// 그냥 지운다. 자원은 "처치"된 경우에만 나가야 한다.
+			Context.Defer().DestroyEntity(EntityIt.GetEntityHandle());
+		}
+	});
+
+	AmmoDepletedQuery.ForEachEntityChunk(Context, [WorldTime](FMassExecutionContext& Context)
+	{
+		const FTREnemyCombatParams& Params = Context.GetConstSharedFragment<FTREnemyCombatParams>();
+		if (Params.EnemyType != ETREnemyType::Shooter)
+		{
+			return;
+		}
+
+		const TConstArrayView<FTREnemyCombatFragment> CombatList = Context.GetFragmentView<FTREnemyCombatFragment>();
+		const TArrayView<FTREnemyStateFragment> StateList = Context.GetMutableFragmentView<FTREnemyStateFragment>();
+
+		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
+		{
+			if (CombatList[EntityIt].ShotsFired < Params.ShotCount)
+			{
+				continue;
+			}
+
+			EnterActionState(StateList[EntityIt], ETREnemyActionState::Death, WorldTime);
 			Context.Defer().DestroyEntity(EntityIt.GetEntityHandle());
 		}
 	});

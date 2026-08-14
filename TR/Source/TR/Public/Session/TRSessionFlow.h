@@ -10,6 +10,8 @@
 #include "TRSessionFlow.generated.h"
 
 class UTRGameInstance;
+class ATRPlayerController;
+class ATRPlayerState;
 
 UCLASS(Config = Game)
 class TR_API UTRSessionFlow : public UGameInstanceSubsystem, public IInterface_TRSession
@@ -60,6 +62,16 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TR|Session")
 	FOnTRSessionListReady OnSessionListReady;
 
+	// ── 로비 준비 ──
+
+	/** 내 준비 상태를 바꾼다. */
+	UFUNCTION(BlueprintCallable, Category = "TR|Session")
+	void SetReady(bool bInReady);
+
+	/** 호스트가 판을 시작한다. 준비가 덜 됐으면 서버가 무시한다. */
+	UFUNCTION(BlueprintCallable, Category = "TR|Session")
+	void StartMatch();
+
 protected:
 	// 방 정원. DefaultGame.ini [/Script/TR.TRSessionFlow] 로 덮어쓸 수 있다.
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "TR|Session")
@@ -67,6 +79,9 @@ protected:
 
 private:
 	UTRGameInstance* GetTRGameInstance() const;
+
+	ATRPlayerController* GetLocalController() const;
+	const ATRPlayerState* GetLocalPlayerState() const;
 
 	void BindGameInstanceEvents();
 	void UnbindGameInstanceEvents();

@@ -15,11 +15,17 @@ void UTRSessionMenuController::Initialize(FSubsystemCollectionBase& Collection)
 
 	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(
 		this, &UTRSessionMenuController::HandlePostLoadMap);
+
+	// 트래블 전에 닫아야 위젯의 NativeDestruct 가 입력 모드와 커서를 되돌린다.
+	// PostLoadMap 에서 참조만 버리면 복원이 통째로 건너뛰어져 시점이 잠긴 채 남는다.
+	PreLoadMapHandle = FCoreUObjectDelegates::PreLoadMap.AddUObject(
+		this, &UTRSessionMenuController::HandlePreLoadMap);
 }
 
 void UTRSessionMenuController::Deinitialize()
 {
 	FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadMapHandle);
+	FCoreUObjectDelegates::PreLoadMap.Remove(PreLoadMapHandle);
 
 	Super::Deinitialize();
 }
@@ -83,9 +89,23 @@ void UTRSessionMenuController::Close()
 	UE_LOG(LogTRNet, Log, TEXT("[SessionMenu] 닫음"));
 }
 
+void UTRSessionMenuController::HandlePreLoadMap(const FString& MapName)
+{
+	// 열려 있던 상태는 남긴다. 트래블 뒤 복구 판단은 HandlePostLoadMap 이 한다.
+	const bool bOpen = (Menu != nullptr);
+
+	Close();
+	bWasOpen = bOpen;
+}
+
 void UTRSessionMenuController::HandlePostLoadMap(UWorld* LoadedWorld)
 {
-	// 트래블이 위젯을 파괴했다. 참조만 비우고 열려 있었다는 사실은 남긴다.
+	// PreLoadMap 이 이미 닫았지만, 트래블 없이 맵이 바뀌는 경로도 있어 한 번 더 정리한다.
+	if (Menu)
+	{
+		Menu->RemoveFromParent();
+	}
+
 	Menu = nullptr;
 
 	if (!LoadedWorld)
