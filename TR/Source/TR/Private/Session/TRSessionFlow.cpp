@@ -1,6 +1,9 @@
 #include "Session/TRSessionFlow.h"
 
 #include "Core/TRGameInstance.h"
+#include "Core/TRGameState.h"
+#include "Core/TRPlayerState.h"
+#include "Player/TRPlayerController.h"
 #include "Session/TRNetLog.h"
 
 #include "Engine/World.h"
@@ -188,9 +191,51 @@ FTRLobbyStatus UTRSessionFlow::GetLobbyStatus() const
 
 	Status.CurrentPlayers = GS->PlayerArray.Num();
 
-	//	준비 인원과 판 진행 여부는 판 시작 규칙이 정해져야 채울 수 있다.
-	//	FTRLobbyStatus 의 주석을 함께 풀고 GameState 값을 읽어 넣으면 된다.
+	const ATRGameState* TRGS = Cast<ATRGameState>(GS);
+	if (TRGS == nullptr)
+	{
+		return Status;
+	}
+
+	Status.ReadyPlayers = TRGS->GetReadyPlayerCount();
+	Status.RequiredPlayers = TRGS->GetRequiredReadyCount();
+	Status.bMatchStarted = TRGS->IsMatchStarted();
+
+	const ATRPlayerState* LocalState = GetLocalPlayerState();
+	Status.bLocalReady = LocalState != nullptr && LocalState->IsReady();
+	Status.bCanStart = LocalState != nullptr && LocalState->IsHost() && TRGS->CanStartMatch();
+
 	return Status;
+}
+
+void UTRSessionFlow::SetReady(bool bInReady)
+{
+	if (ATRPlayerController* PC = GetLocalController())
+	{
+		PC->SetLobbyReady(bInReady);
+	}
+}
+
+void UTRSessionFlow::StartMatch()
+{
+	if (ATRPlayerController* PC = GetLocalController())
+	{
+		PC->RequestStartMatch();
+	}
+}
+
+ATRPlayerController* UTRSessionFlow::GetLocalController() const
+{
+	const UWorld* World = GetWorld();
+
+	return World ? Cast<ATRPlayerController>(World->GetFirstPlayerController()) : nullptr;
+}
+
+const ATRPlayerState* UTRSessionFlow::GetLocalPlayerState() const
+{
+	const ATRPlayerController* PC = GetLocalController();
+
+	return PC ? PC->GetPlayerState<ATRPlayerState>() : nullptr;
 }
 
 // ─────────────────────────────────────────────────────────────

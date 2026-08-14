@@ -6,6 +6,7 @@
 #include "Interaction/TRActionComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "TRTypes.h"
+#include "Core/TRPlayerState.h"
 
 void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -14,6 +15,7 @@ void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ATRGameState, ArmorLevel);
 	DOREPLIFETIME(ATRGameState, TurretLevel);
 	DOREPLIFETIME(ATRGameState, BuildingComponent);
+	DOREPLIFETIME(ATRGameState, bMatchStarted);
 }
 
 UTRActionComponent* ATRGameState::GetBuildingComponent() const
@@ -156,4 +158,50 @@ bool ATRGameState::TryUpgradeTurretLevel()
 	++TurretLevel;
 	OnTurretLevelUpgraded.Broadcast(PrevMaxHP);
 	return true;
+}
+
+int32 ATRGameState::GetReadyPlayerCount() const
+{
+	int32 Count = 0;
+	for (const APlayerState* State : PlayerArray)
+	{
+		const ATRPlayerState* TRState = Cast<ATRPlayerState>(State);
+		if (TRState != nullptr && !TRState->IsHost() && TRState->IsReady())
+		{
+			++Count;
+		}
+	}
+
+	return Count;
+}
+
+int32 ATRGameState::GetRequiredReadyCount() const
+{
+	int32 Count = 0;
+	for (const APlayerState* State : PlayerArray)
+	{
+		const ATRPlayerState* TRState = Cast<ATRPlayerState>(State);
+		if (TRState != nullptr && !TRState->IsHost())
+		{
+			++Count;
+		}
+	}
+
+	return Count;
+}
+
+bool ATRGameState::CanStartMatch() const
+{
+	// 혼자면 필요 인원이 0 이라 곧바로 시작할 수 있다.
+	return !bMatchStarted && GetReadyPlayerCount() >= GetRequiredReadyCount();
+}
+
+void ATRGameState::SetMatchStarted(bool bInStarted)
+{
+	if (!ensureMsgf(HasAuthority(), TEXT("판 시작 상태는 서버에서만 바꿀 수 있습니다.")))
+	{
+		return;
+	}
+
+	bMatchStarted = bInStarted;
 }

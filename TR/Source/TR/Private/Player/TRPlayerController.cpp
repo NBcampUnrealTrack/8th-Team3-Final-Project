@@ -8,6 +8,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Train/TRInstallablePart.h"
 #include "Train/TRTrain.h"
+#include "Core/TRGameMode.h"
+#include "Core/TRPlayerState.h"
 
 void ATRPlayerController::TR_AddResource(int32 Amount)
 {
@@ -64,4 +66,36 @@ void ATRPlayerController::ServerCheatDamageAll_Implementation(float Damage)
 
 	UE_LOG(LogTRGameplay, Log, TEXT("Cheat: DamageAll %.0f to %d part(s), %d train(s)"), Damage, PartCount, TrainCount);
 #endif
+}
+
+void ATRPlayerController::SetLobbyReady(bool bInReady)
+{
+	ServerSetLobbyReady(bInReady);
+}
+
+void ATRPlayerController::RequestStartMatch()
+{
+	ServerStartMatch();
+}
+
+void ATRPlayerController::ServerSetLobbyReady_Implementation(bool bInReady)
+{
+	if (ATRPlayerState* State = GetPlayerState<ATRPlayerState>())
+	{
+		State->SetReady(bInReady);
+	}
+}
+
+void ATRPlayerController::ServerStartMatch_Implementation()
+{
+	const ATRPlayerState* State = GetPlayerState<ATRPlayerState>();
+	if (State == nullptr || !State->IsHost())
+	{
+		return;
+	}
+
+	if (ATRGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATRGameMode>() : nullptr)
+	{
+		GameMode->StartMatch();
+	}
 }

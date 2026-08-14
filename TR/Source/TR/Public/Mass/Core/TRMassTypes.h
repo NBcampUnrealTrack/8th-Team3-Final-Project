@@ -17,6 +17,16 @@ enum class ETRTargetChannel : uint8
 	MAX UMETA(Hidden)
 };
 
+/** 표적 구역의 등급. 적은 값이 작은 등급부터 노린다. */
+UENUM(BlueprintType)
+enum class ETRTargetZoneTier : uint8
+{
+	Turret,
+	Armor,
+
+	MAX UMETA(Hidden)
+};
+
 //적상태
 UENUM(BlueprintType)
 enum class ETREnemyType : uint8
