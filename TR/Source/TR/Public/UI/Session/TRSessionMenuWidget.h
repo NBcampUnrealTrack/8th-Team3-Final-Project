@@ -71,6 +71,18 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Lobby;
 
+	/** 준비 토글. 호스트에게는 숨긴다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_Ready;
+
+	/** 판 시작. 호스트에게만 보이고, 전원 준비 전에는 잠긴다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_Start;
+
+	/** "2 / 3 준비" 표시. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_Ready;
+
 	/** 검색 결과를 담을 상자. 행 위젯을 WBP 가 직접 만들 때 쓴다. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UScrollBox> Box_Results;
@@ -132,6 +144,23 @@ private:
 
 	UFUNCTION()
 	void HandleCloseClicked();
+
+	UFUNCTION()
+	void HandleReadyClicked();
+
+	UFUNCTION()
+	void HandleStartClicked();
+
+	/** 로비 인원·준비 상황을 다시 그린다. 복제로 바뀌는 값이라 주기적으로 부른다. */
+	void RefreshLobbyControls();
+
+	FTimerHandle LobbyRefreshTimer;
+
+	// 직전에 반영한 값. 바뀐 것이 없으면 위젯을 건드리지 않는다.
+	bool bLastHost = false;
+	bool bLastCanStart = false;
+	int32 LastReadyPlayers = -1;
+	int32 LastRequiredPlayers = -1;
 
 	//	자리마다 콜백이 따로 필요하다 — 다이내믹 델리게이트는 인자를 실어 보낼 수 없다.
 

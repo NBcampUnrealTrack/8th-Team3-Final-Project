@@ -59,19 +59,25 @@ struct FTRLobbyStatus
 	UPROPERTY(BlueprintReadOnly, Category = "TR|Session")
 	int32 CurrentPlayers = 0;
 
-	//	아래는 판 시작 규칙이 정해져야 채울 수 있다. 규칙이 나오면 주석을 풀고
-	//	UTRSessionFlow::GetLobbyStatus 에서 GameState 값을 읽어 넣는다.
-	//
-	//	UPROPERTY(BlueprintReadOnly, Category = "TR|Session")
-	//	int32 ReadyPlayers = 0;
-	//
-	//	// 시작에 필요한 최소 인원(서버 설정). 호스트가 아니면 0.
-	//	UPROPERTY(BlueprintReadOnly, Category = "TR|Session")
-	//	int32 RequiredPlayers = 0;
-	//
-	//	// 호스트 기준 판 진행 여부. 클라에서는 항상 false.
-	//	UPROPERTY(BlueprintReadOnly, Category = "TR|Session")
-	//	bool bMatchStarted = false;
+	// 준비를 누른 인원. 호스트는 세지 않는다.
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Session")
+	int32 ReadyPlayers = 0;
+
+	// 시작에 필요한 인원. 호스트를 뺀 접속자 수다.
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Session")
+	int32 RequiredPlayers = 0;
+
+	// 웨이브가 시작됐는지. 로비 UI 를 닫는 신호로 쓴다.
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Session")
+	bool bMatchStarted = false;
+
+	// 내가 준비를 눌렀는지.
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Session")
+	bool bLocalReady = false;
+
+	// 호스트의 시작 버튼을 켤지. 호스트가 아니면 항상 false.
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Session")
+	bool bCanStart = false;
 };
 
 // 방찾기 검색 필터 — 문자열 필터는 결과 수신 후 클라 측 적용(OSS 쿼리는 부분검색 미지원).
