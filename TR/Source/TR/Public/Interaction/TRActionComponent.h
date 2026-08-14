@@ -31,6 +31,13 @@ public:
 	UFUNCTION(BlueprintPure, Category="Action")
 	ETRActionType GetCurrentActionType() const { return CurrentActionType; }
 
+	// 지금 작업 중인 대상. 진행 중이 아니면 nullptr.
+	UFUNCTION(BlueprintPure, Category="Action")
+	AActor* GetCurrentActionTarget() const { return CurrentTarget.Get(); }
+
+	// 재설치는 열차 전체에서 한 번에 하나만 돈다. 진행 중인 컴포넌트를 찾는다. 없으면 nullptr.
+	static UTRActionComponent* FindBuildingComponent(UWorld* World);
+
 	UFUNCTION(BlueprintPure, Category="Action")
 	float GetActionProgress01() const;
 
@@ -44,6 +51,9 @@ private:
 
 	bool ValidateActionTarget(ETRActionType ActionType, AActor* Target) const;
 
+	// 진행 상태를 바꾸는 유일한 통로. GameState 의 재설치 표식도 여기서만 갱신해 둘이 어긋나지 않게 한다.
+	void SetCurrentAction(ETRActionType NewType, AActor* NewTarget);
+
 	bool RequiresMonsterResource(ETRActionType ActionType) const { return ActionType == ETRActionType::Build; }
 	
 	UPROPERTY(Replicated)
@@ -52,7 +62,7 @@ private:
 	UPROPERTY(Replicated)
 	float ActionStartServerTime = 0.f;
 
-	UPROPERTY()
+	UPROPERTY(Replicated)
 	TWeakObjectPtr<AActor> CurrentTarget;
 
 	FTimerHandle ActionTimerHandle;

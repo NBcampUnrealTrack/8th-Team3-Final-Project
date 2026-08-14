@@ -14,6 +14,7 @@
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
 #include "Train/TRSupplyPoint.h"
+#include "Train/TRControlConsole.h"
 #include "GameFramework/PlayerController.h"
 
 UTRInteractionComponent::UTRInteractionComponent()
@@ -66,8 +67,12 @@ void UTRInteractionComponent::UpdateTrace()
 		return;
 	}
 
+	// 방향은 카메라가 아니라 폰의 시점 회전에서 가져온다.
+	// bUsePawnControlRotation 은 로컬 플레이어 컨트롤러일 때만 카메라를 돌리므로,
+	// 서버에서 원격 클라의 카메라는 조준 방향이 아니라 머리 본 방향을 가리킨다.
+	// ControlRotation 은 서버로 복제되니 이쪽을 써야 서버 검증이 클라와 같은 대상을 본다.
 	const FVector Start = CameraComp->GetComponentLocation();
-	const FVector End = Start + CameraComp->GetForwardVector() * TraceDistance;
+	const FVector End = Start + OwnerCharacter->GetViewRotation().Vector() * TraceDistance;
 
 	FHitResult Hit;
 	FCollisionQueryParams QueryParams;
@@ -83,7 +88,7 @@ void UTRInteractionComponent::UpdateTrace()
 	LastTraceResult = Hit.GetActor();
 }
 
-static void BuildPrompts(const AActor* Target, FText& OutRepair, FText& OutReload, FText& OutInteract)
+static void BuildPrompts(const AActor* Target, bool bHasSupplySpace, FText& OutRepair, FText& OutReload, FText& OutInteract)
 {
 	if (!IsValid(Target))
 	{
@@ -105,14 +110,25 @@ static void BuildPrompts(const AActor* Target, FText& OutRepair, FText& OutReloa
 			OutReload = FText::FromString(TEXT("R 키를 눌러 재장전"));
 		}
 
+		// 남이 타고 있으면 서버가 탑승을 거부하므로, 조용히 비워두지 않고 이유를 보여 준다.
 		if (Turret->CanBeMounted())
 		{
 			OutInteract = FText::FromString(TEXT("E 키를 눌러 포탑 탑승"));
 		}
+		else if (Turret->IsOccupied())
+		{
+			OutInteract = FText::FromString(TEXT("포탑 탑승 중"));
+		}
 	}
-	else if (Target->IsA<ATRSupplyPoint>())
+	else if (Target->IsA<ATRSupplyPoint>() && bHasSupplySpace)
 	{
 		OutInteract = FText::FromString(TEXT("E 키를 눌러 자원 획득"));
+	}
+	else if (const ATRControlConsole* Console = Cast<ATRControlConsole>(Target))
+	{
+		OutInteract = Console->IsOccupied()
+			? FText::FromString(TEXT("관제석 사용 중"))
+			: FText::FromString(TEXT("E 키를 눌러 관제석 조작"));
 	}
 }
 
@@ -148,19 +164,25 @@ void UTRInteractionComponent::UpdateInteractionWidget()
 		return;
 	}
 
-	const UTRActionComponent* ActionComp = OwnerCharacter->GetActionComponent();
-	const bool bRepairing = IsValid(ActionComp) && ActionComp->GetCurrentActionType() == ETRActionType::Repair;
-	HUDWidget->SetRepairProgressVisible(bRepairing);
-	if (bRepairing)
+	if (OwnerCharacter->IsOccupyingControlConsole())
 	{
-		HUDWidget->SetRepairProgress(ActionComp->GetActionProgress01());
+		HUDWidget->SetActionProgress(ETRActionType::None, 0.f);
+		HUDWidget->SetTargetInfo(nullptr);
+		HUDWidget->SetInteractionPrompts(FText::GetEmpty(), FText::GetEmpty(), FText::GetEmpty());
+		return;
 	}
+
+	const UTRActionComponent* ActionComp = OwnerCharacter->GetActionComponent();
+	const ETRActionType CurrentAction = IsValid(ActionComp) ? ActionComp->GetCurrentActionType() : ETRActionType::None;
+	HUDWidget->SetActionProgress(CurrentAction, IsValid(ActionComp) ? ActionComp->GetActionProgress01() : 0.f);
 
 	const ATRPlayerState* PlayerState = OwnerCharacter->GetPlayerState<ATRPlayerState>();
 	if (IsValid(PlayerState))
 	{
 		HUDWidget->SetCarriedSupply(PlayerState->GetCarriedSupply());
 	}
+
+	HUDWidget->SetTargetInfo(LastTraceResult.Get());
 
 	// 터렛에 탑승 중이면 수리도 재장전도 못 함
 	const UTRTurretControlComponent* TurretControlComp = OwnerCharacter->GetTurretControlComponent();
@@ -171,7 +193,8 @@ void UTRInteractionComponent::UpdateInteractionWidget()
 	FText InteractPrompt;
 	if (!bMounted)
 	{
-		BuildPrompts(LastTraceResult.Get(), RepairPrompt, ReloadPrompt, InteractPrompt);
+		const bool bHasSupplySpace = IsValid(PlayerState) && PlayerState->HasSupplySpace();
+		BuildPrompts(LastTraceResult.Get(), bHasSupplySpace, RepairPrompt, ReloadPrompt, InteractPrompt);
 	}
 
 	HUDWidget->SetInteractionPrompts(RepairPrompt, ReloadPrompt, InteractPrompt);
