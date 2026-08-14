@@ -26,6 +26,10 @@ struct FTRMassImpactEvent
 	UPROPERTY(BlueprintReadOnly, Category = "TR|Combat")
 	float Damage = 0.f;
 
+	/** 폭발 반경(cm). 이 안에 든 포탑이 함께 맞는다. 사격은 착탄점만. */
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Combat")
+	float Radius = 0.f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "TR|Combat")
 	ETREnemyType SourceType = ETREnemyType::Melee;
 
@@ -39,6 +43,34 @@ struct FTRMassImpactEvent
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTROnEnemyImpact, const FTRMassImpactEvent&, Impact);
+
+/** 포탑 한 발이 적에게 닿은 결과. */
+USTRUCT(BlueprintType)
+struct FTRMassHitResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Combat")
+	bool bHit = false;
+
+	/** 맞은 지점. 피탄 이펙트를 여기 낸다. */
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Combat")
+	FVector Location = FVector::ZeroVector;
+
+	/** 이 발로 적이 죽었는지. */
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Combat")
+	bool bKilled = false;
+
+	/** 남은 체력. 죽었으면 0. */
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Combat")
+	float RemainingHealth = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Combat")
+	ETREnemyType EnemyType = ETREnemyType::Melee;
+};
+
+/** 적을 처치했다. 자원을 받을 쪽이 여기 붙는다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTROnEnemyKilled, const FVector&, Location, int32, ResourceValue);
 
 /**
  * Mass 엔티티가 만든 피해를 게임 스레드로 옮겨 실제 액터에 적용하는 창구.
@@ -80,12 +112,29 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "TR|Combat")
 	FTROnEnemyImpact OnEnemyImpact;
 
+	/**
+	 * 포탑 한 발. 선분에 가장 먼저 걸리는 적에게 피해를 주고 결과를 돌려준다.
+	 * 게임 스레드에서만 부를 것.
+	 *
+	 * @param TraceRadius 탄의 굵기(cm). 적 반지름에 더해 판정한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "TR|Combat")
+	FTRMassHitResult FireHitscan(const FVector& Start, const FVector& Direction, float Range,
+		float Damage, float TraceRadius = 25.f);
+
+	/** 처치 통지. 자원 누적·킬 로그·이펙트가 여기 붙는다. */
+	UPROPERTY(BlueprintAssignable, Category = "TR|Combat")
+	FTROnEnemyKilled OnEnemyKilled;
+
 	// UTickableWorldSubsystem
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	virtual void Deinitialize() override;
 
 private:
+	/** 그리드 질의 상자를 넓히는 여유(cm). 가장 큰 적의 반지름을 덮는다. */
+	static constexpr float MaxAgentRadiusGuess = 200.f;
+
 	/** 큐를 비우고 각 건을 목표 액터에 적용한다. */
 	void ConsumePendingImpacts();
 

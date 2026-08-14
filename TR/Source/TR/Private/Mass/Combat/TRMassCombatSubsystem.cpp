@@ -5,8 +5,16 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Kismet/GameplayStatics.h"
+#include "MassCommandBuffer.h"
+#include "MassCommonFragments.h"
+#include "MassEntityManager.h"
+#include "MassEntityUtils.h"
+#include "MassNavigationFragments.h"
+#include "MassNavigationSubsystem.h"
+#include "Mass/Core/TRMassParams.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Mass/Targeting/TRTargetDirectorSubsystem.h"
+#include "Train/TRTrain.h"
 
 void UTRMassCombatSubsystem::Deinitialize()
 {
@@ -18,6 +26,105 @@ void UTRMassCombatSubsystem::Deinitialize()
 void UTRMassCombatSubsystem::EnqueueImpact(const FTRMassImpactEvent& Impact)
 {
 	PendingImpacts.Enqueue(Impact);
+}
+
+FTRMassHitResult UTRMassCombatSubsystem::FireHitscan(const FVector& Start, const FVector& Direction,
+	float Range, float Damage, float TraceRadius)
+{
+	FTRMassHitResult Result;
+
+	if (!ensureMsgf(IsInGameThread(), TEXT("FireHitscan 은 게임 스레드에서만 부를 수 있습니다.")))
+	{
+		return Result;
+	}
+
+	UWorld* World = GetWorld();
+	const FVector Forward = Direction.GetSafeNormal();
+	if (World == nullptr || Forward.IsNearlyZero() || Range <= 0.f)
+	{
+		return Result;
+	}
+
+	UMassNavigationSubsystem* Navigation = World->GetSubsystem<UMassNavigationSubsystem>();
+	if (Navigation == nullptr)
+	{
+		return Result;
+	}
+
+	FMassEntityManager& EntityManager = UE::Mass::Utils::GetEntityManagerChecked(*World);
+	const FVector End = Start + Forward * Range;
+
+	// 선분을 감싸는 상자로 후보를 좁힌 뒤, 개체마다 선분과의 거리로 판정한다.
+	const FVector Padding(TraceRadius + MaxAgentRadiusGuess);
+	TArray<FMassNavigationObstacleItem, TInlineAllocator<64>> Candidates;
+	Navigation->GetObstacleGrid().Query(FBox(Start, End).ExpandBy(Padding), Candidates);
+
+	FMassEntityHandle NearestEntity;
+	FVector NearestPoint = FVector::ZeroVector;
+	float NearestDistance = TNumericLimits<float>::Max();
+
+	for (const FMassNavigationObstacleItem& Candidate : Candidates)
+	{
+		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Candidate.Entity);
+		const FTREnemyCombatFragment* Combat = EntityManager.GetFragmentDataPtr<FTREnemyCombatFragment>(Candidate.Entity);
+		if (Transform == nullptr || Combat == nullptr)
+		{
+			continue;
+		}
+
+		const FVector EntityLocation = Transform->GetTransform().GetLocation();
+		const FVector ClosestOnRay = FMath::ClosestPointOnSegment(EntityLocation, Start, End);
+
+		const FAgentRadiusFragment* Radius = EntityManager.GetFragmentDataPtr<FAgentRadiusFragment>(Candidate.Entity);
+		const float HitRadius = TraceRadius + (Radius ? Radius->Radius : 0.f);
+
+		if (FVector::DistSquared(ClosestOnRay, EntityLocation) > FMath::Square(HitRadius))
+		{
+			continue;
+		}
+
+		const float DistanceAlongRay = static_cast<float>(FVector::Dist(Start, ClosestOnRay));
+		if (DistanceAlongRay < NearestDistance)
+		{
+			NearestDistance = DistanceAlongRay;
+			NearestEntity = Candidate.Entity;
+			NearestPoint = ClosestOnRay;
+		}
+	}
+
+	if (!NearestEntity.IsSet())
+	{
+		return Result;
+	}
+
+	FTREnemyCombatFragment& Combat = EntityManager.GetFragmentDataChecked<FTREnemyCombatFragment>(NearestEntity);
+	Combat.Health -= Damage;
+
+	Result.bHit = true;
+	Result.Location = NearestPoint;
+	Result.RemainingHealth = FMath::Max(0.f, Combat.Health);
+	Result.bKilled = (Combat.Health <= 0.f);
+
+	if (const FTREnemyCombatParams* Params =
+		EntityManager.GetConstSharedFragmentDataPtr<FTREnemyCombatParams>(NearestEntity))
+	{
+		Result.EnemyType = Params->EnemyType;
+	}
+
+	if (!Result.bKilled)
+	{
+		return Result;
+	}
+
+	if (FTREnemyStateFragment* State = EntityManager.GetFragmentDataPtr<FTREnemyStateFragment>(NearestEntity))
+	{
+		EnterActionState(*State, ETREnemyActionState::Death, World->GetTimeSeconds());
+	}
+
+	OnEnemyKilled.Broadcast(NearestPoint, Combat.ResourceValue);
+	EntityManager.Defer().DestroyEntity(NearestEntity);
+
+	return Result;
 }
 
 TStatId UTRMassCombatSubsystem::GetStatId() const
@@ -61,13 +168,16 @@ void UTRMassCombatSubsystem::ConsumePendingImpacts()
 
 		AActor* DamagedActor = Director ? Director->GetTargetActor(Impact.Channel) : nullptr;
 
-		if (DamagedActor != nullptr)
+		// 기차는 착탄점으로 장갑을 찾아 흡수시키는 자체 경로를 갖고 있다.
+		// 표준 TakeDamage 로 보내면 장갑을 건너뛰고 차체가 바로 맞는다.
+		if (ATRTrain* Train = Cast<ATRTrain>(DamagedActor))
 		{
-			// 언리얼 표준 피해 경로. 받는 쪽이 TakeDamage를 구현하지 않았으면
-			// 아무 일도 일어나지 않는다(크래시하지 않는다).
-			//
-			// 위치를 담아 보내는 이유는 "어느 장갑이 맞았는가"를 받는 쪽이 정할 수 있게
-			// 하기 위해서다. 그 판단은 기차의 구성을 아는 쪽이 해야 한다.
+			Train->ApplyImpactDamage(Impact.Location, Impact.Damage, Impact.Radius,
+				/*EventInstigator=*/nullptr, /*DamageCauser=*/nullptr);
+		}
+		else if (DamagedActor != nullptr)
+		{
+			// 기차가 아닌 목표는 언리얼 표준 경로로 보낸다.
 			FHitResult HitResult;
 			HitResult.ImpactPoint = Impact.Location;
 			HitResult.Location = Impact.Location;
