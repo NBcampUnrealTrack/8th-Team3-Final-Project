@@ -13,6 +13,8 @@
 #include "Interaction/TRActionComponent.h"
 #include "Interaction/TRInteractionComponent.h"
 #include "Interaction/TRTurretControlComponent.h"
+#include "Core/TRGameState.h"
+#include "UI/TRPlayerHUD.h"
 #include "Train/TRControlConsole.h"
 #include "Train/TRInstallablePart.h"
 #include "Train/TRSupplyPoint.h"
@@ -267,14 +269,63 @@ void ATRPlayerCharacter::MulticastPlayJumpLandEffect_Implementation(const FVecto
 
 void ATRPlayerCharacter::OnInteractPressed(const FInputActionValue& Input)
 {
-	if (IsValid(InteractionComp) && Cast<ATRControlConsole>(InteractionComp->GetCurrentTarget()))
+	// 팝업이 떠 있는 동안 E 는 닫기 전용 — 다른 상호작용으로 새지 않게 한다.
+	if (IsLookingAtControlConsole() || IsControlConsoleOpen())
 	{
-		UE_LOG(LogTRGameplay, Verbose, TEXT("OnControlConsoleInteract fired"));
-		OnControlConsoleInteract();
+		if (ATRPlayerHUD* PlayerHUD = GetPlayerHUD())
+		{
+			PlayerHUD->ToggleControlConsole();
+		}
 		return;
 	}
 
 	Interact(Input);   // 관제석이 아니면 원래대로 서버 RPC 호출
+}
+
+ATRPlayerHUD* ATRPlayerCharacter::GetPlayerHUD() const
+{
+	const APlayerController* PC = Cast<APlayerController>(GetController());
+	return IsValid(PC) ? Cast<ATRPlayerHUD>(PC->GetHUD()) : nullptr;
+}
+
+bool ATRPlayerCharacter::IsControlConsoleOpen() const
+{
+	const ATRPlayerHUD* PlayerHUD = GetPlayerHUD();
+	return IsValid(PlayerHUD) && PlayerHUD->IsControlConsoleOpen();
+}
+
+bool ATRPlayerCharacter::IsLookingAtControlConsole() const
+{
+	return IsValid(InteractionComp) && Cast<ATRControlConsole>(InteractionComp->GetCurrentTarget()) != nullptr;
+}
+
+void ATRPlayerCharacter::ServerUpgradeArmor_Implementation()
+{
+	// 클라이언트가 아무 때나 부를 수 있으므로 관제석 앞인지 서버에서 다시 확인한다.
+	if (!IsLookingAtControlConsole())
+	{
+		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeArmor rejected: not looking at control console"));
+		return;
+	}
+
+	if (ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>())
+	{
+		GameState->UpgradeArmorLevel();
+	}
+}
+
+void ATRPlayerCharacter::ServerUpgradeTurret_Implementation()
+{
+	if (!IsLookingAtControlConsole())
+	{
+		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeTurret rejected: not looking at control console"));
+		return;
+	}
+
+	if (ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>())
+	{
+		GameState->UpgradeTurretLevel();
+	}
 }
 
 // 상호작용 RPC 함수, E키 - 포탑 탑승/하차 vs 물자실 자원 획득

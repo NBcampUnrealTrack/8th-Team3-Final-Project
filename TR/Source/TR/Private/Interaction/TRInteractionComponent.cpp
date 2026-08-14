@@ -14,6 +14,7 @@
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
 #include "Train/TRSupplyPoint.h"
+#include "Train/TRControlConsole.h"
 #include "GameFramework/PlayerController.h"
 
 UTRInteractionComponent::UTRInteractionComponent()
@@ -114,6 +115,10 @@ static void BuildPrompts(const AActor* Target, bool bHasSupplySpace, FText& OutR
 	{
 		OutInteract = FText::FromString(TEXT("E 키를 눌러 자원 획득"));
 	}
+	else if (Target->IsA<ATRControlConsole>())
+	{
+		OutInteract = FText::FromString(TEXT("E 키를 눌러 관제석 조작"));
+	}
 }
 
 UTRPlayerHUDWidget* UTRInteractionComponent::GetHUDWidget() const
@@ -145,6 +150,14 @@ void UTRInteractionComponent::UpdateInteractionWidget()
 	UTRPlayerHUDWidget* HUDWidget = GetHUDWidget();
 	if (!IsValid(OwnerCharacter) || !IsValid(HUDWidget))
 	{
+		return;
+	}
+
+	if (OwnerCharacter->IsControlConsoleOpen())
+	{
+		HUDWidget->SetActionProgress(ETRActionType::None, 0.f);
+		HUDWidget->SetTargetInfo(nullptr);
+		HUDWidget->SetInteractionPrompts(FText::GetEmpty(), FText::GetEmpty(), FText::GetEmpty());
 		return;
 	}
 

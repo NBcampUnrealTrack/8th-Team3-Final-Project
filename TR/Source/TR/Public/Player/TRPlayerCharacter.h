@@ -16,6 +16,7 @@ class UCameraComponent;
 class UNiagaraComponent;
 class UNiagaraSystem;
 class ATRControlConsole;
+class ATRPlayerHUD;
 
 UCLASS()
 class TR_API ATRPlayerCharacter : public ACharacter
@@ -42,6 +43,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Action")
 	UTRActionComponent* GetActionComponent() const { return ActionComp; }
+
+	UFUNCTION(BlueprintPure, Category = "UI")
+	bool IsControlConsoleOpen() const;
 	
 	//--- 입력 액션--- 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -59,10 +63,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> IA_Reload;
 	
-	// UI - 이걸 오버라이드/바인드해서 HUD 쪽 로직을 붙이면 됨
-	UFUNCTION(BlueprintImplementableEvent, Category = "Interaction")
-	void OnControlConsoleInteract();
-	
+	// 관제석 팝업에서 호출. 레벨은 GameState가 들고 있어 서버만 올릴 수 있다.
+	UFUNCTION(Server, Reliable)
+	void ServerUpgradeArmor();
+	void ServerUpgradeArmor_Implementation();
+
+	UFUNCTION(Server, Reliable)
+	void ServerUpgradeTurret();
+	void ServerUpgradeTurret_Implementation();
+
 protected:
 	//--- 플레이어 조작 관련함수 ---
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -91,6 +100,12 @@ protected:
 	void TriggerPressed(const FInputActionValue& Input);
 	
 	void OnInteractPressed(const FInputActionValue& Input);
+
+	// 로컬 플레이어의 HUD. 서버에서 원격 플레이어의 폰을 볼 때는 nullptr.
+	ATRPlayerHUD* GetPlayerHUD() const;
+
+	// 관제석 조준 여부. 트레이스는 서버에서도 돌기 때문에 UI 요청 검증에도 쓸 수 있다.
+	bool IsLookingAtControlConsole() const;
 	
 	// Local look input smoothing. Character Movement Component sends final ControlRotation to server.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Look", meta = (ClampMin = "1.0", UIMin = "1.0", UIMax = "100.0"))
