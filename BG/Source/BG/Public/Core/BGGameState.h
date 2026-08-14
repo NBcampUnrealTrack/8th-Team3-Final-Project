@@ -456,6 +456,27 @@ protected:
 
 	// ── 턴 진행 내부 ──
 	void BeginTurn(int32 Seat);
+	/** 치유사(TurnStartHeal). 어트리뷰트가 0 이면 아무 일도 하지 않는다. 서버 전용. */
+	void ApplyTurnStartHeal(int32 Seat);
+
+public:
+	/**
+	 * 서버 전용. 1회성 카드를 손패에 넣는다 (암살자). 실제로 넣은 장수를 반환한다.
+	 *
+	 * 덱에서 뽑는 것이 아니라 **만들어 내는** 것이다 — 덱·버린 패의 총량이 변하지 않는다.
+	 * 그래서 InstanceId 도 덱과 겹치지 않게 음수로 따로 발급한다.
+	 *
+	 * 손패 상한(현재 체력)에 걸리면 그만큼만 들어간다.
+	 */
+	int32 GrantEphemeralCards(class ABGPlayerState* PS, FName CardId, int32 Count);
+
+protected:
+	/**
+	 * 1회성 카드에 줄 다음 InstanceId. **음수로 내려간다.**
+	 * 덱 카드가 1 부터 올라가므로 어느 쪽도 상대를 침범하지 않는다.
+	 */
+	int32 NextEphemeralInstanceId = -1;
+
 	void EnterDrawPhase();
 	void EnterPlayPhase();
 	void AdvanceToNextSeat();

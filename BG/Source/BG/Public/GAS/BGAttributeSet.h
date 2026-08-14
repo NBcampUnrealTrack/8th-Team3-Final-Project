@@ -132,6 +132,57 @@ public:
 	FGameplayAttributeData WeightMultCriticalSuccess;
 	ATTRIBUTE_ACCESSORS(UBGAttributeSet, WeightMultCriticalSuccess)
 
+	// ── 직업 패시브용 보정 (GDD §7.1 "공격 보정 / 회복 보정") ────
+	//
+	//  전부 0 이 기본이고, 0 이면 그 훅은 아무 일도 하지 않는다.
+	//  값은 직업 Row 의 PassiveEffects(Infinite GE)가 채운다 — 코드에는 숫자를 두지 않는다.
+
+	/** 회복할 때마다 더해지는 회복량 (사제). 카드의 회복 수치에 가산된다. */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_HealBonus, Category = "BG|Job")
+	FGameplayAttributeData HealBonus;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, HealBonus)
+
+	/** 자기 턴이 시작될 때 회복하는 양 (치유사). 0 이면 회복하지 않는다. */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_TurnStartHeal, Category = "BG|Job")
+	FGameplayAttributeData TurnStartHeal;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, TurnStartHeal)
+
+	/**
+	 * 피해를 줄 때 추가 피해가 터질 확률(%) (마법사). 0 = 없음.
+	 * DamageNegateChance 와 같은 방식이다 — 피해 직전 서버가 한 번 굴린다.
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageBonusChance, Category = "BG|Job")
+	FGameplayAttributeData DamageBonusChance;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, DamageBonusChance)
+
+	/**
+	 * 위 확률이 터졌을 때 더해지는 피해량. **기본값이 1** 이다.
+	 *
+	 * 0 이 아니라 1 로 둔 이유: 패시브 GE 가 확률만 올려도 동작해야 한다. 0 이 기본이면
+	 * 확률만 채운 GE 가 "확률은 터지는데 피해는 +0" 이 되어 조용히 아무 일도 안 한다.
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageBonusAmount, Category = "BG|Job")
+	FGameplayAttributeData DamageBonusAmount;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, DamageBonusAmount)
+
+	/** 피해를 받을 때 가해자에게 되돌려주는 피해 (수도사). 0 = 반사 없음. */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageReflect, Category = "BG|Job")
+	FGameplayAttributeData DamageReflect;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, DamageReflect)
+
+	/** 피해를 받을 때 가해자에게서 가져오는 손패 장수 (도둑). 0 = 없음. */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_DamageStealCount, Category = "BG|Job")
+	FGameplayAttributeData DamageStealCount;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, DamageStealCount)
+
+	/**
+	 * 대성공 판정 때마다 받는 1회성 카드 장수 (암살자). 0 = 없음.
+	 * 어느 카드를 받는지는 UBGDataSettings::EphemeralAttackCardId 가 정한다.
+	 */
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_EphemeralCardOnCritical, Category = "BG|Job")
+	FGameplayAttributeData EphemeralCardOnCritical;
+	ATTRIBUTE_ACCESSORS(UBGAttributeSet, EphemeralCardOnCritical)
+
 	// ── 공격 카드 한정 보정 (직업 패시브) ────────────────────────
 	//
 	//  위 보정들이 "모든 카드" 에 걸리는 것과 달리, 이 둘은 Card.Trait.Attack 이 붙은
@@ -232,6 +283,13 @@ protected:
 	UFUNCTION() void OnRep_WeightMultCriticalSuccess(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_AttackWeightBonusFailure(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_AttackKeepCardUseChance(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_HealBonus(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_TurnStartHeal(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_DamageBonusChance(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_DamageBonusAmount(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_DamageReflect(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_DamageStealCount(const FGameplayAttributeData& OldValue);
+	UFUNCTION() void OnRep_EphemeralCardOnCritical(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_Strength(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_Agility(const FGameplayAttributeData& OldValue);
 	UFUNCTION() void OnRep_Intelligence(const FGameplayAttributeData& OldValue);

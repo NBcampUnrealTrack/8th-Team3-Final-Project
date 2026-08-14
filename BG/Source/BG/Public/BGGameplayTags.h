@@ -225,7 +225,7 @@ namespace BG
 	}
 
 	// ---------------------------------------------------------------------------------
-	//  Character.Job.* — 판타지 직업 8종. 스탯과 확률 보정의 정체성을 정한다 (GDD §7).
+	//  Character.Job.* — 판타지 직업 12종. 스탯과 확률 보정의 정체성을 정한다 (GDD §7).
 	//
 	//  Role.* 과는 축이 완전히 다르다. 섞지 말 것:
 	//    Role.*         = 진영(보안관/부관/무법자/배신자). 승리 조건과 은닉 정보. 숨김.
@@ -241,14 +241,29 @@ namespace BG
 	{
 		namespace Job
 		{
-			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Warrior)    // 전사     — 성공률 ↑, 대성공률 ↓. 기복 없는 딜러
-			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Mage)       // 마법사   — 대성공률 ↑↑, 대실패율 ↑. 한 방
-			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Rogue)      // 도적     — 카드 사용 한도 +1, 카드당 위력 ↓
-			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cleric)     // 성직자   — 회복 계열 판정·회복량 보정
-			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ranger)     // 궁수     — 드로우 보정. 손패로 선택지를 번다
-			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Paladin)    // 기사     — 체력 ↑, 받는 피해 완화. 탱커
-			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Berserker)  // 광전사   — 체력 ↓, 공격 피해 ↑. 고위험 고수익
-			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Alchemist)  // 연금술사 — 대실패를 실패로 낮추는 등 판정 완화
+			//	⚠️ 2026-08-14 전면 개명 (Docs/Data/Character-List.csv 기준).
+			//	   태그와 실제 직업 이름이 어긋나 있던 것을 맞췄다. **부분 개명이 불가능하다** —
+			//	   Mage 가 다른 직업으로 옮겨가 같은 문자열이 다른 뜻이 되기 때문이다.
+			//	     Warrior→Knight   Mage→Mercenary   Rogue→Hunter     Cleric→Scout
+			//	     Ranger→Priest    Paladin→Healer   Berserker→Mage   Alchemist→Diviner
+			//	   Row 이름이 곧 태그 문자열이므로 DT_BGCharacterRow 도 함께 갈아엎어야 한다
+			//	   (Docs/Data/DT_BGCharacterRow.json 임포트). 한쪽만 하면 전원이 무직이 된다.
+			//
+			//	   대괄호는 현재 구현 상태다. 태그와 Row 는 12종 모두 있지만, 능력이 실제로
+			//	   동작하는 것은 그 표시가 없는 것들뿐이다.
+
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Knight)     // 기사     — 체력 ↑. 기복 없는 국밥
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Mercenary)  // 용병     — 공격 카드는 실패하지 않는다
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Hunter)     // 사냥꾼   — 카드 사용 한도 +1
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Scout)      // 수색꾼   — 턴 시작 드로우 +1
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Priest)     // 사제     — 회복량 +1              [미구현]
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Healer)     // 치유사   — 턴 시작 회복, 체력 ↓   [체력만]
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Mage)       // 마법사   — 공격 시 확률로 피해 +1 [미구현]
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Diviner)    // 점술가   — 대성공·대실패 승산 ×2
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Monk)       // 수도사   — 피해 반사, 체력 ↓      [체력만]
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Brawler)    // 무투가   — 공격 카드 사용한도 확률 유지
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Thief)      // 도둑     — 피해 시 카드 강탈      [미구현]
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Assassin)   // 암살자   — 대성공 시 1회성 카드   [미구현]
 		}
 	}
 

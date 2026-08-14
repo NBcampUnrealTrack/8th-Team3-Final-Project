@@ -214,9 +214,35 @@ FString UGA_BGCardEffects::ApplyDamage(int32 Amount, AActor* Avatar, AActor* Tar
 		Final += Bonus;
 	}
 
-	UE_LOG(LogBGCard, Log, TEXT("[피해] 카드%d%s → 최종 %d"),
+	//	마법사(DamageBonusChance) — 확률로 피해가 더 들어간다.
+	//	방어 판정(요정 갑옷)과 같은 방식이지만 **주는 쪽**이라 여기서 먼저 굴린다.
+	//	무효화되면 이 보너스도 함께 사라지는 것이 맞다 — 막힌 공격에 위력을 논할 이유가 없다.
+	const float BonusChance = SourceASC->GetNumericAttribute(
+		UBGAttributeSet::GetDamageBonusChanceAttribute());
+
+	int32 CritBonus = 0;
+	if (BonusChance > 0.f)
+	{
+		UBGDiceComponent* Dice = UBGDiceComponent::Get(Avatar);
+		const int32 BonusRoll = Dice ? Dice->RandomIndex(100) : INDEX_NONE;
+
+		if (BonusRoll != INDEX_NONE && static_cast<float>(BonusRoll) < BonusChance)
+		{
+			CritBonus = FMath::RoundToInt(
+				SourceASC->GetNumericAttribute(UBGAttributeSet::GetDamageBonusAmountAttribute()));
+			Final += CritBonus;
+
+			//	GDD §10: 자동 판정은 원인·확률·결과를 로그에 남긴다.
+			UE_LOG(LogBGCard, Log,
+				TEXT("[추가피해] 발동 — 눈 %d / 확률 %.0f%% → 피해 +%d"),
+				BonusRoll, BonusChance, CritBonus);
+		}
+	}
+
+	UE_LOG(LogBGCard, Log, TEXT("[피해] 카드%d%s%s → 최종 %d"),
 		Amount,
-		(Bonus > 0) ? *FString::Printf(TEXT(" + 약점포착%d"), Bonus) : TEXT(""),
+		(Bonus > 0)     ? *FString::Printf(TEXT(" + 약점포착%d"), Bonus)   : TEXT(""),
+		(CritBonus > 0) ? *FString::Printf(TEXT(" + 추가피해%d"), CritBonus) : TEXT(""),
 		Final);
 
 	if (Final <= 0)
@@ -292,11 +318,23 @@ FString UGA_BGCardEffects::ApplyHeal(int32 Amount, UAbilitySystemComponent* Sour
 		return FString();
 	}
 
+	//	사제(HealBonus) — 회복할 때마다 더 회복한다. 회복량이 0 인 카드는 대상이 아니다.
+	const int32 Bonus = FMath::RoundToInt(
+		SourceASC->GetNumericAttribute(UBGAttributeSet::GetHealBonusAttribute()));
+	const int32 Final = FMath::Max(0, Amount + Bonus);
+
+	if (Bonus != 0)
+	{
+		UE_LOG(LogBGCard, Log, TEXT("[회복] 카드%d + 회복보정%d → 최종 %d"), Amount, Bonus, Final);
+	}
+
 	//	MaxHealth 클램프는 AttributeSet 이 처리한다.
-	Spec.Data->SetSetByCallerMagnitude(BG::SetByCaller::Heal.GetTag(), static_cast<float>(Amount));
+	Spec.Data->SetSetByCallerMagnitude(BG::SetByCaller::Heal.GetTag(), static_cast<float>(Final));
 	SourceASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 
-	return FString::Printf(TEXT("회복 %d"), Amount);
+	return (Bonus != 0)
+		? FString::Printf(TEXT("회복 %d (보정 +%d)"), Final, Bonus)
+		: FString::Printf(TEXT("회복 %d"), Final);
 }
 
 FString UGA_BGCardEffects::ApplyDraw(int32 Amount, ABGGameState* GS, ABGPlayerState* SelfPS)

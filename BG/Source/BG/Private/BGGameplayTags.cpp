@@ -152,14 +152,18 @@ namespace BG
 	{
 		namespace Job
 		{
-			UE_DEFINE_GAMEPLAY_TAG(Warrior,   "Character.Job.Warrior")
+			UE_DEFINE_GAMEPLAY_TAG(Knight,    "Character.Job.Knight")
+			UE_DEFINE_GAMEPLAY_TAG(Mercenary, "Character.Job.Mercenary")
+			UE_DEFINE_GAMEPLAY_TAG(Hunter,    "Character.Job.Hunter")
+			UE_DEFINE_GAMEPLAY_TAG(Scout,     "Character.Job.Scout")
+			UE_DEFINE_GAMEPLAY_TAG(Priest,    "Character.Job.Priest")
+			UE_DEFINE_GAMEPLAY_TAG(Healer,    "Character.Job.Healer")
 			UE_DEFINE_GAMEPLAY_TAG(Mage,      "Character.Job.Mage")
-			UE_DEFINE_GAMEPLAY_TAG(Rogue,     "Character.Job.Rogue")
-			UE_DEFINE_GAMEPLAY_TAG(Cleric,    "Character.Job.Cleric")
-			UE_DEFINE_GAMEPLAY_TAG(Ranger,    "Character.Job.Ranger")
-			UE_DEFINE_GAMEPLAY_TAG(Paladin,   "Character.Job.Paladin")
-			UE_DEFINE_GAMEPLAY_TAG(Berserker, "Character.Job.Berserker")
-			UE_DEFINE_GAMEPLAY_TAG(Alchemist, "Character.Job.Alchemist")
+			UE_DEFINE_GAMEPLAY_TAG(Diviner,   "Character.Job.Diviner")
+			UE_DEFINE_GAMEPLAY_TAG(Monk,      "Character.Job.Monk")
+			UE_DEFINE_GAMEPLAY_TAG(Brawler,   "Character.Job.Brawler")
+			UE_DEFINE_GAMEPLAY_TAG(Thief,     "Character.Job.Thief")
+			UE_DEFINE_GAMEPLAY_TAG(Assassin,  "Character.Job.Assassin")
 		}
 	}
 

@@ -30,6 +30,16 @@ UBGAttributeSet::UBGAttributeSet()
 	InitAttackWeightBonusFailure(0.f);
 	InitAttackKeepCardUseChance(0.f);
 
+	// 직업 패시브 보정 — 전부 0(훅이 아무 일도 하지 않음).
+	// DamageBonusAmount 만 1 이다 — 패시브가 확률만 올려도 동작해야 하기 때문이다.
+	InitHealBonus(0.f);
+	InitTurnStartHeal(0.f);
+	InitDamageBonusChance(0.f);
+	InitDamageBonusAmount(1.f);
+	InitDamageReflect(0.f);
+	InitDamageStealCount(0.f);
+	InitEphemeralCardOnCritical(0.f);
+
 	// 능력치 — 기본 0 (보정 없음). 실제 값은 캐릭터 Row 의 GE 로 세팅한다.
 	InitStrength(0.f);
 	InitAgility(0.f);
@@ -78,6 +88,13 @@ void UBGAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, WeightMultCriticalSuccess,  COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, AttackWeightBonusFailure,   COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, AttackKeepCardUseChance,    COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, HealBonus,          COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, TurnStartHeal,      COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, DamageBonusChance,  COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, DamageBonusAmount,  COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, DamageReflect,      COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, DamageStealCount,   COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, EphemeralCardOnCritical, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, Strength,          COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, Agility,           COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UBGAttributeSet, Intelligence,      COND_None, REPNOTIFY_Always);
@@ -127,6 +144,19 @@ void UBGAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallback
 	}
 
 	SetHealth(FMath::Clamp(GetHealth(), 0.f, GetMaxHealth()));
+
+	//	피격 반응(수도사 반사 · 도둑 강탈)은 죽든 살든 일어난다 — 아래 사망 조기 반환보다 먼저 본다.
+	//	여기서도 "값이 줄었다" 까지만 알고, 무엇을 할지는 캐릭터 계층이 정한다.
+	const float Delta = Data.EvaluatedData.Magnitude;
+	if (Delta < 0.f)
+	{
+		if (ABGCharacter* OwnerChar = Cast<ABGCharacter>(GetOwningActor()))
+		{
+			OwnerChar->NotifyDamaged(
+				Data.EffectSpec.GetEffectContext().GetInstigator(),
+				FMath::RoundToInt(-Delta));
+		}
+	}
 
 	if (GetHealth() > 0.f)
 	{
@@ -211,6 +241,34 @@ void UBGAttributeSet::OnRep_WeightMultCriticalFailure(const FGameplayAttributeDa
 void UBGAttributeSet::OnRep_WeightMultCriticalSuccess(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, WeightMultCriticalSuccess, OldValue);
+}
+void UBGAttributeSet::OnRep_HealBonus(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, HealBonus, OldValue);
+}
+void UBGAttributeSet::OnRep_TurnStartHeal(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, TurnStartHeal, OldValue);
+}
+void UBGAttributeSet::OnRep_DamageBonusChance(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, DamageBonusChance, OldValue);
+}
+void UBGAttributeSet::OnRep_DamageBonusAmount(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, DamageBonusAmount, OldValue);
+}
+void UBGAttributeSet::OnRep_DamageReflect(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, DamageReflect, OldValue);
+}
+void UBGAttributeSet::OnRep_DamageStealCount(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, DamageStealCount, OldValue);
+}
+void UBGAttributeSet::OnRep_EphemeralCardOnCritical(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UBGAttributeSet, EphemeralCardOnCritical, OldValue);
 }
 void UBGAttributeSet::OnRep_AttackWeightBonusFailure(const FGameplayAttributeData& OldValue)
 {

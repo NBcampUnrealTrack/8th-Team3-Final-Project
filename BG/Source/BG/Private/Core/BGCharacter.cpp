@@ -6,6 +6,10 @@
 #include "Debug/BGCardLog.h"
 #include "Card/BGDataSubsystem.h"
 #include "Card/BGGameDataTypes.h"
+#include "Card/BGCardType.h"
+#include "Card/BGDiceComponent.h"
+#include "GAS/Effect/GE_BGDamage.h"
+#include "AbilitySystemGlobals.h"
 #include "BGGameplayTags.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerState.h"
@@ -378,6 +382,116 @@ void ABGCharacter::OnRep_JobTag()
 	// 전 클라: 직업 태그를 로컬 ASC 루즈 태그에 반영하고 외형을 교체한다.
 	RefreshLooseTags();
 	ApplyJobVisual();
+}
+
+namespace
+{
+	/**
+	 * 반사 피해를 적용하는 중인가.
+	 *
+	 * 수도사 둘이 마주 보면 A→B 반사가 B→A 반사를 부르고 그것이 다시 A→B 를 불러 스택이 터진다.
+	 * 반사 피해는 반사를 유발하지 않는다는 규칙을 이 걸쇠로 강제한다.
+	 *
+	 * 전역이어도 되는 이유: 서버에서 동기적으로만 오간다(피해 GE 적용은 호출 스택 안에서 끝난다).
+	 * PIE 로 월드가 여럿이어도 스택이 겹치지 않으므로 서로를 막지 않는다.
+	 */
+	bool GBGApplyingReflect = false;
+}
+
+void ABGCharacter::NotifyDamaged(AActor* DamageInstigator, int32 DamageAmount)
+{
+	if (!HasAuthority() || DamageAmount <= 0 || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	//	가해자가 없거나(다이너마이트 등) 자해면 되받을 대상이 없다.
+	APawn* AttackerPawn = Cast<APawn>(DamageInstigator);
+	if (!AttackerPawn || AttackerPawn == this)
+	{
+		return;
+	}
+
+	ABGPlayerState* SelfPS     = GetPlayerState<ABGPlayerState>();
+	ABGPlayerState* AttackerPS = AttackerPawn->GetPlayerState<ABGPlayerState>();
+	if (!SelfPS || !AttackerPS || AttackerPS->IsDead())
+	{
+		return;
+	}
+
+	// ── 수도사 (DamageReflect) ────────────────────────────────────
+	const int32 Reflect = FMath::RoundToInt(
+		AbilitySystemComponent->GetNumericAttribute(UBGAttributeSet::GetDamageReflectAttribute()));
+
+	if (Reflect > 0 && !GBGApplyingReflect)
+	{
+		if (UAbilitySystemComponent* AttackerASC =
+				UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(AttackerPawn))
+		{
+			//	반사 피해가 다시 반사를 부르지 않게 잠근다. 아래 ApplyGameplayEffectSpecToTarget 이
+			//	가해자의 PostGameplayEffectExecute 를 **이 스택 안에서** 부르기 때문이다.
+			TGuardValue<bool> ReflectGuard(GBGApplyingReflect, true);
+
+			FGameplayEffectContextHandle Context = AbilitySystemComponent->MakeEffectContext();
+			Context.AddInstigator(this, this);
+
+			const FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(
+				UGE_BGDamage::StaticClass(), 1.f, Context);
+
+			if (Spec.IsValid())
+			{
+				Spec.Data->SetSetByCallerMagnitude(
+					BG::SetByCaller::Damage.GetTag(), -static_cast<float>(Reflect));
+				AbilitySystemComponent->ApplyGameplayEffectSpecToTarget(*Spec.Data.Get(), AttackerASC);
+
+				UE_LOG(LogBGCard, Log, TEXT("[반사] 좌석 %d → 좌석 %d 에 피해 %d"),
+					SelfPS->GetSeatIndex(), AttackerPS->GetSeatIndex(), Reflect);
+			}
+		}
+	}
+
+	// ── 도둑 (DamageStealCount) ───────────────────────────────────
+	const int32 StealCount = FMath::RoundToInt(
+		AbilitySystemComponent->GetNumericAttribute(UBGAttributeSet::GetDamageStealCountAttribute()));
+
+	if (StealCount > 0)
+	{
+		UBGDiceComponent* Dice = UBGDiceComponent::Get(this);
+		int32 Stolen = 0;
+
+		for (int32 i = 0; i < StealCount; ++i)
+		{
+			//	손패는 매번 다시 본다 — 한 장 가져올 때마다 크기가 줄어든다.
+			const TArray<FBGCardInstance>& AttackerHand = AttackerPS->GetHand();
+			if (AttackerHand.IsEmpty())
+			{
+				break;   // 가해자가 빈손이면 아무 일도 일어나지 않는다
+			}
+
+			const int32 Pick = Dice ? Dice->RandomIndex(AttackerHand.Num()) : 0;
+			if (!AttackerHand.IsValidIndex(Pick))
+			{
+				break;
+			}
+
+			//	제거 전에 값을 복사해 둔다 — 배열이 줄면 참조가 무효가 된다.
+			const int32 PickedId = AttackerHand[Pick].InstanceId;
+
+			FBGCardInstance Taken;
+			if (!AttackerPS->RemoveCardFromHand(PickedId, Taken))
+			{
+				break;
+			}
+			SelfPS->AddCardToHand(Taken);
+			++Stolen;
+		}
+
+		if (Stolen > 0)
+		{
+			UE_LOG(LogBGCard, Log, TEXT("[강탈] 좌석 %d 가 좌석 %d 에게서 %d 장 가져옴"),
+				SelfPS->GetSeatIndex(), AttackerPS->GetSeatIndex(), Stolen);
+		}
+	}
 }
 
 void ABGCharacter::NotifyHealthDepleted(AActor* Killer)

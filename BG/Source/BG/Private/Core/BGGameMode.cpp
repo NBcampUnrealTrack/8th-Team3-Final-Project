@@ -242,16 +242,23 @@ TArray<FGameplayTag> ABGGameMode::BuildJobPool()
 {
 	using namespace BG::Character::Job;
 
-	// 8종 전부를 후보로 넣는다. 최대 인원이 7 이라 셔플 후 앞에서 잘라 쓰면 중복이 없다.
+	// 12종 전부를 후보로 넣는다. 최대 인원이 7 이라 셔플 후 앞에서 잘라 쓰면 중복이 없다.
+	//
+	// ⚠️ 여기가 직업 태그를 열거하는 **유일한** 곳이다. 직업을 추가하고 이 목록에 넣지 않으면
+	//    DT 에 Row 가 있어도 아무도 그 직업으로 배정되지 않는다 — 조용히 빠진다.
 	return {
-		Warrior.GetTag(),
+		Knight.GetTag(),
+		Mercenary.GetTag(),
+		Hunter.GetTag(),
+		Scout.GetTag(),
+		Priest.GetTag(),
+		Healer.GetTag(),
 		Mage.GetTag(),
-		Rogue.GetTag(),
-		Cleric.GetTag(),
-		Ranger.GetTag(),
-		Paladin.GetTag(),
-		Berserker.GetTag(),
-		Alchemist.GetTag()
+		Diviner.GetTag(),
+		Monk.GetTag(),
+		Brawler.GetTag(),
+		Thief.GetTag(),
+		Assassin.GetTag()
 	};
 }
 

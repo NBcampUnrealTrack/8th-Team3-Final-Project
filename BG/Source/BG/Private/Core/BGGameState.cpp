@@ -5,6 +5,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
+#include "GAS/Effect/GE_BGHeal.h"
 #include "Engine/GameInstance.h"
 #include "Debug/BGCardLog.h"
 #include "Card/BGDataSubsystem.h"
@@ -720,6 +721,10 @@ void ABGGameState::BeginTurn(int32 Seat)
 		PS->ResetCardsUsedThisTurn();
 	}
 
+	//	치유사(TurnStartHeal) — 자기 턴이 열릴 때 회복한다.
+	//	카드 효과가 아니라 턴 진행의 일부라 GA 가 아니라 여기 있다.
+	ApplyTurnStartHeal(Seat);
+
 	//	TODO: 감옥/다이너마이트 뽑기 판정이 여기 들어간다(PerformDrawCheck).
 	//	      지금은 통과 페이즈다.
 
@@ -731,6 +736,101 @@ void ABGGameState::BeginTurn(int32 Seat)
 	{
 		Rope->BeginRope(CurrentSeat);
 	}
+}
+
+void ABGGameState::ApplyTurnStartHeal(int32 Seat)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	const ABGPlayerState* PS = GetPlayerStateBySeat(Seat);
+	if (!PS || PS->IsDead())
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* ASC =
+		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PS->GetPawn());
+	if (!ASC)
+	{
+		return;
+	}
+
+	const int32 HealAmount = FMath::RoundToInt(
+		ASC->GetNumericAttribute(UBGAttributeSet::GetTurnStartHealAttribute()));
+	if (HealAmount <= 0)
+	{
+		return;   // 기본값 0 — 치유사가 아니면 아무 일도 일어나지 않는다
+	}
+
+	//	이미 만피면 GE 를 굴리지 않는다. 적용해도 AttributeSet 이 클램프하지만,
+	//	로그가 "회복 1" 로 남아 실제로는 안 오른 체력을 올랐다고 읽게 된다.
+	if (ASC->GetNumericAttribute(UBGAttributeSet::GetHealthAttribute())
+		>= ASC->GetNumericAttribute(UBGAttributeSet::GetMaxHealthAttribute()))
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+	const FGameplayEffectSpecHandle Spec =
+		ASC->MakeOutgoingSpec(UGE_BGHeal::StaticClass(), 1.f, Context);
+	if (!Spec.IsValid())
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[턴회복] GE_BGHeal Spec 생성 실패 — 좌석 %d"), Seat);
+		return;
+	}
+
+	Spec.Data->SetSetByCallerMagnitude(BG::SetByCaller::Heal.GetTag(), static_cast<float>(HealAmount));
+	ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+
+	UE_LOG(LogBGCard, Log, TEXT("[턴회복] 좌석 %d 이 턴 시작 회복 %d"), Seat, HealAmount);
+}
+
+int32 ABGGameState::GrantEphemeralCards(ABGPlayerState* PS, FName CardId, int32 Count)
+{
+	if (!HasAuthority() || !PS || CardId.IsNone() || Count <= 0)
+	{
+		return 0;
+	}
+
+	//	DT 에 없는 카드를 만들면 손패에 "이름 없는 카드" 가 생겨 사용도 안 되고 지워지지도 않는다.
+	const UGameInstance* GI = GetGameInstance();
+	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	if (!Data || !Data->GetCardRow(CardId))
+	{
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[1회성] DT_BGCard 에 Row '%s' 가 없어 지급하지 않습니다 "
+			     "(Project Settings > BG Data > EphemeralAttackCardId 확인)."),
+			*CardId.ToString());
+		return 0;
+	}
+
+	//	손패 상한은 현재 체력이다 — 덱에서 뽑을 때와 같은 규칙을 쓴다.
+	int32 Granted = 0;
+	for (int32 i = 0; i < Count; ++i)
+	{
+		if (PS->GetHandCount() >= GetHandLimitForSeat(PS->GetSeatIndex()))
+		{
+			break;
+		}
+
+		FBGCardInstance Card;
+		Card.InstanceId = NextEphemeralInstanceId--;   // 음수. 덱과 겹치지 않는다
+		Card.CardId     = CardId;
+		Card.bEphemeral = true;
+
+		PS->AddCardToHand(Card);
+		++Granted;
+	}
+
+	if (Granted > 0)
+	{
+		UE_LOG(LogBGCard, Log, TEXT("[1회성] 좌석 %d 에 %s %d장 지급 (요청 %d)"),
+			PS->GetSeatIndex(), *CardId.ToString(), Granted, Count);
+	}
+	return Granted;
 }
 
 void ABGGameState::EnterDrawPhase()

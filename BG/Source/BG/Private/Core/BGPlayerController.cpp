@@ -9,6 +9,7 @@
 #include "Debug/BGDebug.h"
 #include "UI/View/BGCardViewLibrary.h"
 #include "Card/BGDataSubsystem.h"           // GetCardRow
+#include "Card/BGDataSettings.h"           // EphemeralAttackCardId
 #include "Card/BGGameDataTypes.h"           // FBGCardRow
 #include "Card/BGDiceComponent.h"           // 4단계 판정
 #include "GAS/BGAttributeSet.h"             // GetOutcomeWeightAttributes
@@ -1082,6 +1083,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	FGameplayTag EventTag;  // 페이로드/로그용 메커니즘 태그 (Ability.*)
 	const FBGCardRow* CardRow = nullptr;   // 판정 데이터 (OutcomeWeights / OutcomeMagnitudes)
 	FName CardCardId = NAME_None;            // DT Row 이름 (장비 중복 검사용)
+	bool bEphemeralCard = false;             // 1회성 카드(암살자) — 사용한도를 쓰지 않고 소비 시 사라진다
 	if (const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
 	{
 		const UGameInstance* GI = GetGameInstance();
@@ -1097,6 +1099,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 					EventTag   = Row->AbilityEventTag;
 					CardRow    = Row;        //	판정 비율·등급별 수치를 아래에서 읽는다
 					CardCardId = Card.CardId; //	장비 중복 검사용 Row 이름
+					bEphemeralCard = Card.bEphemeral;
 				}
 				break;
 			}
@@ -1403,8 +1406,10 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	//	사용 횟수를 발동 "전" 에 센다.
 	//	GA 안의 "카드 사용한도 회복" 효과가 이 카드의 소비를 되돌릴 수 있어야 하는데,
 	//	발동 후에 세면 회복이 아직 0 인 값에 작용해 아무 효과가 없어진다.
+	//	⚠️ 1회성 카드(암살자)는 사용 한도를 소모하지 않는다. 여기서 세지 않으므로
+	//	   아래 발동 실패 롤백과 대비·무투가 환급도 모두 건너뛴다 — 되돌릴 것이 없다.
 	ABGPlayerState* MyPS = GetPlayerState<ABGPlayerState>();
-	if (MyPS)
+	if (MyPS && !bEphemeralCard)
 	{
 		MyPS->IncrementCardsUsedThisTurn();
 	}
@@ -1417,8 +1422,8 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	// GA 매핑 오류나 ActivationBlockedTags(State.Dead 등)로 카드가 조용히 사라지면 추적이 어렵다.
 	if (!ActivatedHandle.IsValid())
 	{
-		//	발동 실패 — 미리 센 사용 횟수를 되돌린다.
-		if (MyPS)
+		//	발동 실패 — 미리 센 사용 횟수를 되돌린다(애초에 세지 않은 1회성 카드는 제외).
+		if (MyPS && !bEphemeralCard)
 		{
 			MyPS->DecrementCardsUsedThisTurn();
 		}
@@ -1441,9 +1446,12 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	//	("다음에 사용하는 카드" 를 이미 썼으므로).
 	//	이 카드의 사용 횟수를 이미 되돌렸는가. 대비와 무투가가 겹칠 수 있는데, 둘 다 환급하면
 	//	카드 한 장으로 사용한도를 두 번 돌려받는다.
-	bool bCardUseRefunded = false;
+	//	1회성 카드는 사용한도를 쓰지 않았으므로 환급 자체가 성립하지 않는다. 걸쇠를 미리 닫아
+	//	대비·무투가 양쪽을 건너뛴다 — 그냥 두면 이 턴에 낸 **다른** 카드의 사용횟수가 환급된다.
+	bool bCardUseRefunded = bEphemeralCard;
 
-	if (MyPS && bResolved && MyPS->HasPendingStatus(BG::Status::NextCard::KeepCardUse.GetTag()))
+	if (MyPS && !bCardUseRefunded && bResolved
+		&& MyPS->HasPendingStatus(BG::Status::NextCard::KeepCardUse.GetTag()))
 	{
 		int32 Unused = 0;
 		MyPS->ConsumePendingStatus(BG::Status::NextCard::KeepCardUse.GetTag(), Unused);
@@ -1456,6 +1464,34 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			bCardUseRefunded = true;
 			BGDebug::Screen(TEXT("[대비] 실패했지만 카드 사용한도를 잃지 않았습니다."),
 				FColor(120, 220, 160), /*Time=*/5.f);
+		}
+	}
+
+	//	── 암살자 (EphemeralCardOnCritical) ──
+	//	대성공을 낼 때마다 1회성 공격 카드를 받는다. 판정을 굴린 카드에만 해당한다 —
+	//	장비처럼 판정하지 않은 카드는 bResolved 가 false 다.
+	//
+	//	⚠️ 1회성 카드로 낸 대성공도 또 준다(연쇄). 손패 상한이 걸려 있어 무한히 쌓이지는 않지만,
+	//	   연쇄를 막고 싶으면 여기에 !bEphemeralCard 를 추가하면 된다.
+	if (MyPS && bResolved && ResolvedOutcome == EBGDiceOutcome::CriticalSuccess && ASC)
+	{
+		const int32 GrantCount = FMath::RoundToInt(
+			ASC->GetNumericAttribute(UBGAttributeSet::GetEphemeralCardOnCriticalAttribute()));
+
+		if (GrantCount > 0)
+		{
+			if (ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+			{
+				const FName GrantId = GetDefault<UBGDataSettings>()->EphemeralAttackCardId;
+				const int32 Granted = GS->GrantEphemeralCards(MyPS, GrantId, GrantCount);
+
+				if (Granted > 0)
+				{
+					BGDebug::Screen(
+						FString::Printf(TEXT("[암살자] 대성공 — 1회성 카드 %d장 획득"), Granted),
+						FColor(200, 170, 120), /*Time=*/5.f);
+				}
+			}
 		}
 	}
 
@@ -1590,6 +1626,17 @@ void ABGPlayerController::ConsumeCard(int32 InstanceId)
 		// 발동 직전에 손패에서 찾아 검증했으므로 여기 걸리면 다른 경로가 손패를 건드린 것이다.
 		UE_LOG(LogBGCard, Warning,
 			TEXT("[BG] ConsumeCard: Instance=%d 를 손패에서 찾지 못했습니다 (이미 제거됨?)."), InstanceId);
+		return;
+	}
+
+	//	1회성 카드(암살자)는 버린 패로 가지 않고 사라진다. 덱에서 나온 카드가 아니므로
+	//	버린 패에 넣으면 셔플을 거쳐 덱에 섞이고 **덱 총량이 판마다 늘어난다.**
+	if (Removed.bEphemeral)
+	{
+		BGDebug::Screen(
+			FString::Printf(TEXT("[서버] 1회성 카드 소멸  %s #%d  (남은 손패 %d 장)"),
+				*Removed.CardId.ToString(), Removed.InstanceId, PS->GetHandCount()),
+			FColor(200, 170, 120), /*Time=*/5.f);
 		return;
 	}
 

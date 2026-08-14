@@ -31,4 +31,13 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, Config, Category = "Data", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGStatusFXRow"))
 	TSoftObjectPtr<UDataTable> StatusFXTable;
+
+	/**
+	 * 암살자가 대성공 시 받는 1회성 카드의 종류 (DT_BGCard 의 Row 이름).
+	 *
+	 * 코드에 카드 이름을 박지 않으려고 설정으로 뺐다. 이 Row 가 DT 에 없으면 카드가 지급되지
+	 * 않고 경고만 남는다 — 규칙은 그대로 돌아간다.
+	 */
+	UPROPERTY(EditAnywhere, Config, Category = "Data")
+	FName EphemeralAttackCardId = FName(TEXT("Card.Id.Bang"));
 };

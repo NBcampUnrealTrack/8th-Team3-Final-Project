@@ -123,6 +123,19 @@ public:
 	 */
 	void NotifyHealthDepleted(AActor* Killer);
 
+	/**
+	 * 서버 전용. 피해를 받았음을 AttributeSet 이 알려온다 (죽었는지와 무관하게).
+	 *
+	 * 여기서 처리하는 것은 "맞았을 때 되받는" 직업 패시브 둘이다 —
+	 * 수도사(DamageReflect: 가해자에게 피해) / 도둑(DamageStealCount: 가해자에게서 카드).
+	 *
+	 * ⚠️ 반사가 다시 반사를 부르는 것을 막는다(수도사끼리 마주 보면 무한 루프).
+	 *    구현부의 재진입 걸쇠 참고.
+	 *
+	 * DamageAmount : 실제로 깎인 체력. 반사량은 이 값과 무관하게 어트리뷰트가 정한다.
+	 */
+	void NotifyDamaged(AActor* DamageInstigator, int32 DamageAmount);
+
 	UFUNCTION(BlueprintPure, Category = "BG")
 	bool IsDead() const { return bDead; }
 

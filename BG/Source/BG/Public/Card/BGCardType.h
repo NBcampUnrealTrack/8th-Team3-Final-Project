@@ -18,8 +18,21 @@ struct FBGCardInstance
 	int32 InstanceId = INDEX_NONE;
 	
 	// DT_BGCard Row 이름
-	UPROPERTY(BlueprintReadOnly) 
-	FName CardId;   
+	UPROPERTY(BlueprintReadOnly)
+	FName CardId;
+
+	/**
+	 * 1회성 카드인가 (암살자가 대성공으로 얻는 카드).
+	 *
+	 * 덱에서 나온 카드가 아니라 규칙이 만들어 준 카드다. 두 가지가 다르다:
+	 *   · 사용해도 **카드 사용 한도를 소모하지 않는다**
+	 *   · 사용하면 버린 패로 가지 않고 **사라진다** (덱 총량이 늘지 않는다)
+	 *
+	 * ⚠️ InstanceId 가 **음수**다. 덱에서 나온 카드는 1부터 올라가므로 겹치지 않는다.
+	 *    InstanceId 로 카드를 찾는 코드가 부호를 가정하지 않도록 주의할 것.
+	 */
+	UPROPERTY(BlueprintReadOnly)
+	bool bEphemeral = false;
 
 	bool IsValid() const { return InstanceId != INDEX_NONE; }
 };
