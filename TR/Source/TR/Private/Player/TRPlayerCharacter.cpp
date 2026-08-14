@@ -350,10 +350,22 @@ void ATRPlayerCharacter::ServerUpgradeArmor_Implementation()
 		return;
 	}
 
-	if (ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>())
+	ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
+	if (!IsValid(GameState))
 	{
-		GameState->UpgradeArmorLevel();
+		return;
 	}
+
+	if (!GameState->TryUpgradeArmorLevel())
+	{
+		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeArmor rejected: level %d/%d, cost %d, resource %d"),
+			GameState->GetArmorLevel(), ATRGameState::MaxArmorLevel,
+			GameState->GetArmorUpgradeCost(), GameState->GetMonsterResource());
+		return;
+	}
+
+	UE_LOG(LogTRGameplay, Verbose, TEXT("UpgradeArmor: level %d (resource left %d)"),
+		GameState->GetArmorLevel(), GameState->GetMonsterResource());
 }
 
 void ATRPlayerCharacter::ServerUpgradeTurret_Implementation()
@@ -364,10 +376,22 @@ void ATRPlayerCharacter::ServerUpgradeTurret_Implementation()
 		return;
 	}
 
-	if (ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>())
+	ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
+	if (!IsValid(GameState))
 	{
-		GameState->UpgradeTurretLevel();
+		return;
 	}
+
+	if (!GameState->TryUpgradeTurretLevel())
+	{
+		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeTurret rejected: level %d/%d, cost %d, resource %d"),
+			GameState->GetTurretLevel(), ATRGameState::MaxTurretLevel,
+			GameState->GetTurretUpgradeCost(), GameState->GetMonsterResource());
+		return;
+	}
+
+	UE_LOG(LogTRGameplay, Verbose, TEXT("UpgradeTurret: level %d (resource left %d)"),
+		GameState->GetTurretLevel(), GameState->GetMonsterResource());
 }
 
 // 상호작용 RPC 함수, E키 - 포탑 탑승/하차 vs 물자실 자원 획득
