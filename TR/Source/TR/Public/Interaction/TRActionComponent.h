@@ -51,6 +51,9 @@ private:
 
 	bool ValidateActionTarget(ETRActionType ActionType, AActor* Target) const;
 
+	// 진행 상태를 바꾸는 유일한 통로. GameState 의 재설치 표식도 여기서만 갱신해 둘이 어긋나지 않게 한다.
+	void SetCurrentAction(ETRActionType NewType, AActor* NewTarget);
+
 	bool RequiresMonsterResource(ETRActionType ActionType) const { return ActionType == ETRActionType::Build; }
 	
 	UPROPERTY(Replicated)

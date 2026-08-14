@@ -28,6 +28,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 public:	
 	virtual void Tick(float DeltaTime) override;
@@ -110,8 +111,13 @@ protected:
 	
 	void OnInteractPressed(const FInputActionValue& Input);
 
-	// 지금 조준 중인 관제석. 트레이스는 서버에서도 돌기 때문에 UI 요청 검증에도 쓸 수 있다.
+	// 지금 조준 중인 관제석. 조준은 순간값이라 점유를 시작할 때만 본다.
 	ATRControlConsole* GetLookedAtControlConsole() const;
+
+	// 점유 중인 관제석. 조준과 달리 계속 유지되는 상태라 따로 들고 있는다.
+	// 서버가 정하고 복제되므로 소유 클라이언트도 같은 답을 본다.
+	UPROPERTY(Replicated)
+	TObjectPtr<ATRControlConsole> OccupiedConsole;
 
 	// 팝업은 서버가 정한 점유 상태를 따라 열리고 닫힌다.
 	void SyncControlConsoleWidget();

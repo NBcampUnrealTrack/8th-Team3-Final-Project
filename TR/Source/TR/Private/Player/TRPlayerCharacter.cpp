@@ -14,6 +14,7 @@
 #include "Interaction/TRInteractionComponent.h"
 #include "Interaction/TRTurretControlComponent.h"
 #include "Core/TRGameState.h"
+#include "Net/UnrealNetwork.h"
 #include "UI/TRPlayerHUD.h"
 #include "Train/TRControlConsole.h"
 #include "Train/TRInstallablePart.h"
@@ -60,7 +61,13 @@ void ATRPlayerCharacter::BeginPlay()
 		GetWorld()->GetTimerManager().SetTimer(MoveUpdateTimerHandle, this, &ATRPlayerCharacter::UpdateMoveEffect, 0.2f, true);
 		UpdateMoveEffect();
 	}
-	
+
+}
+
+void ATRPlayerCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME(ATRPlayerCharacter, OccupiedConsole);
 }
 
 // Look input을 보간해 엔진의 Pitch/Yaw scale 및 제한 경로로 전달.
@@ -308,18 +315,21 @@ void ATRPlayerCharacter::SyncControlConsoleWidget()
 
 void ATRPlayerCharacter::ServerRequestControlConsole_Implementation()
 {
-	if (ATRControlConsole* Console = GetLookedAtControlConsole())
+	// 조준 검사는 점유를 시작할 때 한 번만. 이후로는 저장된 상태를 본다.
+	ATRControlConsole* Console = GetLookedAtControlConsole();
+	if (IsValid(Console) && Console->TryOccupy(this))
 	{
-		Console->TryOccupy(this);
+		OccupiedConsole = Console;
 	}
 }
 
 void ATRPlayerCharacter::ServerReleaseControlConsole_Implementation()
 {
-	if (ATRControlConsole* Console = GetLookedAtControlConsole())
+	if (IsValid(OccupiedConsole))
 	{
-		Console->Release(this);
+		OccupiedConsole->Release(this);
 	}
+	OccupiedConsole = nullptr;
 }
 
 ATRControlConsole* ATRPlayerCharacter::GetLookedAtControlConsole() const
@@ -327,11 +337,9 @@ ATRControlConsole* ATRPlayerCharacter::GetLookedAtControlConsole() const
 	return IsValid(InteractionComp) ? Cast<ATRControlConsole>(InteractionComp->GetCurrentTarget()) : nullptr;
 }
 
-// 클라이언트가 아무 때나 부를 수 있으므로 관제석을 점유 중인지 서버에서 다시 확인한다.
 bool ATRPlayerCharacter::IsOccupyingControlConsole() const
 {
-	const ATRControlConsole* Console = GetLookedAtControlConsole();
-	return IsValid(Console) && Console->IsOccupiedBy(this);
+	return IsValid(OccupiedConsole);
 }
 
 void ATRPlayerCharacter::ServerUpgradeArmor_Implementation()

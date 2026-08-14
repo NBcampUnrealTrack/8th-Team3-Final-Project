@@ -4,7 +4,6 @@
 #include "Interaction/TRActionComponent.h"
 
 #include "Debug/TRGameplayLog.h"
-#include "EngineUtils.h"
 #include "Interaction/TRInteractionComponent.h"
 #include "Core/TRGameState.h"
 #include "Core/TRPlayerState.h"
@@ -45,21 +44,31 @@ bool UTRActionComponent::ServerStartAction_Validate(ETRActionType ActionType, AA
 
 UTRActionComponent* UTRActionComponent::FindBuildingComponent(UWorld* World)
 {
-	if (!IsValid(World))
+	// GameState가 진행 중인 재설치를 들고 있어 순회 없이 바로 답한다.
+	const ATRGameState* GameState = IsValid(World) ? World->GetGameState<ATRGameState>() : nullptr;
+	return IsValid(GameState) ? GameState->GetBuildingComponent() : nullptr;
+}
+
+void UTRActionComponent::SetCurrentAction(ETRActionType NewType, AActor* NewTarget)
+{
+	CurrentActionType = NewType;
+	CurrentTarget = NewTarget;
+
+	ATRGameState* GameState = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
+	if (!IsValid(GameState))
 	{
-		return nullptr;
+		return;
 	}
 
-	for (TActorIterator<ATRPlayerCharacter> It(World); It; ++It)
+	// 재설치 표식은 이 함수에서만 세우고 내린다. 내가 세운 것만 내린다.
+	if (NewType == ETRActionType::Build)
 	{
-		UTRActionComponent* ActionComp = It->GetActionComponent();
-		if (IsValid(ActionComp) && ActionComp->GetCurrentActionType() == ETRActionType::Build)
-		{
-			return ActionComp;
-		}
+		GameState->SetBuildingComponent(this);
 	}
-
-	return nullptr;
+	else if (GameState->GetBuildingComponent() == this)
+	{
+		GameState->SetBuildingComponent(nullptr);
+	}
 }
 
 void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionType, AActor* Target)
@@ -127,8 +136,7 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 		}
 	}
 	
-	CurrentActionType = ActionType;
-	CurrentTarget = Target;
+	SetCurrentAction(ActionType, Target);
 	ActionStartServerTime = World->GetTimeSeconds();
 
 	World->GetTimerManager().SetTimer(
@@ -152,8 +160,7 @@ void UTRActionComponent::ServerCancelAction_Implementation()
 	{
 		World->GetTimerManager().ClearTimer(ActionTimerHandle);
 	}
-	CurrentActionType = ETRActionType::None;
-	CurrentTarget = nullptr;
+	SetCurrentAction(ETRActionType::None, nullptr);
 }
 
 void UTRActionComponent::CompleteAction()
@@ -254,8 +261,7 @@ void UTRActionComponent::CompleteAction()
 		}
 	}
 
-	CurrentActionType = ETRActionType::None;
-	CurrentTarget = nullptr;
+	SetCurrentAction(ETRActionType::None, nullptr);
 }
 
 float UTRActionComponent::GetActionProgress01() const
