@@ -8,6 +8,7 @@
 
 class UBoxComponent;
 class UDataTable;
+class USceneComponent;
 struct FTRArmorLevelRow;
 
 UCLASS()
@@ -24,9 +25,20 @@ public:
 private:
 	const FTRArmorLevelRow* GetCurrentLevelRow(const TCHAR* ContextName) const;
 
+	// 형태 없는 기준점. CollisionBox 와 DamageVolume 은 크기·위치가 전혀 다르므로
+	// 한쪽이 다른 쪽에 딸려 움직이지 않도록 둘 다 이 루트에 형제로 붙인다.
+	UPROPERTY(VisibleAnywhere, Category = "Part")
+	TObjectPtr<USceneComponent> Root;
+
+	// 창문 장갑 — 실내 상호작용용
 	UPROPERTY(VisibleAnywhere, Category = "Part")
 	TObjectPtr<UBoxComponent> CollisionBox;
 
+	// 외부 피격 판정 영역. 이 장갑이 지키는 구역을 덮도록 레벨에서 크기·위치를 잡는다.
+	// 눈에 보이지 않으며 상호작용 트레이스에도 걸리지 않는다.
+	UPROPERTY(VisibleAnywhere, Category = "Part")
+	TObjectPtr<UBoxComponent> DamageVolume;
+	
 	UPROPERTY(EditDefaultsOnly, Category = "Part")
 	TObjectPtr<UDataTable> LevelTable;   // FTRArmorLevelRow, RowName = 레벨
 };

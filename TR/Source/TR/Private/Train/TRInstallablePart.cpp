@@ -2,12 +2,45 @@
 
 
 #include "Train/TRInstallablePart.h"
+
+#include "Debug/TRGameplayLog.h"
 #include "Net/UnrealNetwork.h"
 
 ATRInstallablePart::ATRInstallablePart()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
+}
+
+// 서버 전용. 클라에서는 Super 를 타지 않으므로 OnTakeAnyDamage / BP ReceiveAnyDamage 도 호출되지 않는다.
+float ATRInstallablePart::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
+{
+	if (!HasAuthority() || IsPartDestroyed())
+	{
+		return 0.f;
+	}
+
+	const float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+	if (ActualDamage <= 0.f)
+	{
+		return 0.f;
+	}
+	
+	const float PrevHP = CurrentHP;
+	CurrentHP = FMath::Max(0.f, CurrentHP - ActualDamage);
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Damaged: %s HP %.0f -> %.0f"), *GetName(), PrevHP, CurrentHP);
+
+	if (IsPartDestroyed())
+	{
+		OnPartDestroyed();
+	}
+	
+	return PrevHP - CurrentHP;
+}
+
+void ATRInstallablePart::OnPartDestroyed()
+{
+	UE_LOG(LogTRGameplay, Log, TEXT("Destroyed: %s"), *GetName());
 }
 
 void ATRInstallablePart::BeginPlay()

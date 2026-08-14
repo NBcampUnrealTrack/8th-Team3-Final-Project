@@ -2,6 +2,7 @@
 
 
 #include "Core/TRGameState.h"
+#include "Interaction/TRActionComponent.h"
 #include "Net/UnrealNetwork.h"
 
 void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -10,16 +11,24 @@ void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ATRGameState, MonsterResource);
 	DOREPLIFETIME(ATRGameState, ArmorLevel);
 	DOREPLIFETIME(ATRGameState, TurretLevel);
+	DOREPLIFETIME(ATRGameState, BuildingComponent);
 }
 
-void ATRGameState::ConsumeMonsterResource(int32 Amount)
+UTRActionComponent* ATRGameState::GetBuildingComponent() const
+{
+	// 짓던 플레이어가 나가면 컴포넌트가 사라지므로 여기서 걸러 준다.
+	UTRActionComponent* Component = BuildingComponent.Get();
+	return IsValid(Component) ? Component : nullptr;
+}
+
+void ATRGameState::SetBuildingComponent(UTRActionComponent* InComponent)
 {
 	if (!HasAuthority())
 	{
 		return;
 	}
-	
-	MonsterResource = FMath::Max(0, MonsterResource - Amount);
+
+	BuildingComponent = InComponent;
 }
 
 bool ATRGameState::TryConsumeMonsterResource(int32 Amount)
