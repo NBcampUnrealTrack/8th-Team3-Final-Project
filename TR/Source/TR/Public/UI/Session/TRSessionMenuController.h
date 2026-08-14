@@ -53,6 +53,9 @@ protected:
 	FKey DebugToggleKey = EKeys::F9;
 
 private:
+	// 트래블 직전에 위젯을 정상적으로 닫아 입력 모드와 커서를 되돌린다.
+	void HandlePreLoadMap(const FString& MapName);
+
 	// 트래블로 위젯이 사라지면 여기서 되살린다. 게임 레벨에서는 되살리지 않는다.
 	void HandlePostLoadMap(UWorld* LoadedWorld);
 
@@ -63,5 +66,6 @@ private:
 	bool bWasOpen = false;
 
 	FDelegateHandle PostLoadMapHandle;
+	FDelegateHandle PreLoadMapHandle;
 	FTimerHandle RestoreTimer;
 };
