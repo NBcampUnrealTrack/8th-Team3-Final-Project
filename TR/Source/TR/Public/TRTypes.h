@@ -26,16 +26,13 @@ struct FTRActionDef
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere)
-	float CycleDuration = 5.f;   // 1사이클 소요
+	float CycleDuration = 5.f;  // 1사이클 소요
 	
 	UPROPERTY(EditAnywhere)
-	int32 ResourceAmount = 1;        // 사이클당 필요한 자원
+	int32 ResourceAmount = 1;   // 사이클당 필요한 자원
 	
 	UPROPERTY(EditAnywhere)
-	bool bRepeating = true;      // 완료까지 반복?
-	
-	UPROPERTY(EditAnywhere)
-	FText Prompt;
+	FText Prompt;				// 미사용
 };
 #pragma endregion
 
@@ -110,16 +107,13 @@ struct FTRTurretLevelRow : public FTableRowBase
 	int32 InstallCost = 0;   // 재설치 비용
 
 	UPROPERTY(EditAnywhere)
-	int32 UpgradeCost = 0;   // 이 레벨에서 '다음' 레벨로 올리는 비용. 최대 레벨 행은 0.
+	int32 UpgradeCost = 0;   // 이 레벨에서 다음 레벨로 올리는 비용. 최대 레벨 행은 0.
 
 	UPROPERTY(EditAnywhere)
 	float ManualRange = 0.f;
 
 	UPROPERTY(EditAnywhere)
 	float ManualDamage = 0.f;
-
-	UPROPERTY(EditAnywhere)
-	int32 ManualAmmoPerResource = 0;   // 물자실 자원 1개당 발수
 
 	UPROPERTY(EditAnywhere)
 	float ManualFireRate = 0.f;
