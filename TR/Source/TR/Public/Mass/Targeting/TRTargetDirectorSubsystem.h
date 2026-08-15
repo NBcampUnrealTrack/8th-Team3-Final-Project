@@ -8,6 +8,25 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "TRTargetDirectorSubsystem.generated.h"
 
+/** 목표를 이루는 구역 하나. 기차의 장갑 한 칸에 해당한다. */
+USTRUCT()
+struct FTRTargetZoneState
+{
+	GENERATED_BODY()
+
+	/** 구역의 형상을 정하는 프리미티브. TRMassTargetVolume 태그가 붙은 것. */
+	UPROPERTY()
+	TWeakObjectPtr<UPrimitiveComponent> Volume;
+
+	/** 구역이 속한 액터. 파괴 여부 판정에 쓴다. */
+	UPROPERTY()
+	TWeakObjectPtr<AActor> Owner;
+
+	/** 이 구역을 몇 번째로 노릴지. */
+	UPROPERTY()
+	ETRTargetZoneTier Tier = ETRTargetZoneTier::Armor;
+};
+
 /** 채널 하나의 현재 목표 상태. */
 USTRUCT()
 struct FTRTargetChannelState
@@ -40,11 +59,18 @@ struct FTRTargetChannelState
 
 	UPROPERTY()
 	bool bHasBounds = false;
+
+	/** 목표를 나눈 구역들. 비어 있으면 LocalBounds 하나를 통째로 쓴다. */
+	UPROPERTY()
+	TArray<FTRTargetZoneState> Zones;
 };
 
 /** 프로세서가 한 프레임에 한 번 받아가는 목표 해석 결과. */
 struct FTRResolvedTarget
 {
+	/** 스냅샷이 담을 수 있는 구역 수. 기차는 장갑 4 + 포탑 5를 쓴다. */
+	static constexpr int32 MaxZones = 16;
+
 	/** 목표 중심(액터 위치 또는 고정 위치). */
 	FVector Center = FVector::ZeroVector;
 
@@ -57,14 +83,26 @@ struct FTRResolvedTarget
 
 	bool bValid = false;
 
-	/**
-	 * 표면 최근접점을 구한다. 바운드가 없으면 중심을 그대로 돌려준다.
-	 *
-	 * 박스에 대한 클램프 한 번이라 개체당 비용이 거의 없다. 정밀한 콜리전 질의는
-	 * 개체 수가 수백이 되면 감당할 수 없고, 접근 목표로는 박스면 충분하다.
-	 */
+	/** 구역별 월드 공간 바운드. 앞에서부터 ZoneCount 개만 유효하다. */
+	FBox ZoneBounds[MaxZones];
+
+	/** 구역이 아직 표적이 될 수 있는지. 번호를 유지하려고 죽은 구역도 자리를 지킨다. */
+	bool ZoneAlive[MaxZones] = {};
+
+	/** 구역별 등급. 낮은 등급이 하나라도 살아 있으면 높은 등급은 고르지 않는다. */
+	ETRTargetZoneTier ZoneTier[MaxZones] = {};
+
+	/** 등록된 구역 수. 0이면 LocalBounds 하나를 쓴다. */
+	int32 ZoneCount = 0;
+
+	/** 표면 최근접점. 구역이 있으면 가장 가까운 구역에서, 없으면 전체 바운드에서 구한다. */
 	FVector GetClosestSurfacePoint(const FVector& From) const
 	{
+		if (ZoneCount > 0)
+		{
+			return GetZoneSurfacePoint(FindNearestZone(From), From);
+		}
+
 		if (!bHasBounds)
 		{
 			return Center;
@@ -74,6 +112,65 @@ struct FTRResolvedTarget
 		const FVector LocalClosest = LocalBounds.GetClosestPointTo(LocalFrom);
 
 		return Transform.TransformPosition(LocalClosest);
+	}
+
+	/** 살아 있는 구역인지. */
+	bool IsZoneAlive(int32 ZoneIndex) const
+	{
+		return ZoneIndex >= 0 && ZoneIndex < ZoneCount && ZoneAlive[ZoneIndex];
+	}
+
+	/**
+	 * 노려야 할 구역의 번호. 없으면 INDEX_NONE.
+	 * 등급이 낮은 쪽(포탑 → 장갑)을 먼저 비우고, 같은 등급 안에서 가장 가까운 것을 고른다.
+	 */
+	int32 FindNearestZone(const FVector& From) const
+	{
+		for (uint8 Tier = 0; Tier < static_cast<uint8>(ETRTargetZoneTier::MAX); ++Tier)
+		{
+			const int32 Nearest = FindNearestZoneInTier(From, static_cast<ETRTargetZoneTier>(Tier));
+			if (Nearest != INDEX_NONE)
+			{
+				return Nearest;
+			}
+		}
+
+		return INDEX_NONE;
+	}
+
+	/** 지정한 등급 안에서 살아 있는 가장 가까운 구역. 없으면 INDEX_NONE. */
+	int32 FindNearestZoneInTier(const FVector& From, ETRTargetZoneTier Tier) const
+	{
+		int32 Nearest = INDEX_NONE;
+		double NearestDistanceSq = 0.0;
+
+		for (int32 Index = 0; Index < ZoneCount; ++Index)
+		{
+			if (!ZoneAlive[Index] || ZoneTier[Index] != Tier)
+			{
+				continue;
+			}
+
+			const double DistanceSq = FVector::DistSquared(ZoneBounds[Index].GetClosestPointTo(From), From);
+			if (Nearest == INDEX_NONE || DistanceSq < NearestDistanceSq)
+			{
+				Nearest = Index;
+				NearestDistanceSq = DistanceSq;
+			}
+		}
+
+		return Nearest;
+	}
+
+	/** 지정한 구역의 표면 최근접점. 죽었거나 번호가 범위를 벗어나면 중심을 돌려준다. */
+	FVector GetZoneSurfacePoint(int32 ZoneIndex, const FVector& From) const
+	{
+		if (!IsZoneAlive(ZoneIndex))
+		{
+			return Center;
+		}
+
+		return ZoneBounds[ZoneIndex].GetClosestPointTo(From);
 	}
 };
 
@@ -134,6 +231,15 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "TR|Mass")
 	void RefreshTargetBounds(ETRTargetChannel Channel);
+
+	/** 추적 구역을 직접 등록한다. 목표 액터에 붙어 있지 않은 장갑·포탑이 스스로 부를 때 쓴다. */
+	UFUNCTION(BlueprintCallable, Category = "TR|Mass")
+	void RegisterTargetZone(ETRTargetChannel Channel, UPrimitiveComponent* Volume,
+		ETRTargetZoneTier Tier = ETRTargetZoneTier::Armor);
+
+	/** 구역을 표적에서 뺀다. 장갑이 파괴됐을 때 부른다. */
+	UFUNCTION(BlueprintCallable, Category = "TR|Mass")
+	void UnregisterTargetZone(ETRTargetChannel Channel, UPrimitiveComponent* Volume);
 
 	// UTickableWorldSubsystem — 매 틱 스냅샷을 갱신한다.
 

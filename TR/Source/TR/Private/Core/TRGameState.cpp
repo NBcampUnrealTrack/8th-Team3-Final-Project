@@ -2,8 +2,11 @@
 
 
 #include "Core/TRGameState.h"
+#include "Engine/DataTable.h"
 #include "Interaction/TRActionComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "TRTypes.h"
+#include "Core/TRPlayerState.h"
 
 void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -12,6 +15,7 @@ void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ATRGameState, ArmorLevel);
 	DOREPLIFETIME(ATRGameState, TurretLevel);
 	DOREPLIFETIME(ATRGameState, BuildingComponent);
+	DOREPLIFETIME(ATRGameState, bMatchStarted);
 }
 
 UTRActionComponent* ATRGameState::GetBuildingComponent() const
@@ -46,32 +50,158 @@ bool ATRGameState::TryConsumeMonsterResource(int32 Amount)
 	return true;
 }
 
-bool ATRGameState::UpgradeArmorLevel()
+void ATRGameState::AddMonsterResource(int32 Amount)
+{
+	if (!HasAuthority() || Amount <= 0)
+	{
+		return;
+	}
+	MonsterResource += Amount;
+}
+
+const FTRArmorLevelRow* ATRGameState::GetArmorLevelRow(const TCHAR* ContextName) const
+{
+	if (!ensureMsgf(ArmorLevelTable, TEXT("%s: ArmorLevelTable not assigned"), *GetName()))
+	{
+		return nullptr;
+	}
+
+	const FTRArmorLevelRow* Row = ArmorLevelTable->FindRow<FTRArmorLevelRow>(FName(*FString::FromInt(ArmorLevel)), ContextName);
+	ensureMsgf(Row, TEXT("%s: armor level row %d not found in ArmorLevelTable"), *GetName(), ArmorLevel);
+	return Row;
+}
+
+const FTRTurretLevelRow* ATRGameState::GetTurretLevelRow(const TCHAR* ContextName) const
+{
+	if (!ensureMsgf(TurretLevelTable, TEXT("%s: TurretLevelTable not assigned"), *GetName()))
+	{
+		return nullptr;
+	}
+
+	const FTRTurretLevelRow* Row = TurretLevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(TurretLevel)), ContextName);
+	ensureMsgf(Row, TEXT("%s: turret level row %d not found in TurretLevelTable"), *GetName(), TurretLevel);
+	return Row;
+}
+
+int32 ATRGameState::GetArmorUpgradeCost() const
+{
+	// 최대 레벨이면 다음 레벨이 없다. 행 조회 자체를 하지 않는다.
+	if (ArmorLevel >= MaxArmorLevel)
+	{
+		return INDEX_NONE;
+	}
+
+	const FTRArmorLevelRow* Row = GetArmorLevelRow(ANSI_TO_TCHAR(__FUNCTION__));
+	return Row ? Row->UpgradeCost : INDEX_NONE;
+}
+
+int32 ATRGameState::GetTurretUpgradeCost() const
+{
+	if (TurretLevel >= MaxTurretLevel)
+	{
+		return INDEX_NONE;
+	}
+
+	const FTRTurretLevelRow* Row = GetTurretLevelRow(ANSI_TO_TCHAR(__FUNCTION__));
+	return Row ? Row->UpgradeCost : INDEX_NONE;
+}
+
+bool ATRGameState::TryUpgradeArmorLevel()
 {
 	if (!HasAuthority())
 	{
 		return false;
 	}
-	
-	if (ArmorLevel >= MaxArmorLevel)
+
+	// 최대 레벨이면 INDEX_NONE 이 나오므로 레벨 검사가 여기에 함께 걸린다.
+	const int32 Cost = GetArmorUpgradeCost();
+	if (Cost < 0)
 	{
 		return false;
 	}
+
+	// 올리기 전 최대 HP. 파츠가 현재 HP 비율을 유지하는 데 쓴다.
+	const FTRArmorLevelRow* PrevRow = GetArmorLevelRow(ANSI_TO_TCHAR(__FUNCTION__));
+	const float PrevMaxHP = PrevRow ? PrevRow->MaxHP : 0.f;
+
+	if (!TryConsumeMonsterResource(Cost))
+	{
+		return false;
+	}
+
 	++ArmorLevel;
+	OnArmorLevelUpgraded.Broadcast(PrevMaxHP);
 	return true;
 }
 
-bool ATRGameState::UpgradeTurretLevel()
+bool ATRGameState::TryUpgradeTurretLevel()
 {
 	if (!HasAuthority())
 	{
 		return false;
 	}
-	
-	if (TurretLevel >= MaxTurretLevel)
+
+	const int32 Cost = GetTurretUpgradeCost();
+	if (Cost < 0)
 	{
 		return false;
 	}
+
+	const FTRTurretLevelRow* PrevRow = GetTurretLevelRow(ANSI_TO_TCHAR(__FUNCTION__));
+	const float PrevMaxHP = PrevRow ? PrevRow->MaxHP : 0.f;
+
+	if (!TryConsumeMonsterResource(Cost))
+	{
+		return false;
+	}
+
 	++TurretLevel;
+	OnTurretLevelUpgraded.Broadcast(PrevMaxHP);
 	return true;
+}
+
+int32 ATRGameState::GetReadyPlayerCount() const
+{
+	int32 Count = 0;
+	for (const APlayerState* State : PlayerArray)
+	{
+		const ATRPlayerState* TRState = Cast<ATRPlayerState>(State);
+		if (TRState != nullptr && !TRState->IsHost() && TRState->IsReady())
+		{
+			++Count;
+		}
+	}
+
+	return Count;
+}
+
+int32 ATRGameState::GetRequiredReadyCount() const
+{
+	int32 Count = 0;
+	for (const APlayerState* State : PlayerArray)
+	{
+		const ATRPlayerState* TRState = Cast<ATRPlayerState>(State);
+		if (TRState != nullptr && !TRState->IsHost())
+		{
+			++Count;
+		}
+	}
+
+	return Count;
+}
+
+bool ATRGameState::CanStartMatch() const
+{
+	// 혼자면 필요 인원이 0 이라 곧바로 시작할 수 있다.
+	return !bMatchStarted && GetReadyPlayerCount() >= GetRequiredReadyCount();
+}
+
+void ATRGameState::SetMatchStarted(bool bInStarted)
+{
+	if (!ensureMsgf(HasAuthority(), TEXT("판 시작 상태는 서버에서만 바꿀 수 있습니다.")))
+	{
+		return;
+	}
+
+	bMatchStarted = bInStarted;
 }

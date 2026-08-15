@@ -8,7 +8,6 @@
 
 class UStaticMeshComponent;
 class USceneComponent;
-class UDataTable;
 class APawn;
 struct FTRTurretLevelRow;
 
@@ -50,6 +49,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Turret")
 	bool IsWithinFireArc(float CameraYaw, float CameraPitch) const;
 
+	// 사각의 중심(설치 시 메시가 향한 방향)과 반각.
+	// 탑승 카메라 클램프가 이 값들로 시야를 묶어, 서버 검사와 같은 범위를 쓴다.
+	UFUNCTION(BlueprintPure, Category = "Turret")
+	float GetInstallYaw() const { return InstallYaw; }
+
+	UFUNCTION(BlueprintPure, Category = "Turret")
+	float GetInstallPitch() const { return InstallPitch; }
+
+	UFUNCTION(BlueprintPure, Category = "Turret")
+	float GetFireArcHalfAngle() const { return FireArcHalfAngle; }
+
 	UFUNCTION(BlueprintPure, Category = "Turret")
 	bool CanBeReloaded() const { return !IsPartDestroyed() && GetCurrentAmmo() < GetMaxAmmo(); }
 
@@ -63,7 +73,9 @@ public:
 	
 protected:
 	virtual void BeginPlay() override;
-	
+
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	virtual void OnPartDestroyed() override;
 	
 	UPROPERTY(Replicated)
@@ -72,6 +84,7 @@ protected:
 private:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	// 레벨별 수치는 ATRGameState 가 테이블을 들고 답한다 — 값이 모든 포탑에 공통이라서다.
 	const FTRTurretLevelRow* GetCurrentLevelRow(const TCHAR* ContextName) const;
 
 	UPROPERTY(VisibleAnywhere, Category = "Turret")
@@ -85,9 +98,6 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Turret")
 	TObjectPtr<UStaticMeshComponent> ConsoleMesh;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Turret")
-	TObjectPtr<UDataTable> LevelTable;   // FTRTurretLevelRow, RowName = 레벨
-	
 	UPROPERTY(Replicated)
 	int32 CurrentAmmo = 0;
 

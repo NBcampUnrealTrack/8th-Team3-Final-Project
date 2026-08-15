@@ -187,6 +187,9 @@ namespace UE::TR::Enemy
 	 */
 	inline constexpr float LeaveDistanceMargin = 50.f;
 
+	/** 사격 착탄의 판정 반경(cm). 폭발이 아니므로 맞은 자리만 친다. */
+	inline constexpr float ShotImpactRadius = 50.f;
+
 	/** 스폰 직후의 접근 수치. 종류가 정지 거리를 정한다. */
 	inline FTRApproachFragment MakeApproach(const FTREnemyCombatParams& Params)
 	{
@@ -200,6 +203,9 @@ namespace UE::TR::Enemy
 		}
 
 		Approach.LeaveDistance = Approach.StopDistance + LeaveDistanceMargin;
+
+		// 사격형만 표적을 고정한다(기획서). 나머지는 매 틱 가장 가까운 구역으로 붙는다.
+		Approach.bLockTargetZone = (Params.EnemyType == ETREnemyType::Shooter);
 
 		// 0이면 Mass Movement의 Max Speed를 그대로 쓴다. 종류별 이동 속도는 그쪽에서
 		// 주는 것이 엔진 회피·이동과 일관되므로, 대부분의 적은 여기가 0이다.
@@ -239,6 +245,7 @@ namespace UE::TR::Enemy
 		Approach.StopDistance = Params.ContactRadius;
 		Approach.LeaveDistance = Params.ContactRadius + LeaveDistanceMargin;
 		Approach.MaxSpeed = Params.LaunchSpeed;
+		Approach.bLockTargetZone = false;
 
 		Combat.MaxHealth = Params.LaunchedHealth;
 		Combat.Health = FMath::Min(Combat.Health, Params.LaunchedHealth);

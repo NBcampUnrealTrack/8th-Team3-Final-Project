@@ -5,6 +5,8 @@
 #include "Components/PrimitiveComponent.h"
 #include "GameFramework/Actor.h"
 #include "HAL/IConsoleManager.h"
+#include "Mass/Debug/TRMassDebug.h"
+#include "Train/TRInstallablePart.h"
 
 namespace
 {
@@ -61,6 +63,15 @@ namespace
 
 		return OutLocalBounds.IsValid != 0;
 	}
+
+	/** 파괴된 장갑·포탑인지. 액터는 남아 있어도 표적에서 빠져야 한다. */
+	bool IsZoneOwnerDestroyed(const FTRTargetZoneState& Zone)
+	{
+		const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Zone.Owner.Get());
+
+		return Part != nullptr && Part->IsPartDestroyed();
+	}
+
 }
 
 void UTRTargetDirectorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -103,6 +114,23 @@ void UTRTargetDirectorSubsystem::RefreshSnapshot()
 			Resolved.Transform = TargetActor->GetActorTransform();
 			Resolved.bHasBounds = State.bHasBounds;
 			Resolved.bValid = true;
+
+			// 죽은 구역도 자리를 지킨다. 사격형이 번호로 표적을 고정하기 때문이다.
+			for (const FTRTargetZoneState& Zone : State.Zones)
+			{
+				if (Resolved.ZoneCount >= FTRResolvedTarget::MaxZones)
+				{
+					break;
+				}
+
+				const UPrimitiveComponent* Volume = Zone.Volume.Get();
+				const bool bAlive = (Volume != nullptr) && Zone.Owner.IsValid() && !IsZoneOwnerDestroyed(Zone);
+
+				Resolved.ZoneBounds[Resolved.ZoneCount] = bAlive ? Volume->Bounds.GetBox() : FBox(ForceInit);
+				Resolved.ZoneAlive[Resolved.ZoneCount] = bAlive;
+				Resolved.ZoneTier[Resolved.ZoneCount] = Zone.Tier;
+				++Resolved.ZoneCount;
+			}
 
 			if (State.bHasBounds)
 			{
@@ -151,9 +179,15 @@ void UTRTargetDirectorSubsystem::SetTargetActor(ETRTargetChannel Channel, AActor
 	// 형상은 등록 시 한 번만 잰다. 기차는 매 프레임 움직이지만 로컬 바운드는 그대로다.
 	State.bHasBounds = false;
 
+	State.Zones.Reset();
+
 	if (NewTarget != nullptr)
 	{
 		State.bHasBounds = MeasureLocalBounds(*NewTarget, State.LocalBounds);
+
+		// 구역은 UTRMassTargetZoneComponent 등록이 유일한 출처다.
+		UE_LOG(LogTRMass, Log, TEXT("채널[%d] 목표 '%s' 등록"),
+			static_cast<int32>(Channel), *NewTarget->GetName());
 	}
 
 	// 첫 틱 전에 조회하는 쪽이 있다(웨이브 스포너의 BeginPlay 검사).
@@ -175,7 +209,75 @@ void UTRTargetDirectorSubsystem::RefreshTargetBounds(ETRTargetChannel Channel)
 	}
 
 	// SetTargetActor는 같은 대상이면 조기 반환하므로, 재계산은 이 경로로만 가능하다.
+	// 바운드만 다시 잰다. 구역은 건드리지 않는다.
 	State.bHasBounds = MeasureLocalBounds(*TargetActor, State.LocalBounds);
+
+	RefreshSnapshot();
+}
+
+void UTRTargetDirectorSubsystem::RegisterTargetZone(ETRTargetChannel Channel, UPrimitiveComponent* Volume,
+	ETRTargetZoneTier Tier)
+{
+	if (!ensureMsgf(IsValidChannel(Channel) && Volume != nullptr,
+		TEXT("추적 구역 등록 실패 — 채널이나 볼륨이 잘못됐습니다.")))
+	{
+		return;
+	}
+
+	FTRTargetChannelState& State = Channels[static_cast<int32>(Channel)];
+
+	int32 FreeIndex = INDEX_NONE;
+	for (int32 Index = 0; Index < State.Zones.Num(); ++Index)
+	{
+		const FTRTargetZoneState& Existing = State.Zones[Index];
+		if (Existing.Volume.Get() == Volume)
+		{
+			return;
+		}
+
+		// 비워 둔 자리를 다시 쓴다.
+		if (FreeIndex == INDEX_NONE && Existing.Volume.Get() == nullptr)
+		{
+			FreeIndex = Index;
+		}
+	}
+
+	if (FreeIndex == INDEX_NONE && State.Zones.Num() >= FTRResolvedTarget::MaxZones)
+	{
+		UE_LOG(LogTRMass, Warning, TEXT("채널[%d] 추적 구역이 %d개를 넘어 '%s'를 등록하지 않습니다."),
+			static_cast<int32>(Channel), FTRResolvedTarget::MaxZones, *GetNameSafe(Volume));
+		return;
+	}
+
+	FTRTargetZoneState& Zone = (FreeIndex != INDEX_NONE)
+		? State.Zones[FreeIndex]
+		: State.Zones.AddDefaulted_GetRef();
+
+	Zone.Volume = Volume;
+	Zone.Owner = Volume->GetOwner();
+	Zone.Tier = Tier;
+
+	RefreshSnapshot();
+}
+
+void UTRTargetDirectorSubsystem::UnregisterTargetZone(ETRTargetChannel Channel, UPrimitiveComponent* Volume)
+{
+	if (!IsValidChannel(Channel) || Volume == nullptr)
+	{
+		return;
+	}
+
+	// 자리는 남기고 볼륨만 비운다. 번호가 밀리면 사격형이 고정해 둔 표적이 어긋난다.
+	FTRTargetChannelState& State = Channels[static_cast<int32>(Channel)];
+	for (FTRTargetZoneState& Zone : State.Zones)
+	{
+		if (Zone.Volume.Get() == Volume)
+		{
+			Zone.Volume = nullptr;
+			Zone.Owner = nullptr;
+			break;
+		}
+	}
 
 	RefreshSnapshot();
 }
@@ -192,6 +294,7 @@ void UTRTargetDirectorSubsystem::SetTargetLocation(ETRTargetChannel Channel, FVe
 	State.TargetLocation = NewLocation;
 	State.bHasTarget = true;
 	State.bHasBounds = false;
+	State.Zones.Reset();
 
 	RefreshSnapshot();
 }
@@ -207,6 +310,7 @@ void UTRTargetDirectorSubsystem::ClearTarget(ETRTargetChannel Channel)
 	State.TargetActor = nullptr;
 	State.bHasTarget = false;
 	State.bHasBounds = false;
+	State.Zones.Reset();
 
 	RefreshSnapshot();
 }

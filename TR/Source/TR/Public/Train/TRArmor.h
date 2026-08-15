@@ -7,7 +7,6 @@
 #include "TRArmor.generated.h"
 
 class UBoxComponent;
-class UDataTable;
 class USceneComponent;
 struct FTRArmorLevelRow;
 
@@ -22,7 +21,12 @@ public:
 	virtual float GetMaxHP() const override;
 	virtual int32 GetInstallCost() const override;
 
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 private:
+	// 레벨별 수치는 ATRGameState 가 테이블을 들고 답한다
 	const FTRArmorLevelRow* GetCurrentLevelRow(const TCHAR* ContextName) const;
 
 	// 형태 없는 기준점. CollisionBox 와 DamageVolume 은 크기·위치가 전혀 다르므로
@@ -38,7 +42,4 @@ private:
 	// 눈에 보이지 않으며 상호작용 트레이스에도 걸리지 않는다.
 	UPROPERTY(VisibleAnywhere, Category = "Part")
 	TObjectPtr<UBoxComponent> DamageVolume;
-	
-	UPROPERTY(EditDefaultsOnly, Category = "Part")
-	TObjectPtr<UDataTable> LevelTable;   // FTRArmorLevelRow, RowName = 레벨
 };

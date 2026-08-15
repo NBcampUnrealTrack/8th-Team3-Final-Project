@@ -14,7 +14,7 @@ class TR_API ATRInstallablePart : public AActor
 public:
 	ATRInstallablePart();
 	
-	// 레벨별 수치는 자식이 자기 DataTable로 답변
+	// 레벨별 수치는 자식이 ATRGameState 의 DataTable을 조회해 답변
 	virtual float GetMaxHP() const PURE_VIRTUAL(ATRInstallablePart::GetMaxHP, return 0.f;);
 	
 	virtual int32 GetInstallCost() const PURE_VIRTUAL(ATRInstallablePart::GetInstallCost, return 0;);
@@ -39,6 +39,10 @@ public:
 
 	// 설치 로직 — 공통 (풀피로 초기화)
 	void ApplyInstall();
+
+	// 레벨이 올라 최대 HP 가 커졌을 때 현재 HP 비율을 유지한 채 따라 올린다. 서버 전용.
+	// ATRGameState 의 레벨 업그레이드 델리게이트에 자식이 직접 건다.
+	void ApplyLevelUpgrade(float PrevMaxHP);
 	
 protected:
 	virtual void BeginPlay() override;

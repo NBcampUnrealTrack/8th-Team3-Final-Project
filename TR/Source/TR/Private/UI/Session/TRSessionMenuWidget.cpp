@@ -9,17 +9,28 @@
 #include "Components/EditableTextBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "TimerManager.h"
 
 void UTRSessionMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
+	// 포커스를 먼저 열어 둔다. 아래 로비 갱신이 포커스를 잡으려 하기 때문이다.
+	SetIsFocusable(true);
+
 	BindButtons();
 	BindSessionEvents();
 	RefreshStatusTexts();
+	RefreshLobbyControls();
 
-	SetIsFocusable(true);
+	// 준비 상황은 복제로 바뀌므로 알림이 없다. 주기적으로 다시 읽는다.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(LobbyRefreshTimer, this,
+			&UTRSessionMenuWidget::RefreshLobbyControls, 0.25f, /*bLoop=*/true);
+	}
 
 	if (APlayerController* PC = GetOwningPlayer())
 	{
@@ -67,6 +78,11 @@ FReply UTRSessionMenuWidget::NativeOnKeyDown(const FGeometry& InGeometry, const 
 void UTRSessionMenuWidget::NativeDestruct()
 {
 	UnbindSessionEvents();
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(LobbyRefreshTimer);
+	}
 
 	// 게임 화면으로 돌려준다. 커서는 열기 전 상태를 그대로 되돌린다.
 	if (APlayerController* PC = GetOwningPlayer())
@@ -127,6 +143,16 @@ void UTRSessionMenuWidget::BindButtons()
 	if (Button_Close)
 	{
 		Button_Close->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleCloseClicked);
+	}
+
+	if (Button_Ready)
+	{
+		Button_Ready->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleReadyClicked);
+	}
+
+	if (Button_Start)
+	{
+		Button_Start->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleStartClicked);
 	}
 
 	if (Button_JoinSlot0)
@@ -249,6 +275,13 @@ void UTRSessionMenuWidget::RequestClose()
 		{
 			Controller->Close();
 		}
+	}
+
+	// 컨트롤러가 이미 참조를 놓친 위젯은 여기서 직접 내린다.
+	// 안 그러면 화면에 남아 입력 억제를 쥔 채 F9 와 마우스를 막는다.
+	if (IsInViewport())
+	{
+		RemoveFromParent();
 	}
 }
 
@@ -399,6 +432,91 @@ void UTRSessionMenuWidget::RefreshStatusTexts()
 	{
 		const FTRLobbyStatus Status = Session->GetLobbyStatus();
 		Text_Lobby->SetText(FText::Format(NSLOCTEXT("TR", "LobbyCount", "접속 {0}명"), Status.CurrentPlayers));
+	}
+}
+
+void UTRSessionMenuWidget::HandleReadyClicked()
+{
+	UTRSessionFlow* Flow = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTRSessionFlow>() : nullptr;
+	if (Flow == nullptr)
+	{
+		return;
+	}
+
+	Flow->SetReady(!Flow->GetLobbyStatus().bLocalReady);
+}
+
+void UTRSessionMenuWidget::HandleStartClicked()
+{
+	if (UTRSessionFlow* Flow = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTRSessionFlow>() : nullptr)
+	{
+		Flow->StartMatch();
+	}
+}
+
+void UTRSessionMenuWidget::RefreshLobbyControls()
+{
+	IInterface_TRSession* Session = GetSession();
+	if (Session == nullptr)
+	{
+		return;
+	}
+
+	const FTRLobbyStatus Status = Session->GetLobbyStatus();
+	const bool bHost = Session->IsHost();
+
+	// 값이 그대로면 아무것도 건드리지 않는다. 포커스를 가진 버튼을 다시 껐다 켜면
+	// Slate 가 키보드 포커스를 놓아 버려서 F9·ESC 가 먹통이 된다.
+	if (bHost == bLastHost
+		&& Status.bCanStart == bLastCanStart
+		&& Status.bMatchStarted == bLastMatchStarted
+		&& Status.ReadyPlayers == LastReadyPlayers
+		&& Status.RequiredPlayers == LastRequiredPlayers)
+	{
+		return;
+	}
+
+	bLastHost = bHost;
+	bLastCanStart = Status.bCanStart;
+	bLastMatchStarted = Status.bMatchStarted;
+	LastReadyPlayers = Status.ReadyPlayers;
+	LastRequiredPlayers = Status.RequiredPlayers;
+
+	if (Text_Ready)
+	{
+		Text_Ready->SetText(FText::Format(NSLOCTEXT("TR", "ReadyCount", "{0} / {1} 준비"),
+			Status.ReadyPlayers, Status.RequiredPlayers));
+	}
+
+	// 호스트는 준비를 누르지 않는다. 시작 버튼이 그 역할을 한다.
+	if (Button_Ready)
+	{
+		Button_Ready->SetVisibility(bHost ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	}
+
+	if (Button_Start)
+	{
+		Button_Start->SetVisibility(bHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		Button_Start->SetIsEnabled(Status.bCanStart);
+	}
+
+	// 위 조작으로 포커스가 떨어졌으면 되돌린다. 닫는 키는 이 위젯이 직접 받는다.
+	if (IsFocusable() && !HasAnyUserFocus() && !HasFocusedDescendants())
+	{
+		SetKeyboardFocus();
+	}
+
+	// 웨이브가 돌기 시작하면 로비를 붙잡고 있을 이유가 없다.
+	if (Status.bMatchStarted)
+	{
+		// 닫기 전에 타이머부터 끊는다. 위젯이 안 지워지는 경우 이 함수가 계속 돌면서
+		// 입력 억제를 쥔 채 남는다.
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(LobbyRefreshTimer);
+		}
+
+		RequestClose();
 	}
 }
 

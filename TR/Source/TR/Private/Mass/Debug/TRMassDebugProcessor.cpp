@@ -169,6 +169,33 @@ void UTRMassDebugProcessor::DrawTargetBounds(FMassExecutionContext& Context, UWo
 			continue;
 		}
 
+		// 구역이 있으면 구역별로 그린다. 초록=살아 있음 / 빨강=파괴되어 표적에서 빠짐.
+		if (Resolved.ZoneCount > 0)
+		{
+			for (int32 ZoneIndex = 0; ZoneIndex < Resolved.ZoneCount; ++ZoneIndex)
+			{
+				if (!Resolved.ZoneAlive[ZoneIndex])
+				{
+					continue;
+				}
+
+				// 등급을 색으로 나눈다. 청록=포탑(먼저 노림) / 초록=장갑.
+				const bool bTurret = Resolved.ZoneTier[ZoneIndex] == ETRTargetZoneTier::Turret;
+				const FColor ZoneColor = bTurret ? FColor::Cyan : FColor::Green;
+
+				const FBox& Zone = Resolved.ZoneBounds[ZoneIndex];
+				DrawDebugBox(&World, Zone.GetCenter(), Zone.GetExtent(), FQuat::Identity,
+					ZoneColor, /*bPersistentLines=*/false, /*LifeTime=*/-1.f,
+					/*DepthPriority=*/0, /*Thickness=*/3.f);
+
+				DrawDebugString(&World, Zone.GetCenter(),
+					FString::Printf(TEXT("%s%d"), bTurret ? TEXT("T") : TEXT("A"), ZoneIndex),
+					nullptr, ZoneColor, 0.f, /*bDrawShadow=*/true);
+			}
+
+			continue;
+		}
+
 		if (!Resolved.bHasBounds)
 		{
 			// 바운드가 없으면 중심 한 점이 목표다. 이 상태면 적들이 한 점으로 수렴하므로
