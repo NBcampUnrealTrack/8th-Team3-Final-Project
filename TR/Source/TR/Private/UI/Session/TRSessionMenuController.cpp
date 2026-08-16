@@ -78,14 +78,17 @@ void UTRSessionMenuController::Open()
 
 void UTRSessionMenuController::Close()
 {
-	// 입력 모드 복원은 위젯의 NativeDestruct 가 한다.
-	if (Menu)
+	bWasOpen = false;
+
+	if (!Menu)
 	{
-		Menu->RemoveFromParent();
-		Menu = nullptr;
+		return;
 	}
 
-	bWasOpen = false;
+	// 입력 모드 복원은 위젯의 NativeDestruct 가 한다.
+	Menu->RemoveFromParent();
+	Menu = nullptr;
+
 	UE_LOG(LogTRNet, Log, TEXT("[SessionMenu] 닫음"));
 }
 

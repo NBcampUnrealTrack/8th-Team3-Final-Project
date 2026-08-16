@@ -101,15 +101,6 @@ float ATRTurret::GetManualDamage() const
 	return 0.f;
 }
 
-int32 ATRTurret::GetManualAmmoPerResource() const
-{
-	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
-	{
-		return Row->ManualAmmoPerResource;
-	}
-	return 0;
-}
-
 float ATRTurret::GetMaxHP() const
 {
 	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
@@ -174,10 +165,18 @@ void ATRTurret::ConsumeAmmo(int32 Amount)
 	CurrentAmmo = FMath::Max(0, CurrentAmmo - Amount);
 }
 
-void ATRTurret::AddAmmo(int32 Amount)
+bool ATRTurret::RefillAmmoToMax()
 {
-	CurrentAmmo = FMath::Clamp(CurrentAmmo + Amount, 0, GetMaxAmmo());
+	const int32 MaxAmmo = GetMaxAmmo();
+	if (MaxAmmo <= 0)
+	{
+		UE_LOG(LogTRGameplay, Warning, TEXT("RefillAmmoToMax failed: invalid MaxAmmo (%s)"), *GetName());
+		return false;
+	}
+	CurrentAmmo = MaxAmmo;
+	return true;
 }
+
 
 bool ATRTurret::IsWithinFireArc(float CameraYaw, float CameraPitch) const
 {

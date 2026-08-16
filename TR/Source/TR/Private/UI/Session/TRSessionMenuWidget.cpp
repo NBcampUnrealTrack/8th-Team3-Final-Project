@@ -276,6 +276,13 @@ void UTRSessionMenuWidget::RequestClose()
 			Controller->Close();
 		}
 	}
+
+	// 컨트롤러가 이미 참조를 놓친 위젯은 여기서 직접 내린다.
+	// 안 그러면 화면에 남아 입력 억제를 쥔 채 F9 와 마우스를 막는다.
+	if (IsInViewport())
+	{
+		RemoveFromParent();
+	}
 }
 
 void UTRSessionMenuWidget::JoinByIndex(int32 ResultIndex)
@@ -502,6 +509,13 @@ void UTRSessionMenuWidget::RefreshLobbyControls()
 	// 웨이브가 돌기 시작하면 로비를 붙잡고 있을 이유가 없다.
 	if (Status.bMatchStarted)
 	{
+		// 닫기 전에 타이머부터 끊는다. 위젯이 안 지워지는 경우 이 함수가 계속 돌면서
+		// 입력 억제를 쥔 채 남는다.
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(LobbyRefreshTimer);
+		}
+
 		RequestClose();
 	}
 }

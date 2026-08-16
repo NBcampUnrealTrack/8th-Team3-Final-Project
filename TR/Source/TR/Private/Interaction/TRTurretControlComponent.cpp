@@ -3,9 +3,12 @@
 
 #include "Interaction/TRTurretControlComponent.h"
 #include "Debug/TRGameplayLog.h"
+#include "DrawDebugHelpers.h"
 #include "Net/UnrealNetwork.h"
+#include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
 #include "Interaction/TRActionComponent.h"
 #include "Interaction/TRInteractionComponent.h"
 #include "Camera/CameraComponent.h"
@@ -212,7 +215,20 @@ bool UTRTurretControlComponent::TraceFireTarget(FHitResult& OutHit) const
 	QueryParams.AddIgnoredActor(OwnerPawn);
 	QueryParams.AddIgnoredActor(MountedTurret);
 
-	return GetWorld()->LineTraceSingleByChannel(OutHit, ViewLocation, TraceEnd, ECC_Pawn, QueryParams);
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return false;
+	}
+
+	const bool bHit = World->LineTraceSingleByChannel(OutHit, ViewLocation, TraceEnd, ECC_Pawn, QueryParams);
+
+#if !UE_BUILD_SHIPPING
+	// 초록=명중, 빨강=빗나감. 사격 판정이 서버에서 도니 서버 화면에만 그려진다.
+	DrawDebugLine(World, ViewLocation, bHit ? OutHit.ImpactPoint : TraceEnd, bHit ? FColor::Green : FColor::Red, false, 2.f, 0, 1.5f);
+#endif
+
+	return bHit;
 }
 
 bool UTRTurretControlComponent::TryAutoRefillFromInventory()
@@ -224,14 +240,20 @@ bool UTRTurretControlComponent::TryAutoRefillFromInventory()
 		return false;
 	}
 
+	// 보유한 물자실 자원이 없으면 false
 	if (PS->GetCarriedSupply() <= 0)
 	{
 		return false;
 	}
 
+	// 채우기가 실패하면 자원을 빼면 안 되므로 차감보다 먼저 시도한다.
+	if (!MountedTurret->RefillAmmoToMax())
+	{
+		return false;
+	}
+
 	PS->ConsumeCarriedSupply(1);
-	MountedTurret->AddAmmo(MountedTurret->GetManualAmmoPerResource());
-	UE_LOG(LogTRGameplay, Verbose, TEXT("Auto-refilled ammo: +%d"), MountedTurret->GetManualAmmoPerResource());
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Reload completed, Current Ammo: %d"), MountedTurret->GetCurrentAmmo());
 	return true;
 }
 
@@ -241,12 +263,83 @@ void UTRTurretControlComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 	Super::EndPlay(EndPlayReason);
 }
 
+APlayerCameraManager* UTRTurretControlComponent::GetLocalCameraManager() const
+{
+	const APawn* OwnerPawn = GetOwner<APawn>();
+	const APlayerController* PC = IsValid(OwnerPawn) ? Cast<APlayerController>(OwnerPawn->GetController()) : nullptr;
+	return IsValid(PC) ? PC->PlayerCameraManager : nullptr;
+}
+
+// 탑승 중에는 사각 밖을 아예 못 보게 시야를 묶는다.
+// 서버의 IsWithinFireArc 검사는 그대로 남는다 — 이건 피드백용이고,
+// 조작된 회전값을 거르는 건 여전히 서버 몫이다.
+void UTRTurretControlComponent::ApplyMountedViewLimits(const ATRTurret* Turret)
+{
+	APlayerCameraManager* CameraManager = GetLocalCameraManager();
+	if (!IsValid(CameraManager) || !IsValid(Turret))
+	{
+		return;
+	}
+
+	// 이미 저장돼 있으면 덮어쓰지 않는다 — 포탑을 갈아탈 때 원본이 아니라
+	// 직전 포탑의 제한값을 저장해 버리면 하차 후에도 시야가 묶인 채로 남는다.
+	if (!bViewLimitsSaved)
+	{
+		SavedViewYawMin = CameraManager->ViewYawMin;
+		SavedViewYawMax = CameraManager->ViewYawMax;
+		SavedViewPitchMin = CameraManager->ViewPitchMin;
+		SavedViewPitchMax = CameraManager->ViewPitchMax;
+		bViewLimitsSaved = true;
+	}
+
+	const float HalfAngle = Turret->GetFireArcHalfAngle();
+
+	// 반각이 180 이상이면 전방위라 Yaw 는 묶지 않는다.
+	// FMath::ClampAngle 은 폭 360 을 0 으로 접어버려서, 그대로 넣으면 시야가 한 점에 고정된다.
+	if (HalfAngle < 180.f)
+	{
+		CameraManager->ViewYawMin = Turret->GetInstallYaw() - HalfAngle;
+		CameraManager->ViewYawMax = Turret->GetInstallYaw() + HalfAngle;
+	}
+
+	// Pitch 는 위아래로 90도를 넘길 수 없다. 사각이 그보다 넓어도 여기서 잘린다.
+	const float PitchHalfAngle = FMath::Min(HalfAngle, 89.9f);
+	CameraManager->ViewPitchMin = Turret->GetInstallPitch() - PitchHalfAngle;
+	CameraManager->ViewPitchMax = Turret->GetInstallPitch() + PitchHalfAngle;
+}
+
+void UTRTurretControlComponent::ClearMountedViewLimits()
+{
+	APlayerCameraManager* CameraManager = GetLocalCameraManager();
+	if (!IsValid(CameraManager) || !bViewLimitsSaved)
+	{
+		return;
+	}
+
+	CameraManager->ViewYawMin = SavedViewYawMin;
+	CameraManager->ViewYawMax = SavedViewYawMax;
+	CameraManager->ViewPitchMin = SavedViewPitchMin;
+	CameraManager->ViewPitchMax = SavedViewPitchMax;
+	bViewLimitsSaved = false;
+}
+
 void UTRTurretControlComponent::OnRep_MountedTurret()
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	if (!IsValid(OwnerPawn) || !OwnerPawn->IsLocallyControlled())
 	{
 		return;   // 카메라는 이 값을 실제로 "보는" 로컬 플레이어만 처리
+	}
+
+	// 시야 제한은 카메라 부착과 별개로 처리한다 —
+	// 카메라 컴포넌트를 못 찾아 아래에서 리턴하더라도 제한은 반드시 원복돼야 한다.
+	if (IsValid(MountedTurret))
+	{
+		ApplyMountedViewLimits(MountedTurret);
+	}
+	else
+	{
+		ClearMountedViewLimits();
 	}
 
 	ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);

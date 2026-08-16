@@ -15,12 +15,24 @@ void ATRPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
 void ATRPlayerState::AddCarriedSupply(int32 Amount)
 {
+	if (!ensureMsgf(HasAuthority(), TEXT("물자는 서버에서만 바꿀 수 있습니다.")))
+	{
+		return;
+	}
+	
 	CarriedSupply = FMath::Clamp(CarriedSupply + Amount, 0, MaxCarriedSupply);
+	ForceNetUpdate();
 }
 
 void ATRPlayerState::ConsumeCarriedSupply(int32 Amount)
 {
+	if (!ensureMsgf(HasAuthority(), TEXT("물자는 서버에서만 바꿀 수 있습니다.")))
+	{
+		return;
+	}
+	
 	CarriedSupply = FMath::Max(0, CarriedSupply - Amount);
+	ForceNetUpdate();
 }
 
 void ATRPlayerState::SetReady(bool bInReady)
