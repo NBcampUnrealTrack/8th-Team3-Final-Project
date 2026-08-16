@@ -240,14 +240,20 @@ bool UTRTurretControlComponent::TryAutoRefillFromInventory()
 		return false;
 	}
 
+	// 보유한 물자실 자원이 없으면 false
 	if (PS->GetCarriedSupply() <= 0)
 	{
 		return false;
 	}
 
+	// 채우기가 실패하면 자원을 빼면 안 되므로 차감보다 먼저 시도한다.
+	if (!MountedTurret->RefillAmmoToMax())
+	{
+		return false;
+	}
+
 	PS->ConsumeCarriedSupply(1);
-	MountedTurret->AddAmmo(MountedTurret->GetManualAmmoPerResource());
-	UE_LOG(LogTRGameplay, Verbose, TEXT("Auto-refilled ammo: +%d"), MountedTurret->GetManualAmmoPerResource());
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Reload completed, Current Ammo: %d"), MountedTurret->GetCurrentAmmo());
 	return true;
 }
 

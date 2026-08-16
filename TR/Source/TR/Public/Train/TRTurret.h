@@ -31,9 +31,6 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Turret")
 	float GetManualDamage() const;
-
-	UFUNCTION(BlueprintPure, Category = "Turret")
-	int32 GetManualAmmoPerResource() const;
 	
 	UFUNCTION(BlueprintPure, Category = "Turret")
 	float GetManualFireRate() const;
@@ -69,7 +66,9 @@ public:
 	void SetOccupant(APawn* NewOccupant) { Occupant = NewOccupant; }
 	
 	void ConsumeAmmo(int32 Amount);
-	void AddAmmo(int32 Amount);
+	
+	// 실제로 채웠으면 true. 호출부는 이 값으로 자원 차감 여부를 정한다.
+	bool RefillAmmoToMax();
 	
 protected:
 	virtual void BeginPlay() override;
