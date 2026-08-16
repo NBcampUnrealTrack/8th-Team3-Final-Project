@@ -401,56 +401,180 @@ namespace UE::TR::Enemy
 		OutCombat.ShotsFired = 0;
 	}
 
-	/** SelectAnim의 결과. 어떤 칸을, 루프로 재생할지. */
-	struct FAnimSelection
+	/** 이 행동 상태에 대응하는 단발 클립. 로코모션 상태면 nullptr. */
+	inline const FTRAnimSequenceRef* FindOneShot(const FTREnemyAnimParams& Params, ETREnemyActionState ActionState)
 	{
+		switch (ActionState)
+		{
+		case ETREnemyActionState::Attack: return &Params.Attack;
+		case ETREnemyActionState::Launch: return &Params.Launch;
+		case ETREnemyActionState::Fire:   return &Params.Fire;
+		case ETREnemyActionState::Death:  return &Params.Death;
+		default:                          return nullptr;
+		}
+	}
+
+	/**
+	 * 속력으로 대기/이동을 고른다.
+	 *
+	 * @param bWasMoving  직전 프레임에 이동 클립이었는지. 이미 이동 중이면 더 낮은 속력까지
+	 *                    버틴다. 같은 값을 양방향에 쓰면 임계값 위아래로 진동하는 개체가 매
+	 *                    프레임 클립을 갈아치우고, 그게 곧 재생 위치 리셋이 된다.
+	 */
+	inline const FTRAnimSequenceRef& SelectLocomotion(const FTREnemyAnimParams& Params, float Speed, bool bWasMoving)
+	{
+		const float LeaveThreshold =
+			Params.MoveSpeedThreshold * (1.f - FMath::Clamp(Params.MoveSpeedHysteresis, 0.f, 0.9f));
+		const float Threshold = bWasMoving ? LeaveThreshold : Params.MoveSpeedThreshold;
+
+		return (Speed > Threshold) ? Params.Move : Params.Idle;
+	}
+
+	/**
+	 * 루프 클립의 재생 위치(초). 원점은 **월드 시각 0**이다.
+	 *
+	 * 로코모션은 진입 시각을 기록하지 않으므로 양쪽 표현이 공유할 원점이 월드 시각뿐이다.
+	 * 시각의 함수라 언제 물어봐도 같은 값이고, 그래서 매 프레임 다시 써넣어도 재생이 리셋되지 않는다.
+	 *
+	 * @param PhaseOffset  0~1. 개체마다 다르게 주면 무리가 같은 발을 딛지 않는다.
+	 */
+	inline float ComputeLoopPosition(const FTRAnimSequenceRef& Sequence, float PhaseOffset, float WorldTime)
+	{
+		const float Length = Sequence.Duration;
+		if (Length <= 0.f)
+		{
+			// 접을 길이를 모른다. 애셋에서 Duration을 채워야 위상이 산다.
+			return 0.f;
+		}
+
+		const float PlayRate = FMath::Max(Sequence.PlayRate, KINDA_SMALL_NUMBER);
+
+		// 월드 시각이 수천 초가 되면 float 유효 자릿수가 클립 길이를 넘어 위상이 계단처럼 튄다.
+		const double Position = static_cast<double>(PhaseOffset) * Length
+			+ static_cast<double>(WorldTime) * PlayRate;
+
+		return static_cast<float>(FMath::Fmod(Position, static_cast<double>(Length)));
+	}
+
+	/** 단발 클립의 재생 위치(초). 원점은 상태 진입 시각 — 복제되는 값이라 클라에서도 맞는다. */
+	inline float ComputeOneShotPosition(const FTRAnimSequenceRef& Sequence, float StateElapsed)
+	{
+		return FMath::Max(StateElapsed, 0.f) * FMath::Max(Sequence.PlayRate, KINDA_SMALL_NUMBER);
+	}
+
+	/** ResolveAnim의 결과. 표현이 이 프레임에 재생할 것 전부. */
+	struct FAnimResolution
+	{
+		/** 지금 고른 클립. 한 칸만 재생할 수 있는 ISM이 쓴다. */
 		FTRAnimSequenceRef Sequence;
+
 		bool bLooping = true;
+
+		/** 루프가 이동 클립인가. 다음 프레임 히스테리시스와 AnimBP 전이 조건으로 쓴다. */
+		bool bMoving = false;
+
+		/**
+		 * 지금 행동 상태에 대응하는 단발 클립이 있는가. 없으면 ActionPosition은 의미가 없다.
+		 *
+		 * 받는 쪽은 이 값이 false면 **직전 값을 유지해야 한다.** 0으로 덮으면 단발이 끝나
+		 * 블렌드 아웃되는 중에 상태가 None으로 돌아갈 때 클립이 첫 프레임으로 되감긴다.
+		 */
+		bool bHasAction = false;
+
+		/**
+		 * 로코모션·단발 두 클립의 재생 위치(초). **고르지 않은 쪽도 계속 흐른다.**
+		 *
+		 * 액터 표현은 전이 중에 두 클립을 동시에 물고 블렌드한다. 고른 쪽만 갱신하면
+		 * 물러나는 클립이 얼어붙은 채로 사라져서, 전환마다 눈에 띄는 끊김이 생긴다.
+		 * ISM은 어차피 한 칸이라 GetPosition()만 본다.
+		 */
+		float LocomotionPosition = 0.f;
+		float ActionPosition = 0.f;
+
+		/** 고른 클립의 재생 위치. */
+		float GetPosition() const { return bLooping ? LocomotionPosition : ActionPosition; }
+	};
+
+	/** 표현이 이 프레임에 보는 개체 상태 한 벌. ResolveAnim의 입력이자 액터에 넘기는 값. */
+	struct FAnimContext
+	{
+		ETREnemyActionState ActionState = ETREnemyActionState::None;
+
+		/** 상태에 들어간 뒤 경과 시간(초). 단발 재생 위치의 원점이다. */
+		float StateElapsed = 0.f;
+
+		/** 월드 속도(cm/s). */
+		FVector Velocity = FVector::ZeroVector;
+
+		/**
+		 * 지면이 흐르는 월드 속도(cm/s). 속력은 Velocity와의 차로 잰다 —
+		 * 월드 속력을 쓰면 기차와 나란히 달리는 적이 대기 모션을 재생하며 미끄러진다.
+		 */
+		FVector GroundVelocity = FVector::ZeroVector;
+
+		/** 직전 프레임의 이동 판정. 임계값 히스테리시스에 쓴다. */
+		bool bWasMoving = false;
+
+		/** GetTypeHash(FMassEntityHandle). 루프 위상을 개체마다 흩는 씨앗. */
+		uint32 EntityHash = 0;
+
+		float WorldTime = 0.f;
 	};
 
 	/**
-	 * 행동 상태와 속력에서 재생할 시퀀스를 고른다.
+	 * 이 프레임에 무엇을 어디서 재생할지 결정한다. **두 표현 모두 이 함수만 쓴다.**
 	 *
-	 * 상태 프래그먼트를 건드리지 않는 게 요점이다. 단발이 끝났다고 ActionState를 되돌리면
+	 * ISM은 렌더가 기준 시각에서 위치를 역산하고 액터는 AnimBP가 누적하는데, 둘이 어긋난
+	 * 채로 LOD가 바뀌면 포즈가 튄다. 판단과 위상을 여기 한 곳에 두면 어긋날 수가 없다.
+	 *
+	 * 상태 프래그먼트를 건드리지 않는 것도 요점이다. 단발이 끝났다고 ActionState를 되돌리면
 	 * 공격 프로세서의 "이미 Attack이면 준비 시간을 다시 세지 않는다" 판정이 깨진다.
 	 * 여기서는 표현만 로코모션으로 되돌리고, 상태는 전투 쪽이 계속 쥐고 있게 둔다.
-	 *
-	 * @param StateElapsed  상태에 들어간 뒤 경과 시간(초).
-	 * @param Speed         이동 속력(cm/s).
-	 * @param bWasMoving    직전 프레임에 이동 클립을 재생 중이었는지. 임계값 히스테리시스에 쓴다.
 	 */
-	inline FAnimSelection SelectAnim(const FTREnemyAnimParams& Params,
-		ETREnemyActionState ActionState, float StateElapsed, float Speed, bool bWasMoving)
+	inline FAnimResolution ResolveAnim(const FTREnemyAnimParams& Params, const FAnimContext& Ctx)
 	{
-		const FTRAnimSequenceRef* OneShot = nullptr;
-		switch (ActionState)
-		{
-		case ETREnemyActionState::Attack: OneShot = &Params.Attack; break;
-		case ETREnemyActionState::Launch: OneShot = &Params.Launch; break;
-		case ETREnemyActionState::Fire:   OneShot = &Params.Fire;   break;
-		case ETREnemyActionState::Death:  OneShot = &Params.Death;  break;
-		default: break;
-		}
+		const float Speed = (Ctx.Velocity - Ctx.GroundVelocity).Size2D();
+
+		FAnimResolution Out;
+
+		// ── 로코모션 ─────────────────────────────────────────────────────────
+		// 단발 중에도 계산한다. 액터가 전이 구간에 두 클립을 함께 물기 때문이고,
+		// 원점이 월드 시각이라 지금 재생 중인지와 무관하게 값이 정해진다.
+		const FTRAnimSequenceRef& LoopSequence = SelectLocomotion(Params, Speed, Ctx.bWasMoving);
+		Out.bMoving = (LoopSequence.SequenceIndex == Params.Move.SequenceIndex);
+
+		// 해시로 위상을 뽑는다. 난수는 매 프레임 값이 바뀌어 재생 위치가 튀고,
+		// 스폰 때 뽑아 두면 프래그먼트가 늘고 복제도 해야 한다.
+		const float PhaseOffset = Params.bDesyncLoopPhase
+			? static_cast<float>(Ctx.EntityHash & 0xFFFF) / 65535.f
+			: 0.f;
+
+		Out.LocomotionPosition = ComputeLoopPosition(LoopSequence, PhaseOffset, Ctx.WorldTime);
+
+		// ── 단발 ─────────────────────────────────────────────────────────────
+		const FTRAnimSequenceRef* OneShot = FindOneShot(Params, Ctx.ActionState);
+		bool bOneShotPlaying = false;
 
 		if (OneShot != nullptr)
 		{
-			// Duration이 0이면 "끝나지 않는 단발"로 본다. 죽음 포즈를 유지하는 용도.
-			const float PlayLength = (OneShot->Duration > 0.f)
-				? OneShot->Duration / FMath::Max(OneShot->PlayRate, KINDA_SMALL_NUMBER)
-				: MAX_flt;
+			Out.bHasAction = true;
 
-			if (StateElapsed < PlayLength)
-			{
-				return FAnimSelection{ *OneShot, /*bLooping=*/false };
-			}
+			// Duration이 0이면 "끝나지 않는 단발"이다. 죽음 포즈를 유지하는 용도.
+			const bool bUnbounded = (OneShot->Duration <= 0.f);
+			const float RawPosition = ComputeOneShotPosition(*OneShot, Ctx.StateElapsed);
+
+			bOneShotPlaying = bUnbounded || (RawPosition < OneShot->Duration);
+
+			// 끝난 뒤에도 위치를 넘긴다 — 블렌드 아웃 동안 클립이 얼면 안 되기 때문이다.
+			// 대신 클립 끝에 붙인다. ISM 쪽도 LoopMode::Clamp라 같은 자리에서 멈춘다.
+			Out.ActionPosition = bUnbounded ? RawPosition : FMath::Min(RawPosition, OneShot->Duration);
 		}
 
-		// 이미 이동 중이면 더 낮은 속력까지 버틴다. 같은 값을 양방향에 쓰면 임계값 위아래로
-		// 진동하는 개체가 매 프레임 클립을 갈아치우고, 그게 곧 재생 위치 리셋이 된다.
-		const float LeaveThreshold = Params.MoveSpeedThreshold * (1.f - FMath::Clamp(Params.MoveSpeedHysteresis, 0.f, 0.9f));
-		const float Threshold = bWasMoving ? LeaveThreshold : Params.MoveSpeedThreshold;
+		// ── 이 프레임에 화면을 쥐는 쪽 ────────────────────────────────────────
+		Out.bLooping = !bOneShotPlaying;
+		Out.Sequence = bOneShotPlaying ? *OneShot : LoopSequence;
 
-		return FAnimSelection{ (Speed > Threshold) ? Params.Move : Params.Idle, /*bLooping=*/true };
+		return Out;
 	}
 
 	/**

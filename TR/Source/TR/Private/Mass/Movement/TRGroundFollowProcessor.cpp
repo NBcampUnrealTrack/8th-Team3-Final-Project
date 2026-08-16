@@ -56,6 +56,12 @@ void UTRGroundFollowProcessor::ConfigureQueries(const TSharedRef<FMassEntityMana
 
 	EntityQuery.AddConstSharedRequirement<FTRChaseParams>(EMassFragmentPresence::All);
 
+	// 청크 필터로 원거리 개체는 프레임을 건너뛴다. 그 경우 이번 틱이 실제로 대표하는
+	// 시간은 월드 델타가 아니라 **건너뛴 만큼 누적된 값**이고, 그건 이 프래그먼트에 있다.
+	// 월드 델타로 보간하면 LOD가 낮은 개체일수록 지면을 늦게 따라와 경사에서 뜨거나 잠긴다.
+	// (UTRChaseSteeringProcessor가 같은 이유로 같은 값을 읽는다.)
+	EntityQuery.AddRequirement<FMassSimulationVariableTickFragment>(
+		EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 	EntityQuery.AddChunkRequirement<FMassSimulationVariableTickChunkFragment>(
 		EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 	EntityQuery.SetChunkFilter(&FMassSimulationVariableTickChunkFragment::ShouldTickChunkThisFrame);
@@ -73,15 +79,19 @@ void UTRGroundFollowProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 	}
 
 	const float WorldTime = World->GetTimeSeconds();
-	const float DeltaTime = FMath::Min(0.1f, Context.GetDeltaTimeSeconds());
+	const float WorldDeltaTime = Context.GetDeltaTimeSeconds();
 
-	EntityQuery.ForEachEntityChunk(Context, [World, WorldTime, DeltaTime](FMassExecutionContext& Context)
+	EntityQuery.ForEachEntityChunk(Context, [World, WorldTime, WorldDeltaTime](FMassExecutionContext& Context)
 	{
 		const FTRChaseParams& ChaseParams = Context.GetConstSharedFragment<FTRChaseParams>();
 		if (!ChaseParams.bFollowGround)
 		{
 			return;
 		}
+
+		const TConstArrayView<FMassSimulationVariableTickFragment> VariableTickList =
+			Context.GetFragmentView<FMassSimulationVariableTickFragment>();
+		const bool bHasVariableTick = (VariableTickList.Num() > 0);
 
 		const TArrayView<FTransformFragment> TransformList = Context.GetMutableFragmentView<FTransformFragment>();
 		const TArrayView<FTRGroundFragment> GroundList = Context.GetMutableFragmentView<FTRGroundFragment>();
@@ -90,6 +100,10 @@ void UTRGroundFollowProcessor::Execute(FMassEntityManager& EntityManager, FMassE
 		{
 			FTransform& Transform = TransformList[EntityIt].GetMutableTransform();
 			FTRGroundFragment& Ground = GroundList[EntityIt];
+
+			// 큰 시간 간격에서 보간이 튀는 걸 막는다(엔진 이동 프로세서와 동일한 상한).
+			const float DeltaTime = FMath::Min(0.1f,
+				bHasVariableTick ? VariableTickList[EntityIt].DeltaTime : WorldDeltaTime);
 
 			FVector Location = Transform.GetLocation();
 

@@ -173,6 +173,15 @@ protected:
 	TStateTreeExternalDataHandle<FTRChaseChannelFragment> ChannelHandle;
 	TStateTreeExternalDataHandle<FTREnemyCombatParams> CombatParamsHandle;
 	TStateTreeExternalDataHandle<UTRMassCombatSubsystem> CombatSubsystemHandle;
+
+	/**
+	 * 다음 발사 시각에 스스로 깨어나기 위해 필요하다.
+	 *
+	 * UMassStateTreeProcessor 는 **신호를 받은 엔티티만** 트리를 틱한다. 그리고 태스크가
+	 * Running 을 반환하면 재신호를 넣지 않는다(엔진 코드 확인). 즉 이 Tick 은 가만히
+	 * 두면 두 번 다시 불리지 않고, 사격형은 첫 발만 쏘고 굳는다.
+	 */
+	TStateTreeExternalDataHandle<UMassSignalSubsystem> SignalSubsystemHandle;
 };
 
 USTRUCT()
@@ -207,4 +216,7 @@ protected:
 	virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const override;
 
 	TStateTreeExternalDataHandle<FTREnemyStateFragment> EnemyStateHandle;
+
+	/** 연출 시간이 끝나는 시점에 스스로 깨어나기 위해. FTRFireTask 의 같은 필드 주석 참고. */
+	TStateTreeExternalDataHandle<UMassSignalSubsystem> SignalSubsystemHandle;
 };

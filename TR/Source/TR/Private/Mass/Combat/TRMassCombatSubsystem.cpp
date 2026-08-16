@@ -124,7 +124,7 @@ FTRMassHitResult UTRMassCombatSubsystem::FireHitscan(const FVector& Start, const
 
 	if (FTREnemyStateFragment* State = EntityManager.GetFragmentDataPtr<FTREnemyStateFragment>(NearestEntity))
 	{
-		EnterActionState(*State, ETREnemyActionState::Death, World->GetTimeSeconds());
+		TryEnterActionState(*State, ETREnemyActionState::Death, World->GetTimeSeconds());
 	}
 
 	OnEnemyKilled.Broadcast(NearestPoint, Combat.ResourceValue);

@@ -6,6 +6,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Environment/TRGroundMotionSubsystem.h"
 #include "Environment/TRLevelSceneChunk.h"
 #include "Environment/TRLevelSceneFloor.h"
 #include "Environment/TRLevelSceneRailSegment.h"
@@ -147,6 +148,7 @@ void ATRLevelSceneManager::Tick(const float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	UpdateFloorVelocity();
+	PublishGroundVelocity();
 
 	if (!bAutoMove || VisualSpeed <= 0.f)
 	{
@@ -388,6 +390,27 @@ void ATRLevelSceneManager::UpdateFloorVelocity(const bool bForceUpdate)
 	ActiveFloor->SetMovementVelocity(MaterialVelocity.X, MaterialVelocity.Y);
 	LastAppliedFloorVisualSpeed = EffectiveVisualSpeed;
 	LastAppliedFloorMovementDirection = SafeDirection;
+}
+
+//지면 스크롤 속도를 Mass 쪽에 알린다
+void ATRLevelSceneManager::PublishGroundVelocity() const
+{
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+
+	UTRGroundMotionSubsystem* GroundMotion = World->GetSubsystem<UTRGroundMotionSubsystem>();
+	if (GroundMotion == nullptr)
+	{
+		return;
+	}
+
+	//MoveChunks와 같은 식이어야 한다. 어긋나면 적의 발이 실제 지면과 다른 속도로 움직인다
+	const float EffectiveVisualSpeed = bAutoMove ? FMath::Max(0.f, VisualSpeed) : 0.f;
+
+	GroundMotion->SetGroundVelocity(-GetActorForwardVector() * EffectiveVisualSpeed);
 }
 
 //청크 속도만큼 이동

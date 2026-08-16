@@ -191,15 +191,7 @@ void UTRChaseSteeringProcessor::Execute(FMassEntityManager& EntityManager, FMass
 				if (bIsArrived != Target.bArrived)
 				{
 					// 상태가 바뀐 순간에만 아키타입을 옮긴다. 매 틱 명령을 쌓으면 낭비다.
-					Target.bArrived = bIsArrived;
-					if (bIsArrived)
-					{
-						Context.Defer().AddTag<FTRArrivedTag>(EntityIt.GetEntityHandle());
-					}
-					else
-					{
-						Context.Defer().RemoveTag<FTRArrivedTag>(EntityIt.GetEntityHandle());
-					}
+					SetArrived(Context.Defer(), EntityIt.GetEntityHandle(), Target, bIsArrived);
 
 					// 행동 상태(FTREnemyStateFragment)는 여기서 건드리지 않는다.
 					// StateTree Task가 그 값의 단독 주인이다. 두 곳에서 쓰면 어느 쪽이

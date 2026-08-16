@@ -39,7 +39,7 @@ void FTRMoveToTargetTask::GetDependencies(UE::MassBehavior::FStateTreeDependency
 EStateTreeRunStatus FTRMoveToTargetTask::EnterState(FStateTreeExecutionContext& Context,
 	const FStateTreeTransitionResult& Transition) const
 {
-	EnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::None, GetWorldTime(Context));
+	TryEnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::None, GetWorldTime(Context));
 
 	// 이동 자체는 프로세서가 한다. 이 상태는 전이 조건이 참이 될 때까지 유지되기만 하면 된다.
 	return EStateTreeRunStatus::Running;
@@ -68,7 +68,11 @@ EStateTreeRunStatus FTRDetonateTask::EnterState(FStateTreeExecutionContext& Cont
 	FMassStateTreeExecutionContext& MassContext = static_cast<FMassStateTreeExecutionContext&>(Context);
 
 	const float WorldTime = GetWorldTime(Context);
-	EnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::Attack, WorldTime);
+	if (!TryEnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::Attack, WorldTime))
+	{
+		// 프로세서가 같은 프레임에 먼저 걸었다. 준비 시간과 태그는 그쪽이 이미 처리했다.
+		return EStateTreeRunStatus::Running;
+	}
 
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 
@@ -112,14 +116,20 @@ EStateTreeRunStatus FTRLaunchTask::EnterState(FStateTreeExecutionContext& Contex
 	FTREnemyCombatFragment& Combat = Context.GetExternalData(CombatHandle);
 	FTRApproachFragment& Approach = Context.GetExternalData(ApproachHandle);
 
-	UE::TR::Enemy::ApplyLaunched(Params, Combat, Approach);
-	EnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::Launch, GetWorldTime(Context));
+	if (!TryEnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::Launch, GetWorldTime(Context)))
+	{
+		// 프로세서가 같은 프레임에 먼저 사출했다. ApplyLaunched를 두 번 걸면
+		// 체력 상한이 다시 내려가므로 여기서 멈춘다.
+		return EStateTreeRunStatus::Running;
+	}
 
-	// 정지 거리가 바뀌었으므로 옛 거리로 내린 도달 판정은 의미를 잃는다.
-	Context.GetExternalData(TargetHandle).bArrived = false;
+	UE::TR::Enemy::ApplyLaunched(Params, Combat, Approach);
 
 	FMassCommandBuffer& Commands = MassContext.GetMassEntityExecutionContext().Defer();
-	Commands.RemoveTag<FTRArrivedTag>(MassContext.GetEntity());
+
+	// 정지 거리가 바뀌었으므로 옛 거리로 내린 도달 판정은 의미를 잃는다.
+	SetArrived(Commands, MassContext.GetEntity(), Context.GetExternalData(TargetHandle), false);
+
 	Commands.AddTag<FTRLaunchedTag>(MassContext.GetEntity());
 
 	return EStateTreeRunStatus::Running;
@@ -133,6 +143,7 @@ bool FTRFireTask::Link(FStateTreeLinker& Linker)
 	Linker.LinkExternalData(ChannelHandle);
 	Linker.LinkExternalData(CombatParamsHandle);
 	Linker.LinkExternalData(CombatSubsystemHandle);
+	Linker.LinkExternalData(SignalSubsystemHandle);
 	return true;
 }
 
@@ -183,16 +194,31 @@ EStateTreeRunStatus FTRFireTask::Tick(FStateTreeExecutionContext& Context, const
 
 	++Combat.ShotsFired;
 	Combat.NextActionTime = WorldTime + Params.FireInterval;
-	EnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::Fire, WorldTime);
 
-	return (Combat.ShotsFired >= Params.ShotCount)
-		? EStateTreeRunStatus::Succeeded
-		: EStateTreeRunStatus::Running;
+	// 한 발마다 다시 재생해야 하므로 재시작이다. 이미 Fire 상태여도 갱신한다.
+	RetriggerActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::Fire, WorldTime);
+
+	if (Combat.ShotsFired >= Params.ShotCount)
+	{
+		return EStateTreeRunStatus::Succeeded;
+	}
+
+	// 다음 발사 시각에 깨어나도록 예약한다.
+	//
+	// 이게 없으면 이 Tick 은 두 번 다시 불리지 않는다 — 트리는 신호받은 엔티티만 틱하고,
+	// Running 을 반환한 엔티티에는 재신호를 넣지 않기 때문이다. 사격형이 첫 발만 쏘고
+	// 그 자리에 굳는다.
+	FMassStateTreeExecutionContext& MassContext = static_cast<FMassStateTreeExecutionContext&>(Context);
+	Context.GetExternalData(SignalSubsystemHandle).DelaySignalEntity(
+		UE::Mass::Signals::NewStateTreeTaskRequired, MassContext.GetEntity(), Params.FireInterval);
+
+	return EStateTreeRunStatus::Running;
 }
 
 bool FTRDeathTask::Link(FStateTreeLinker& Linker)
 {
 	Linker.LinkExternalData(EnemyStateHandle);
+	Linker.LinkExternalData(SignalSubsystemHandle);
 	return true;
 }
 
@@ -204,7 +230,9 @@ void FTRDeathTask::GetDependencies(UE::MassBehavior::FStateTreeDependencyBuilder
 EStateTreeRunStatus FTRDeathTask::EnterState(FStateTreeExecutionContext& Context,
 	const FStateTreeTransitionResult& Transition) const
 {
-	EnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::Death, GetWorldTime(Context));
+	// 이미 Death 라면 다른 경로(포탑 사격 등)가 먼저 죽인 것이다. 그때는 진입 시각을
+	// 그대로 두어야 연출 시간이 그 순간부터 정확히 재진다.
+	TryEnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::Death, GetWorldTime(Context));
 
 	// 연출 시간이 없으면 이번 틱에 바로 지운다.
 	return Tick(Context, 0.f);
@@ -215,12 +243,19 @@ EStateTreeRunStatus FTRDeathTask::Tick(FStateTreeExecutionContext& Context, cons
 	const FTREnemyStateFragment& State = Context.GetExternalData(EnemyStateHandle);
 	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
 
-	if (GetWorldTime(Context) - State.StateEnteredTime < InstanceData.LingerDuration)
+	FMassStateTreeExecutionContext& MassContext = static_cast<FMassStateTreeExecutionContext&>(Context);
+
+	const float Remaining = InstanceData.LingerDuration - (GetWorldTime(Context) - State.StateEnteredTime);
+	if (Remaining > 0.f)
 	{
+		// 연출이 끝나는 시각에 깨어나도록 예약한다. 예약하지 않으면 이 Tick 이 다시
+		// 불리지 않아 **시체가 영원히 남는다**(트리는 신호받은 엔티티만 틱한다).
+		Context.GetExternalData(SignalSubsystemHandle).DelaySignalEntity(
+			UE::Mass::Signals::NewStateTreeTaskRequired, MassContext.GetEntity(), Remaining);
+
 		return EStateTreeRunStatus::Running;
 	}
 
-	FMassStateTreeExecutionContext& MassContext = static_cast<FMassStateTreeExecutionContext&>(Context);
 	MassContext.GetMassEntityExecutionContext().Defer().DestroyEntity(MassContext.GetEntity());
 
 	return EStateTreeRunStatus::Succeeded;

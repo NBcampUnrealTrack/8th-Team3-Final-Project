@@ -39,9 +39,7 @@ namespace
 }
 
 UTREnemyAttackProcessor::UTREnemyAttackProcessor()
-	: ArrivalQuery(*this)
-	, DetonationQuery(*this)
-	, AmmoDepletedQuery(*this)
+	: DetonationQuery(*this)
 {
 	bAutoRegisterWithProcessingPhases = true;
 
@@ -54,33 +52,14 @@ UTREnemyAttackProcessor::UTREnemyAttackProcessor()
 
 void UTREnemyAttackProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
 {
-	// ── 도달 → 행동 시작 ──────────────────────────────────────────────────
-	ArrivalQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
-	ArrivalQuery.AddRequirement<FTREnemyCombatFragment>(EMassFragmentAccess::ReadWrite);
-	ArrivalQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadWrite);
-	ArrivalQuery.AddRequirement<FTRApproachFragment>(EMassFragmentAccess::ReadWrite);
-	// 피해를 받을 액터를 고르는 근거. 판단은 하지 않고 채널만 실어 보낸다.
-	ArrivalQuery.AddRequirement<FTRChaseChannelFragment>(EMassFragmentAccess::ReadOnly);
-	// 사출로 정지 거리를 바꿀 때 도달 상태를 무효화해야 한다(아래 Launcher 분기 참고).
-	ArrivalQuery.AddRequirement<FTRTargetFragment>(EMassFragmentAccess::ReadWrite);
-	ArrivalQuery.AddConstSharedRequirement<FTREnemyCombatParams>(EMassFragmentPresence::All);
-	ArrivalQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
-	ArrivalQuery.AddTagRequirement<FTRArrivedTag>(EMassFragmentPresence::All);
-	ArrivalQuery.AddTagRequirement<FTRDetonatingTag>(EMassFragmentPresence::None);
-	ArrivalQuery.AddSubsystemRequirement<UTRMassCombatSubsystem>(EMassFragmentAccess::ReadWrite);
-
 	// ── 폭발 예약 → 실행 ──────────────────────────────────────────────────
 	DetonationQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
 	DetonationQuery.AddRequirement<FTREnemyCombatFragment>(EMassFragmentAccess::ReadOnly);
+	// 피해를 받을 액터를 고르는 근거. 판단은 하지 않고 채널만 실어 보낸다.
 	DetonationQuery.AddRequirement<FTRChaseChannelFragment>(EMassFragmentAccess::ReadOnly);
 	DetonationQuery.AddConstSharedRequirement<FTREnemyCombatParams>(EMassFragmentPresence::All);
 	DetonationQuery.AddTagRequirement<FTRDetonatingTag>(EMassFragmentPresence::All);
 	DetonationQuery.AddSubsystemRequirement<UTRMassCombatSubsystem>(EMassFragmentAccess::ReadWrite);
-
-	AmmoDepletedQuery.AddRequirement<FTREnemyCombatFragment>(EMassFragmentAccess::ReadOnly);
-	AmmoDepletedQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadWrite);
-	AmmoDepletedQuery.AddConstSharedRequirement<FTREnemyCombatParams>(EMassFragmentPresence::All);
-	AmmoDepletedQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 }
 
 void UTREnemyAttackProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
@@ -96,111 +75,7 @@ void UTREnemyAttackProcessor::Execute(FMassEntityManager& EntityManager, FMassEx
 
 	const float WorldTime = World->GetTimeSeconds();
 
-	// ── 1. 도달한 적의 행동 개시 ──────────────────────────────────────────
-	ArrivalQuery.ForEachEntityChunk(Context, [WorldTime](FMassExecutionContext& Context)
-	{
-		const FTREnemyCombatParams& Params = Context.GetConstSharedFragment<FTREnemyCombatParams>();
-		UTRMassCombatSubsystem& Combat = Context.GetMutableSubsystemChecked<UTRMassCombatSubsystem>();
-
-		// 이미 사출된 상체는 종류가 사출형이어도 행동은 근접형과 같다(접촉하면 터진다).
-		// 태그는 아키타입 단위라 청크당 한 번만 확인하면 된다.
-		const ETREnemyType Behavior = Context.DoesArchetypeHaveTag<FTRLaunchedTag>()
-			? ETREnemyType::Melee : Params.EnemyType;
-
-		const TConstArrayView<FTransformFragment> TransformList = Context.GetFragmentView<FTransformFragment>();
-		const TArrayView<FTREnemyCombatFragment> CombatList = Context.GetMutableFragmentView<FTREnemyCombatFragment>();
-		const TArrayView<FTREnemyStateFragment> StateList = Context.GetMutableFragmentView<FTREnemyStateFragment>();
-		const TArrayView<FTRApproachFragment> ApproachList = Context.GetMutableFragmentView<FTRApproachFragment>();
-		const TConstArrayView<FTRChaseChannelFragment> ChannelList = Context.GetFragmentView<FTRChaseChannelFragment>();
-		const TArrayView<FTRTargetFragment> TargetList = Context.GetMutableFragmentView<FTRTargetFragment>();
-
-		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
-		{
-			const FMassEntityHandle Entity = EntityIt.GetEntityHandle();
-			FTREnemyCombatFragment& Combatant = CombatList[EntityIt];
-			FTREnemyStateFragment& State = StateList[EntityIt];
-
-			switch (Behavior)
-			{
-			case ETREnemyType::Launcher:
-			{
-				// StateTree 의 Launch 태스크가 같은 프레임에 먼저 걸었으면 두 번 하지 않는다.
-				if (State.ActionState == ETREnemyActionState::Launch)
-				{
-					break;
-				}
-
-				// 상체를 사출한다. 새 엔티티를 만들지 않고 이 엔티티의 성격을 바꾼다.
-				// 하체는 그 자리에 버려진 뒤 즉시 소멸하는데(기획서), 그건 연출이므로
-				// 표현 쪽(액터/이펙트)이 ActionState == Launch를 보고 처리한다.
-				UE::TR::Enemy::ApplyLaunched(Params, Combatant, ApproachList[EntityIt]);
-				EnterActionState(State, ETREnemyActionState::Launch, WorldTime);
-
-				// 도달 상태를 여기서 직접 무효화한다.
-				//
-				// 도달 판정의 주인은 Steering이지만, **사출은 자기 정지 거리를 스스로
-				// 바꾸는 행동**이라 옛 거리(40m)로 내린 판정은 이 순간 의미를 잃는다.
-				// 무효화까지가 사출이라는 행동의 일부다.
-				//
-				// Steering에 맡기면 안 되는 이유: Steering은 시뮬레이션 LOD 청크 필터를
-				// 쓰기 때문에 프레임을 건너뛸 수 있다. 이 프로세서는 매 프레임 도므로,
-				// 건너뛴 프레임에는 도달 태그가 남은 채로 다시 여기 잡히고 —
-				// 그때는 FTRLaunchedTag 때문에 근접형으로 분기해서 40m 지점에서 터진다.
-				TargetList[EntityIt].bArrived = false;
-				Context.Defer().RemoveTag<FTRArrivedTag>(Entity);
-
-				Context.Defer().AddTag<FTRLaunchedTag>(Entity);
-				break;
-			}
-
-			case ETREnemyType::Shooter:
-			{
-				// 탄 소진 처리는 AmmoDepletedQuery 가 맡는다.
-				if (Combatant.ShotsFired >= Params.ShotCount)
-				{
-					break;
-				}
-
-				// 유지 거리에서 나란히 달리며 사격. 첫 발은 도달 즉시 나간다.
-				if (Combatant.NextActionTime > 0.f && WorldTime < Combatant.NextActionTime)
-				{
-					break;
-				}
-
-				// 착탄점은 사수 위치가 아니라 조준한 기차 표면이다.
-				EmitImpact(Combat, TargetList[EntityIt].TargetLocation, Combatant.ShotDamage,
-					UE::TR::Enemy::ShotImpactRadius, ETREnemyType::Shooter, /*bExplosion=*/false,
-					ChannelList[EntityIt].Channel);
-
-				++Combatant.ShotsFired;
-				Combatant.NextActionTime = WorldTime + Params.FireInterval;
-				EnterActionState(State, ETREnemyActionState::Fire, WorldTime);
-				break;
-			}
-
-			case ETREnemyType::Melee:
-			default:
-			{
-				// StateTree 의 Detonate 태스크가 이미 걸어 두었으면 그 값을 그대로 둔다.
-				// 태그 부착이 Defer 로 미뤄져 같은 프레임에는 쿼리 필터에 걸리지 않으므로,
-				// 여기서 한 번 더 확인해야 준비 시간이 두 번 덮어써지지 않는다.
-				if (State.ActionState == ETREnemyActionState::Attack)
-				{
-					break;
-				}
-
-				// 접촉. 준비 시간을 재고 폭발 예약 상태로 넘긴다.
-				Combatant.NextActionTime = WorldTime + Params.DetonationWindup;
-				EnterActionState(State, ETREnemyActionState::Attack, WorldTime);
-
-				Context.Defer().AddTag<FTRDetonatingTag>(Entity);
-				break;
-			}
-			}
-		}
-	});
-
-	// ── 2. 준비가 끝난 폭발 실행 ──────────────────────────────────────────
+	// 준비 시각이 지난 폭발을 실행한다. 예약은 StateTree 의 FTRDetonateTask 가 한다.
 	DetonationQuery.ForEachEntityChunk(Context, [WorldTime](FMassExecutionContext& Context)
 	{
 		const FTREnemyCombatParams& Params = Context.GetConstSharedFragment<FTREnemyCombatParams>();
@@ -224,29 +99,6 @@ void UTREnemyAttackProcessor::Execute(FMassEntityManager& EntityManager, FMassEx
 
 			// 자폭한 적은 자원을 주지 않는다(기획서). 그래서 여기서 자원 처리를 하지 않고
 			// 그냥 지운다. 자원은 "처치"된 경우에만 나가야 한다.
-			Context.Defer().DestroyEntity(EntityIt.GetEntityHandle());
-		}
-	});
-
-	AmmoDepletedQuery.ForEachEntityChunk(Context, [WorldTime](FMassExecutionContext& Context)
-	{
-		const FTREnemyCombatParams& Params = Context.GetConstSharedFragment<FTREnemyCombatParams>();
-		if (Params.EnemyType != ETREnemyType::Shooter)
-		{
-			return;
-		}
-
-		const TConstArrayView<FTREnemyCombatFragment> CombatList = Context.GetFragmentView<FTREnemyCombatFragment>();
-		const TArrayView<FTREnemyStateFragment> StateList = Context.GetMutableFragmentView<FTREnemyStateFragment>();
-
-		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
-		{
-			if (CombatList[EntityIt].ShotsFired < Params.ShotCount)
-			{
-				continue;
-			}
-
-			EnterActionState(StateList[EntityIt], ETREnemyActionState::Death, WorldTime);
 			Context.Defer().DestroyEntity(EntityIt.GetEntityHandle());
 		}
 	});
