@@ -214,13 +214,4 @@ protected:
 		const FStateTreeTransitionResult& Transition) const override;
 
 	TStateTreeExternalDataHandle<FTREnemyStateFragment> EnemyStateHandle;
-
-	/**
-	 * 죽는 순간 속도를 끊기 위해.
-	 *
-	 * 태그만 붙여서는 부족하다. 태그 부착은 명령 버퍼를 거쳐 다음 플러시에 반영되고,
-	 * 그 사이에도 엔진 이동 프로세서는 남아 있는 속도로 계속 엔티티를 옮긴다.
-	 */
-	TStateTreeExternalDataHandle<FMassVelocityFragment> VelocityHandle;
-	TStateTreeExternalDataHandle<FMassForceFragment> ForceHandle;
 };

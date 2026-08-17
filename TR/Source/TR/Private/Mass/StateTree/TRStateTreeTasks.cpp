@@ -225,16 +225,12 @@ EStateTreeRunStatus FTRFireTask::Tick(FStateTreeExecutionContext& Context, const
 bool FTRDeathTask::Link(FStateTreeLinker& Linker)
 {
 	Linker.LinkExternalData(EnemyStateHandle);
-	Linker.LinkExternalData(VelocityHandle);
-	Linker.LinkExternalData(ForceHandle);
 	return true;
 }
 
 void FTRDeathTask::GetDependencies(UE::MassBehavior::FStateTreeDependencyBuilder& Builder) const
 {
 	Builder.AddReadWrite<FTREnemyStateFragment>();
-	Builder.AddReadWrite<FMassVelocityFragment>();
-	Builder.AddReadWrite<FMassForceFragment>();
 }
 
 EStateTreeRunStatus FTRDeathTask::EnterState(FStateTreeExecutionContext& Context,
@@ -246,12 +242,8 @@ EStateTreeRunStatus FTRDeathTask::EnterState(FStateTreeExecutionContext& Context
 	// 그대로 두어야 연출 시간이 그 순간부터 정확히 재진다.
 	TryEnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::Death, GetWorldTime(Context));
 
-	// 시체는 그 자리에 남아야 한다. 태그만 붙이면 이동·분리 프로세서가 다음 플러시부터
-	// 제외되지만, 이미 실린 속도는 엔진 이동 프로세서가 계속 적용해 시체가 미끄러진다.
-	// 그래서 속도와 조종력을 여기서 직접 끊는다.
-	Context.GetExternalData(VelocityHandle).Value = FVector::ZeroVector;
-	Context.GetExternalData(ForceHandle).Value = FVector::ZeroVector;
-
+	// 이 태그가 조종·분리에서 빼주고, UTRMassDeathProcessor 가 집어갈 표시가 된다.
+	// 속도는 그 프로세서가 매 프레임 확정하므로 여기서 손댈 필요가 없다.
 	MassContext.GetMassEntityExecutionContext().Defer().AddTag<FTRDeadTag>(MassContext.GetEntity());
 
 	// 삭제는 UTRMassDeathProcessor 가 한다. 여기서 직접 지우면 포탑 사격 경로와 연출 시간이
