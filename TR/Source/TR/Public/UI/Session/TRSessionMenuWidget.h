@@ -79,9 +79,13 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_Start;
 
-	/** "2 / 3 준비" 표시. */
+	/** "준비 2 / 3" 표시. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Ready;
+
+	/** 준비 버튼 안의 글자. 준비 상태에 따라 "준비"와 "준비 취소"로 바뀐다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Button_Ready_Text;
 
 	/** 검색 결과를 담을 상자. 행 위젯을 WBP 가 직접 만들 때 쓴다. */
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -160,8 +164,12 @@ private:
 	bool bLastHost = false;
 	bool bLastCanStart = false;
 	bool bLastMatchStarted = false;
+	bool bLastLocalReady = false;
 	int32 LastReadyPlayers = -1;
 	int32 LastRequiredPlayers = -1;
+
+	// 판이 도는 중에 열린 메뉴인가. 이 경우 판 시작 자동 닫기를 하지 않는다.
+	bool bOpenedDuringMatch = false;
 
 	//	자리마다 콜백이 따로 필요하다 — 다이내믹 델리게이트는 인자를 실어 보낼 수 없다.
 
