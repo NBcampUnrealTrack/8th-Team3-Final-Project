@@ -207,19 +207,9 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	const FTRMassHitResult EnemyHit = Combat->FireHitscan(
 		FireOrigin, FireDirection, EnemyRange, MountedTurret->GetManualDamage());
 
-#if !UE_BUILD_SHIPPING
-	// 초록=적 명중, 빨강=액터(구조물·지형)에 막힘. 아무것도 안 맞으면 아무것도 안 그린다.
-	if (EnemyHit.bHit)
-	{
-		DrawDebugSphere(World, EnemyHit.Location, 50.f, 12, FColor::Green, false, 2.f);
-		ClientDrawFireHit(EnemyHit.Location, true);
-	}
-	else if (bActorHit)
-	{
-		DrawDebugSphere(World, Hit.ImpactPoint, 50.f, 12, FColor::Red, false, 2.f);
-		ClientDrawFireHit(Hit.ImpactPoint, false);
-	}
-#endif
+	// 연출은 포탑이 전원에게 알린다. 적을 맞혔으면 그 지점, 액터에 막혔으면 막힌 지점, 둘 다 아니면 사거리 끝.
+	const FVector EffectLocation = EnemyHit.bHit ? EnemyHit.Location : (bActorHit ? Hit.ImpactPoint : FireOrigin + FireDirection * EnemyRange);
+	MountedTurret->MulticastFireEffect(EffectLocation, EnemyHit.bHit);
 
 	if (EnemyHit.bHit)
 	{
@@ -251,20 +241,6 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	UE_LOG(LogTRGameplay, Verbose, TEXT("Fire hit: %s"), *HitActor->GetName());
 }
 
-// TODO: 진단용 임시 코드.
-void UTRTurretControlComponent::ClientDrawFireHit_Implementation(FVector HitLocation, bool bEnemyHit)
-{
-#if !UE_BUILD_SHIPPING
-	UWorld* World = GetWorld();
-	if (!IsValid(World))
-	{
-		return;
-	}
-
-	DrawDebugSphere(World, HitLocation, 50.f, 12, bEnemyHit ? FColor::Green : FColor::Red, false, 2.f);
-#endif
-}
-
 bool UTRTurretControlComponent::TraceFireTarget(const FVector& Start, const FVector& Direction, FHitResult& OutHit) const
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
@@ -275,7 +251,6 @@ bool UTRTurretControlComponent::TraceFireTarget(const FVector& Start, const FVec
 
 	const FVector TraceEnd = Start + Direction * MountedTurret->GetManualRange();
 
-	// 카메라가 포탑 메시에 붙어 있어 시작점이 포탑 안이다. 무시하지 않으면 자기가 탄 포탑을 맞춘다.
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(OwnerPawn);
 	QueryParams.AddIgnoredActor(MountedTurret);
@@ -312,7 +287,7 @@ bool UTRTurretControlComponent::TryAutoRefillFromInventory()
 		return false;
 	}
 
-	// 채우기가 실패하면 자원을 빼면 안 되므로 차감보다 먼저 시도한다.
+	// 포탑 탄창 만탄 채우기
 	if (!MountedTurret->RefillAmmoToMax())
 	{
 		return false;

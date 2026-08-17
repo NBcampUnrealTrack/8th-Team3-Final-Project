@@ -36,13 +36,6 @@ public:
 	void ServerFire();
 	void ServerFire_Implementation();
 
-	// TODO: 진단용 임시 코드 — 명중 지점 디버그 구를 소유 클라이언트 화면에 그린다.
-	// 판정은 서버에서 도므로 결과만 내려보낸다. UFUNCTION 은 #if 로 감쌀 수 없어(UHT 가
-	// 조건을 해석하지 못한다) 선언은 항상 두고 본문만 가드한다.
-	UFUNCTION(Client, Unreliable)
-	void ClientDrawFireHit(FVector HitLocation, bool bEnemyHit);
-	void ClientDrawFireHit_Implementation(FVector HitLocation, bool bEnemyHit);
-	
 	void ForceDismount();
 	
 private:
