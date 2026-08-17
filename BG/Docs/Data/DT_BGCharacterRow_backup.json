@@ -1,0 +1,106 @@
+[
+	{
+		"Name": "Character.Job.Warrior",
+		"CharacterTag":
+		{
+			"TagName": "Character.Job.Alchemist"
+		},
+		"DisplayName": "",
+		"DefaultAttributeGE": "/Script/Engine.BlueprintGeneratedClass'/Game/Data/Character/AT_Sheriff.AT_Sheriff_C'",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "/Game/TestNoCommit/rogue_all.rogue_all",
+		"AnimClass": "None"
+	},
+	{
+		"Name": "Character.Job.Mage",
+		"CharacterTag":
+		{
+			"TagName": "Character.Job.Berserker"
+		},
+		"DisplayName": "",
+		"DefaultAttributeGE": "/Script/Engine.BlueprintGeneratedClass'/Game/Data/Character/AT_Sheriff.AT_Sheriff_C'",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "/Game/TestNoCommit/rogue_all.rogue_all",
+		"AnimClass": "None"
+	},
+	{
+		"Name": "Character.Job.Rogue",
+		"CharacterTag":
+		{
+			"TagName": "Character.Job.Cleric"
+		},
+		"DisplayName": "",
+		"DefaultAttributeGE": "/Script/Engine.BlueprintGeneratedClass'/Game/Data/Character/AT_Sheriff.AT_Sheriff_C'",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "/Game/TestNoCommit/rogue_all.rogue_all",
+		"AnimClass": "None"
+	},
+	{
+		"Name": "Character.Job.Cleric",
+		"CharacterTag":
+		{
+			"TagName": "Character.Job.Mage"
+		},
+		"DisplayName": "",
+		"DefaultAttributeGE": "/Script/Engine.BlueprintGeneratedClass'/Game/Data/Character/AT_Sheriff.AT_Sheriff_C'",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "/Game/TestNoCommit/rogue_all.rogue_all",
+		"AnimClass": "None"
+	},
+	{
+		"Name": "Character.Job.Ranger",
+		"CharacterTag":
+		{
+			"TagName": "Character.Job.Paladin"
+		},
+		"DisplayName": "",
+		"DefaultAttributeGE": "/Script/Engine.BlueprintGeneratedClass'/Game/Data/Character/AT_Sheriff.AT_Sheriff_C'",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "/Game/TestNoCommit/rogue_all.rogue_all",
+		"AnimClass": "None"
+	},
+	{
+		"Name": "Character.Job.Paladin",
+		"CharacterTag":
+		{
+			"TagName": "Character.Job.Ranger"
+		},
+		"DisplayName": "",
+		"DefaultAttributeGE": "/Script/Engine.BlueprintGeneratedClass'/Game/Data/Character/AT_Sheriff.AT_Sheriff_C'",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "/Game/TestNoCommit/rogue_all.rogue_all",
+		"AnimClass": "None"
+	},
+	{
+		"Name": "Character.Job.Berserker",
+		"CharacterTag":
+		{
+			"TagName": "Character.Job.Rogue"
+		},
+		"DisplayName": "",
+		"DefaultAttributeGE": "/Script/Engine.BlueprintGeneratedClass'/Game/Data/Character/AT_Sheriff.AT_Sheriff_C'",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "/Game/TestNoCommit/rogue_all.rogue_all",
+		"AnimClass": "None"
+	},
+	{
+		"Name": "Character.Job.Alchemist",
+		"CharacterTag":
+		{
+			"TagName": "Character.Job.Warrior"
+		},
+		"DisplayName": "",
+		"DefaultAttributeGE": "/Script/Engine.BlueprintGeneratedClass'/Game/Data/Character/AT_Sheriff.AT_Sheriff_C'",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "/Game/TestNoCommit/rogue_all.rogue_all",
+		"AnimClass": "None"
+	}
+]

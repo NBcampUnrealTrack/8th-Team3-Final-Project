@@ -1,0 +1,122 @@
+[
+	{
+		"Name": "Character.Job.Knight",
+		"CharacterTag": "Character.Job.Knight",
+		"DisplayName": "기사",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Mercenary",
+		"CharacterTag": "Character.Job.Mercenary",
+		"DisplayName": "용병",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Hunter",
+		"CharacterTag": "Character.Job.Hunter",
+		"DisplayName": "사냥꾼",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Scout",
+		"CharacterTag": "Character.Job.Scout",
+		"DisplayName": "수색꾼",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Priest",
+		"CharacterTag": "Character.Job.Priest",
+		"DisplayName": "사제",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Healer",
+		"CharacterTag": "Character.Job.Healer",
+		"DisplayName": "치유사",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Mage",
+		"CharacterTag": "Character.Job.Mage",
+		"DisplayName": "마법사",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Diviner",
+		"CharacterTag": "Character.Job.Diviner",
+		"DisplayName": "점술가",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Monk",
+		"CharacterTag": "Character.Job.Monk",
+		"DisplayName": "수도사",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Brawler",
+		"CharacterTag": "Character.Job.Brawler",
+		"DisplayName": "무투가",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Thief",
+		"CharacterTag": "Character.Job.Thief",
+		"DisplayName": "도둑",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	},
+	{
+		"Name": "Character.Job.Assassin",
+		"CharacterTag": "Character.Job.Assassin",
+		"DisplayName": "암살자",
+		"DefaultAttributeGE": "",
+		"PassiveEffects": [],
+		"GrantedAbilities": [],
+		"SkeletalMesh": "",
+		"AnimClass": ""
+	}
+]
