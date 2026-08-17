@@ -178,7 +178,7 @@ void UTRMassCombatSubsystem::ConsumePendingImpacts()
 		// 표준 TakeDamage 로 보내면 장갑을 건너뛰고 차체가 바로 맞는다.
 		if (ATRTrain* Train = Cast<ATRTrain>(DamagedActor))
 		{
-			Train->ApplyImpactDamage(Impact.Location, Impact.Damage, Impact.Radius,
+			Train->ApplyImpactDamage(Impact.Location, Impact.Damage, /*Impact.Radius,*/ // Radius 제거
 				/*EventInstigator=*/nullptr, /*DamageCauser=*/nullptr);
 		}
 		else if (DamagedActor != nullptr)
