@@ -176,88 +176,95 @@ void UTRActionComponent::CompleteAction()
 		switch (CurrentActionType)
 		{
 			case ETRActionType::Repair:
+			{
+				ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
+				const float HealPercent = IsValid(Character) ? Character->GetHealPercent() : 0.f;
+				bool bRepaired = false;
+				if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
 				{
-					ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
-					const float HealPercent = IsValid(Character) ? Character->GetHealPercent() : 0.f;
-
-					bool bRepaired = false;
-					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
+					if (Part->CanBeRepaired())
 					{
-						if (Part->CanBeRepaired())
-						{
-							Part->ApplyRepair(Part->GetMaxHP() * (HealPercent / 100.f));
-							UE_LOG(LogTRGameplay, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
-							bRepaired = true;
-						}
-						else
-						{
-							UE_LOG(LogTRGameplay, Verbose, TEXT("Repair skipped: %s no longer repairable"), *Part->GetName());
-						}
+						Part->ApplyRepair(Part->GetMaxHP() * (HealPercent / 100.f));
+						UE_LOG(LogTRGameplay, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
+						bRepaired = true;
 					}
-					else if (ATRTrain* Train = Cast<ATRTrain>(Target))
+					else
 					{
-						if (Train->CanBeRepaired())
-						{
-							Train->ApplyRepair(Train->GetMaxHullHealth() * (HealPercent / 100.f));
-							UE_LOG(LogTRGameplay, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
-							bRepaired = true;
-						}
-						else
-						{
-							UE_LOG(LogTRGameplay, Verbose, TEXT("Repair skipped: Train no longer repairable"));
-						}
+						UE_LOG(LogTRGameplay, Verbose, TEXT("Repair skipped: %s no longer repairable"), *Part->GetName());
 					}
-
-					if (bRepaired && PS)
-					{
-						PS->ConsumeCarriedSupply(Def->ResourceAmount);
-					}
-					break;
 				}
-			case ETRActionType::Reload:
+				else if (ATRTrain* Train = Cast<ATRTrain>(Target))
 				{
-					if (ATRTurret* Turret = Cast<ATRTurret>(Target))
+					if (Train->CanBeRepaired())
 					{
-						Turret->AddAmmo(Def->ResourceAmount * Turret->GetManualAmmoPerResource());
-						UE_LOG(LogTRGameplay, Verbose, TEXT("Reload complete: %s Ammo %d / %d"), *Turret->GetName(), Turret->GetCurrentAmmo(), Turret->GetMaxAmmo());
+						Train->ApplyRepair(Train->GetMaxHullHealth() * (HealPercent / 100.f));
+						UE_LOG(LogTRGameplay, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
+						bRepaired = true;
 					}
-					if (PS)
+					else
 					{
-						PS->ConsumeCarriedSupply(Def->ResourceAmount);
+						UE_LOG(LogTRGameplay, Verbose, TEXT("Repair skipped: Train no longer repairable"));
 					}
-					break;
 				}
-			case ETRActionType::Build:
+				if (bRepaired && PS)
 				{
-					if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
-					{
-						const int32 InstallCost = Part->GetInstallCost();
-						
-						// TryConsumeMonsterResource 는 검사와 차감을 함께 한다. 여기서 이미 자원이 빠지므로
-						// 아래에서 다시 차감하면 안 된다.
-						ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
-						if (!IsValid(GameState) || !GameState->TryConsumeMonsterResource(InstallCost))
-						{
-							UE_LOG(LogTRGameplay, Log, TEXT("Build aborted: not enough resource for %s (cost %d)"), *Part->GetName(), InstallCost);
-							break;
-						}
-
-						Part->ApplyInstall();
-						UE_LOG(LogTRGameplay, Verbose, TEXT("Build complete: %s (cost %d, resource left %d)"), *Part->GetName(), InstallCost, GameState->GetMonsterResource());
-					}
-					break;
+					PS->ConsumeCarriedSupply(Def->ResourceAmount);
 				}
-			case ETRActionType::Restock:
-				{
-					if (PS)
-					{
-						PS->AddCarriedSupply(Def->ResourceAmount);
-						UE_LOG(LogTRGameplay, Verbose, TEXT("Restock complete: CarriedSupply %d / %d"), PS->GetCarriedSupply(), ATRPlayerState::MaxCarriedSupply);
-					}
-					break;
-				}
-			default:
 				break;
+			}
+			case ETRActionType::Reload:
+			{
+				bool bReloaded = false;
+				if (ATRTurret* Turret = Cast<ATRTurret>(Target))
+				{
+					if (Turret->CanBeReloaded() && Turret->RefillAmmoToMax())
+					{
+						UE_LOG(LogTRGameplay, Verbose, TEXT("Reload complete: %s Ammo %d / %d"), *Turret->GetName(), Turret->GetCurrentAmmo(), Turret->GetMaxAmmo());
+						bReloaded = true;
+					}
+					else
+					{
+						UE_LOG(LogTRGameplay, Verbose, TEXT("Reload skipped: %s no longer reloadable"), *Turret->GetName());
+					}
+				}
+				if (bReloaded && PS)
+				{
+					PS->ConsumeCarriedSupply(Def->ResourceAmount);
+				}
+				break;
+			}
+			case ETRActionType::Build:
+			{
+				if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
+				{
+					const int32 InstallCost = Part->GetInstallCost();
+					
+					// TryConsumeMonsterResource 는 검사와 차감을 함께 한다. 여기서 이미 자원이 빠지므로
+					// 아래에서 다시 차감하면 안 된다.
+					ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
+					if (!IsValid(GameState) || !GameState->TryConsumeMonsterResource(InstallCost))
+					{
+						UE_LOG(LogTRGameplay, Log, TEXT("Build aborted: not enough resource for %s (cost %d)"), *Part->GetName(), InstallCost);
+						break;
+					}
+					Part->ApplyInstall();
+					UE_LOG(LogTRGameplay, Verbose, TEXT("Build complete: %s (cost %d, resource left %d)"), *Part->GetName(), InstallCost, GameState->GetMonsterResource());
+				}
+				break;
+			}
+			case ETRActionType::Restock:
+			{
+				if (PS)
+				{
+					PS->AddCarriedSupply(Def->ResourceAmount);
+					UE_LOG(LogTRGameplay, Verbose, TEXT("Restock complete: CarriedSupply %d / %d"), PS->GetCarriedSupply(), ATRPlayerState::MaxCarriedSupply);
+				}
+				break;
+			}
+			default:
+			{
+				break;
+			}
 		}
 	}
 
