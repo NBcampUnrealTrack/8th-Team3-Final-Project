@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "MassMovementFragments.h"
 #include "MassStateTreeTypes.h"
 #include "Mass/Combat/TRMassCombatSubsystem.h"
 #include "Mass/Core/TRMassFragments.h"
@@ -188,13 +189,14 @@ USTRUCT()
 struct FTRDeathTaskInstanceData
 {
 	GENERATED_BODY()
-
-	/** 엔티티를 지우기까지 기다리는 시간(초). 사망 연출 길이만큼 준다. */
-	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", ForceUnits = "s"))
-	float LingerDuration = 0.f;
 };
 
-/** 사망 상태로 들어가고, 연출이 끝나면 엔티티를 지운다. */
+/**
+ * 사망 상태로 들어간다.
+ *
+ * 시체를 얼마나 남길지는 FTREnemyCombatParams::DeathLinger 가 정하고, 실제 삭제는
+ * UTRMassDeathProcessor 가 한다. 죽는 경로가 여럿이라 삭제 시점은 한 곳에 모아야 한다.
+ */
 USTRUCT(meta = (DisplayName = "TR Death"))
 struct FTRDeathTask : public FMassStateTreeTaskBase
 {
@@ -204,8 +206,6 @@ struct FTRDeathTask : public FMassStateTreeTaskBase
 
 	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
 
-	FTRDeathTask() { bShouldCallTick = true; }
-
 protected:
 	virtual bool Link(FStateTreeLinker& Linker) override;
 	virtual void GetDependencies(UE::MassBehavior::FStateTreeDependencyBuilder& Builder) const override;
@@ -213,10 +213,14 @@ protected:
 	virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context,
 		const FStateTreeTransitionResult& Transition) const override;
 
-	virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const override;
-
 	TStateTreeExternalDataHandle<FTREnemyStateFragment> EnemyStateHandle;
 
-	/** 연출 시간이 끝나는 시점에 스스로 깨어나기 위해. FTRFireTask 의 같은 필드 주석 참고. */
-	TStateTreeExternalDataHandle<UMassSignalSubsystem> SignalSubsystemHandle;
+	/**
+	 * 죽는 순간 속도를 끊기 위해.
+	 *
+	 * 태그만 붙여서는 부족하다. 태그 부착은 명령 버퍼를 거쳐 다음 플러시에 반영되고,
+	 * 그 사이에도 엔진 이동 프로세서는 남아 있는 속도로 계속 엔티티를 옮긴다.
+	 */
+	TStateTreeExternalDataHandle<FMassVelocityFragment> VelocityHandle;
+	TStateTreeExternalDataHandle<FMassForceFragment> ForceHandle;
 };

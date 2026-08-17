@@ -183,6 +183,25 @@ struct FTREnemyCombatParams : public FMassConstSharedFragment
 	UPROPERTY(EditAnywhere, Category = "Enemy|Shooter", meta = (ClampMin = "0.0"))
 	float ShotDamage = 25.f;
 
+	/**
+	 * 죽은 뒤 시체가 남아 있는 시간(초). 사망 연출 길이만큼 준다.
+	 *
+	 * 이 시간 동안 엔티티는 살아 있되 조종·분리에서 제외되어 그 자리에 멈춘다(FTRDeadTag).
+	 * 0이면 다음 틱에 바로 사라진다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Enemy", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float DeathLinger = 2.f;
+
+	/**
+	 * 피격 판정용 몸통 높이(cm).
+	 *
+	 * 엔티티 트랜스폼은 발밑이라, 이 값이 없으면 적이 발 위치의 점 하나가 된다. 그러면
+	 * 몸통을 정확히 조준한 사격이 오히려 빗나간다 — 광선이 발밑까지 내려오지 않으니까.
+	 * 발밑에서 위로 이만큼을 몸통 선분으로 보고 판정한다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Enemy", meta = (ClampMin = "0.0", ForceUnits = "cm"))
+	float HitHeight = 180.f;
+
 	UPROPERTY(EditAnywhere, Category = "Enemy|Shooter", meta = (ClampMin = "0.0", ForceUnits = "s"))
 	float FireInterval = 2.f;
 

@@ -47,7 +47,13 @@ private:
 	
 	void CompleteMount();
 
-	bool TraceFireTarget(FHitResult& OutHit) const;
+	/**
+	 * 액터 대상 라인 트레이스. 기차·아군 구조물·지형처럼 콜리전을 가진 것만 잡힌다.
+	 *
+	 * 광선을 인자로 받는 이유는 Mass 적 판정과 **완전히 같은 선분**을 써야 하기 때문이다.
+	 * 두 판정이 각자 시점을 구하면 미세하게 어긋나 하나만 맞는 각도가 생긴다.
+	 */
+	bool TraceFireTarget(const FVector& Start, const FVector& Direction, float Range, FHitResult& OutHit) const;
 	bool TryAutoRefillFromInventory();
 
 	// 로컬 플레이어의 카메라 매니저. 서버/원격 클라이언트에서는 nullptr.

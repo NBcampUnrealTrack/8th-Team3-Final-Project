@@ -4,6 +4,7 @@
 
 #include "Engine/World.h"
 #include "MassCommandBuffer.h"
+#include "MassMovementFragments.h"
 #include "MassSignalSubsystem.h"
 #include "MassStateTreeDependency.h"
 #include "MassStateTreeExecutionContext.h"
@@ -167,6 +168,12 @@ EStateTreeRunStatus FTRFireTask::EnterState(FStateTreeExecutionContext& Context,
 
 EStateTreeRunStatus FTRFireTask::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
 {
+	// 죽은 뒤에도 시체가 잠시 남으므로, 그동안 계속 쏘지 않도록 여기서 끊는다.
+	if (Context.GetExternalData(EnemyStateHandle).ActionState == ETREnemyActionState::Death)
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
 	const FTREnemyCombatParams& Params = Context.GetExternalData(CombatParamsHandle);
 	FTREnemyCombatFragment& Combat = Context.GetExternalData(CombatHandle);
 
@@ -218,45 +225,37 @@ EStateTreeRunStatus FTRFireTask::Tick(FStateTreeExecutionContext& Context, const
 bool FTRDeathTask::Link(FStateTreeLinker& Linker)
 {
 	Linker.LinkExternalData(EnemyStateHandle);
-	Linker.LinkExternalData(SignalSubsystemHandle);
+	Linker.LinkExternalData(VelocityHandle);
+	Linker.LinkExternalData(ForceHandle);
 	return true;
 }
 
 void FTRDeathTask::GetDependencies(UE::MassBehavior::FStateTreeDependencyBuilder& Builder) const
 {
 	Builder.AddReadWrite<FTREnemyStateFragment>();
+	Builder.AddReadWrite<FMassVelocityFragment>();
+	Builder.AddReadWrite<FMassForceFragment>();
 }
 
 EStateTreeRunStatus FTRDeathTask::EnterState(FStateTreeExecutionContext& Context,
 	const FStateTreeTransitionResult& Transition) const
 {
+	FMassStateTreeExecutionContext& MassContext = static_cast<FMassStateTreeExecutionContext&>(Context);
+
 	// 이미 Death 라면 다른 경로(포탑 사격 등)가 먼저 죽인 것이다. 그때는 진입 시각을
 	// 그대로 두어야 연출 시간이 그 순간부터 정확히 재진다.
 	TryEnterActionState(Context.GetExternalData(EnemyStateHandle), ETREnemyActionState::Death, GetWorldTime(Context));
 
-	// 연출 시간이 없으면 이번 틱에 바로 지운다.
-	return Tick(Context, 0.f);
-}
+	// 시체는 그 자리에 남아야 한다. 태그만 붙이면 이동·분리 프로세서가 다음 플러시부터
+	// 제외되지만, 이미 실린 속도는 엔진 이동 프로세서가 계속 적용해 시체가 미끄러진다.
+	// 그래서 속도와 조종력을 여기서 직접 끊는다.
+	Context.GetExternalData(VelocityHandle).Value = FVector::ZeroVector;
+	Context.GetExternalData(ForceHandle).Value = FVector::ZeroVector;
 
-EStateTreeRunStatus FTRDeathTask::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
-{
-	const FTREnemyStateFragment& State = Context.GetExternalData(EnemyStateHandle);
-	const FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	MassContext.GetMassEntityExecutionContext().Defer().AddTag<FTRDeadTag>(MassContext.GetEntity());
 
-	FMassStateTreeExecutionContext& MassContext = static_cast<FMassStateTreeExecutionContext&>(Context);
-
-	const float Remaining = InstanceData.LingerDuration - (GetWorldTime(Context) - State.StateEnteredTime);
-	if (Remaining > 0.f)
-	{
-		// 연출이 끝나는 시각에 깨어나도록 예약한다. 예약하지 않으면 이 Tick 이 다시
-		// 불리지 않아 **시체가 영원히 남는다**(트리는 신호받은 엔티티만 틱한다).
-		Context.GetExternalData(SignalSubsystemHandle).DelaySignalEntity(
-			UE::Mass::Signals::NewStateTreeTaskRequired, MassContext.GetEntity(), Remaining);
-
-		return EStateTreeRunStatus::Running;
-	}
-
-	MassContext.GetMassEntityExecutionContext().Defer().DestroyEntity(MassContext.GetEntity());
-
+	// 삭제는 UTRMassDeathProcessor 가 한다. 여기서 직접 지우면 포탑 사격 경로와 연출 시간이
+	// 갈라지고, 두 경로가 겹칠 때 같은 엔티티를 두 번 지우려 든다.
+	// 트리를 깨우는 지연 신호도 필요 없어졌다 — 프로세서는 매 틱 시각만 비교하면 된다.
 	return EStateTreeRunStatus::Succeeded;
 }

@@ -47,6 +47,10 @@ void UTRChaseSeparationProcessor::ConfigureQueries(const TSharedRef<FMassEntityM
 	EntityQuery.AddRequirement<FMassForceFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 
+	// 시체는 밀려나지 않는다. 산 개체들이 시체를 피해 지나가는 편이 자연스럽고,
+	// 무엇보다 밀리면 "죽은 자리에 남는다"가 깨진다.
+	EntityQuery.AddTagRequirement<FTRDeadTag>(EMassFragmentPresence::None);
+
 	EntityQuery.AddConstSharedRequirement<FTRChaseParams>(EMassFragmentPresence::All);
 
 	// Off LOD를 제외하지 않는다.

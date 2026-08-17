@@ -96,6 +96,11 @@ void UTRChaseSteeringProcessor::ConfigureQueries(const TSharedRef<FMassEntityMan
 	EntityQuery.AddRequirement<FMassForceFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 
+	// 시체는 조종하지 않는다. 죽은 자리에 남아 있어야 한다.
+	// 태그는 아키타입 단위로 빠르게 걸러주고, 태그가 붙기 전 한 프레임은 아래 상태 값이 막는다.
+	EntityQuery.AddTagRequirement<FTRDeadTag>(EMassFragmentPresence::None);
+	EntityQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
+
 	// 정지 거리와 속도는 개체마다 다르다(종류·사출 여부). TR Chaser 트레이트가 항상 붙인다.
 	EntityQuery.AddRequirement<FTRApproachFragment>(EMassFragmentAccess::ReadOnly);
 
@@ -146,9 +151,23 @@ void UTRChaseSteeringProcessor::Execute(FMassEntityManager& EntityManager, FMass
 		const TArrayView<FMassForceFragment> ForceList = Context.GetMutableFragmentView<FMassForceFragment>();
 
 		const TConstArrayView<FTRApproachFragment> ApproachList = Context.GetFragmentView<FTRApproachFragment>();
+		const TConstArrayView<FTREnemyStateFragment> StateList = Context.GetFragmentView<FTREnemyStateFragment>();
+		const bool bHasState = (StateList.Num() > 0);
 
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
+			// 죽은 개체는 조종하지 않는다.
+			//
+			// FTRDeadTag 로 아키타입 단위 제외를 걸어 두었지만, 태그 부착은 명령 버퍼를 거쳐
+			// **한 프레임 늦게** 반영된다. 그 한 프레임에 마지막으로 힘을 실어버리면 이후
+			// 그 힘이 남아 시체가 계속 가속한다. 상태 값은 죽는 즉시 바뀌므로 여기서 막는다.
+			// 힘을 0으로 덮는 것까지 해야 이미 실린 값이 사라진다.
+			if (bHasState && StateList[EntityIt].ActionState == ETREnemyActionState::Death)
+			{
+				ForceList[EntityIt].Value = FVector::ZeroVector;
+				continue;
+			}
+
 			FTRTargetFragment& Target = TargetList[EntityIt];
 			FTransform& Transform = TransformList[EntityIt].GetMutableTransform();
 			const FVector CurrentVelocity = VelocityList[EntityIt].Value;
