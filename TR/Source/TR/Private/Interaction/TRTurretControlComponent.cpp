@@ -18,8 +18,9 @@
 #include "Train/TRInstallablePart.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
+#include "Mass/Combat/TRMassCombatSubsystem.h"
 
-// 아군 구조물 — 기차 선체와 설치 파츠(장갑·포탑).
+// 아군 구조물: 기차 선체와 설치 파츠(장갑·포탑).
 static bool IsFriendlyStructure(const AActor* Actor)
 {
 	return IsValid(Actor) && (Actor->IsA<ATRTrain>() || Actor->IsA<ATRInstallablePart>());
@@ -155,6 +156,28 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 		return;
 	}
 
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+	
+	UTRMassCombatSubsystem* Combat = World->GetSubsystem<UTRMassCombatSubsystem>();
+	if (!IsValid(Combat))
+	{
+		UE_LOG(LogTRGameplay, Warning, TEXT("Fire aborted: TRMassCombatSubsystem not found"));
+		return;
+	}
+
+	// 발사 원점은 카메라 컴포넌트의 위치다.
+	ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
+	UCameraComponent* Camera = IsValid(Character) ? Character->GetCameraComponent() : nullptr;
+	if (!IsValid(Camera))
+	{
+		UE_LOG(LogTRGameplay, Warning, TEXT("Fire aborted: camera component not found"));
+		return;
+	}
+	
 	const FRotator CamRot = Controller->GetControlRotation();
 	if (!MountedTurret->IsWithinFireArc(CamRot.Yaw, CamRot.Pitch))
 	{
@@ -163,7 +186,7 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	}
 
 	const float FireInterval = 1.f / FMath::Max(MountedTurret->GetManualFireRate(), 0.01f);   // 0으로 나누기 방지
-	const float Now = GetWorld()->GetTimeSeconds();
+	const float Now = World->GetTimeSeconds();
 	if (LastFireTime >= 0.f && Now - LastFireTime < FireInterval)
 	{
 		return;
@@ -172,8 +195,31 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 
 	MountedTurret->ConsumeAmmo(1);
 
+	const FVector FireOrigin = Camera->GetComponentLocation();
+	const FVector FireDirection = CamRot.Vector();
+
+	// 액터 쪽을 먼저 재서 유효 사거리를 정한다. 무언가에 막혔으면 그 지점까지만 적을 찾는다.
 	FHitResult Hit;
-	if (!TraceFireTarget(Hit))
+	const bool bActorHit = TraceFireTarget(FireOrigin, FireDirection, Hit);
+	const float EnemyRange = bActorHit ? Hit.Distance : MountedTurret->GetManualRange();
+
+	// Mass 적 판정. FireHitscan 안에서 체력 차감·사망 처리·OnEnemyKilled 까지 끝낸다.
+	const FTRMassHitResult EnemyHit = Combat->FireHitscan(
+		FireOrigin, FireDirection, EnemyRange, MountedTurret->GetManualDamage());
+
+	// 연출은 포탑이 전원에게 알린다. 적을 맞혔으면 그 지점, 액터에 막혔으면 막힌 지점, 둘 다 아니면 사거리 끝.
+	const FVector EffectLocation = EnemyHit.bHit ? EnemyHit.Location : (bActorHit ? Hit.ImpactPoint : FireOrigin + FireDirection * EnemyRange);
+	MountedTurret->MulticastFireEffect(EffectLocation, EnemyHit.bHit);
+
+	if (EnemyHit.bHit)
+	{
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Fire hit enemy(%s): remaining %.0f%s"),
+			LexToString(EnemyHit.EnemyType), EnemyHit.RemainingHealth, EnemyHit.bKilled ? TEXT(" [killed]") : TEXT(""));
+		return;
+	}
+
+	// 적이 없으면 액터 판정 결과를 쓴다.
+	if (!bActorHit)
 	{
 		UE_LOG(LogTRGameplay, Verbose, TEXT("Fire missed"));
 		return;
@@ -195,22 +241,16 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	UE_LOG(LogTRGameplay, Verbose, TEXT("Fire hit: %s"), *HitActor->GetName());
 }
 
-bool UTRTurretControlComponent::TraceFireTarget(FHitResult& OutHit) const
+bool UTRTurretControlComponent::TraceFireTarget(const FVector& Start, const FVector& Direction, FHitResult& OutHit) const
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	AController* Controller = IsValid(OwnerPawn) ? OwnerPawn->GetController() : nullptr;
-	if (!IsValid(Controller) || !IsValid(MountedTurret))
+	if (!IsValid(OwnerPawn) || !IsValid(MountedTurret))
 	{
 		return false;
 	}
 
-	FVector ViewLocation;
-	FRotator ViewRotation;
-	Controller->GetPlayerViewPoint(ViewLocation, ViewRotation);
+	const FVector TraceEnd = Start + Direction * MountedTurret->GetManualRange();
 
-	const FVector TraceEnd = ViewLocation + ViewRotation.Vector() * MountedTurret->GetManualRange();
-
-	// 카메라가 포탑 메시에 붙어 있어 시작점이 포탑 안이다. 무시하지 않으면 자기가 탄 포탑을 맞춘다.
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(OwnerPawn);
 	QueryParams.AddIgnoredActor(MountedTurret);
@@ -221,13 +261,14 @@ bool UTRTurretControlComponent::TraceFireTarget(FHitResult& OutHit) const
 		return false;
 	}
 
-	const bool bHit = World->LineTraceSingleByChannel(OutHit, ViewLocation, TraceEnd, ECC_Pawn, QueryParams);
-
-#if !UE_BUILD_SHIPPING
-	// 초록=명중, 빨강=빗나감. 사격 판정이 서버에서 도니 서버 화면에만 그려진다.
-	DrawDebugLine(World, ViewLocation, bHit ? OutHit.ImpactPoint : TraceEnd, bHit ? FColor::Green : FColor::Red, false, 2.f, 0, 1.5f);
-#endif
-
+	const bool bHit = World->LineTraceSingleByChannel(
+		OutHit, 
+		Start,
+		TraceEnd,
+		ECC_Pawn, 
+		QueryParams
+	);
+	
 	return bHit;
 }
 
@@ -246,7 +287,7 @@ bool UTRTurretControlComponent::TryAutoRefillFromInventory()
 		return false;
 	}
 
-	// 채우기가 실패하면 자원을 빼면 안 되므로 차감보다 먼저 시도한다.
+	// 포탑 탄창 만탄 채우기
 	if (!MountedTurret->RefillAmmoToMax())
 	{
 		return false;
@@ -271,8 +312,6 @@ APlayerCameraManager* UTRTurretControlComponent::GetLocalCameraManager() const
 }
 
 // 탑승 중에는 사각 밖을 아예 못 보게 시야를 묶는다.
-// 서버의 IsWithinFireArc 검사는 그대로 남는다 — 이건 피드백용이고,
-// 조작된 회전값을 거르는 건 여전히 서버 몫이다.
 void UTRTurretControlComponent::ApplyMountedViewLimits(const ATRTurret* Turret)
 {
 	APlayerCameraManager* CameraManager = GetLocalCameraManager();
@@ -281,8 +320,7 @@ void UTRTurretControlComponent::ApplyMountedViewLimits(const ATRTurret* Turret)
 		return;
 	}
 
-	// 이미 저장돼 있으면 덮어쓰지 않는다 — 포탑을 갈아탈 때 원본이 아니라
-	// 직전 포탑의 제한값을 저장해 버리면 하차 후에도 시야가 묶인 채로 남는다.
+	// 이미 저장돼 있으면 덮어쓰지 않는다.
 	if (!bViewLimitsSaved)
 	{
 		SavedViewYawMin = CameraManager->ViewYawMin;
@@ -295,7 +333,6 @@ void UTRTurretControlComponent::ApplyMountedViewLimits(const ATRTurret* Turret)
 	const float HalfAngle = Turret->GetFireArcHalfAngle();
 
 	// 반각이 180 이상이면 전방위라 Yaw 는 묶지 않는다.
-	// FMath::ClampAngle 은 폭 360 을 0 으로 접어버려서, 그대로 넣으면 시야가 한 점에 고정된다.
 	if (HalfAngle < 180.f)
 	{
 		CameraManager->ViewYawMin = Turret->GetInstallYaw() - HalfAngle;
@@ -326,13 +363,53 @@ void UTRTurretControlComponent::ClearMountedViewLimits()
 void UTRTurretControlComponent::OnRep_MountedTurret()
 {
 	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	if (!IsValid(OwnerPawn) || !OwnerPawn->IsLocallyControlled())
+	if (!IsValid(OwnerPawn))
 	{
-		return;   // 카메라는 이 값을 실제로 "보는" 로컬 플레이어만 처리
+		return;
 	}
 
-	// 시야 제한은 카메라 부착과 별개로 처리한다 —
-	// 카메라 컴포넌트를 못 찾아 아래에서 리턴하더라도 제한은 반드시 원복돼야 한다.
+	const bool bIsLocal = OwnerPawn->IsLocallyControlled();
+	const bool bIsServer = OwnerPawn->HasAuthority();
+
+	if (bIsLocal || bIsServer)
+	{
+		ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
+		UCameraComponent* Camera = IsValid(Character) ? Character->GetCameraComponent() : nullptr;
+		if (IsValid(Camera))
+		{
+			if (IsValid(MountedTurret))
+			{
+				if (!bCameraLastTransform)
+				{
+					LastCameraTransform = Camera->GetRelativeTransform();
+					bCameraLastTransform = true;
+				}
+				// 터렛 시점으로 전환
+				Camera->AttachToComponent(MountedTurret->GetTurretMesh(),
+					FAttachmentTransformRules::SnapToTargetNotIncludingScale /* , 소켓명 */);
+			}
+			else
+			{
+				// 원래 자리(캐릭터 머리)로 복귀 — 생성자에서 붙인 위치와 동일
+				Camera->AttachToComponent(Character->GetMesh(),
+					FAttachmentTransformRules::SnapToTargetNotIncludingScale, FName("head"));
+				
+				if (bCameraLastTransform)
+				{
+					Camera->SetRelativeTransform(LastCameraTransform);
+					bCameraLastTransform = false;
+				}
+			}
+		}
+	}
+	
+	// 시야 제한은 로컬 전용이다.
+	// 화면을 보는 쪽의 조작감 문제이고, 조작된 회전을 거르는 건 서버의 IsWithinFireArc 다.
+	if (!bIsLocal)
+	{
+		return;
+	}
+
 	if (IsValid(MountedTurret))
 	{
 		ApplyMountedViewLimits(MountedTurret);
@@ -340,23 +417,5 @@ void UTRTurretControlComponent::OnRep_MountedTurret()
 	else
 	{
 		ClearMountedViewLimits();
-	}
-
-	ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
-	UCameraComponent* Camera = IsValid(Character) ? Character->GetCameraComponent() : nullptr;
-	if (!IsValid(Camera))
-	{
-		return;
-	}
-
-	if (IsValid(MountedTurret))
-	{
-		// 터렛 시점으로 전환
-		Camera->AttachToComponent(MountedTurret->GetTurretMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale /* , 소켓명 */);
-	}
-	else
-	{
-		// 원래 자리(캐릭터 머리)로 복귀 — 생성자에서 붙인 위치와 동일
-		Camera->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, FName("head"));
 	}
 }

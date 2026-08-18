@@ -35,7 +35,7 @@ public:
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category="Turret")
 	void ServerFire();
 	void ServerFire_Implementation();
-	
+
 	void ForceDismount();
 	
 private:
@@ -47,7 +47,8 @@ private:
 	
 	void CompleteMount();
 
-	bool TraceFireTarget(FHitResult& OutHit) const;
+	// 원점·방향을 호출부에서 받는다. ServerFire 의 적 판정과 같은 값을 써야 두 판정이 어긋나지 않는다.
+	bool TraceFireTarget(const FVector& Start, const FVector& Direction, FHitResult& OutHit) const;
 	bool TryAutoRefillFromInventory();
 
 	// 로컬 플레이어의 카메라 매니저. 서버/원격 클라이언트에서는 nullptr.
@@ -76,4 +77,10 @@ private:
 	FTimerHandle MountTimerHandle;
 
 	TWeakObjectPtr<ATRTurret> PendingMountTurret;
+	
+	// user
+	// 카메라 직전 위치 저장
+	FTransform LastCameraTransform;
+	// 카메라 직전 위치 확인
+	bool bCameraLastTransform = false;
 };

@@ -21,6 +21,8 @@ public:
 	virtual float GetMaxHP() const override;
 	virtual int32 GetInstallCost() const override;
 
+	UBoxComponent* GetDamageVolume() const { return DamageVolume; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -28,7 +30,7 @@ protected:
 private:
 	// 레벨별 수치는 ATRGameState 가 테이블을 들고 답한다
 	const FTRArmorLevelRow* GetCurrentLevelRow(const TCHAR* ContextName) const;
-
+	
 	// 형태 없는 기준점. CollisionBox 와 DamageVolume 은 크기·위치가 전혀 다르므로
 	// 한쪽이 다른 쪽에 딸려 움직이지 않도록 둘 다 이 루트에 형제로 붙인다.
 	UPROPERTY(VisibleAnywhere, Category = "Part")

@@ -12,6 +12,17 @@ ATRInstallablePart::ATRInstallablePart()
 	bReplicates = true;
 }
 
+void ATRInstallablePart::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 레벨 배치 파츠는 설치 완료 상태로 게임을 시작한다. 단, 에디터에서 CurrentHP를 미리 세팅해뒀으면(테스트용 — 데미지 시스템 생기면 제거 검토) 덮어쓰지 않음.
+	if (HasAuthority() && CurrentHP <= 0.f)
+	{
+		ApplyInstall();
+	}
+}
+
 // 서버 전용. 클라에서는 Super 를 타지 않으므로 OnTakeAnyDamage / BP ReceiveAnyDamage 도 호출되지 않는다.
 float ATRInstallablePart::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
@@ -43,15 +54,9 @@ void ATRInstallablePart::OnPartDestroyed()
 	UE_LOG(LogTRGameplay, Log, TEXT("Destroyed: %s"), *GetName());
 }
 
-void ATRInstallablePart::BeginPlay()
+void ATRInstallablePart::OnPartInstalled()
 {
-	Super::BeginPlay();
-
-	// 레벨 배치 파츠는 설치 완료 상태로 게임을 시작한다. 단, 에디터에서 CurrentHP를 미리 세팅해뒀으면(테스트용 — 데미지 시스템 생기면 제거 검토) 덮어쓰지 않음.
-	if (HasAuthority() && CurrentHP <= 0.f)
-	{
-		ApplyInstall();
-	}
+	UE_LOG(LogTRGameplay, Log, TEXT("Installed: %s"), *GetName());
 }
 
 void ATRInstallablePart::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -68,6 +73,11 @@ void ATRInstallablePart::ApplyRepair(float Amount)
 void ATRInstallablePart::ApplyInstall()
 {
 	CurrentHP = GetMaxHP();
+	
+	if (!IsPartDestroyed())
+	{
+		OnPartInstalled();
+	}
 }
 
 void ATRInstallablePart::ApplyLevelUpgrade(float PrevMaxHP)

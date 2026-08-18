@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "MassMovementFragments.h"
 #include "MassStateTreeTypes.h"
 #include "Mass/Combat/TRMassCombatSubsystem.h"
 #include "Mass/Core/TRMassFragments.h"
@@ -173,19 +174,29 @@ protected:
 	TStateTreeExternalDataHandle<FTRChaseChannelFragment> ChannelHandle;
 	TStateTreeExternalDataHandle<FTREnemyCombatParams> CombatParamsHandle;
 	TStateTreeExternalDataHandle<UTRMassCombatSubsystem> CombatSubsystemHandle;
+
+	/**
+	 * 다음 발사 시각에 스스로 깨어나기 위해 필요하다.
+	 *
+	 * UMassStateTreeProcessor 는 **신호를 받은 엔티티만** 트리를 틱한다. 그리고 태스크가
+	 * Running 을 반환하면 재신호를 넣지 않는다(엔진 코드 확인). 즉 이 Tick 은 가만히
+	 * 두면 두 번 다시 불리지 않고, 사격형은 첫 발만 쏘고 굳는다.
+	 */
+	TStateTreeExternalDataHandle<UMassSignalSubsystem> SignalSubsystemHandle;
 };
 
 USTRUCT()
 struct FTRDeathTaskInstanceData
 {
 	GENERATED_BODY()
-
-	/** 엔티티를 지우기까지 기다리는 시간(초). 사망 연출 길이만큼 준다. */
-	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", ForceUnits = "s"))
-	float LingerDuration = 0.f;
 };
 
-/** 사망 상태로 들어가고, 연출이 끝나면 엔티티를 지운다. */
+/**
+ * 사망 상태로 들어간다.
+ *
+ * 시체를 얼마나 남길지는 FTREnemyCombatParams::DeathLinger 가 정하고, 실제 삭제는
+ * UTRMassDeathProcessor 가 한다. 죽는 경로가 여럿이라 삭제 시점은 한 곳에 모아야 한다.
+ */
 USTRUCT(meta = (DisplayName = "TR Death"))
 struct FTRDeathTask : public FMassStateTreeTaskBase
 {
@@ -195,16 +206,12 @@ struct FTRDeathTask : public FMassStateTreeTaskBase
 
 	virtual const UStruct* GetInstanceDataType() const override { return FInstanceDataType::StaticStruct(); }
 
-	FTRDeathTask() { bShouldCallTick = true; }
-
 protected:
 	virtual bool Link(FStateTreeLinker& Linker) override;
 	virtual void GetDependencies(UE::MassBehavior::FStateTreeDependencyBuilder& Builder) const override;
 
 	virtual EStateTreeRunStatus EnterState(FStateTreeExecutionContext& Context,
 		const FStateTreeTransitionResult& Transition) const override;
-
-	virtual EStateTreeRunStatus Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const override;
 
 	TStateTreeExternalDataHandle<FTREnemyStateFragment> EnemyStateHandle;
 };

@@ -52,6 +52,8 @@ private:
 	void ValidateGenerationSettings() const;
 
 	//--- 이동 효과 관련 함수 ---
+	//지금 배경을 흘려도 되는가. bAutoMove 와 판 시작 여부를 함께 본다.
+	bool IsSceneMovementAllowed() const;
 	void MoveChunks(float DeltaSeconds);
 	void MoveRailSegments(float DeltaSeconds);
 	void RecyclePassedChunks();
@@ -59,6 +61,9 @@ private:
 	void RecycleChunk(ATRLevelSceneChunk* Chunk);
 	void RecycleRailSegment(ATRLevelSceneRailSegment* RailSegment);
 	void UpdateFloorVelocity(bool bForceUpdate = false);
+
+	//지면 스크롤 속도를 UTRGroundMotionSubsystem에 매긴다. 적 애니메이션의 발 미끄러짐 보정에 쓰인다
+	void PublishGroundVelocity() const;
 	float GetTravelDistance(const ATRLevelSceneChunk* Chunk) const;
 	float GetRailTravelDistance(const ATRLevelSceneRailSegment* RailSegment) const;
 	float GetFrontmostTravelDistance(const ATRLevelSceneChunk* IgnoredChunk = nullptr) const;
@@ -105,6 +110,10 @@ private:
 	//자동 이동 여부 설정
 	UPROPERTY(EditAnywhere, Category = "Level Scene|Movement")
 	bool bAutoMove = true;
+
+	//판이 시작된 뒤에만 움직일지 여부. 끄면 로비에서도 배경이 흐른다.
+	UPROPERTY(EditAnywhere, Category = "Level Scene|Movement")
+	bool bMoveOnlyAfterMatchStart = true;
 
 	//레일 생성 여부 결정
 	UPROPERTY(EditAnywhere, Category = "Level Scene|Rail")

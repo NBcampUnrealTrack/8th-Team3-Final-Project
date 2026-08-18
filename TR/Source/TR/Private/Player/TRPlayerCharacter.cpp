@@ -64,6 +64,16 @@ void ATRPlayerCharacter::BeginPlay()
 
 }
 
+void ATRPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(MoveUpdateTimerHandle);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void ATRPlayerCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
