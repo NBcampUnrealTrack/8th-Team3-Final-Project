@@ -81,8 +81,14 @@ void ATRPlayerController::RequestStartMatch()
 void ATRPlayerController::ServerSetLobbyReady_Implementation(bool bInReady)
 {
 	// 판이 시작된 뒤에는 준비를 바꿀 수 없다. 판정은 서버가 쥔다.
-	const ATRGameState* GameState = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
-	if (GameState != nullptr && GameState->IsMatchStarted())
+	const UWorld* World = GetWorld();
+	const ATRGameState* GameState = World ? World->GetGameState<ATRGameState>() : nullptr;
+	if (!ensureMsgf(GameState, TEXT("서버에 ATRGameState 가 없어 준비 변경을 판정할 수 없습니다.")))
+	{
+		return;
+	}
+
+	if (GameState->IsMatchStarted())
 	{
 		return;
 	}

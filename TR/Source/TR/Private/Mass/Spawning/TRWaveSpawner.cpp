@@ -4,6 +4,7 @@
 
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Mass/Core/TRMassParams.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Mass/Targeting/TRTargetDirectorSubsystem.h"
 #include "TimerManager.h"
@@ -140,9 +141,13 @@ void ATRWaveSpawner::StartWaveNumber(int32 WaveNumber)
 		Definition = UTRWaveDirectorSubsystem::ScaleWaveForNumber(
 			Row->Wave, WaveNumber, SourceWaveNumber, ScalingStartWave, PerWaveMultiplier);
 
-		UE_LOG(LogTRMass, Log, TEXT("웨이브 %d: 테이블에 없어 %d행을 스케일링 (그룹 %d개, 스탯 ×%.2f)"),
-			WaveNumber, SourceWaveNumber, Definition.Groups.Num(), Definition.StatScale);
+		UE_LOG(LogTRMass, Log, TEXT("웨이브 %d: 테이블에 없어 %d행을 스케일링 (그룹 %d개)"),
+			WaveNumber, SourceWaveNumber, Definition.Groups.Num());
 	}
+
+	UE_LOG(LogTRMass, Log, TEXT("웨이브 %d 배수: 체력 ×%.2f, 피해 ×%.2f, 속도 ×%.2f, 자원 +%d"),
+		WaveNumber, Definition.StatScale.Health, Definition.StatScale.Damage,
+		Definition.StatScale.Speed, Definition.StatScale.ResourceBonus);
 
 	// 이 웨이브가 쓰는 채널에 목표가 없으면 적이 스폰만 되고 움직이지 않는다.
 	// 에러 없이 조용히 실패하는 지점이라 여기서 먼저 잡는다.

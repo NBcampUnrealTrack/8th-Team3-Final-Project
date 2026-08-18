@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Mass/EntityHandle.h"
+#include "Mass/Core/TRMassParams.h"
 #include "Mass/Core/TRMassTypes.h"
 #include "Mass/Spawning/TRMassSpawnUtils.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -45,8 +46,8 @@ struct FTRChaserSpawnParams
 	 * 티어마다 Config 애셋을 복제하지 않기 위한 장치다. 애셋을 복제하면 밸런스를
 	 * 고칠 때마다 전부 손봐야 하고, 하나를 빠뜨리면 그 티어만 조용히 어긋난다.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TR|Spawn", meta = (ClampMin = "0.01"))
-	float StatScale = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TR|Spawn")
+	FTREnemyStatScale StatScale;
 };
 
 /**

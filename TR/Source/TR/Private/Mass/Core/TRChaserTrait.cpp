@@ -114,7 +114,8 @@ void UTRChaserTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildContext
 	// 종류에서 파생되는 값들. 스폰 시 스포너가 티어 배수를 곱해 다시 채우지만,
 	// 스포너를 거치지 않고 만들어진 엔티티(레벨에 놓은 AMassSpawner 등)도
 	// 그대로 동작해야 하므로 기준(T1) 수치를 여기서 넣어둔다.
-	UE::TR::Enemy::InitCombat(CombatParams, /*StatScale=*/1.f, BuildContext.AddFragment_GetRef<FTREnemyCombatFragment>());
+	// 기준값(T1)으로 채워 둔다. 티어 배수는 스폰 시 스포너가 다시 넣는다.
+	UE::TR::Enemy::InitCombat(CombatParams, FTREnemyStatScale(), BuildContext.AddFragment_GetRef<FTREnemyCombatFragment>());
 	BuildContext.AddFragment_GetRef<FTRApproachFragment>() = UE::TR::Enemy::MakeApproach(CombatParams);
 
 	// 채널은 엔티티마다 다를 수 있으므로 일반 프래그먼트로 두고, 초기값을 여기서 박아둔다.

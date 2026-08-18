@@ -111,6 +111,29 @@ struct FTRChaseParams : public FMassConstSharedFragment
 };
 
 /**
+ * 티어별 성장 배수. 항목마다 곡선이 달라 배수 하나로는 표현되지 않는다 —
+ * 기획서의 T1→T3 이 체력 25/30/35, 피해 15/20/25, 속도 5/7/10 m/s 로 각각 다르다.
+ */
+USTRUCT(BlueprintType)
+struct FTREnemyStatScale
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, Category = "Enemy|Scale", meta = (ClampMin = "0.01"))
+	float Health = 1.f;
+
+	UPROPERTY(EditAnywhere, Category = "Enemy|Scale", meta = (ClampMin = "0.01"))
+	float Damage = 1.f;
+
+	UPROPERTY(EditAnywhere, Category = "Enemy|Scale", meta = (ClampMin = "0.01"))
+	float Speed = 1.f;
+
+	/** 티어당 더해지는 자원. 물가에 해당해 복리로 불리지 않고 가산만 한다. */
+	UPROPERTY(EditAnywhere, Category = "Enemy|Scale", meta = (ClampMin = "0"))
+	int32 ResourceBonus = 0;
+};
+
+/**
  * 종류별 전투 수치. Config 애셋마다 이 값만 바꾸면 근접형/사출형/사격형이 갈린다.
  *
  * 여기 있는 값은 **T1(기준) 수치**다. 티어별 수치는 스폰 시 배수(StatScale)를 곱해
@@ -410,19 +433,20 @@ namespace UE::TR::Enemy
 		return BaseSpeed * Approach.SpeedScale;
 	}
 
-	/** 스폰 직후의 전투 수치. StatScale은 티어 배수(기획서의 웨이브당 +5% 복리). */
-	inline void InitCombat(const FTREnemyCombatParams& Params, float StatScale, FTREnemyCombatFragment& OutCombat)
+	/** 스폰 직후의 전투 수치. StatScale은 웨이브 테이블이 준 티어 배수다. */
+	inline void InitCombat(const FTREnemyCombatParams& Params, const FTREnemyStatScale& StatScale,
+		FTREnemyCombatFragment& OutCombat)
 	{
-		const float Scale = (StatScale > 0.f) ? StatScale : 1.f;
+		const float HealthScale = (StatScale.Health > 0.f) ? StatScale.Health : 1.f;
+		const float DamageScale = (StatScale.Damage > 0.f) ? StatScale.Damage : 1.f;
 
-		OutCombat.MaxHealth = Params.MaxHealth * Scale;
+		OutCombat.MaxHealth = Params.MaxHealth * HealthScale;
 		OutCombat.Health = OutCombat.MaxHealth;
-		OutCombat.ContactDamage = Params.ContactDamage * Scale;
-		OutCombat.ShotDamage = Params.ShotDamage * Scale;
+		OutCombat.ContactDamage = Params.ContactDamage * DamageScale;
+		OutCombat.ShotDamage = Params.ShotDamage * DamageScale;
 
-		// 자원은 밸런스상 물가에 해당한다. 물량과 함께 복리로 불리면 후반에 폭주하므로
-		// 배수를 곱하지 않는다(기획서도 T4+ 자원은 고정값이다).
-		OutCombat.ResourceValue = Params.ResourceValue;
+		// 자원은 밸런스상 물가에 해당한다. 복리로 불리면 후반에 폭주하므로 티어당 가산만 한다.
+		OutCombat.ResourceValue = Params.ResourceValue + FMath::Max(0, StatScale.ResourceBonus);
 
 		OutCombat.NextActionTime = 0.f;
 		OutCombat.ShotsFired = 0;
