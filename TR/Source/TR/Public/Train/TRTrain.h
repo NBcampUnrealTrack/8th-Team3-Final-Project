@@ -28,8 +28,8 @@ public:
 	int32 GetActiveArmorCount() const;
 
 	// 자폭·충돌처럼 한 지점의 충격이 적용될 때의 진입점.
-	// 착탄점에 가장 가까운 살아있는 부위(포탑 또는 장갑) 하나가 전부 받고,
-	// 그 부위가 파괴됐으면 선체가 받는다
+	// 착탄점에 가장 가까운 살아있는 부위(포탑 또는 장갑) 하나가 전부 받고, 그 부위가 파괴됐으면 선체가 받는다
+	// 거리 상한은 두지 않는다. 호출자가 이 기차를 목표로 확정한 착탄점만 보낸다.
 	void ApplyImpactDamage(const FVector& ImpactPoint, float Damage, AController* EventInstigator, AActor* DamageCauser);
 
 	UFUNCTION(BlueprintPure, Category = "Train")
@@ -80,13 +80,6 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Train")
 	float MaxHullHealth = 2000.f;
-
-	// 착탄점에서 이 거리 안에 있는 부위만 피격 대상이 된다. 밖이면 선체가 맞는다.
-	//
-	// 근접형은 목표 표면에서 정지 거리만큼 떨어져 터지므로, 적의 ContactRadius 보다
-	// 넉넉해야 한다. 너무 크게 잡으면 반대편에서 터진 폭발이 엉뚱한 부위에 붙는다.
-	UPROPERTY(EditDefaultsOnly, Category = "Train", meta = (ClampMin = "0.0", Units = "cm"))
-	float PartHitDistance = 100.f;
 
 	// 테스트용 — 데미지 시스템(적 등) 생기면 EditInstanceOnly 제거 검토
 	UPROPERTY(EditInstanceOnly, Replicated, BlueprintReadOnly, Category = "Train", meta = (AllowPrivateAccess = "true"))
