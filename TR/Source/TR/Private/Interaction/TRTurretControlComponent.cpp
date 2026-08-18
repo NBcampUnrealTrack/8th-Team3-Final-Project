@@ -379,6 +379,11 @@ void UTRTurretControlComponent::OnRep_MountedTurret()
 		{
 			if (IsValid(MountedTurret))
 			{
+				if (!bCameraLastTransform)
+				{
+					LastCameraTransform = Camera->GetRelativeTransform();
+					bCameraLastTransform = true;
+				}
 				// 터렛 시점으로 전환
 				Camera->AttachToComponent(MountedTurret->GetTurretMesh(),
 					FAttachmentTransformRules::SnapToTargetNotIncludingScale /* , 소켓명 */);
@@ -388,10 +393,16 @@ void UTRTurretControlComponent::OnRep_MountedTurret()
 				// 원래 자리(캐릭터 머리)로 복귀 — 생성자에서 붙인 위치와 동일
 				Camera->AttachToComponent(Character->GetMesh(),
 					FAttachmentTransformRules::SnapToTargetNotIncludingScale, FName("head"));
+				
+				if (bCameraLastTransform)
+				{
+					Camera->SetRelativeTransform(LastCameraTransform);
+					bCameraLastTransform = false;
+				}
 			}
 		}
 	}
-
+	
 	// 시야 제한은 로컬 전용이다.
 	// 화면을 보는 쪽의 조작감 문제이고, 조작된 회전을 거르는 건 서버의 IsWithinFireArc 다.
 	if (!bIsLocal)
@@ -401,28 +412,10 @@ void UTRTurretControlComponent::OnRep_MountedTurret()
 
 	if (IsValid(MountedTurret))
 	{
-		// user
-		// 포탑 이동 전 캐릭터 카메라 위치 저장
-		if (!bCameraLastTransform)
-		{
-			LastCameraTransform = Camera->GetRelativeTransform();
-			bCameraLastTransform = true;
-		}
-		
-		// 터렛 시점으로 전환
-		Camera->AttachToComponent(MountedTurret->GetTurretMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale /* , 소켓명 */);
+		ApplyMountedViewLimits(MountedTurret);
 	}
 	else
 	{
-		// 원래 자리(캐릭터 머리)로 복귀 — 생성자에서 붙인 위치와 동일
-		Camera->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, FName("head"));
-		
-		// user
-		// 포탑 직전 카메라 위치 복원
-		if (bCameraLastTransform)
-		{
-			Camera->SetRelativeTransform(LastCameraTransform);
-			bCameraLastTransform = false;
-		}
+		ClearMountedViewLimits();
 	}
 }
