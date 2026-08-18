@@ -20,6 +20,12 @@ void UTRSessionMenuWidget::NativeConstruct()
 	// 포커스를 먼저 열어 둔다. 아래 로비 갱신이 포커스를 잡으려 하기 때문이다.
 	SetIsFocusable(true);
 
+	// 판 시작 자동 닫기 판단에 쓴다. 갱신을 돌리기 전에 정해야 한다.
+	if (IInterface_TRSession* Session = GetSession())
+	{
+		bOpenedDuringMatch = Session->GetLobbyStatus().bMatchStarted;
+	}
+
 	BindButtons();
 	BindSessionEvents();
 	RefreshStatusTexts();
@@ -470,6 +476,7 @@ void UTRSessionMenuWidget::RefreshLobbyControls()
 	if (bHost == bLastHost
 		&& Status.bCanStart == bLastCanStart
 		&& Status.bMatchStarted == bLastMatchStarted
+		&& Status.bLocalReady == bLastLocalReady
 		&& Status.ReadyPlayers == LastReadyPlayers
 		&& Status.RequiredPlayers == LastRequiredPlayers)
 	{
@@ -479,24 +486,36 @@ void UTRSessionMenuWidget::RefreshLobbyControls()
 	bLastHost = bHost;
 	bLastCanStart = Status.bCanStart;
 	bLastMatchStarted = Status.bMatchStarted;
+	bLastLocalReady = Status.bLocalReady;
 	LastReadyPlayers = Status.ReadyPlayers;
 	LastRequiredPlayers = Status.RequiredPlayers;
 
 	if (Text_Ready)
 	{
-		Text_Ready->SetText(FText::Format(NSLOCTEXT("TR", "ReadyCount", "{0} / {1} 준비"),
+		Text_Ready->SetText(FText::Format(NSLOCTEXT("TR", "ReadyCount", "준비 {0} / {1}"),
 			Status.ReadyPlayers, Status.RequiredPlayers));
 	}
 
 	// 호스트는 준비를 누르지 않는다. 시작 버튼이 그 역할을 한다.
+	// 판이 돌기 시작하면 둘 다 할 일이 없으므로 감춘다.
 	if (Button_Ready)
 	{
-		Button_Ready->SetVisibility(bHost ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		const bool bShow = !bHost && !Status.bMatchStarted;
+		Button_Ready->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+
+	// 누르면 무엇이 되는지를 적는다. 준비한 사람에게는 취소 버튼으로 보인다.
+	if (Button_Ready_Text)
+	{
+		Button_Ready_Text->SetText(Status.bLocalReady
+			? NSLOCTEXT("TR", "CancelReady", "준비 취소")
+			: NSLOCTEXT("TR", "Ready", "준비"));
 	}
 
 	if (Button_Start)
 	{
-		Button_Start->SetVisibility(bHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		const bool bShow = bHost && !Status.bMatchStarted;
+		Button_Start->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		Button_Start->SetIsEnabled(Status.bCanStart);
 	}
 
@@ -506,17 +525,31 @@ void UTRSessionMenuWidget::RefreshLobbyControls()
 		SetKeyboardFocus();
 	}
 
-	// 웨이브가 돌기 시작하면 로비를 붙잡고 있을 이유가 없다.
-	if (Status.bMatchStarted)
+	// 열어 둔 사이에 판이 시작되면 로비를 붙잡고 있을 이유가 없다.
+	// 판이 도는 중에 직접 연 메뉴는 사용자가 닫을 때까지 둔다.
+	if (Status.bMatchStarted && !bOpenedDuringMatch && !bClosePending)
 	{
-		// 닫기 전에 타이머부터 끊는다. 위젯이 안 지워지는 경우 이 함수가 계속 돌면서
-		// 입력 억제를 쥔 채 남는다.
-		if (UWorld* World = GetWorld())
+		// 세션 이벤트 콜백으로도 이 함수가 불린다. 표시가 없으면 다음 틱 타이머가 겹쳐 걸린다.
+		bClosePending = true;
+
+		UWorld* World = GetWorld();
+		if (World == nullptr)
 		{
-			World->GetTimerManager().ClearTimer(LobbyRefreshTimer);
+			// 월드가 없으면 다음 틱을 기약할 수 없다. 즉시 닫는다.
+			RequestClose();
+			return;
 		}
 
-		RequestClose();
+		// 닫기 전에 타이머부터 끊는다. 위젯이 안 지워지는 경우 이 함수가 계속 돌면서
+		// 입력 억제를 쥔 채 남는다.
+		World->GetTimerManager().ClearTimer(LobbyRefreshTimer);
+
+		// 뷰포트에 붙는 중일 수 있어 닫기는 다음 틱으로 미룬다.
+		World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				RequestClose();
+			}));
 	}
 }
 

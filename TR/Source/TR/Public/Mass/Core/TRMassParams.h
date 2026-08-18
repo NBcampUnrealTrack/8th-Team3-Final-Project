@@ -153,9 +153,17 @@ struct FTREnemyCombatParams : public FMassConstSharedFragment
 	UPROPERTY(EditAnywhere, Category = "Enemy|Detonate", meta = (ClampMin = "0.0"))
 	float ContactDamage = 15.f;
 	
+	/** 폭발이 닿는 반경. 표적을 고르는 거리가 아니라 터진 자리에서 퍼지는 범위다. */
 	UPROPERTY(EditAnywhere, Category = "Enemy|Detonate", meta = (ClampMin = "0.0", ForceUnits = "cm"))
 	float ContactRadius = 300.f;
-	
+
+	/**
+	 * 표적 표면까지 이만큼 붙어야 자폭을 시작한다. 폭발 반경과 따로 잡는다.
+	 * 거리는 개체 중심 기준이라 메시 앞끝이 표적에 닿는 값으로 맞춘다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Enemy|Detonate", meta = (ClampMin = "0.0", ForceUnits = "cm"))
+	float ContactStopDistance = 130.f;
+
 	//폭발시간
 	UPROPERTY(EditAnywhere, Category = "Enemy|Detonate", meta = (ClampMin = "0.0", ForceUnits = "s"))
 	float DetonationWindup = 0.4f;
@@ -350,7 +358,7 @@ namespace UE::TR::Enemy
 		{
 		case ETREnemyType::Launcher: Approach.StopDistance = Params.LaunchDistance;    break;
 		case ETREnemyType::Shooter:  Approach.StopDistance = Params.StandoffDistance;  break;
-		default:                     Approach.StopDistance = Params.ContactRadius;     break;
+		default:                     Approach.StopDistance = Params.ContactStopDistance; break;
 		}
 
 		Approach.LeaveDistance = Approach.StopDistance + LeaveDistanceMargin;
@@ -605,8 +613,8 @@ namespace UE::TR::Enemy
 	inline void ApplyLaunched(const FTREnemyCombatParams& Params,
 		FTREnemyCombatFragment& Combat, FTRApproachFragment& Approach)
 	{
-		Approach.StopDistance = Params.ContactRadius;
-		Approach.LeaveDistance = Params.ContactRadius + LeaveDistanceMargin;
+		Approach.StopDistance = Params.ContactStopDistance;
+		Approach.LeaveDistance = Params.ContactStopDistance + LeaveDistanceMargin;
 		Approach.MaxSpeed = Params.LaunchSpeed;
 		Approach.bLockTargetZone = false;
 
