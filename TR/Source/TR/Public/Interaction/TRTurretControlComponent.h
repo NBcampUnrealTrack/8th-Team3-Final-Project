@@ -76,4 +76,10 @@ private:
 	FTimerHandle MountTimerHandle;
 
 	TWeakObjectPtr<ATRTurret> PendingMountTurret;
+	
+	// user
+	// 카메라 직전 위치 저장
+	FTransform LastCameraTransform;
+	// 카메라 직전 위치 확인
+	bool bCameraLastTransform = false;
 };
