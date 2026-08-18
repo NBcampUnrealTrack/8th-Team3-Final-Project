@@ -13,6 +13,12 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "UObject/ConstructorHelpers.h"
+#include "MassCommonFragments.h"
+#include "MassEntityManager.h"
+#include "MassEntityUtils.h"
+#include "MassNavigationSubsystem.h"
+#include "Mass/Core/TRMassFragments.h"
+#include "Mass/Combat/TRMassCombatSubsystem.h"
 
 ATRTurret::ATRTurret()
 {
@@ -49,8 +55,7 @@ void ATRTurret::BeginPlay()
 		InstallPitch = InstallRotation.Pitch;
 	}
 
-	// TurretMesh 는 조준선을 무시하므로 상호작용을 잡아주는 건 ConsoleMesh 뿐이다.
-	// 메시가 비면 콜리전 형상 자체가 없어 탑승·수리가 조용히 불가능해진다.
+	// 메시가 비어서 콜리전 형상 자체가 없어 탑승·수리가 조용히 불가능해진 상황을 알려주는 로그
 	ensureMsgf(IsValid(ConsoleMesh) && ConsoleMesh->GetStaticMesh(),
 		TEXT("%s: ConsoleMesh has no static mesh. Interaction is impossible — assign one in the Blueprint."),
 		*GetName());
@@ -64,19 +69,8 @@ void ATRTurret::BeginPlay()
 	ATRGameState* GS = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
 	if (IsValid(GS))
 	{
-		GS->OnTurretLevelUpgraded.AddUObject(this, &ATRTurret::ApplyLevelUpgrade);
+		GS->OnTurretLevelUpgraded.AddUObject(this, &ATRTurret::HandleLevelUpgraded);
 	}
-}
-
-void ATRTurret::EndPlay(const EEndPlayReason::Type EndPlayReason)
-{
-	ATRGameState* GS = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
-	if (IsValid(GS))
-	{
-		GS->OnTurretLevelUpgraded.RemoveAll(this);
-	}
-
-	Super::EndPlay(EndPlayReason);
 }
 
 const FTRTurretLevelRow* ATRTurret::GetCurrentLevelRow(const TCHAR* ContextName) const
@@ -128,6 +122,8 @@ void ATRTurret::OnPartDestroyed()
 {
 	Super::OnPartDestroyed();
 	
+	StopAutoFire();
+	
 	// 아래 어느 경로로 빠지든 점유는 해제한다. 남으면 재설치 후에도 CanBeMounted() 가 false 다.
 	APawn* CurrentOccupant = Occupant;
 	SetOccupant(nullptr);
@@ -147,11 +143,49 @@ void ATRTurret::OnPartDestroyed()
 	TurretControl->ForceDismount();
 }
 
+void ATRTurret::OnPartInstalled()
+{
+	Super::OnPartInstalled();
+
+	// 설치 시 만탄
+	RefillAmmoToMax();
+
+	// 설치 완료 = 무인 상태로 살아난 것. 게임 시작 시에도 이 경로로 켜진다.
+	StartAutoFire();
+}
+
 float ATRTurret::GetManualFireRate() const
 {
 	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
 	{
 		return Row->ManualFireRate;
+	}
+	return 0.f;
+}
+
+float ATRTurret::GetAutoRange() const
+{
+	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
+	{
+		return Row->AutoRange;
+	}
+	return 0.f;
+}
+
+float ATRTurret::GetAutoDamagePerShot() const
+{
+	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
+	{
+		return Row->AutoDamagePerShot;
+	}
+	return 0.f;
+}
+
+float ATRTurret::GetAutoFireRate() const
+{
+	if (const FTRTurretLevelRow* Row = GetCurrentLevelRow(ANSI_TO_TCHAR(__FUNCTION__)))
+	{
+		return Row->AutoFireRate;
 	}
 	return 0.f;
 }
@@ -163,6 +197,20 @@ int32 ATRTurret::GetMaxAmmo() const
 		return Row->AutoMagazine;
 	}
 	return 0;
+}
+
+void ATRTurret::SetOccupant(APawn* NewOccupant)
+{
+	Occupant = NewOccupant;
+
+	if (IsOccupied())
+	{
+		StopAutoFire();
+	}
+	else
+	{
+		StartAutoFire();
+	}
 }
 
 void ATRTurret::ConsumeAmmo(int32 Amount)
@@ -208,4 +256,200 @@ bool ATRTurret::IsWithinFireArc(float CameraYaw, float CameraPitch) const
 	const float YawDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(InstallYaw, CameraYaw));
 	const float PitchDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(InstallPitch, CameraPitch));
 	return YawDelta <= FireArcHalfAngle && PitchDelta <= FireArcHalfAngle;
+}
+
+void ATRTurret::HandleLevelUpgraded(float PrevMaxHP)
+{
+	// HP 비율 유지는 기반 클래스가 담당한다.
+	ApplyLevelUpgrade(PrevMaxHP);
+
+	// AutoFireRate 가 레벨마다 달라지므로 타이머 주기를 다시 잡는다.
+	StopAutoFire();
+	StartAutoFire();
+}
+
+bool ATRTurret::FindNearestEnemy(const FVector& Origin, float Range, FVector& OutTargetLocation) const
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || Range <= 0.f)
+	{
+		return false;
+	}
+
+	UMassNavigationSubsystem* Navigation = World->GetSubsystem<UMassNavigationSubsystem>();
+	if (!IsValid(Navigation))
+	{
+		return false;
+	}
+
+	FMassEntityManager& EntityManager = UE::Mass::Utils::GetEntityManagerChecked(*World);
+
+	// 그리드는 2D(XY)다. 사거리 크기의 박스로 후보를 좁히고 실제 거리·각도는 아래에서 본다.
+	const FVector Extent(Range, Range, 0.f);
+	
+	// TFixedAllocator 금지: Query() 는 결과 수에 상한이 없어 넘치면 assert 로 죽는다.
+	TArray<FMassNavigationObstacleItem, TInlineAllocator<64>> Candidates;
+	Navigation->GetObstacleGrid().Query(FBox(Origin - Extent, Origin + Extent), Candidates);
+
+	// 초기값이 곧 사거리 상한이다. 거리 검사와 최소값 갱신을 한 변수로 처리한다.
+	double NearestDistanceSq = FMath::Square(static_cast<double>(Range));
+	bool bFound = false;
+
+	for (const FMassNavigationObstacleItem& Candidate : Candidates)
+	{
+		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Candidate.Entity);
+		const FTREnemyCombatFragment* Combat = EntityManager.GetFragmentDataPtr<FTREnemyCombatFragment>(Candidate.Entity);
+
+		// 전투 프래그먼트가 없으면 적이 아니다. 이미 죽었지만 아직 안 지워진 개체도 건너뛴다.
+		if (Transform == nullptr || Combat == nullptr || Combat->Health <= 0.f)
+		{
+			continue;
+		}
+
+		const FVector EnemyLocation = Transform->GetTransform().GetLocation();
+
+		// 3D 거리로 본다. 그리드가 2D 라서 높이는 여기서만 걸러진다.
+		const double DistanceSq = FVector::DistSquared(Origin, EnemyLocation);
+		if (DistanceSq >= NearestDistanceSq)
+		{
+			continue;
+		}
+
+		// 사각 밖이면 쏠 수 없다. 수동 사격과 같은 검사를 쓴다.
+		const FRotator ToEnemy = (EnemyLocation - Origin).Rotation();
+		if (!IsWithinFireArc(ToEnemy.Yaw, ToEnemy.Pitch))
+		{
+			continue;
+		}
+
+		NearestDistanceSq = DistanceSq;
+		OutTargetLocation = EnemyLocation;
+		bFound = true;
+	}
+
+	return bFound;
+}
+
+void ATRTurret::StartAutoFire()
+{
+	// 자동 사격은 서버 권위다. 파괴됐거나 사람이 탄 포탑은 돌지 않는다.
+	if (!HasAuthority() || IsPartDestroyed() || IsOccupied())
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	// AutoFireRate 가 0 이면(테이블 행 누락) 0 으로 나눈다. 수동 쪽과 같은 가드.
+	const float FireInterval = 1.f / FMath::Max(GetAutoFireRate(), 0.01f);
+	World->GetTimerManager().SetTimer(
+		AutoFireTimerHandle, 
+		this, 
+		&ATRTurret::AutoFireTick, 
+		FireInterval, 
+		true
+	);
+
+	UE_LOG(LogTRGameplay, Verbose, TEXT("AutoFire started: %s (%.2fs)"), *GetName(), FireInterval);
+}
+
+void ATRTurret::StopAutoFire()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World) || !AutoFireTimerHandle.IsValid())
+	{
+		return;
+	}
+
+	World->GetTimerManager().ClearTimer(AutoFireTimerHandle);
+	UE_LOG(LogTRGameplay, Verbose, TEXT("AutoFire stopped: %s"), *GetName());
+}
+
+void ATRTurret::AutoFireTick()
+{
+	// 타이머로도 막지만, 상태가 바뀌는 순간과 타이머 사이의 한 프레임을 위해 다시 본다.
+	if (IsPartDestroyed() || IsOccupied())
+	{
+		return;
+	}
+
+	if (GetCurrentAmmo() <= 0)
+	{
+		return;
+	}
+
+	if (!IsValid(TurretMesh))
+	{
+		return;
+	}
+
+	// 사격이 성립하지 않으면 탐색도 탄약도 쓰지 않는다.
+	UWorld* World = GetWorld();
+	UTRMassCombatSubsystem* Combat = IsValid(World) ? World->GetSubsystem<UTRMassCombatSubsystem>() : nullptr;
+	if (!IsValid(Combat))
+	{
+		UE_LOG(LogTRGameplay, Warning, TEXT("AutoFire aborted: TRMassCombatSubsystem not found (%s)"), *GetName());
+		return;
+	}
+	
+	// 총구는 일단 메시 원점. 모델링이 완성되면 소켓으로 바꾼다.
+	const FVector Muzzle = TurretMesh->GetComponentLocation();
+
+	FVector TargetLocation;
+	if (!FindNearestEnemy(Muzzle, GetAutoRange(), TargetLocation))
+	{
+		return;
+	}
+
+	ConsumeAmmo(1);
+
+	// 적의 트랜스폼 위치를 그대로 조준한다.
+	const FVector FireDirection = (TargetLocation - Muzzle).GetSafeNormal();
+	const FTRMassHitResult Hit = Combat->FireHitscan(Muzzle, FireDirection, GetAutoRange(), GetAutoDamagePerShot());
+
+	// 연출은 전원이 본다. 빗나가도 총구 화염은 나야 하므로 조건 없이 알린다.
+	MulticastFireEffect(Hit.Location, Hit.bHit);
+
+	if (!Hit.bHit)
+	{
+		// 방금 찾은 적을 못 맞힌 상황. 판정 반지름이 좁거나 그 사이에 사라졌다.
+		UE_LOG(LogTRGameplay, Verbose, TEXT("AutoFire missed: %s (ammo %d)"), *GetName(), GetCurrentAmmo());
+		return;
+	}
+
+	UE_LOG(LogTRGameplay, Verbose, TEXT("AutoFire hit: %s -> %s remaining %.0f%s (ammo %d)"),
+		*GetName(), LexToString(Hit.EnemyType), Hit.RemainingHealth, Hit.bKilled ? TEXT(" [killed]") : TEXT(""), GetCurrentAmmo());
+}
+
+void ATRTurret::MulticastFireEffect_Implementation(FVector HitLocation, bool bEnemyHit)
+{
+	const FVector Muzzle = IsValid(TurretMesh) ? TurretMesh->GetComponentLocation() : GetActorLocation();
+
+#if !UE_BUILD_SHIPPING
+	// 적을 맞힌 지점까지만 그린다.
+	if (bEnemyHit)
+	{
+		DrawDebugLine(GetWorld(), Muzzle, HitLocation, FColor::Cyan, false, 0.4f, SDPG_Foreground, 1.f);
+	}
+#endif
+
+	// TODO: 총구 화염 · 피탄 이펙트 · 사운드.
+}
+
+
+void ATRTurret::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	StopAutoFire(); // AutoFireTimerHandle ClearTimer
+	
+	ATRGameState* GS = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
+	if (IsValid(GS))
+	{
+		GS->OnTurretLevelUpgraded.RemoveAll(this);
+	}
+
+	Super::EndPlay(EndPlayReason);
 }

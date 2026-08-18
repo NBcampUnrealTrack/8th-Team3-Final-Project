@@ -9,6 +9,7 @@
 
 class ATRArmor;
 class ATRTurret;
+class ATRInstallablePart;
 
 UCLASS()
 class TR_API ATRTrain : public AActor
@@ -26,12 +27,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Train")
 	int32 GetActiveArmorCount() const;
 
-	// 자폭·충돌처럼 한 지점의 충격이 여러 대상에 동시 적용될 때의 진입점.
-	// 살아있는 장갑이 그 자리를 덮고 있으면 장갑이 전부 흡수하고, 아니면 폭발에 걸친 포탑들과 선체가 맞는다.
-	// Radius 는 터뜨린 쪽의 폭발 반경. 0 이하면 기차 기본값 ImpactRadius 를 쓴다.
-	// 착탄점이 기차 근처인지는 검증하지 않는다 — 호출부 책임이다.
-	// TODO: 적 구현 시 호출할 것. 현재 호출부가 없어 장갑 흡수 로직 전체가 미검증이다.
-	void ApplyImpactDamage(const FVector& ImpactPoint, float Damage, float Radius, AController* EventInstigator, AActor* DamageCauser);
+	// 자폭·충돌처럼 한 지점의 충격이 적용될 때의 진입점.
+	// 착탄점에 가장 가까운 살아있는 부위(포탑 또는 장갑) 하나가 전부 받고, 그 부위가 파괴됐으면 선체가 받는다
+	// 거리 상한은 두지 않는다. 호출자가 이 기차를 목표로 확정한 착탄점만 보낸다.
+	void ApplyImpactDamage(const FVector& ImpactPoint, float Damage, AController* EventInstigator, AActor* DamageCauser);
 
 	UFUNCTION(BlueprintPure, Category = "Train")
 	bool HasActiveArmor() const { return GetActiveArmorCount() > 0; }
@@ -72,29 +71,21 @@ protected:
 
 private:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
-
-	// 해당 지점을 덮는 살아있는 장갑을 반환. 장갑이 없거나 파괴됐으면 nullptr (= 노출 상태).
-	ATRArmor* FindArmorAt(const FVector& Point) const;
-
+	
 	// 모든 슬롯이 레벨에서 채워졌는지 확인. 비어 있으면 관제석 UI 칸이 조용히 빈 채로 남는다.
 	void ValidateSlots() const;
-
+	
 	UPROPERTY(VisibleAnywhere, Category = "Train")
 	TObjectPtr<UStaticMeshComponent> MeshComp;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Train")
 	float MaxHullHealth = 2000.f;
 
-	// 폭발 반경 기본값 (기획: 기차 표면 3m).
-	// ApplyImpactDamage 가 Radius 를 못 받았을 때만 쓰인다 — 폭발 크기는 원래 터뜨린 쪽이 정한다.
-	UPROPERTY(EditDefaultsOnly, Category = "Train", meta = (ClampMin = "0.0", Units = "cm"))
-	float ImpactRadius = 300.f;
-
 	// 테스트용 — 데미지 시스템(적 등) 생기면 EditInstanceOnly 제거 검토
 	UPROPERTY(EditInstanceOnly, Replicated, BlueprintReadOnly, Category = "Train", meta = (AllowPrivateAccess = "true"))
 	float CurrentHullHealth = 2000.f;
 
-	// 레벨에서 슬롯마다 배치된 액터를 할당한다. 맵이라 한 슬롯에 둘이 들어갈 수 없다.
+	// 레벨에서 슬롯마다 배치된 액터를 할당한다.
 	// 장갑 하나가 한 면 전체를 담당하며, 창문·피격 볼륨을 여러 개 갖는 건 액터 내부 컴포넌트로 처리한다.
 	UPROPERTY(EditInstanceOnly, Category = "Train")
 	TMap<ETRArmorSlot, TObjectPtr<ATRArmor>> ArmorSlots;

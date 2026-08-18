@@ -15,7 +15,6 @@
 #include "Train/TRSupplyPoint.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
-#include "Train/TRControlConsole.h"
 #include "GameFramework/GameStateBase.h"
 
 UTRActionComponent::UTRActionComponent()
@@ -327,28 +326,33 @@ bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* 
 		return false;
 	}
 
-	// 클라이언트가 임의의 액터를 Target으로 넘길 수 있으므로, 실제 상호작용 대상과 일치하는지 서버에서 재검증
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	const UTRInteractionComponent* Interaction = IsValid(OwnerPawn) ? OwnerPawn->FindComponentByClass<UTRInteractionComponent>() : nullptr;
-	if (!IsValid(Interaction))
-	{
-		UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: no InteractionComponent"));
-		return false;
-	}
 
 	if (ActionType == ETRActionType::Build)
 	{
-		// Build(재설치)는 관제석 UI에서 원격으로 대상을 고르므로, 실제 조준 대상은 파츠가 아니라 ControlConsole이어야 한다
-		if (!Cast<ATRControlConsole>(Interaction->GetCurrentTarget()))
+		// Build(재설치)는 관제석 UI에서 원격으로 대상을 고르므로 조준을 볼 이유가 없다.
+		const ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
+		if (!IsValid(Character) || !Character->IsOccupyingControlConsole())
 		{
-			UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: Build requires looking at ControlConsole"));
+			UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: Build requires occupying the ControlConsole"));
 			return false;
 		}
 	}
-	else if (Interaction->GetCurrentTarget() != Target)
+	else
 	{
-		UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: target=%s is not current interaction target"), *Target->GetName());
-		return false;
+		// 클라이언트가 임의의 액터를 Target으로 넘길 수 있으므로, 실제 상호작용 대상과 일치하는지 서버에서 재검증
+		const UTRInteractionComponent* Interaction = IsValid(OwnerPawn) ? OwnerPawn->FindComponentByClass<UTRInteractionComponent>() : nullptr;
+		if (!IsValid(Interaction))
+		{
+			UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: no InteractionComponent"));
+			return false;
+		}
+
+		if (Interaction->GetCurrentTarget() != Target)
+		{
+			UE_LOG(LogTRGameplay, Log, TEXT("ValidateActionTarget failed: target=%s is not current interaction target"), *Target->GetName());
+			return false;
+		}
 	}
 
 	bool bValid = false;

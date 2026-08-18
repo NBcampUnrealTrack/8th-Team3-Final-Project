@@ -1,13 +1,139 @@
-// TRPlayerHUD.cpp
+﻿// TRPlayerHUD.cpp
 
 #include "UI/TRPlayerHUD.h"
+#include "Blueprint/UserWidget.h"
 #include "Debug/TRGameplayLog.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
+#include "Widgets/SViewport.h"
 #include "UI/TRPlayerHUDWidget.h"
+#include "UI/TRPopupStack.h"
 #include "UI/TRControlConsoleWidget.h"
+
+static UGameViewportClient* GetViewportClient(const APlayerController* PC)
+{
+	const ULocalPlayer* LocalPlayer = PC->GetLocalPlayer();
+	return LocalPlayer ? LocalPlayer->ViewportClient : nullptr;
+}
+
+void ATRPlayerHUD::ApplyGameInputMode(APlayerController* PC)
+{
+	if (!IsValid(PC))
+	{
+		return;
+	}
+
+	FInputModeGameOnly Mode;
+	Mode.SetConsumeCaptureMouseDown(true);
+
+	PC->SetInputMode(Mode);
+	PC->SetShowMouseCursor(false);
+
+	const UGameViewportClient* ViewportClient = GetViewportClient(PC);
+	const TSharedPtr<SViewport> ViewportWidget = ViewportClient ? ViewportClient->GetGameViewportWidget() : nullptr;
+	if (ViewportWidget.IsValid())
+	{
+		PC->GetLocalPlayer()->GetSlateOperations().CaptureMouse(ViewportWidget.ToSharedRef());
+	}
+
+	if (ATRPlayerHUD* HUD = PC->GetHUD<ATRPlayerHUD>())
+	{
+		HUD->bCenterMouse = true;
+	}
+}
+
+void ATRPlayerHUD::PushPopupInputMode(APlayerController* PC, UUserWidget* FocusWidget)
+{
+	if (UTRPopupStack* PopupStack = UTRPopupStack::Get(PC))
+	{
+		PopupStack->Push();
+	}
+
+	ApplyPopupInputMode(PC, FocusWidget);
+}
+
+void ATRPlayerHUD::PopPopupInputMode(APlayerController* PC)
+{
+	UTRPopupStack* PopupStack = UTRPopupStack::Get(PC);
+
+	// 아직 다른 팝업이 남아 있으면 커서를 그대로 둔다.
+	if (PopupStack != nullptr && !PopupStack->Pop())
+	{
+		ApplyPopupInputMode(PC, nullptr);
+		return;
+	}
+
+	ApplyGameInputMode(PC);
+}
+
+void ATRPlayerHUD::ApplyPopupInputMode(APlayerController* PC, UUserWidget* FocusWidget)
+{
+	if (!IsValid(PC))
+	{
+		return;
+	}
+
+	FInputModeGameAndUI Mode;
+	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	if (IsValid(FocusWidget))
+	{
+		Mode.SetWidgetToFocus(FocusWidget->TakeWidget());
+	}
+
+	PC->SetInputMode(Mode);
+	PC->SetShowMouseCursor(true);
+
+	if (ATRPlayerHUD* HUD = PC->GetHUD<ATRPlayerHUD>())
+	{
+		HUD->bCenterMouse = false;
+	}
+}
+
+void ATRPlayerHUD::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	APlayerController* PC = GetOwningPlayerController();
+	if (!bCenterMouse || !IsValid(PC))
+	{
+		return;
+	}
+
+	// 뷰포트를 다시 클릭하면 캡처가 돌아오고 중앙 고정
+	const UGameViewportClient* ViewportClient = GetViewportClient(PC);
+	const FViewport* Viewport = ViewportClient ? ViewportClient->Viewport : nullptr;
+	if (Viewport == nullptr || !Viewport->HasMouseCapture())
+	{
+		return;
+	}
+
+	int32 SizeX = 0;
+	int32 SizeY = 0;
+	PC->GetViewportSize(SizeX, SizeY);
+	if (SizeX <= 0 || SizeY <= 0)
+	{
+		return;
+	}
+
+	PC->SetMouseLocation(SizeX / 2, SizeY / 2);
+}
 
 void ATRPlayerHUD::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (APlayerController* PC = GetOwningPlayerController())
+	{
+		ApplyGameInputMode(PC);
+
+		if (UTRPopupStack* PopupStack = UTRPopupStack::Get(PC))
+		{
+			PopupStack->Reset();
+		}
+
+		bCenterMouse = true;
+	}
 
 	if (!IsValid(PlayerHUDWidgetClass))
 	{

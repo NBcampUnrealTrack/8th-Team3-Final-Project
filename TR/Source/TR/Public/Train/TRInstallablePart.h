@@ -52,7 +52,7 @@ protected:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// HP가 0이 된 순간 서버에서 1회 호출되는 알림 훅.
-	// 액터를 소멸시키지 않는다 - 재설치를 위해 슬롯에 남아야 하므로 Destroy() 호출 금지.
+	// 액터를 소멸시키지 않는다. 재설치를 위해 슬롯에 남아야 하므로 Destroy() 호출 금지.
 	virtual void OnPartDestroyed();
 
 	//--- VFX ---
@@ -63,6 +63,9 @@ protected:
 	//현재 체력이 최대 체력에서 이 비율 이하로 내려가면 손상 지속 이펙트를 켠다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Part|VFX", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DamageEffectHealthRatio = 0.9f;
+	
+	// HP 가 최대치로 채워져 설치가 완료된 순간 서버에서 1회 호출되는 알림 훅.
+	virtual void OnPartInstalled();
 	
 	// 테스트용 — 데미지 시스템(적 등) 생기면 EditInstanceOnly 제거 검토
 	UPROPERTY(EditInstanceOnly, Replicated)
