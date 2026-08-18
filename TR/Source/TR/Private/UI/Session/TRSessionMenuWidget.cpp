@@ -4,6 +4,7 @@
 #include "Session/TRSessionFlow.h"
 #include "Session/Interface_TRSession.h"
 #include "UI/Session/TRSessionMenuController.h"
+#include "UI/TRPlayerHUD.h"
 
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
@@ -34,16 +35,7 @@ void UTRSessionMenuWidget::NativeConstruct()
 
 	if (APlayerController* PC = GetOwningPlayer())
 	{
-		bPrevShowMouseCursor = PC->bShowMouseCursor;
-
-		//	GameAndUI 로 둔다. UIOnly 면 컨트롤러가 키를 못 받아, 트래블 뒤 포커스가
-		//	위젯에 안 들어왔을 때 여는 키로 닫을 방법이 사라진다.
-		FInputModeGameAndUI Mode;
-		Mode.SetWidgetToFocus(TakeWidget());
-		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-
-		PC->SetInputMode(Mode);
-		PC->SetShowMouseCursor(true);
+		ATRPlayerHUD::ApplyPopupInputMode(PC, this);
 
 		//	대신 시점·이동만 막는다. 안 그러면 마우스가 카메라까지 돌려 화면이 휙휙 튄다.
 		//	카운터 방식이라 닫을 때 정확히 한 번 되돌린다.
@@ -94,13 +86,8 @@ void UTRSessionMenuWidget::NativeDestruct()
 			bInputSuppressed = false;
 		}
 
-		// 기본 캡처 모드(CapturePermanently_IncludingInitialMouseDown)로 맞춘다.
-		// 이걸 빼면 닫은 뒤 첫 클릭이 씹혀 마우스가 튀는 것처럼 보인다.
-		FInputModeGameOnly Mode;
-		Mode.SetConsumeCaptureMouseDown(true);
-
-		PC->SetInputMode(Mode);
-		PC->SetShowMouseCursor(bPrevShowMouseCursor);
+		// 커서를 다시 숨기고 뷰포트 중앙에 묶는다.
+		ATRPlayerHUD::ApplyGameInputMode(PC);
 	}
 
 	Super::NativeDestruct();

@@ -209,9 +209,6 @@ private:
 	/** 지금 화면에 올라간 목록. 자리 번호 → 검색 인덱스. */
 	TArray<int32> SlotResultIndices;
 
-	/** 열기 전 커서 상태. 닫을 때 그대로 되돌린다 — 게임 쪽 설정을 짐작하지 않는다. */
-	bool bPrevShowMouseCursor = false;
-
 	/** 시점·이동을 막아 두었는가. 카운터 방식이라 정확히 한 번만 되돌려야 한다. */
 	bool bInputSuppressed = false;
 };

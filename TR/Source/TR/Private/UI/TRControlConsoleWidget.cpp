@@ -2,6 +2,7 @@
 
 #include "UI/TRControlConsoleWidget.h"
 #include "UI/TRConsoleButton.h"
+#include "UI/TRPlayerHUD.h"
 #include "Components/TextBlock.h"
 #include "Core/TRGameState.h"
 #include "Debug/TRGameplayLog.h"
@@ -66,15 +67,7 @@ void UTRControlConsoleWidget::ApplyPopupInputMode()
 		return;
 	}
 
-	bPrevShowMouseCursor = PC->bShowMouseCursor;
-
-	//	GameAndUI로 둔다. UIOnly 면 컨트롤러가 키를 못 받아 E 로 다시 닫을 수 없다.
-	FInputModeGameAndUI Mode;
-	Mode.SetWidgetToFocus(TakeWidget());
-	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-
-	PC->SetInputMode(Mode);
-	PC->SetShowMouseCursor(true);
+	ATRPlayerHUD::ApplyPopupInputMode(PC, this);
 
 	//	시점과 이동을 막아야 관제석 조준이 유지된다 - 서버가 재설치를 조준 대상으로 검증한다.
 	PC->SetIgnoreLookInput(true);
@@ -97,12 +90,8 @@ void UTRControlConsoleWidget::RestoreGameInputMode()
 		bInputSuppressed = false;
 	}
 
-	// 기본 캡처 모드로 맞춘다. 이걸 빼면 닫은 뒤 첫 클릭이 씹힌다.
-	FInputModeGameOnly Mode;
-	Mode.SetConsumeCaptureMouseDown(true);
-
-	PC->SetInputMode(Mode);
-	PC->SetShowMouseCursor(bPrevShowMouseCursor);
+	// 커서를 다시 숨기고 뷰포트 중앙에 묶는다.
+	ATRPlayerHUD::ApplyGameInputMode(PC);
 }
 
 void UTRControlConsoleWidget::CollectSlotRow(const UEnum* SlotEnum, const TCHAR* NamePrefix, bool bArmor)

@@ -8,6 +8,7 @@
 
 class UTRPlayerHUDWidget;
 class UTRControlConsoleWidget;
+class UUserWidget;
 
 UCLASS()
 class TR_API ATRPlayerHUD : public AHUD
@@ -16,6 +17,10 @@ class TR_API ATRPlayerHUD : public AHUD
 
 public:
 	UTRPlayerHUDWidget* GetPlayerHUDWidget() const { return PlayerHUDWidget; }
+
+	static void ApplyGameInputMode(APlayerController* PC);
+
+	static void ApplyPopupInputMode(APlayerController* PC, UUserWidget* FocusWidget);
 
 	// 관제석 팝업. 떠 있는 동안은 마우스 커서가 나오고 시점·이동이 잠긴다.
 	void ToggleControlConsole();
@@ -26,6 +31,10 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
+	virtual void Tick(float DeltaSeconds) override;
+
+	bool bCenterMouse = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTRPlayerHUDWidget> PlayerHUDWidget;
