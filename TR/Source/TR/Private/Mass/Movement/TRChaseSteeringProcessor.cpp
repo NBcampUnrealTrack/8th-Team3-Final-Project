@@ -96,6 +96,11 @@ void UTRChaseSteeringProcessor::ConfigureQueries(const TSharedRef<FMassEntityMan
 	EntityQuery.AddRequirement<FMassForceFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 
+	// 시체는 조종하지 않는다. 죽은 자리에 남아 있어야 한다.
+	// 태그는 아키타입 단위로 빠르게 걸러주고, 태그가 붙기 전 한 프레임은 아래 상태 값이 막는다.
+	EntityQuery.AddTagRequirement<FTRDeadTag>(EMassFragmentPresence::None);
+	EntityQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
+
 	// 정지 거리와 속도는 개체마다 다르다(종류·사출 여부). TR Chaser 트레이트가 항상 붙인다.
 	EntityQuery.AddRequirement<FTRApproachFragment>(EMassFragmentAccess::ReadOnly);
 
@@ -146,24 +151,36 @@ void UTRChaseSteeringProcessor::Execute(FMassEntityManager& EntityManager, FMass
 		const TArrayView<FMassForceFragment> ForceList = Context.GetMutableFragmentView<FMassForceFragment>();
 
 		const TConstArrayView<FTRApproachFragment> ApproachList = Context.GetFragmentView<FTRApproachFragment>();
+		const TConstArrayView<FTREnemyStateFragment> StateList = Context.GetFragmentView<FTREnemyStateFragment>();
+		const bool bHasState = (StateList.Num() > 0);
 
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
+			// 죽은 개체는 조종하지 않는다.
+			//
+			// FTRDeadTag 로 아키타입 단위 제외를 걸어 두었지만, 태그 부착은 명령 버퍼를 거쳐
+			// **한 프레임 늦게** 반영된다. 그 한 프레임에 마지막으로 힘을 실어버리면 이후
+			// 그 힘이 남아 시체가 계속 가속한다. 상태 값은 죽는 즉시 바뀌므로 여기서 막는다.
+			// 힘을 0으로 덮는 것까지 해야 이미 실린 값이 사라진다.
+			if (bHasState && StateList[EntityIt].ActionState == ETREnemyActionState::Death)
+			{
+				ForceList[EntityIt].Value = FVector::ZeroVector;
+				continue;
+			}
+
 			FTRTargetFragment& Target = TargetList[EntityIt];
 			FTransform& Transform = TransformList[EntityIt].GetMutableTransform();
 			const FVector CurrentVelocity = VelocityList[EntityIt].Value;
 			const FTRApproachFragment& Approach = ApproachList[EntityIt];
 
 			// 속도는 보통 Mass Movement가 정하고, 사출형처럼 단계마다 달라지는 개체만
-			// 자기 값을 갖는다. 명시된 값에는 비율을 곱하지 않는다 — 이미 "얼마로 달릴지"가
-			// 정해진 수치라 또 곱하면 기획 수치(상체 25 m/s)와 어긋난다.
+			// 자기 값을 갖는다. 거기에 스폰 때 뽑은 개체별 배수가 곱해진다.
 			//
-			// 어느 쪽이든 엔진의 UMassApplyForceProcessor가 마지막에
+			// 엔진의 UMassApplyForceProcessor가 마지막에
 			// FMassMovementParameters::MaxSpeed로 클램프한다. 그 값이 이 엔티티가 낼 수 있는
 			// 천장이므로, 단계 속도를 쓰는 Config는 Max Speed를 그중 최댓값으로 잡아야 한다.
-			const float DesiredSpeed = (Approach.MaxSpeed > 0.f)
-				? Approach.MaxSpeed
-				: MovementParams.MaxSpeed * ChaseParams.SpeedRatio;
+			const float DesiredSpeed = UE::TR::Enemy::ComputeDesiredSpeed(
+				Approach, MovementParams.MaxSpeed, ChaseParams);
 
 			// 도착 몇 초 전부터 회전 기준을 바꿀지를 거리로 환산해 둔다.
 			const float OrientationFadeDistance = ChaseParams.OrientationFadeTime * DesiredSpeed;
@@ -193,15 +210,7 @@ void UTRChaseSteeringProcessor::Execute(FMassEntityManager& EntityManager, FMass
 				if (bIsArrived != Target.bArrived)
 				{
 					// 상태가 바뀐 순간에만 아키타입을 옮긴다. 매 틱 명령을 쌓으면 낭비다.
-					Target.bArrived = bIsArrived;
-					if (bIsArrived)
-					{
-						Context.Defer().AddTag<FTRArrivedTag>(EntityIt.GetEntityHandle());
-					}
-					else
-					{
-						Context.Defer().RemoveTag<FTRArrivedTag>(EntityIt.GetEntityHandle());
-					}
+					SetArrived(Context.Defer(), EntityIt.GetEntityHandle(), Target, bIsArrived);
 
 					// 행동 상태(FTREnemyStateFragment)는 여기서 건드리지 않는다.
 					// StateTree Task가 그 값의 단독 주인이다. 두 곳에서 쓰면 어느 쪽이

@@ -4,6 +4,7 @@
 
 #include "GameFramework/Pawn.h"
 #include "Net/UnrealNetwork.h"
+#include "TRTypes.h"
 
 ATRControlConsole::ATRControlConsole()
 {
@@ -12,6 +13,9 @@ ATRControlConsole::ATRControlConsole()
 
 	ConsoleMeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ConsoleMeshComp"));
 	RootComponent = ConsoleMeshComp;
+	// 로비·게임 양쪽 조준선에 걸린다. 콜리전은 판이 시작돼도 바뀌지 않고,
+	// 무엇을 열지는 잡힌 뒤 ATRPlayerCharacter::OnInteractPressed 가 IsMatchStarted() 로 가른다.
+	ConsoleMeshComp->SetCollisionProfileName(TRCollisionProfile::DualInteractable);
 }
 
 void ATRControlConsole::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

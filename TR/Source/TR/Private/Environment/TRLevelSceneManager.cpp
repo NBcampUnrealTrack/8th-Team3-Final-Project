@@ -4,8 +4,10 @@
 
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Core/TRGameState.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Environment/TRGroundMotionSubsystem.h"
 #include "Environment/TRLevelSceneChunk.h"
 #include "Environment/TRLevelSceneFloor.h"
 #include "Environment/TRLevelSceneRailSegment.h"
@@ -147,8 +149,9 @@ void ATRLevelSceneManager::Tick(const float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	UpdateFloorVelocity();
+	PublishGroundVelocity();
 
-	if (!bAutoMove || VisualSpeed <= 0.f)
+	if (!IsSceneMovementAllowed() || VisualSpeed <= 0.f)
 	{
 		return;
 	}
@@ -157,6 +160,25 @@ void ATRLevelSceneManager::Tick(const float DeltaSeconds)
 	MoveRailSegments(DeltaSeconds);
 	RecyclePassedChunks();
 	RecyclePassedRailSegments();
+}
+
+//배경을 흘려도 되는 상태인지 판정
+bool ATRLevelSceneManager::IsSceneMovementAllowed() const
+{
+	if (!bAutoMove)
+	{
+		return false;
+	}
+
+	if (!bMoveOnlyAfterMatchStart)
+	{
+		return true;
+	}
+
+	const UWorld* World = GetWorld();
+	const ATRGameState* State = World ? World->GetGameState<ATRGameState>() : nullptr;
+
+	return State != nullptr && State->IsMatchStarted();
 }
 
 //이동속도 설정
@@ -376,7 +398,7 @@ void ATRLevelSceneManager::UpdateFloorVelocity(const bool bForceUpdate)
 	}
 
 	const FVector2D SafeDirection = FloorMovementDirection.GetSafeNormal();
-	const float EffectiveVisualSpeed = bAutoMove ? FMath::Max(0.f, VisualSpeed) : 0.f;
+	const float EffectiveVisualSpeed = IsSceneMovementAllowed() ? FMath::Max(0.f, VisualSpeed) : 0.f;
 	if (!bForceUpdate
 		&& FMath::IsNearlyEqual(LastAppliedFloorVisualSpeed, EffectiveVisualSpeed)
 		&& LastAppliedFloorMovementDirection.Equals(SafeDirection))
@@ -388,6 +410,27 @@ void ATRLevelSceneManager::UpdateFloorVelocity(const bool bForceUpdate)
 	ActiveFloor->SetMovementVelocity(MaterialVelocity.X, MaterialVelocity.Y);
 	LastAppliedFloorVisualSpeed = EffectiveVisualSpeed;
 	LastAppliedFloorMovementDirection = SafeDirection;
+}
+
+//지면 스크롤 속도를 Mass 쪽에 알린다
+void ATRLevelSceneManager::PublishGroundVelocity() const
+{
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+
+	UTRGroundMotionSubsystem* GroundMotion = World->GetSubsystem<UTRGroundMotionSubsystem>();
+	if (GroundMotion == nullptr)
+	{
+		return;
+	}
+
+	//MoveChunks와 같은 식이어야 한다. 어긋나면 적의 발이 실제 지면과 다른 속도로 움직인다
+	const float EffectiveVisualSpeed = IsSceneMovementAllowed() ? FMath::Max(0.f, VisualSpeed) : 0.f;
+
+	GroundMotion->SetGroundVelocity(-GetActorForwardVector() * EffectiveVisualSpeed);
 }
 
 //청크 속도만큼 이동

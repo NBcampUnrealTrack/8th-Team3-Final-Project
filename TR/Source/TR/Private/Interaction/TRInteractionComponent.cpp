@@ -3,6 +3,8 @@
 
 #include "Interaction/TRInteractionComponent.h"
 #include "Debug/TRGameplayLog.h"
+#include "TRTypes.h"
+#include "Core/TRGameState.h"
 #include "Player/TRPlayerCharacter.h"
 #include "Camera/CameraComponent.h"
 #include "UI/TRPlayerHUD.h"
@@ -78,11 +80,16 @@ void UTRInteractionComponent::UpdateTrace()
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(GetOwner());
 
+	// 판 시작 전에는 전용 채널로 쏜다. 포탑·장갑·기차는 그 채널을 Ignore 하므로 아예 잡히지 않고,
+	// GetCurrentTarget() 을 재확인하는 상호작용 경로들이 서버·UI 양쪽에서 함께 닫힌다.
+	const ATRGameState* GameState = World->GetGameState<ATRGameState>();
+	const bool bMatchStarted = IsValid(GameState) && GameState->IsMatchStarted();
+
 	const bool bHit = World->LineTraceSingleByChannel(
 		Hit,
 		Start,
 		End,
-		ECC_Visibility,
+		bMatchStarted ? ECC_Visibility : TRCollisionChannel::LobbyInteract,
 		QueryParams
 	);
 	LastTraceResult = Hit.GetActor();
