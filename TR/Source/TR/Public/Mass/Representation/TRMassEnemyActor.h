@@ -10,6 +10,7 @@
 #include "TRMassEnemyActor.generated.h"
 
 class USkeletalMeshComponent;
+class UNiagaraSystem;
 
 /**
  * AnimBP가 읽을 값 묶음.
@@ -149,6 +150,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "TR|Enemy")
 	TObjectPtr<USkeletalMeshComponent> MeshComp;
 
+	//--- VFX ---
+	//Mass 사망 상태 폭팔 이펙트
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "TR|Enemy|VFX")
+	TObjectPtr<UNiagaraSystem> DeathEffect;
+
 	/** 속도 값의 떨림을 줄인다. 0이면 보간 없음. */
 	UPROPERTY(EditDefaultsOnly, Category = "TR|Enemy", meta = (ClampMin = "0.0"))
 	float SpeedInterpRate = 10.f;
@@ -156,6 +162,9 @@ protected:
 private:
 	/** AnimBP에 노출되는 값 묶음. Mass가 밀어넣은 값에서 파생된다. */
 	FTREnemyAnimData AnimData;
+
+	//직전 상태. 사망 이펙트를 한 번만 재생하기 위한 추적용.
+	ETREnemyActionState PreviousActionState = ETREnemyActionState::None;
 
 	FVector CurrentVelocity = FVector::ZeroVector;
 

@@ -9,11 +9,16 @@
 #include "Debug/TRGameplayLog.h"
 #include "GameFramework/Pawn.h"
 #include "Interaction/TRTurretControlComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+#include "UObject/ConstructorHelpers.h"
 
 ATRTurret::ATRTurret()
 {
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	RootComponent = Root;
+	DamageEffect->SetupAttachment(Root);
 
 	TurretMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TurretMesh"));
 	TurretMesh->SetupAttachment(Root);
@@ -175,6 +180,26 @@ bool ATRTurret::RefillAmmoToMax()
 	}
 	CurrentAmmo = MaxAmmo;
 	return true;
+}
+
+//멀티캐스트로 사격 VFX 스폰, 나이아가라 풀링 사용.
+void ATRTurret::MulticastPlayMuzzleEffect_Implementation()
+{
+	if (GetNetMode() == NM_DedicatedServer || !IsValid(MuzzleEffect) || !IsValid(TurretMesh))
+	{
+		return;
+	}
+
+	UNiagaraFunctionLibrary::SpawnSystemAttached(
+		MuzzleEffect,
+		TurretMesh,
+		MuzzleSocketName,	//추후 포탑 메시 교체시 총구 위치로 조정 필요.
+		MuzzleEffectLocationOffset,
+		MuzzleEffectRotationOffset,
+		EAttachLocation::KeepRelativeOffset,
+		true,
+		true,
+		ENCPoolMethod::AutoRelease);
 }
 
 

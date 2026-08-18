@@ -172,6 +172,8 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	LastFireTime = Now;
 
 	MountedTurret->ConsumeAmmo(1);
+	//발사 이팩트 생성
+	MountedTurret->MulticastPlayMuzzleEffect();
 
 	FVector ViewLocation;
 	FRotator ViewRotation;

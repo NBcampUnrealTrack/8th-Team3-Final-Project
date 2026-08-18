@@ -30,6 +30,8 @@ void UTRActionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME(UTRActionComponent, CurrentActionType);
 	DOREPLIFETIME(UTRActionComponent, ActionStartServerTime);
 	DOREPLIFETIME(UTRActionComponent, CurrentTarget);
+	DOREPLIFETIME(UTRActionComponent, bRepairEffectActive);
+	DOREPLIFETIME(UTRActionComponent, bSupplyEffectActive);
 }
 
 bool UTRActionComponent::ServerStartAction_Validate(ETRActionType ActionType, AActor* Target)
@@ -53,6 +55,9 @@ void UTRActionComponent::SetCurrentAction(ETRActionType NewType, AActor* NewTarg
 {
 	CurrentActionType = NewType;
 	CurrentTarget = NewTarget;
+	bRepairEffectActive = NewType == ETRActionType::Repair;
+	bSupplyEffectActive = NewType == ETRActionType::Reload;
+	RefreshOwnerActionEffects();
 
 	ATRGameState* GameState = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
 	if (!IsValid(GameState))
@@ -69,6 +74,25 @@ void UTRActionComponent::SetCurrentAction(ETRActionType NewType, AActor* NewTarg
 	{
 		GameState->SetBuildingComponent(nullptr);
 	}
+}
+
+//두 RepNotify가 어느 순서로 와도 마지막으로 복제된 상태 조합을 한 번에 적용한다.
+void UTRActionComponent::RefreshOwnerActionEffects() const
+{
+	if (ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(GetOwner()))
+	{
+		Character->SetActionEffectsActive(bRepairEffectActive, bSupplyEffectActive);
+	}
+}
+
+void UTRActionComponent::OnRep_RepairEffectActive()
+{
+	RefreshOwnerActionEffects();
+}
+
+void UTRActionComponent::OnRep_SupplyEffectActive()
+{
+	RefreshOwnerActionEffects();
 }
 
 void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionType, AActor* Target)
@@ -377,6 +401,10 @@ void UTRActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		World->GetTimerManager().ClearTimer(ActionTimerHandle);
 	}
+
+	bRepairEffectActive = false;
+	bSupplyEffectActive = false;
+	RefreshOwnerActionEffects();
 
 	Super::EndPlay(EndPlayReason);
 }

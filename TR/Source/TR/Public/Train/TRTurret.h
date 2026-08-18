@@ -8,6 +8,7 @@
 
 class UStaticMeshComponent;
 class USceneComponent;
+class UNiagaraSystem;
 class APawn;
 struct FTRTurretLevelRow;
 
@@ -69,6 +70,11 @@ public:
 	
 	// 실제로 채웠으면 true. 호출부는 이 값으로 자원 차감 여부를 정한다.
 	bool RefillAmmoToMax();
+
+	//서버에서 승인된 발사를 모든 클라이언트의 총구 이펙트로 전파한다.
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayMuzzleEffect();
+	void MulticastPlayMuzzleEffect_Implementation();
 	
 protected:
 	virtual void BeginPlay() override;
@@ -96,6 +102,20 @@ private:
 	// 기차 내부 조종 구조물. 탑승·수리·재장전은 전부 여기서 상호작용한다.
 	UPROPERTY(VisibleAnywhere, Category = "Turret")
 	TObjectPtr<UStaticMeshComponent> ConsoleMesh;
+
+	//--- VFX ---
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Turret|VFX", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UNiagaraSystem> MuzzleEffect;
+
+	//총구 소켓이 없으면 TurretMesh 원점에 아래 상대 오프셋을 적용한다.
+	UPROPERTY(EditDefaultsOnly, Category = "Turret|VFX")
+	FName MuzzleSocketName = NAME_None;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Turret|VFX")
+	FVector MuzzleEffectLocationOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Turret|VFX")
+	FRotator MuzzleEffectRotationOffset = FRotator::ZeroRotator;
 
 	UPROPERTY(Replicated)
 	int32 CurrentAmmo = 0;

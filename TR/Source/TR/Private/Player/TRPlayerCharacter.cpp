@@ -21,6 +21,7 @@
 #include "Train/TRSupplyPoint.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
+#include "UObject/ConstructorHelpers.h"
 
 // Sets default values
 ATRPlayerCharacter::ATRPlayerCharacter()
@@ -39,9 +40,18 @@ ATRPlayerCharacter::ATRPlayerCharacter()
 	CameraComp->FirstPersonFieldOfView = 70.0f;
 	CameraComp->FirstPersonScale = 0.6f;
 
+	// 나이아가라 컴포넌트
 	WalkEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("WalkEffect"));
 	WalkEffect->SetupAttachment(RootComponent);
 	WalkEffect->bAutoActivate = false;
+
+	RepairEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("RepairEffect"));
+	RepairEffect->SetupAttachment(RootComponent);
+	RepairEffect->bAutoActivate = false;
+
+	SupplyEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("SupplyEffect"));
+	SupplyEffect->SetupAttachment(RootComponent);
+	SupplyEffect->bAutoActivate = false;
 	
 	// ActorComponent
 	InteractionComp = CreateDefaultSubobject<UTRInteractionComponent>(TEXT("InteractionComp"));
@@ -243,6 +253,44 @@ void ATRPlayerCharacter::UpdateMoveEffect()
 {
 	WalkEffect->SetVariableVec3(FName(TEXT("MovementVelocity")), GetVelocity());
 	WalkEffect->SetVariableBool(FName(TEXT("IsOnFloor")), !GetCharacterMovement()->IsFalling());
+}
+
+//행동 상태는 서버가 정하고 복제한다. Niagara 컴포넌트는 복제하지 않고 각 머신에서 같은 상태만 적용한다.
+void ATRPlayerCharacter::SetActionEffectsActive(const bool bRepairActive, const bool bSupplyActive)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (IsValid(RepairEffect))
+	{
+		if (bRepairActive)
+		{
+			if (!RepairEffect->IsActive())
+			{
+				RepairEffect->Activate(true);
+			}
+		}
+		else
+		{
+			RepairEffect->DeactivateImmediate();
+		}
+	}
+	if (IsValid(SupplyEffect))
+	{
+		if (bSupplyActive)
+		{
+			if (!SupplyEffect->IsActive())
+			{
+				SupplyEffect->Activate(true);
+			}
+		}
+		else
+		{
+			SupplyEffect->DeactivateImmediate();
+		}
+	}
 }
 
 //착지 함수, VFX/SFX 임시 연동 (추후 애니메이션 추가시 AnimNotify 기반으로 변경 필요)

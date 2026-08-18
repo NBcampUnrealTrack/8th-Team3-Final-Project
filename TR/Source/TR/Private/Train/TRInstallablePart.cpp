@@ -5,11 +5,17 @@
 
 #include "Debug/TRGameplayLog.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "UObject/ConstructorHelpers.h"
 
 ATRInstallablePart::ATRInstallablePart()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
+
+	DamageEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("DamageEffect"));
+	DamageEffect->bAutoActivate = false;
 }
 
 // 서버 전용. 클라에서는 Super 를 타지 않으므로 OnTakeAnyDamage / BP ReceiveAnyDamage 도 호출되지 않는다.
@@ -28,6 +34,7 @@ float ATRInstallablePart::TakeDamage(float DamageAmount, const FDamageEvent& Dam
 	
 	const float PrevHP = CurrentHP;
 	CurrentHP = FMath::Max(0.f, CurrentHP - ActualDamage);
+	UpdateDamageEffectState();
 	UE_LOG(LogTRGameplay, Verbose, TEXT("Damaged: %s HP %.0f -> %.0f"), *GetName(), PrevHP, CurrentHP);
 
 	if (IsPartDestroyed())
@@ -52,22 +59,33 @@ void ATRInstallablePart::BeginPlay()
 	{
 		ApplyInstall();
 	}
+	else if (HasAuthority())
+	{
+		UpdateDamageEffectState();
+	}
+	else
+	{
+		RefreshDamageEffect();
+	}
 }
 
 void ATRInstallablePart::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(ATRInstallablePart, CurrentHP);
+	DOREPLIFETIME(ATRInstallablePart, bDamageEffectActive);
 }
 
 void ATRInstallablePart::ApplyRepair(float Amount)
 {
 	CurrentHP = FMath::Clamp(CurrentHP + Amount, 0.f, GetMaxHP());
+	UpdateDamageEffectState();
 }
 
 void ATRInstallablePart::ApplyInstall()
 {
 	CurrentHP = GetMaxHP();
+	UpdateDamageEffectState();
 }
 
 void ATRInstallablePart::ApplyLevelUpgrade(float PrevMaxHP)
@@ -81,6 +99,7 @@ void ATRInstallablePart::ApplyLevelUpgrade(float PrevMaxHP)
 	// 행 조회에 실패해 이전 최대치를 모르면 비율을 구할 수 없다. 최대치만 오르고 현재 HP 는 그대로 둔다.
 	if (PrevMaxHP <= 0.f)
 	{
+		UpdateDamageEffectState();
 		UE_LOG(LogTRGameplay, Warning, TEXT("%s: level upgrade kept HP as-is — previous MaxHP unknown"), *GetName());
 		return;
 	}
@@ -88,6 +107,37 @@ void ATRInstallablePart::ApplyLevelUpgrade(float PrevMaxHP)
 	// HP 는 정수로만 다루므로 반올림한다. 풀피였다면 비율이 정확히 1 이라 새 최대치에 그대로 맞는다.
 	const float NewMaxHP = GetMaxHP();
 	CurrentHP = FMath::Clamp(FMath::RoundToFloat(NewMaxHP * (CurrentHP / PrevMaxHP)), 0.f, NewMaxHP);
+	UpdateDamageEffectState();
 
 	UE_LOG(LogTRGameplay, Verbose, TEXT("%s: level upgraded, HP %.0f / %.0f"), *GetName(), CurrentHP, NewMaxHP);
+}
+
+//손상 지속 상태의 판정은 서버 한 곳에서만 하고 결과 bool만 복제한다.
+void ATRInstallablePart::UpdateDamageEffectState()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	const float MaxHP = GetMaxHP();
+	const float HealthRatio = MaxHP > 0.f ? CurrentHP / MaxHP : 0.f;
+	bDamageEffectActive = CurrentHP > 0.f && MaxHP > 0.f
+		&& HealthRatio <= DamageEffectHealthRatio;
+	RefreshDamageEffect();
+}
+
+void ATRInstallablePart::RefreshDamageEffect() const
+{
+	if (GetNetMode() == NM_DedicatedServer || !IsValid(DamageEffect))
+	{
+		return;
+	}
+
+	DamageEffect->SetActive(bDamageEffectActive);
+}
+
+void ATRInstallablePart::OnRep_DamageEffectActive()
+{
+	RefreshDamageEffect();
 }

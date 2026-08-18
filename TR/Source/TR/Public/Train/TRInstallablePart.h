@@ -6,6 +6,8 @@
 #include "GameFramework/Actor.h"
 #include "TRInstallablePart.generated.h"
 
+class UNiagaraComponent;
+
 UCLASS(Abstract)
 class TR_API ATRInstallablePart : public AActor
 {
@@ -52,8 +54,30 @@ protected:
 	// HP가 0이 된 순간 서버에서 1회 호출되는 알림 훅.
 	// 액터를 소멸시키지 않는다 - 재설치를 위해 슬롯에 남아야 하므로 Destroy() 호출 금지.
 	virtual void OnPartDestroyed();
+
+	//--- VFX ---
+	//베이스 생성 시점에는 루트가 없으므로 파생 클래스 생성자에서 RootComponent에 붙인다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Part|VFX")
+	TObjectPtr<UNiagaraComponent> DamageEffect;
+
+	//현재 체력이 최대 체력에서 이 비율 이하로 내려가면 손상 지속 이펙트를 켠다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Part|VFX", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DamageEffectHealthRatio = 0.9f;
 	
 	// 테스트용 — 데미지 시스템(적 등) 생기면 EditInstanceOnly 제거 검토
 	UPROPERTY(EditInstanceOnly, Replicated)
 	float CurrentHP = 0.f;
+
+private:
+	//서버에서 체력 임계치를 계산하고 복제 상태를 갱신한다.
+	void UpdateDamageEffectState();
+
+	//Niagara 컴포넌트는 복제하지 않고 이 bool만 각 머신의 활성 상태에 반영한다.
+	void RefreshDamageEffect() const;
+
+	UFUNCTION()
+	void OnRep_DamageEffectActive();
+
+	UPROPERTY(ReplicatedUsing = OnRep_DamageEffectActive)
+	bool bDamageEffectActive = false;
 };

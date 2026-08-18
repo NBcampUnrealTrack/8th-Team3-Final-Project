@@ -45,6 +45,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Action")
 	UTRActionComponent* GetActionComponent() const { return ActionComp; }
 
+	//나이아가라용 상태값 설정
+	void SetActionEffectsActive(bool bRepairActive, bool bSupplyActive);
+
 	UFUNCTION(BlueprintPure, Category = "UI")
 	bool IsOccupyingControlConsole() const;
 	
@@ -147,6 +150,13 @@ protected:
 	//--- VFX ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
 	TObjectPtr<UNiagaraComponent> WalkEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraComponent> RepairEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraComponent> SupplyEffect;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
 	TObjectPtr<UNiagaraSystem> JumpLandEffect;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")

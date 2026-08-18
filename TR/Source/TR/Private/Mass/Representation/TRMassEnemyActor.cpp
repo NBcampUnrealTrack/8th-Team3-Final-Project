@@ -4,6 +4,9 @@
 
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+#include "UObject/ConstructorHelpers.h"
 
 ATRMassEnemyActor::ATRMassEnemyActor()
 {
@@ -52,6 +55,24 @@ ATRMassEnemyActor::ATRMassEnemyActor()
 void ATRMassEnemyActor::SetMassState(const UE::TR::Enemy::FAnimContext& Context,
 	const UE::TR::Enemy::FAnimResolution& Anim, float DeltaSeconds)
 {
+	//스냅샷으로 받은 사망 상태의 진입 순간에만 재생한다. 이 액터는 복제되지 않으므로 각 클라이언트가 로컬에서 판단한다.
+	if (GetNetMode() != NM_DedicatedServer
+		&& PreviousActionState != ETREnemyActionState::Death
+		&& Context.ActionState == ETREnemyActionState::Death
+		&& IsValid(DeathEffect))
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(),
+			DeathEffect,
+			GetActorLocation(),
+			GetActorRotation(),
+			FVector::OneVector,
+			true,
+			true,
+			ENCPoolMethod::AutoRelease);
+	}
+	PreviousActionState = Context.ActionState;
+
 	// 속도는 보간한다. Mass 쪽 값이 프레임마다 튀어도 애니메이션이 떨지 않게.
 	// 갓 나타난 프레임만 예외다 — 0에서 기어오르면 방금 나타난 적이 잠깐 대기 모션을 재생한다.
 	CurrentVelocity = (SpeedInterpRate > 0.f && DeltaSeconds > 0.f && !bFirstUpdate)
@@ -92,6 +113,7 @@ void ATRMassEnemyActor::PrepareForPooling_Implementation()
 
 	CurrentVelocity = FVector::ZeroVector;
 	AnimData = FTREnemyAnimData();
+	PreviousActionState = ETREnemyActionState::None;
 }
 
 void ATRMassEnemyActor::PrepareForGame_Implementation()
@@ -101,6 +123,7 @@ void ATRMassEnemyActor::PrepareForGame_Implementation()
 	// 재사용된 액터가 이전 개체의 속도를 물고 시작하지 않도록 초기화한다.
 	CurrentVelocity = FVector::ZeroVector;
 	AnimData = FTREnemyAnimData();
+	PreviousActionState = ETREnemyActionState::None;
 
 	// 값만 지워서는 부족하다. AnimBP의 상태머신은 이전 개체가 남긴 스테이트에 그대로 머물러 있다.
 	bFirstUpdate = true;
