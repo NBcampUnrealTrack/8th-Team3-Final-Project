@@ -1,4 +1,4 @@
-// TRControlConsoleWidget.cpp
+﻿// TRControlConsoleWidget.cpp
 
 #include "UI/TRControlConsoleWidget.h"
 #include "UI/TRConsoleButton.h"
@@ -208,6 +208,10 @@ void UTRControlConsoleWidget::RefreshSlots()
 		const bool bDestroyed = IsValid(Part) && Part->IsPartDestroyed();
 
 		Button->SetIsEnabled(!bBuilding && bDestroyed && MonsterResource >= Part->GetInstallCost());
+
+		// 파츠 HP 는 복제되므로 클라이언트도 같은 값을 그린다. 슬롯이 비어 있으면 감춘다.
+		const float MaxHP = IsValid(Part) ? Part->GetMaxHP() : 0.f;
+		Button->SetHealth01(MaxHP > 0.f ? Part->GetCurrentHP() / MaxHP : -1.f);
 
 		if (Part == BuildTarget)
 		{
