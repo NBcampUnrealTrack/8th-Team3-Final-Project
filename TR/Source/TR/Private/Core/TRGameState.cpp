@@ -2,11 +2,12 @@
 
 
 #include "Core/TRGameState.h"
+#include "TRTypes.h"
 #include "Engine/DataTable.h"
 #include "Interaction/TRActionComponent.h"
 #include "Net/UnrealNetwork.h"
-#include "TRTypes.h"
 #include "Core/TRPlayerState.h"
+#include "Mass/Combat/TRMassCombatSubsystem.h"
 
 void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
@@ -16,6 +17,36 @@ void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ATRGameState, TurretLevel);
 	DOREPLIFETIME(ATRGameState, BuildingComponent);
 	DOREPLIFETIME(ATRGameState, bMatchStarted);
+}
+
+void ATRGameState::BeginPlay()
+{
+	Super::BeginPlay();
+	
+	// 처치 보상은 서버에서만 누적한다. MonsterResource 는 복제되므로 클라이언트는 값만 받는다.
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	UTRMassCombatSubsystem* Combat = World->GetSubsystem<UTRMassCombatSubsystem>();
+	if (!IsValid(Combat))
+	{
+		return;
+	}
+
+	Combat->OnEnemyKilled.AddDynamic(this, &ATRGameState::HandleEnemyKilled);
+}
+
+void ATRGameState::HandleEnemyKilled(const FVector& Location, int32 ResourceValue)
+{
+	AddMonsterResource(ResourceValue);
 }
 
 UTRActionComponent* ATRGameState::GetBuildingComponent() const
@@ -195,4 +226,19 @@ void ATRGameState::SetMatchStarted(bool bInStarted)
 	}
 
 	bMatchStarted = bInStarted;
+}
+
+void ATRGameState::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 월드 종료 순서에 따라 서브시스템이 먼저 정리됐을 수 있으므로 확인하고 해제한다.
+	UWorld* World = GetWorld();
+	if (IsValid(World))
+	{
+		if (UTRMassCombatSubsystem* Combat = World->GetSubsystem<UTRMassCombatSubsystem>())
+		{
+			Combat->OnEnemyKilled.RemoveDynamic(this, &ATRGameState::HandleEnemyKilled);
+		}
+	}
+
+	Super::EndPlay(EndPlayReason);
 }

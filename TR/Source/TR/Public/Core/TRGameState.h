@@ -77,9 +77,16 @@ public:
 	void SetMatchStarted(bool bInStarted);
 
 protected:
+	virtual void BeginPlay() override;
+	
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 private:
+	UFUNCTION()
+	void HandleEnemyKilled(const FVector& Location, int32 ResourceValue);
+	
 	UPROPERTY(Replicated)
 	int32 MonsterResource = 0;
 	
