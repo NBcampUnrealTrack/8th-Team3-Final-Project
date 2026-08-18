@@ -193,11 +193,12 @@ bool ATRGameState::TryUpgradeTurretLevel()
 
 int32 ATRGameState::GetReadyPlayerCount() const
 {
+	// 호스트는 시작 버튼을 쥐고 있으므로 항상 준비된 것으로 센다.
 	int32 Count = 0;
 	for (const APlayerState* State : PlayerArray)
 	{
 		const ATRPlayerState* TRState = Cast<ATRPlayerState>(State);
-		if (TRState != nullptr && !TRState->IsHost() && TRState->IsReady())
+		if (TRState != nullptr && (TRState->IsHost() || TRState->IsReady()))
 		{
 			++Count;
 		}
@@ -208,22 +209,12 @@ int32 ATRGameState::GetReadyPlayerCount() const
 
 int32 ATRGameState::GetRequiredReadyCount() const
 {
-	int32 Count = 0;
-	for (const APlayerState* State : PlayerArray)
-	{
-		const ATRPlayerState* TRState = Cast<ATRPlayerState>(State);
-		if (TRState != nullptr && !TRState->IsHost())
-		{
-			++Count;
-		}
-	}
-
-	return Count;
+	return PlayerArray.Num();
 }
 
 bool ATRGameState::CanStartMatch() const
 {
-	// 혼자면 필요 인원이 0 이라 곧바로 시작할 수 있다.
+	// 혼자면 호스트 하나로 1/1 이라 곧바로 시작할 수 있다.
 	return !bMatchStarted && GetReadyPlayerCount() >= GetRequiredReadyCount();
 }
 
