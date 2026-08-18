@@ -57,7 +57,15 @@ void UTRTargetSyncProcessor::Execute(FMassEntityManager& EntityManager, FMassExe
 
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
+			// 채널 값은 스폰 파라미터에서 오므로 블루프린트가 바이트 캐스트로 범위를 벗어난
+			// 값을 넣을 수 있다. 그러면 스택 배열을 벗어나 읽는다.
 			const int32 ChannelIndex = static_cast<int32>(ChannelList[EntityIt].Channel);
+			if (ChannelIndex < 0 || ChannelIndex >= UE_ARRAY_COUNT(Resolved))
+			{
+				TargetList[EntityIt].bHasTarget = false;
+				continue;
+			}
+
 			if (!Resolved[ChannelIndex].bValid)
 			{
 				TargetList[EntityIt].bHasTarget = false;

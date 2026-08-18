@@ -14,6 +14,7 @@
 #include "Camera/CameraComponent.h"
 #include "Core/TRPlayerState.h"
 #include "Kismet/GameplayStatics.h"
+#include "Mass/Combat/TRMassCombatSubsystem.h"
 #include "Player/TRPlayerCharacter.h"
 #include "Train/TRInstallablePart.h"
 #include "Train/TRTrain.h"
@@ -172,14 +173,67 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 
 	MountedTurret->ConsumeAmmo(1);
 
-	FHitResult Hit;
-	if (!TraceFireTarget(Hit))
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	Controller->GetPlayerViewPoint(ViewLocation, ViewRotation);
+
+	const FVector Direction = ViewRotation.Vector();
+	const float Range = MountedTurret->GetManualRange();
+	const float Damage = MountedTurret->GetManualDamage();
+
+	// 액터 판정을 먼저 한다. 그 결과가 Mass 판정의 사거리 상한이 된다 —
+	// 벽이나 아군 구조물에 막힌 사격이 그 뒤의 적을 관통해 맞히면 안 된다.
+	FHitResult ActorHit;
+	const bool bActorHit = TraceFireTarget(ViewLocation, Direction, Range, ActorHit);
+	const float MassRange = bActorHit
+		? static_cast<float>(FVector::Dist(ViewLocation, ActorHit.ImpactPoint))
+		: Range;
+
+	// 적은 액터가 아니라 Mass 공간 그리드로 판정한다. 원거리 개체는 액터 자체가 없고,
+	// 근거리 표현 액터도 콜리전이 꺼져 있어 라인 트레이스로는 절대 잡히지 않는다.
+	// 앞을 막은 것보다 가까운 적만 후보가 되므로 관통도 생기지 않는다.
+	FTRMassHitResult MassHit;
+	if (UTRMassCombatSubsystem* Combat = GetWorld()->GetSubsystem<UTRMassCombatSubsystem>())
+	{
+		MassHit = Combat->FireHitscan(ViewLocation, Direction, MassRange, Damage);
+	}
+
+#if !UE_BUILD_SHIPPING
+	// 초록=적 명중, 노랑=액터 명중, 빨강=빗나감. 판정이 서버에서 도니 서버 화면에만 그려진다.
+	{
+		const bool bAnyHit = MassHit.bHit || bActorHit;
+		const FVector DebugEnd = MassHit.bHit ? MassHit.Location
+			: (bActorHit ? ActorHit.ImpactPoint : ViewLocation + Direction * Range);
+		const FColor DebugColor = MassHit.bHit ? FColor::Green : (bAnyHit ? FColor::Yellow : FColor::Red);
+
+		DrawDebugLine(GetWorld(), ViewLocation, DebugEnd, DebugColor, false, 2.f, 0, 1.5f);
+
+		// 명중했는데 안 죽는 경우를 눈으로 가르기 위해 수치를 띄운다.
+		// 피해가 0이면 "-0.0"이 뜨고, 체력이 크면 남은 값이 그대로 보인다.
+		if (MassHit.bHit)
+		{
+			DrawDebugString(GetWorld(), MassHit.Location,
+				FString::Printf(TEXT("-%.1f  hp %.1f"), Damage, MassHit.RemainingHealth),
+				nullptr, FColor::Yellow, 2.f);
+		}
+	}
+#endif
+
+	if (MassHit.bHit)
+	{
+		// 피해는 FireHitscan 이 이미 적용했다. 여기서 또 때리면 두 배가 된다.
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Fire hit enemy (killed=%d, hp=%.1f)"),
+			MassHit.bKilled ? 1 : 0, MassHit.RemainingHealth);
+		return;
+	}
+
+	if (!bActorHit)
 	{
 		UE_LOG(LogTRGameplay, Verbose, TEXT("Fire missed"));
 		return;
 	}
 
-	AActor* HitActor = Hit.GetActor();
+	AActor* HitActor = ActorHit.GetActor();
 	if (!IsValid(HitActor))
 	{
 		return;
@@ -191,44 +245,27 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 		return;
 	}
 
-	UGameplayStatics::ApplyDamage(HitActor, MountedTurret->GetManualDamage(), Controller, MountedTurret, nullptr);
+	UGameplayStatics::ApplyDamage(HitActor, Damage, Controller, MountedTurret, nullptr);
 	UE_LOG(LogTRGameplay, Verbose, TEXT("Fire hit: %s"), *HitActor->GetName());
 }
 
-bool UTRTurretControlComponent::TraceFireTarget(FHitResult& OutHit) const
+bool UTRTurretControlComponent::TraceFireTarget(const FVector& Start, const FVector& Direction,
+	const float Range, FHitResult& OutHit) const
 {
-	APawn* OwnerPawn = Cast<APawn>(GetOwner());
-	AController* Controller = IsValid(OwnerPawn) ? OwnerPawn->GetController() : nullptr;
-	if (!IsValid(Controller) || !IsValid(MountedTurret))
-	{
-		return false;
-	}
-
-	FVector ViewLocation;
-	FRotator ViewRotation;
-	Controller->GetPlayerViewPoint(ViewLocation, ViewRotation);
-
-	const FVector TraceEnd = ViewLocation + ViewRotation.Vector() * MountedTurret->GetManualRange();
-
-	// 카메라가 포탑 메시에 붙어 있어 시작점이 포탑 안이다. 무시하지 않으면 자기가 탄 포탑을 맞춘다.
-	FCollisionQueryParams QueryParams;
-	QueryParams.AddIgnoredActor(OwnerPawn);
-	QueryParams.AddIgnoredActor(MountedTurret);
-
 	UWorld* World = GetWorld();
 	if (!IsValid(World))
 	{
 		return false;
 	}
 
-	const bool bHit = World->LineTraceSingleByChannel(OutHit, ViewLocation, TraceEnd, ECC_Pawn, QueryParams);
+	const FVector TraceEnd = Start + Direction * Range;
 
-#if !UE_BUILD_SHIPPING
-	// 초록=명중, 빨강=빗나감. 사격 판정이 서버에서 도니 서버 화면에만 그려진다.
-	DrawDebugLine(World, ViewLocation, bHit ? OutHit.ImpactPoint : TraceEnd, bHit ? FColor::Green : FColor::Red, false, 2.f, 0, 1.5f);
-#endif
+	// 카메라가 포탑 메시에 붙어 있어 시작점이 포탑 안이다. 무시하지 않으면 자기가 탄 포탑을 맞춘다.
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(GetOwner());
+	QueryParams.AddIgnoredActor(MountedTurret);
 
-	return bHit;
+	return World->LineTraceSingleByChannel(OutHit, Start, TraceEnd, ECC_Pawn, QueryParams);
 }
 
 bool UTRTurretControlComponent::TryAutoRefillFromInventory()

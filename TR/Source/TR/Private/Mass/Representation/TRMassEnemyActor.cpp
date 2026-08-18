@@ -2,6 +2,7 @@
 
 #include "Mass/Representation/TRMassEnemyActor.h"
 
+#include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
 
 ATRMassEnemyActor::ATRMassEnemyActor()
@@ -48,20 +49,41 @@ ATRMassEnemyActor::ATRMassEnemyActor()
 	bReplicates = false;
 }
 
-void ATRMassEnemyActor::SetMassState(const FVector& InVelocity, ETREnemyActionState InActionState,
-	float InStateElapsed, float DeltaSeconds)
+void ATRMassEnemyActor::SetMassState(const UE::TR::Enemy::FAnimContext& Context,
+	const UE::TR::Enemy::FAnimResolution& Anim, float DeltaSeconds)
 {
-	// 속도는 보간한다. Mass 쪽 값이 프레임마다 조금씩 튀어도 애니메이션이 떨지 않게.
-	CurrentVelocity = (SpeedInterpRate > 0.f && DeltaSeconds > 0.f)
-		? FMath::VInterpTo(CurrentVelocity, InVelocity, DeltaSeconds, SpeedInterpRate)
-		: InVelocity;
+	// 속도는 보간한다. Mass 쪽 값이 프레임마다 튀어도 애니메이션이 떨지 않게.
+	// 갓 나타난 프레임만 예외다 — 0에서 기어오르면 방금 나타난 적이 잠깐 대기 모션을 재생한다.
+	CurrentVelocity = (SpeedInterpRate > 0.f && DeltaSeconds > 0.f && !bFirstUpdate)
+		? FMath::VInterpTo(CurrentVelocity, Context.Velocity, DeltaSeconds, SpeedInterpRate)
+		: Context.Velocity;
 
-	// 지면이 스크롤하므로 지면 대비 속력을 따로 계산한다. 이 값으로 재생 속도를 맞춰야
-	// 발이 미끄러지지 않는다.
-	AnimData.GroundSpeed = (CurrentVelocity - GroundVelocity).Size();
-	AnimData.LocalVelocity = GetActorRotation().UnrotateVector(CurrentVelocity);
-	AnimData.ActionState = InActionState;
-	AnimData.StateElapsed = InStateElapsed;
+	// 이 플래그는 액터가 스스로 내린다. AnimBP가 소비하게 두면, 부모 클래스를 안 바꿨거나
+	// 다른 AnimBP를 쓴 구성에서 영원히 참으로 남아 속도 보간이 아예 걸리지 않는다.
+	bFirstUpdate = false;
+
+	// 지면이 스크롤하므로 지면 대비 속도로 바꾼다. 이 값으로 재생 속도를 맞춰야 발이 미끄러지지 않는다.
+	const FVector RelativeVelocity = CurrentVelocity - Context.GroundVelocity;
+
+	// 수평 성분만 잰다. 발이 딛는 속력은 수평이고, 무엇보다 이동/대기를 가르는
+	// UE::TR::Enemy::ResolveAnim도 Size2D를 쓴다. 여기만 3D면 낙하나 경사 구간에서
+	// "대기 판정인데 재생 속도는 빠른" 상태가 된다.
+	AnimData.GroundSpeed = RelativeVelocity.Size2D();
+	AnimData.LocalVelocity = GetActorRotation().UnrotateVector(RelativeVelocity);
+	AnimData.ActionState = Context.ActionState;
+	AnimData.StateElapsed = Context.StateElapsed;
+	AnimData.bPlayingOneShot = !Anim.bLooping;
+	AnimData.bIsMoving = Anim.bMoving;
+
+	// 로코모션은 매 프레임 갱신한다. 단발 중에도 값이 흘러야 블렌드가 매끄럽다.
+	AnimData.LocomotionTime = Anim.LocomotionPosition;
+
+	// 단발은 대응하는 클립이 있을 때만 덮는다. 상태가 None으로 돌아간 뒤에도 0.15초쯤
+	// 블렌드 아웃이 남아 있는데, 여기서 0을 쓰면 물러나던 클립이 첫 프레임으로 되감긴다.
+	if (Anim.bHasAction)
+	{
+		AnimData.ActionTime = Anim.ActionPosition;
+	}
 }
 
 void ATRMassEnemyActor::PrepareForPooling_Implementation()
@@ -79,4 +101,14 @@ void ATRMassEnemyActor::PrepareForGame_Implementation()
 	// 재사용된 액터가 이전 개체의 속도를 물고 시작하지 않도록 초기화한다.
 	CurrentVelocity = FVector::ZeroVector;
 	AnimData = FTREnemyAnimData();
+
+	// 값만 지워서는 부족하다. AnimBP의 상태머신은 이전 개체가 남긴 스테이트에 그대로 머물러 있다.
+	bFirstUpdate = true;
+	bPoseResetPending = true;
+
+	if (UAnimInstance* AnimInstance = MeshComp->GetAnimInstance())
+	{
+		//스프링/시뮬레이션 노드가 이전 위치에서 튕겨나가는 것도 막는다
+		AnimInstance->ResetDynamics(ETeleportType::TeleportPhysics);
+	}
 }

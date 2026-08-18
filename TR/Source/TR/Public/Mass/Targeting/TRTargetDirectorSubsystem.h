@@ -100,7 +100,17 @@ struct FTRResolvedTarget
 	{
 		if (ZoneCount > 0)
 		{
-			return GetZoneSurfacePoint(FindNearestZone(From), From);
+			const int32 Nearest = FindNearestZone(From);
+			if (Nearest != INDEX_NONE)
+			{
+				return GetZoneSurfacePoint(Nearest, From);
+			}
+
+			// 구역이 전부 파괴됐으면 차체로 내려간다(기획서: 포탑 → 장갑 → 차체).
+			//
+			// 여기서 곧장 Center를 돌려주면 안 된다. 그러면 전원이 기차 한가운데 한 점으로
+			// 몰리고, 정지 거리도 그 점에서 재므로 근접형이 차체 안쪽으로 파고든 뒤에야
+			// 도달 판정이 선다. 아래 바운드 경로로 흘려보내면 차체 표면을 노린다.
 		}
 
 		if (!bHasBounds)
