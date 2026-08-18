@@ -61,6 +61,9 @@ private:
 	void RecycleChunk(ATRLevelSceneChunk* Chunk);
 	void RecycleRailSegment(ATRLevelSceneRailSegment* RailSegment);
 	void UpdateFloorVelocity(bool bForceUpdate = false);
+
+	//지면 스크롤 속도를 UTRGroundMotionSubsystem에 매긴다. 적 애니메이션의 발 미끄러짐 보정에 쓰인다
+	void PublishGroundVelocity() const;
 	float GetTravelDistance(const ATRLevelSceneChunk* Chunk) const;
 	float GetRailTravelDistance(const ATRLevelSceneRailSegment* RailSegment) const;
 	float GetFrontmostTravelDistance(const ATRLevelSceneChunk* IgnoredChunk = nullptr) const;

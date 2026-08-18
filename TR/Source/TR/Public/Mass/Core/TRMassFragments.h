@@ -4,6 +4,8 @@
 
 #include "CoreMinimal.h"
 #include "MassEntityTypes.h"
+// SetArrived 가 엔티티 핸들을 받는다. MassEntityTypes.h 는 이걸 끌어오지 않는다.
+#include "Mass/EntityHandle.h"
 #include "Mass/Core/TRMassTypes.h"
 #include "TRMassFragments.generated.h"
 
@@ -46,6 +48,20 @@ struct FTRLaunchedTag : public FMassTag
 	GENERATED_BODY()
 };
 
+/**
+ * 죽어서 연출이 끝나기를 기다리는 중.
+ *
+ * 이동·분리 프로세서가 이 태그를 제외한다. 시체는 조종력을 받지 않아야 그 자리에 남는다.
+ * 지면 추종은 계속 돈다 — 쓰러진 자리가 경사면이면 지면에 붙어 있어야 한다.
+ *
+ * 태그로 두면 아키타입 단위로 걸러지므로, 시체가 쌓여도 이동 프로세서의 비용이 늘지 않는다.
+ */
+USTRUCT()
+struct FTRDeadTag : public FMassTag
+{
+	GENERATED_BODY()
+};
+
 //----------------------------------------------------------------------//
 //  추적
 //----------------------------------------------------------------------//
@@ -84,6 +100,56 @@ struct FTRTargetFragment : public FMassFragment
 };
 
 /**
+ * 도달 상태를 바꾼다. **불리언과 태그는 항상 함께 움직여야 한다.**
+ *
+ * 같은 사실이 두 군데 있는 건 의도된 중복이다. 태그 변경은 Defer 라 같은 프레임의
+ * 쿼리 필터에 반영되지 않아서, 그 프레임 안에서 판단하려면 불리언이 필요하다.
+ * 문제는 둘을 맞추는 규칙이 호출부마다 흩어져 있었다는 점이다 — 한쪽만 갱신하면
+ * 도달 판정이 태그와 불리언 사이에서 어긋나고, 그건 재현이 어려운 종류의 버그다.
+ *
+ * 커맨드 버퍼 타입을 템플릿으로 받는 이유는 이 헤더가 프로젝트 전역에 포함되기
+ * 때문이다. MassCommandBuffer.h 를 여기서 끌어오면 전체 컴파일이 무거워진다.
+ */
+template<typename TMassCommandBuffer>
+inline void SetArrived(TMassCommandBuffer& Commands, FMassEntityHandle Entity,
+	FTRTargetFragment& Target, bool bArrived)
+{
+	Target.bArrived = bArrived;
+
+	if (bArrived)
+	{
+		Commands.template AddTag<FTRArrivedTag>(Entity);
+	}
+	else
+	{
+		Commands.template RemoveTag<FTRArrivedTag>(Entity);
+	}
+}
+
+/**
+ * 복제용 식별자. 서버가 스폰 시 부여하고, 클라이언트는 이 번호로 같은 적을 찾는다.
+ *
+ * FMassEntityHandle 을 그대로 쓸 수 없다. 핸들은 그 월드의 로컬 인덱스라
+ * 서버의 3번과 클라이언트의 3번이 다른 개체다.
+ */
+USTRUCT()
+struct FTRMassNetIdFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	/** 0이면 아직 부여되지 않았다는 뜻. 서버에서만 채운다. */
+	UPROPERTY()
+	int32 NetId = 0;
+
+	/**
+	 * 이 적을 어떤 Config 로 표현할지. 클라이언트가 같은 메시로 스폰하기 위해 필요하다.
+	 * 스냅샷에 애셋 경로를 실어 보내는 대신 팔레트 색인만 보낸다(1바이트).
+	 */
+	UPROPERTY()
+	uint8 ConfigIndex = 0;
+};
+
+/**
  * 이 개체가 어디까지 접근하고 얼마나 빠른가.
  *
  * 종류·상태에 따라 달라지는 값만 모았다 — 사출형은 40m에서 멈췄다가 상체가 되면
@@ -109,6 +175,22 @@ struct FTRApproachFragment : public FMassFragment
 	UPROPERTY()
 	float MaxSpeed = 0.f;
 
+	/**
+	 * 이 개체만의 속도 배수. 스폰 시 한 번 뽑고 평생 유지한다.
+	 *
+	 * 속도가 전부 공유 파라미터에서 나오면 한 무리가 통째로 같은 속도로 움직여서,
+	 * 대열이 얼어붙은 것처럼 보인다. 분리력이 좌우로는 흩어주지만 앞뒤로는
+	 * 아무것도 하지 않기 때문에 특히 눈에 띈다.
+	 *
+	 * 매 틱 흔들지 않고 개체에 고정하는 이유는, 프레임마다 다시 뽑으면 평균으로
+	 * 수렴해서 결국 다 같은 속도가 되고 애니메이션 재생 속도만 떨리기 때문이다.
+	 * "저 녀석이 유독 빠르다"가 보여야 무리처럼 읽힌다.
+	 *
+	 * 값은 UE::TR::Enemy::MakeSpeedScale이 뽑는다. 직접 채우지 말 것.
+	 */
+	UPROPERTY()
+	float SpeedScale = 1.f;
+
 	/** 표적 구역을 한 번 정하면 고정한다. 사격형이 쓴다. */
 	UPROPERTY()
 	bool bLockTargetZone = false;
@@ -133,12 +215,52 @@ struct FTREnemyStateFragment : public FMassFragment
 };
 
 /**
- * 행동 상태 진입. 상태와 진입 시각은 항상 함께 바뀌어야 한다.
+ * 행동 상태 진입. **이미 그 상태면 아무것도 하지 않고 false를 돌려준다.**
  *
- * 따로 대입하면 한쪽만 갱신하는 실수가 나고, 그러면 AnimBP가 새 상태를
- * 옛날 경과 시간으로 재생해서 애니메이션이 중간부터 시작한다.
+ * 상태와 진입 시각은 항상 함께 바뀌어야 한다. 따로 대입하면 한쪽만 갱신하는 실수가
+ * 나고, 그러면 표현이 새 상태를 옛날 경과 시간으로 재생한다.
+ *
+ * 반환값이 핵심이다. 같은 행동을 StateTree 태스크와 프로세서가 각자 수행하는 구간이
+ * 있는데(근접형 자폭, 사출), 예전에는 호출부마다 `if (State.ActionState == X) break;`를
+ * 손으로 적어 중복을 피했다. 그 가드는 세 곳에서 모양이 제각각이었고 사격형에는
+ * 아예 없었다. 이제는 진입에 성공한 쪽만 뒷일을 하면 된다:
+ *
+ *     if (!TryEnterActionState(State, ETREnemyActionState::Attack, WorldTime))
+ *     {
+ *         break;   // 다른 쪽이 이미 처리했다
+ *     }
+ *     ...준비 시간 설정, 태그 부착...
+ *
+ * 멱등이라는 점도 중요하다. 매 틱 불려도 StateEnteredTime이 갱신되지 않으므로,
+ * 경과 시간으로 재생 종료를 판단하는 표현(UE::TR::Enemy::ResolveAnim)이 단발
+ * 애니메이션의 마지막 프레임에서 영원히 멈추는 일이 없다.
+ *
+ * @return 상태가 실제로 바뀌었으면 true. 이미 같은 상태였으면 false.
  */
-inline void EnterActionState(FTREnemyStateFragment& State, ETREnemyActionState NewState, float WorldTime)
+inline bool TryEnterActionState(FTREnemyStateFragment& State, ETREnemyActionState NewState, float WorldTime)
+{
+	if (State.ActionState == NewState)
+	{
+		return false;
+	}
+
+	State.ActionState = NewState;
+	State.StateEnteredTime = WorldTime;
+	return true;
+}
+
+/**
+ * 같은 상태를 처음부터 다시 시작한다. 진입 시각을 무조건 갱신한다.
+ *
+ * 한 상태 안에서 **여러 번 반복되는 동작**에만 쓴다 — 사격형이 FireInterval마다
+ * 한 발씩 쏘는 경우가 유일한 예다. 표현 쪽은 진입 시각이 바뀌는 것을 "다시 재생하라"는
+ * 신호로 읽으므로, 이것 없이 TryEnterActionState만 쓰면 두 번째 발부터 사격
+ * 애니메이션이 나오지 않는다.
+ *
+ * 반대로 1회성 행동에 이걸 쓰면 매 틱 재생이 리셋되어 애니메이션이 얼어붙는다.
+ * 헷갈리면 TryEnterActionState 쪽이 맞다.
+ */
+inline void RetriggerActionState(FTREnemyStateFragment& State, ETREnemyActionState NewState, float WorldTime)
 {
 	State.ActionState = NewState;
 	State.StateEnteredTime = WorldTime;

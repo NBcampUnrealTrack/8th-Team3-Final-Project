@@ -7,6 +7,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Train/TRInstallablePart.h"
+#include "Train/TRTrain.h"
 
 namespace
 {
@@ -64,12 +65,38 @@ namespace
 		return OutLocalBounds.IsValid != 0;
 	}
 
+	/**
+	 * 게임플레이상 죽은 액터인지. **UObject 로서의 유효성과 다르다.**
+	 *
+	 * 기차도 장갑·포탑도 파괴되어도 액터는 그대로 남는다(잔해를 보여주고 수리도 받아야
+	 * 하므로). 그래서 TWeakObjectPtr 이 유효하다는 것만으로 "살아 있는 표적"이라고
+	 * 판단하면, 기차가 터진 뒤에도 적들이 계속 몰려든다.
+	 */
+	bool IsTargetActorDead(const AActor* Actor)
+	{
+		if (Actor == nullptr)
+		{
+			return true;
+		}
+
+		if (const ATRTrain* Train = Cast<ATRTrain>(Actor))
+		{
+			return Train->IsHullDestroyed();
+		}
+
+		if (const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Actor))
+		{
+			return Part->IsPartDestroyed();
+		}
+
+		// 죽음 개념이 없는 액터(고정 위치 목표 등)는 살아 있는 것으로 본다.
+		return false;
+	}
+
 	/** 파괴된 장갑·포탑인지. 액터는 남아 있어도 표적에서 빠져야 한다. */
 	bool IsZoneOwnerDestroyed(const FTRTargetZoneState& Zone)
 	{
-		const ATRInstallablePart* Part = Cast<ATRInstallablePart>(Zone.Owner.Get());
-
-		return Part != nullptr && Part->IsPartDestroyed();
+		return IsTargetActorDead(Zone.Owner.Get());
 	}
 
 }
@@ -110,6 +137,17 @@ void UTRTargetDirectorSubsystem::RefreshSnapshot()
 
 		if (const AActor* TargetActor = State.TargetActor.Get())
 		{
+			// 파괴된 목표는 더 이상 표적이 아니다.
+			//
+			// 액터는 파괴된 뒤에도 남아 있으므로(잔해 표시·수리) 포인터 유효성만으로는
+			// 걸러지지 않는다. 이걸 빠뜨리면 기차가 터진 뒤에도 적들이 계속 몰려든다.
+			// bValid 를 false 로 두면 TargetSync 가 bHasTarget 을 내리고, Steering 이
+			// 조종력을 0으로 만들면서 도달 태그까지 풀어준다.
+			if (IsTargetActorDead(TargetActor))
+			{
+				continue;
+			}
+
 			Resolved.Center = TargetActor->GetActorLocation();
 			Resolved.Transform = TargetActor->GetActorTransform();
 			Resolved.bHasBounds = State.bHasBounds;

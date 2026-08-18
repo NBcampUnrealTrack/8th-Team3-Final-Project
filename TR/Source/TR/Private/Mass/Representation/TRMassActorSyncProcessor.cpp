@@ -10,9 +10,11 @@
 #include "MassCommonTypes.h"
 #include "MassExecutionContext.h"
 #include "MassMovementFragments.h"
+#include "Environment/TRGroundMotionSubsystem.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Mass/Representation/TRMassEnemyActor.h"
 #include "Mass/Core/TRMassFragments.h"
+#include "Mass/Core/TRMassParams.h"
 
 DECLARE_CYCLE_STAT(TEXT("Actor Sync"), STAT_TRMassActorSync, STATGROUP_TRMass);
 
@@ -38,6 +40,12 @@ void UTRMassActorSyncProcessor::ConfigureQueries(const TSharedRef<FMassEntityMan
 	EntityQuery.AddRequirement<FMassVelocityFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 	EntityQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
+
+	// 애님 파라미터는 선택 사항이다. 표현 액터만 붙이고 애니메이션은 BP가 알아서 하는
+	// 구성도 트랜스폼 동기화는 받아야 한다.
+	EntityQuery.AddConstSharedRequirement<FTREnemyAnimParams>(EMassFragmentPresence::Optional);
+
+	EntityQuery.AddSubsystemRequirement<UTRGroundMotionSubsystem>(EMassFragmentAccess::ReadOnly);
 }
 
 void UTRMassActorSyncProcessor::Execute(FMassEntityManager& EntityManager, FMassExecutionContext& Context)
@@ -59,6 +67,10 @@ void UTRMassActorSyncProcessor::Execute(FMassEntityManager& EntityManager, FMass
 		const bool bHasVelocity = (VelocityList.Num() > 0);
 		const bool bHasState = (StateList.Num() > 0);
 
+		const FTREnemyAnimParams* AnimParams = Context.GetConstSharedFragmentPtr<FTREnemyAnimParams>();
+		const FVector GroundVelocity =
+			Context.GetSubsystemChecked<UTRGroundMotionSubsystem>().GetGroundVelocity();
+
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
 			// Mass가 스폰한 표현 액터만 움직인다. 외부에서 붙인 액터는 자기 트랜스폼의 주인이므로 건드리지 않는다.
@@ -76,17 +88,27 @@ void UTRMassActorSyncProcessor::Execute(FMassEntityManager& EntityManager, FMass
 			// LOD 전환/풀 재사용으로 순간이동할 때 값이 튄다.
 			if (ATRMassEnemyActor* EnemyActor = Cast<ATRMassEnemyActor>(Actor))
 			{
-				const FVector Velocity = bHasVelocity ? VelocityList[EntityIt].Value : FVector::ZeroVector;
+				UE::TR::Enemy::FAnimContext AnimContext;
+				AnimContext.Velocity = bHasVelocity ? VelocityList[EntityIt].Value : FVector::ZeroVector;
+				AnimContext.GroundVelocity = GroundVelocity;
+				AnimContext.bWasMoving = EnemyActor->WasMoving();
+				AnimContext.EntityHash = GetTypeHash(EntityIt.GetEntityHandle());
+				AnimContext.WorldTime = WorldTime;
 
-				ETREnemyActionState ActionState = ETREnemyActionState::None;
-				float StateElapsed = 0.f;
 				if (bHasState)
 				{
-					ActionState = StateList[EntityIt].ActionState;
-					StateElapsed = WorldTime - StateList[EntityIt].StateEnteredTime;
+					AnimContext.ActionState = StateList[EntityIt].ActionState;
+					AnimContext.StateElapsed = WorldTime - StateList[EntityIt].StateEnteredTime;
 				}
 
-				EnemyActor->SetMassState(Velocity, ActionState, StateElapsed, DeltaTime);
+				// ISM과 같은 함수로 판단한다. AnimBP가 속력을 보고 자체 판단하게 두면
+				// 규칙이 갈라지고, 그 차이가 곧 LOD 전환 순간의 팝이 된다.
+				// 파라미터가 없으면 기본 해석(대기, 위치 0)이 그대로 나간다.
+				const UE::TR::Enemy::FAnimResolution Anim = (AnimParams != nullptr)
+					? UE::TR::Enemy::ResolveAnim(*AnimParams, AnimContext)
+					: UE::TR::Enemy::FAnimResolution();
+
+				EnemyActor->SetMassState(AnimContext, Anim, DeltaTime);
 			}
 		}
 	});
