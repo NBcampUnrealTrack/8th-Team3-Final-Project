@@ -1,4 +1,4 @@
-// TRPlayerHUD.cpp
+﻿// TRPlayerHUD.cpp
 
 #include "UI/TRPlayerHUD.h"
 #include "Blueprint/UserWidget.h"
@@ -8,6 +8,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Widgets/SViewport.h"
 #include "UI/TRPlayerHUDWidget.h"
+#include "UI/TRPopupStack.h"
 #include "UI/TRControlConsoleWidget.h"
 
 static UGameViewportClient* GetViewportClient(const APlayerController* PC)
@@ -40,6 +41,30 @@ void ATRPlayerHUD::ApplyGameInputMode(APlayerController* PC)
 	{
 		HUD->bCenterMouse = true;
 	}
+}
+
+void ATRPlayerHUD::PushPopupInputMode(APlayerController* PC, UUserWidget* FocusWidget)
+{
+	if (UTRPopupStack* PopupStack = UTRPopupStack::Get(PC))
+	{
+		PopupStack->Push();
+	}
+
+	ApplyPopupInputMode(PC, FocusWidget);
+}
+
+void ATRPlayerHUD::PopPopupInputMode(APlayerController* PC)
+{
+	UTRPopupStack* PopupStack = UTRPopupStack::Get(PC);
+
+	// 아직 다른 팝업이 남아 있으면 커서를 그대로 둔다.
+	if (PopupStack != nullptr && !PopupStack->Pop())
+	{
+		ApplyPopupInputMode(PC, nullptr);
+		return;
+	}
+
+	ApplyGameInputMode(PC);
 }
 
 void ATRPlayerHUD::ApplyPopupInputMode(APlayerController* PC, UUserWidget* FocusWidget)
@@ -98,7 +123,17 @@ void ATRPlayerHUD::BeginPlay()
 {
 	Super::BeginPlay();
 
-	ApplyGameInputMode(GetOwningPlayerController());
+	if (APlayerController* PC = GetOwningPlayerController())
+	{
+		ApplyGameInputMode(PC);
+
+		if (UTRPopupStack* PopupStack = UTRPopupStack::Get(PC))
+		{
+			PopupStack->Reset();
+		}
+
+		bCenterMouse = true;
+	}
 
 	if (!IsValid(PlayerHUDWidgetClass))
 	{

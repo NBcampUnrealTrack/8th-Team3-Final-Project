@@ -67,7 +67,7 @@ void UTRControlConsoleWidget::ApplyPopupInputMode()
 		return;
 	}
 
-	ATRPlayerHUD::ApplyPopupInputMode(PC, this);
+	ATRPlayerHUD::PushPopupInputMode(PC, this);
 
 	//	시점과 이동을 막아야 관제석 조준이 유지된다 - 서버가 재설치를 조준 대상으로 검증한다.
 	PC->SetIgnoreLookInput(true);
@@ -91,7 +91,7 @@ void UTRControlConsoleWidget::RestoreGameInputMode()
 	}
 
 	// 커서를 다시 숨기고 뷰포트 중앙에 묶는다.
-	ATRPlayerHUD::ApplyGameInputMode(PC);
+	ATRPlayerHUD::PopPopupInputMode(PC);
 }
 
 void UTRControlConsoleWidget::CollectSlotRow(const UEnum* SlotEnum, const TCHAR* NamePrefix, bool bArmor)

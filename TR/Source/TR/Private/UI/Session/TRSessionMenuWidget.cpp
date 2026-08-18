@@ -1,4 +1,4 @@
-#include "UI/Session/TRSessionMenuWidget.h"
+﻿#include "UI/Session/TRSessionMenuWidget.h"
 
 #include "Session/TRNetLog.h"
 #include "Session/TRSessionFlow.h"
@@ -41,7 +41,7 @@ void UTRSessionMenuWidget::NativeConstruct()
 
 	if (APlayerController* PC = GetOwningPlayer())
 	{
-		ATRPlayerHUD::ApplyPopupInputMode(PC, this);
+		ATRPlayerHUD::PushPopupInputMode(PC, this);
 
 		//	대신 시점·이동만 막는다. 안 그러면 마우스가 카메라까지 돌려 화면이 휙휙 튄다.
 		//	카운터 방식이라 닫을 때 정확히 한 번 되돌린다.
@@ -93,7 +93,7 @@ void UTRSessionMenuWidget::NativeDestruct()
 		}
 
 		// 커서를 다시 숨기고 뷰포트 중앙에 묶는다.
-		ATRPlayerHUD::ApplyGameInputMode(PC);
+		ATRPlayerHUD::PopPopupInputMode(PC);
 	}
 
 	Super::NativeDestruct();
