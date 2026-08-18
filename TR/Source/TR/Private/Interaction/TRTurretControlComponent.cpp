@@ -194,8 +194,6 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	LastFireTime = Now;
 
 	MountedTurret->ConsumeAmmo(1);
-	//발사 이팩트 생성
-	MountedTurret->MulticastPlayMuzzleEffect();
 
 	const FVector FireOrigin = Camera->GetComponentLocation();
 	const FVector FireDirection = CamRot.Vector();

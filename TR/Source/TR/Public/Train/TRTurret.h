@@ -130,18 +130,18 @@ private:
 	TObjectPtr<UStaticMeshComponent> ConsoleMesh;
 
 	//--- VFX ---
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Turret|VFX", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UNiagaraSystem> MuzzleEffect;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Turret|VFX", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UNiagaraSystem> FireEffect;
 
 	//총구 소켓이 없으면 TurretMesh 원점에 아래 상대 오프셋을 적용한다.
-	UPROPERTY(EditDefaultsOnly, Category = "Turret|VFX")
-	FName MuzzleSocketName = NAME_None;
+	UPROPERTY(EditAnywhere, Category = "Turret|VFX")
+	FName FireEffectSocketName = NAME_None;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Turret|VFX")
-	FVector MuzzleEffectLocationOffset = FVector::ZeroVector;
+	UPROPERTY(EditAnywhere, Category = "Turret|VFX")
+	FVector FireEffectLocationOffset = FVector::ZeroVector;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Turret|VFX")
-	FRotator MuzzleEffectRotationOffset = FRotator::ZeroRotator;
+	UPROPERTY(EditAnywhere, Category = "Turret|VFX")
+	FRotator FireEffectRotationOffset = FRotator::ZeroRotator;
 
 	UPROPERTY(Replicated)
 	int32 CurrentAmmo = 0;

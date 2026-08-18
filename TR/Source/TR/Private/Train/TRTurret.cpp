@@ -230,27 +230,6 @@ bool ATRTurret::RefillAmmoToMax()
 	return true;
 }
 
-//멀티캐스트로 사격 VFX 스폰, 나이아가라 풀링 사용.
-void ATRTurret::MulticastPlayMuzzleEffect_Implementation()
-{
-	if (GetNetMode() == NM_DedicatedServer || !IsValid(MuzzleEffect) || !IsValid(TurretMesh))
-	{
-		return;
-	}
-
-	UNiagaraFunctionLibrary::SpawnSystemAttached(
-		MuzzleEffect,
-		TurretMesh,
-		MuzzleSocketName,	//추후 포탑 메시 교체시 총구 위치로 조정 필요.
-		MuzzleEffectLocationOffset,
-		MuzzleEffectRotationOffset,
-		EAttachLocation::KeepRelativeOffset,
-		true,
-		true,
-		ENCPoolMethod::AutoRelease);
-}
-
-
 bool ATRTurret::IsWithinFireArc(float CameraYaw, float CameraPitch) const
 {
 	const float YawDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(InstallYaw, CameraYaw));
@@ -427,13 +406,28 @@ void ATRTurret::AutoFireTick()
 
 void ATRTurret::MulticastFireEffect_Implementation(FVector HitLocation, bool bEnemyHit)
 {
-	const FVector Muzzle = IsValid(TurretMesh) ? TurretMesh->GetComponentLocation() : GetActorLocation();
+	//멀티캐스트로 사격 VFX 스폰, 나이아가라 풀링 사용.
+	if (GetNetMode() != NM_DedicatedServer && IsValid(FireEffect) && IsValid(TurretMesh))
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAttached(
+			FireEffect,
+			TurretMesh,
+			FireEffectSocketName,	//추후 포탑 메시 교체시 총구 위치로 조정 필요.
+			FireEffectLocationOffset,
+			FireEffectRotationOffset,
+			EAttachLocation::KeepRelativeOffset,
+			true,
+			true,
+			ENCPoolMethod::AutoRelease);
+	}
+
+	const FVector FireOrigin = IsValid(TurretMesh) ? TurretMesh->GetComponentLocation() : GetActorLocation();
 
 #if !UE_BUILD_SHIPPING
 	// 적을 맞힌 지점까지만 그린다.
 	if (bEnemyHit)
 	{
-		DrawDebugLine(GetWorld(), Muzzle, HitLocation, FColor::Cyan, false, 0.4f, SDPG_Foreground, 1.f);
+		DrawDebugLine(GetWorld(), FireOrigin, HitLocation, FColor::Cyan, false, 0.4f, SDPG_Foreground, 1.f);
 	}
 #endif
 
