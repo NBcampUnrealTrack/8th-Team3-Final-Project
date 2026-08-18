@@ -527,21 +527,29 @@ void UTRSessionMenuWidget::RefreshLobbyControls()
 
 	// 열어 둔 사이에 판이 시작되면 로비를 붙잡고 있을 이유가 없다.
 	// 판이 도는 중에 직접 연 메뉴는 사용자가 닫을 때까지 둔다.
-	if (Status.bMatchStarted && !bOpenedDuringMatch)
+	if (Status.bMatchStarted && !bOpenedDuringMatch && !bClosePending)
 	{
+		// 세션 이벤트 콜백으로도 이 함수가 불린다. 표시가 없으면 다음 틱 타이머가 겹쳐 걸린다.
+		bClosePending = true;
+
+		UWorld* World = GetWorld();
+		if (World == nullptr)
+		{
+			// 월드가 없으면 다음 틱을 기약할 수 없다. 즉시 닫는다.
+			RequestClose();
+			return;
+		}
+
 		// 닫기 전에 타이머부터 끊는다. 위젯이 안 지워지는 경우 이 함수가 계속 돌면서
 		// 입력 억제를 쥔 채 남는다.
-		if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().ClearTimer(LobbyRefreshTimer);
+		World->GetTimerManager().ClearTimer(LobbyRefreshTimer);
 
-			// 뷰포트에 붙는 중일 수 있어 닫기는 다음 틱으로 미룬다.
-			World->GetTimerManager().SetTimerForNextTick(
-				FTimerDelegate::CreateWeakLambda(this, [this]()
-				{
-					RequestClose();
-				}));
-		}
+		// 뷰포트에 붙는 중일 수 있어 닫기는 다음 틱으로 미룬다.
+		World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateWeakLambda(this, [this]()
+			{
+				RequestClose();
+			}));
 	}
 }
 

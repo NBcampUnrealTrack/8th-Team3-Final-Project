@@ -171,6 +171,9 @@ private:
 	// 판이 도는 중에 열린 메뉴인가. 이 경우 판 시작 자동 닫기를 하지 않는다.
 	bool bOpenedDuringMatch = false;
 
+	// 자동 닫기를 이미 걸었는가. 갱신이 여러 경로로 불려도 한 번만 예약한다.
+	bool bClosePending = false;
+
 	//	자리마다 콜백이 따로 필요하다 — 다이내믹 델리게이트는 인자를 실어 보낼 수 없다.
 
 	UFUNCTION()
