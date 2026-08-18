@@ -86,7 +86,5 @@ private:
 	// 열차는 레벨에 하나뿐이므로 한 번 찾아 들고 있는다.
 	TWeakObjectPtr<ATRTrain> CachedTrain;
 
-	bool bPrevShowMouseCursor = false;
-
 	bool bInputSuppressed = false;
 };
