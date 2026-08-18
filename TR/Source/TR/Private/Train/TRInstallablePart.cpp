@@ -3,18 +3,21 @@
 
 #include "Train/TRInstallablePart.h"
 
+#include "Components/SceneComponent.h"
 #include "Debug/TRGameplayLog.h"
 #include "Net/UnrealNetwork.h"
 #include "NiagaraComponent.h"
-#include "NiagaraSystem.h"
-#include "UObject/ConstructorHelpers.h"
 
 ATRInstallablePart::ATRInstallablePart()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
 
+	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	RootComponent = Root;
+
 	DamageEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("DamageEffect"));
+	DamageEffect->SetupAttachment(Root);
 	DamageEffect->bAutoActivate = false;
 }
 
@@ -22,10 +25,21 @@ void ATRInstallablePart::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 레벨 배치 파츠는 설치 완료 상태로 게임을 시작한다. 단, 에디터에서 CurrentHP를 미리 세팅해뒀으면(테스트용 — 데미지 시스템 생기면 제거 검토) 덮어쓰지 않음.
-	if (HasAuthority() && CurrentHP <= 0.f)
+	if (!HasAuthority())
+	{
+		RefreshDamageEffect();
+		return;
+	}
+
+	// 레벨 배치 파츠는 설치 완료 상태로 게임을 시작한다.
+	// 단, 에디터에서 CurrentHP를 미리 세팅해뒀으면 덮어쓰지 않는다.
+	if (CurrentHP <= 0.f)
 	{
 		ApplyInstall();
+	}
+	else
+	{
+		UpdateDamageEffectState();
 	}
 }
 
@@ -63,21 +77,6 @@ void ATRInstallablePart::OnPartDestroyed()
 
 void ATRInstallablePart::OnPartInstalled()
 {
-	Super::BeginPlay();
-
-	// 레벨 배치 파츠는 설치 완료 상태로 게임을 시작한다. 단, 에디터에서 CurrentHP를 미리 세팅해뒀으면(테스트용 — 데미지 시스템 생기면 제거 검토) 덮어쓰지 않음.
-	if (HasAuthority() && CurrentHP <= 0.f)
-	{
-		ApplyInstall();
-	}
-	else if (HasAuthority())
-	{
-		UpdateDamageEffectState();
-	}
-	else
-	{
-		RefreshDamageEffect();
-	}
 	UE_LOG(LogTRGameplay, Log, TEXT("Installed: %s"), *GetName());
 }
 
@@ -129,9 +128,9 @@ void ATRInstallablePart::ApplyLevelUpgrade(float PrevMaxHP)
 	UE_LOG(LogTRGameplay, Verbose, TEXT("%s: level upgraded, HP %.0f / %.0f"), *GetName(), CurrentHP, NewMaxHP);
 }
 
-//손상 지속 상태의 판정은 서버 한 곳에서만 하고 결과 bool만 복제한다.
 void ATRInstallablePart::UpdateDamageEffectState()
 {
+	// 손상 지속 상태는 서버 한 곳에서만 판정하고 결과 bool만 복제한다.
 	if (!HasAuthority())
 	{
 		return;
@@ -140,18 +139,28 @@ void ATRInstallablePart::UpdateDamageEffectState()
 	const float MaxHP = GetMaxHP();
 	const float HealthRatio = MaxHP > 0.f ? CurrentHP / MaxHP : 0.f;
 	bDamageEffectActive = CurrentHP > 0.f && MaxHP > 0.f
-		&& HealthRatio <= DamageEffectHealthRatio;
+		&& HealthRatio <= DamageEffectThresholdRatio;
 	RefreshDamageEffect();
 }
 
-void ATRInstallablePart::RefreshDamageEffect() const
+void ATRInstallablePart::RefreshDamageEffect()
 {
 	if (GetNetMode() == NM_DedicatedServer || !IsValid(DamageEffect))
 	{
 		return;
 	}
 
-	DamageEffect->SetActive(bDamageEffectActive);
+	if (bDamageEffectActive)
+	{
+		if (!DamageEffect->IsActive())
+		{
+			DamageEffect->Activate(true);
+		}
+	}
+	else if (DamageEffect->IsActive())
+	{
+		DamageEffect->Deactivate();
+	}
 }
 
 void ATRInstallablePart::OnRep_DamageEffectActive()

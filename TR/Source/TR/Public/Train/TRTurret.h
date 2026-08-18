@@ -118,9 +118,6 @@ private:
 
 	FTimerHandle AutoFireTimerHandle;
 	
-	UPROPERTY(VisibleAnywhere, Category = "Turret")
-	TObjectPtr<USceneComponent> Root;
-
 	// 기차 외부. 적의 피격 대상이자 탑승 시 카메라가 붙는 지점.
 	UPROPERTY(VisibleAnywhere, Category = "Turret")
 	TObjectPtr<UStaticMeshComponent> TurretMesh;
@@ -133,7 +130,7 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Turret|VFX", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UNiagaraSystem> FireEffect;
 
-	//총구 소켓이 없으면 TurretMesh 원점에 아래 상대 오프셋을 적용한다.
+	// 총구 소켓이 없으면 TurretMesh 원점에 아래 상대 오프셋을 적용한다.
 	UPROPERTY(EditAnywhere, Category = "Turret|VFX")
 	FName FireEffectSocketName = NAME_None;
 

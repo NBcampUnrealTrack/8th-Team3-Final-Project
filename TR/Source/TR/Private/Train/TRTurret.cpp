@@ -12,7 +12,6 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
-#include "UObject/ConstructorHelpers.h"
 #include "MassCommonFragments.h"
 #include "MassEntityManager.h"
 #include "MassEntityUtils.h"
@@ -22,10 +21,6 @@
 
 ATRTurret::ATRTurret()
 {
-	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
-	RootComponent = Root;
-	DamageEffect->SetupAttachment(Root);
-
 	TurretMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TurretMesh"));
 	TurretMesh->SetupAttachment(Root);
 	// 조준선에 안 걸리게 한다. 탑승은 실내 ConsoleMesh 로만.
@@ -406,18 +401,20 @@ void ATRTurret::AutoFireTick()
 
 void ATRTurret::MulticastFireEffect_Implementation(FVector HitLocation, bool bEnemyHit)
 {
-	//멀티캐스트로 사격 VFX 스폰, 나이아가라 풀링 사용.
+	// 멀티캐스트로 사격 VFX를 스폰하고 Niagara 풀링으로 반환한다.
 	if (GetNetMode() != NM_DedicatedServer && IsValid(FireEffect) && IsValid(TurretMesh))
 	{
+		const bool bAutoDestroy = true;
+		const bool bAutoActivate = true;
 		UNiagaraFunctionLibrary::SpawnSystemAttached(
 			FireEffect,
 			TurretMesh,
-			FireEffectSocketName,	//추후 포탑 메시 교체시 총구 위치로 조정 필요.
+			FireEffectSocketName,	// 추후 포탑 메시 교체 시 총구 위치로 조정 필요.
 			FireEffectLocationOffset,
 			FireEffectRotationOffset,
 			EAttachLocation::KeepRelativeOffset,
-			true,
-			true,
+			bAutoDestroy,
+			bAutoActivate,
 			ENCPoolMethod::AutoRelease);
 	}
 
@@ -431,7 +428,7 @@ void ATRTurret::MulticastFireEffect_Implementation(FVector HitLocation, bool bEn
 	}
 #endif
 
-	// TODO: 총구 화염 · 피탄 이펙트 · 사운드.
+	// TODO: 피탄 이펙트 · 사운드.
 }
 
 

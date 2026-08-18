@@ -151,9 +151,12 @@ protected:
 	TObjectPtr<USkeletalMeshComponent> MeshComp;
 
 	//--- VFX ---
-	//Mass 사망 상태 폭팔 이펙트
+	// Mass 사망 상태 폭발 이펙트
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "TR|Enemy|VFX")
 	TObjectPtr<UNiagaraSystem> DeathEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "TR|Enemy|VFX")
+	float DeathEffectZOffset = 80.f;
 
 	/** 속도 값의 떨림을 줄인다. 0이면 보간 없음. */
 	UPROPERTY(EditDefaultsOnly, Category = "TR|Enemy", meta = (ClampMin = "0.0"))
@@ -163,12 +166,12 @@ private:
 	/** AnimBP에 노출되는 값 묶음. Mass가 밀어넣은 값에서 파생된다. */
 	FTREnemyAnimData AnimData;
 
-	//직전 상태. 사망 이펙트를 한 번만 재생하기 위한 추적용.
+	// 직전 상태. 사망 이펙트를 한 번만 재생하기 위한 추적용.
 	ETREnemyActionState PreviousActionState = ETREnemyActionState::None;
 
 	FVector CurrentVelocity = FVector::ZeroVector;
 
-	/** 첫 SetMassState인지. 속도 보간을 건너뛰는 데만 쓰고 액터가 스스로 내린다. */
+	/** 첫 SetMassState인지. 속도 보간과 사망 진입 연출을 건너뛰고 액터가 스스로 내린다. */
 	bool bFirstUpdate = true;
 
 	/** AnimBP가 포즈를 되돌려야 하는지. ConsumePoseReset이 내린다. */

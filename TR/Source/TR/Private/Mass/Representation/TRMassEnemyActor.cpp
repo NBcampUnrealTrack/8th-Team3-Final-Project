@@ -6,7 +6,6 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
-#include "UObject/ConstructorHelpers.h"
 
 ATRMassEnemyActor::ATRMassEnemyActor()
 {
@@ -55,20 +54,23 @@ ATRMassEnemyActor::ATRMassEnemyActor()
 void ATRMassEnemyActor::SetMassState(const UE::TR::Enemy::FAnimContext& Context,
 	const UE::TR::Enemy::FAnimResolution& Anim, float DeltaSeconds)
 {
-	//스냅샷으로 받은 사망 상태의 진입 순간에만 재생한다. 이 액터는 복제되지 않으므로 각 클라이언트가 로컬에서 판단한다.
+	// 스냅샷으로 받은 사망 상태의 진입 순간에만 재생한다. 이 액터는 복제되지 않으므로 각 클라이언트가 로컬에서 판단한다.
 	if (GetNetMode() != NM_DedicatedServer
+		&& !bFirstUpdate
 		&& PreviousActionState != ETREnemyActionState::Death
 		&& Context.ActionState == ETREnemyActionState::Death
 		&& IsValid(DeathEffect))
 	{
+		const bool bAutoDestroy = true;
+		const bool bAutoActivate = true;
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
 			GetWorld(),
 			DeathEffect,
-			GetActorLocation(),
+			GetActorLocation() + FVector::UpVector * DeathEffectZOffset,
 			GetActorRotation(),
 			FVector::OneVector,
-			true,
-			true,
+			bAutoDestroy,
+			bAutoActivate,
 			ENCPoolMethod::AutoRelease);
 	}
 	PreviousActionState = Context.ActionState;
@@ -79,8 +81,8 @@ void ATRMassEnemyActor::SetMassState(const UE::TR::Enemy::FAnimContext& Context,
 		? FMath::VInterpTo(CurrentVelocity, Context.Velocity, DeltaSeconds, SpeedInterpRate)
 		: Context.Velocity;
 
-	// 이 플래그는 액터가 스스로 내린다. AnimBP가 소비하게 두면, 부모 클래스를 안 바꿨거나
-	// 다른 AnimBP를 쓴 구성에서 영원히 참으로 남아 속도 보간이 아예 걸리지 않는다.
+	// 첫 스냅샷은 속도 보간과 사망 진입 연출에서 제외한다. 풀에서 이미 사망한 엔티티를 받아도 폭발을 반복하지 않는다.
+	// 이 플래그는 액터가 스스로 내려 AnimBP 구성과 무관하게 한 프레임만 유지한다.
 	bFirstUpdate = false;
 
 	// 지면이 스크롤하므로 지면 대비 속도로 바꾼다. 이 값으로 재생 속도를 맞춰야 발이 미끄러지지 않는다.
@@ -131,7 +133,7 @@ void ATRMassEnemyActor::PrepareForGame_Implementation()
 
 	if (UAnimInstance* AnimInstance = MeshComp->GetAnimInstance())
 	{
-		//스프링/시뮬레이션 노드가 이전 위치에서 튕겨나가는 것도 막는다
+		// 스프링/시뮬레이션 노드가 이전 위치에서 튕겨나가는 것도 막는다.
 		AnimInstance->ResetDynamics(ETeleportType::TeleportPhysics);
 	}
 }

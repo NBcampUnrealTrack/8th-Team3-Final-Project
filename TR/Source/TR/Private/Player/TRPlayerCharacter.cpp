@@ -1,4 +1,4 @@
-//TRPlayerCharacter.cpp
+// TRPlayerCharacter.cpp
 
 
 #include "Player/TRPlayerCharacter.h"
@@ -21,7 +21,6 @@
 #include "Train/TRSupplyPoint.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
-#include "UObject/ConstructorHelpers.h"
 
 // Sets default values
 ATRPlayerCharacter::ATRPlayerCharacter()
@@ -40,7 +39,7 @@ ATRPlayerCharacter::ATRPlayerCharacter()
 	CameraComp->FirstPersonFieldOfView = 70.0f;
 	CameraComp->FirstPersonScale = 0.6f;
 
-	// 나이아가라 컴포넌트
+	// ---VFX---
 	WalkEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("WalkEffect"));
 	WalkEffect->SetupAttachment(RootComponent);
 	WalkEffect->bAutoActivate = false;
@@ -64,7 +63,7 @@ void ATRPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	//이동 이펙트 활성화
+	// 이동 이펙트 활성화
 	if (IsValid(WalkEffect) && IsValid(WalkEffect->GetAsset()))
 	{
 		WalkEffect->Activate();
@@ -111,13 +110,13 @@ void ATRPlayerCharacter::Tick(float DeltaTime)
 		AddControllerPitchInput(SmoothedLookInput.Y);
 	}
 
-	//회전 입력 후 소모
+	// 회전 입력 후 소모
 	PendingLookInput = FVector2D::ZeroVector;
 
 	SyncControlConsoleWidget();
 }
 
-//컨트롤러 설정 - IMC 등록, 틱 활성화 결정
+// 컨트롤러 설정 - IMC 등록, 틱 활성화 결정
 void ATRPlayerCharacter::NotifyControllerChanged()
 {
 	Super::NotifyControllerChanged();
@@ -259,52 +258,46 @@ void ATRPlayerCharacter::StartJump(const FInputActionValue& Input)
 	}
 }
 
-//이동속도 및 지면 접촉 여부 이동 이펙트에 전달
+// 이동속도 및 지면 접촉 여부 이동 이펙트에 전달
 void ATRPlayerCharacter::UpdateMoveEffect()
 {
 	WalkEffect->SetVariableVec3(FName(TEXT("MovementVelocity")), GetVelocity());
 	WalkEffect->SetVariableBool(FName(TEXT("IsOnFloor")), !GetCharacterMovement()->IsFalling());
 }
 
-//행동 상태는 서버가 정하고 복제한다. Niagara 컴포넌트는 복제하지 않고 각 머신에서 같은 상태만 적용한다.
-void ATRPlayerCharacter::SetActionEffectsActive(const bool bRepairActive, const bool bSupplyActive)
+void ATRPlayerCharacter::SetActionEffect(const ETRActionType InActionType)
 {
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
 
-	if (IsValid(RepairEffect))
+	// 행동 상태는 서버가 정하고 복제한다. Niagara 컴포넌트는 각 머신에서 같은 상태만 적용한다.
+	const auto SetEffectActive = [](UNiagaraComponent* Effect, const bool bInActive)
 	{
-		if (bRepairActive)
+		if (!IsValid(Effect))
 		{
-			if (!RepairEffect->IsActive())
+			return;
+		}
+
+		if (bInActive)
+		{
+			if (!Effect->IsActive())
 			{
-				RepairEffect->Activate(true);
+				Effect->Activate(true);
 			}
 		}
-		else
+		else if (Effect->IsActive())
 		{
-			RepairEffect->DeactivateImmediate();
+			Effect->DeactivateImmediate();
 		}
-	}
-	if (IsValid(SupplyEffect))
-	{
-		if (bSupplyActive)
-		{
-			if (!SupplyEffect->IsActive())
-			{
-				SupplyEffect->Activate(true);
-			}
-		}
-		else
-		{
-			SupplyEffect->DeactivateImmediate();
-		}
-	}
+	};
+
+	SetEffectActive(RepairEffect, InActionType == ETRActionType::Repair);
+	SetEffectActive(SupplyEffect, InActionType == ETRActionType::Reload);
 }
 
-//착지 함수, VFX/SFX 임시 연동 (추후 애니메이션 추가시 AnimNotify 기반으로 변경 필요)
+// 착지 함수, VFX/SFX 임시 연동 (추후 애니메이션 추가 시 AnimNotify 기반으로 변경 필요)
 void ATRPlayerCharacter::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
@@ -315,7 +308,7 @@ void ATRPlayerCharacter::Landed(const FHitResult& Hit)
 	}
 }
 
-//서버 RPC 점프 및 착지 이팩트 전파 호출
+// 서버 RPC 점프 및 착지 이펙트 전파 호출
 void ATRPlayerCharacter::ServerPlayJumpLandEffect_Implementation()
 {
 	UCharacterMovementComponent* MovementComp = GetCharacterMovement();
@@ -326,7 +319,7 @@ void ATRPlayerCharacter::ServerPlayJumpLandEffect_Implementation()
 	MulticastPlayJumpLandEffect(GetActorLocation() + FVector(0, 0, JumpLandOffset));
 }
 
-//멀티캐스트 RPC 점프 및 착지 이펙트 각 클라이언트로 전파
+// 멀티캐스트 RPC 점프 및 착지 이펙트 각 클라이언트로 전파
 void ATRPlayerCharacter::MulticastPlayJumpLandEffect_Implementation(const FVector& Location)
 {
 	if (IsValid(JumpLandEffect))

@@ -9,10 +9,6 @@
 
 ATRArmor::ATRArmor()
 {
-	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
-	RootComponent = Root;
-	DamageEffect->SetupAttachment(Root);
-
 	// 창문 방범창 — 실내에서 수리·설치를 상호작용하는 지점.
 	CollisionBox = CreateDefaultSubobject<UBoxComponent>(TEXT("CollisionBox"));
 	CollisionBox->SetupAttachment(Root);

@@ -29,8 +29,6 @@ void UTRActionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME(UTRActionComponent, CurrentActionType);
 	DOREPLIFETIME(UTRActionComponent, ActionStartServerTime);
 	DOREPLIFETIME(UTRActionComponent, CurrentTarget);
-	DOREPLIFETIME(UTRActionComponent, bRepairEffectActive);
-	DOREPLIFETIME(UTRActionComponent, bSupplyEffectActive);
 }
 
 bool UTRActionComponent::ServerStartAction_Validate(ETRActionType ActionType, AActor* Target)
@@ -54,9 +52,7 @@ void UTRActionComponent::SetCurrentAction(ETRActionType NewType, AActor* NewTarg
 {
 	CurrentActionType = NewType;
 	CurrentTarget = NewTarget;
-	bRepairEffectActive = NewType == ETRActionType::Repair;
-	bSupplyEffectActive = NewType == ETRActionType::Reload;
-	RefreshOwnerActionEffects();
+	RefreshOwnerActionEffect();
 
 	ATRGameState* GameState = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
 	if (!IsValid(GameState))
@@ -75,23 +71,17 @@ void UTRActionComponent::SetCurrentAction(ETRActionType NewType, AActor* NewTarg
 	}
 }
 
-//두 RepNotify가 어느 순서로 와도 마지막으로 복제된 상태 조합을 한 번에 적용한다.
-void UTRActionComponent::RefreshOwnerActionEffects() const
+void UTRActionComponent::RefreshOwnerActionEffect()
 {
 	if (ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(GetOwner()))
 	{
-		Character->SetActionEffectsActive(bRepairEffectActive, bSupplyEffectActive);
+		Character->SetActionEffect(CurrentActionType);
 	}
 }
 
-void UTRActionComponent::OnRep_RepairEffectActive()
+void UTRActionComponent::OnRep_CurrentActionType()
 {
-	RefreshOwnerActionEffects();
-}
-
-void UTRActionComponent::OnRep_SupplyEffectActive()
-{
-	RefreshOwnerActionEffects();
+	RefreshOwnerActionEffect();
 }
 
 void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionType, AActor* Target)
@@ -406,9 +396,17 @@ void UTRActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		World->GetTimerManager().ClearTimer(ActionTimerHandle);
 	}
 
-	bRepairEffectActive = false;
-	bSupplyEffectActive = false;
-	RefreshOwnerActionEffects();
+	const AActor* OwnerActor = GetOwner();
+	if (IsValid(OwnerActor) && OwnerActor->HasAuthority())
+	{
+		SetCurrentAction(ETRActionType::None, nullptr);
+	}
+
+	// 파괴 중에는 마지막 복제가 도착하지 않을 수 있으므로 각 머신에서 즉시 끈다.
+	if (ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(GetOwner()))
+	{
+		Character->SetActionEffect(ETRActionType::None);
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
