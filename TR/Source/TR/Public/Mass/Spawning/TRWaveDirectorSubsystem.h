@@ -163,11 +163,14 @@ struct FTRWaveDefinition
 	ETRTargetChannel Channel = ETRTargetChannel::Train;
 
 	/**
-	 * 스탯 배수. ScaleWaveForNumber가 채워 넣는 값이라 테이블에서 직접 건드리지 않는다.
-	 * 스폰 시 체력·피해량에 곱해진다(기획서의 "웨이브당 +5% 복리").
+	 * 티어 배수. T1 기준값에 곱해 그 웨이브의 실제 수치를 만든다.
+	 *
+	 * 티어가 바뀌는 웨이브에만 행을 넣으면 된다 — 행이 없는 웨이브는 그보다 작은
+	 * 최대 행을 물려받는다. 기획서 기준 1·4·7행이 T1·T2·T3 이고,
+	 * W10 부터는 ScaleWaveForNumber 가 여기에 복리를 얹는다.
 	 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Wave")
-	float StatScale = 1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave")
+	FTREnemyStatScale StatScale;
 
 	/**
 	 * 배치를 다 낸 뒤, 밀린 물량(MaxPendingBatches)을 마저 내보내려고 기다리는 최대 시간(초).

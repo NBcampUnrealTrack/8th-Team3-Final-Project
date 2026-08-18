@@ -234,8 +234,9 @@ FTRWaveDefinition UTRWaveDirectorSubsystem::ScaleWaveForNumber(const FTRWaveDefi
 
 	const float Multiplier = FMath::Pow(PerWaveMultiplier, static_cast<float>(CompoundSteps));
 
-	// 스탯 배수는 그룹과 무관하게 웨이브 전체에 걸린다.
-	Scaled.StatScale = BaseDefinition.StatScale * Multiplier;
+	// 복리는 체력·피해에만 건다. 속도와 자원은 기획서상 T3 에서 고정이다.
+	Scaled.StatScale.Health = BaseDefinition.StatScale.Health * Multiplier;
+	Scaled.StatScale.Damage = BaseDefinition.StatScale.Damage * Multiplier;
 
 	for (int32 GroupIndex = 0; GroupIndex < Scaled.Groups.Num(); ++GroupIndex)
 	{
