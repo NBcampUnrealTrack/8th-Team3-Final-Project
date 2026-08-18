@@ -2,8 +2,13 @@
 
 #include "Mass/Debug/TRMassDebugProcessor.h"
 
+#include "Animation/AnimSequenceTransformProviderData.h"
+#include "Components/InstancedSkinnedMeshComponent.h"
+#include "Engine/SkinnedAsset.h"
+#include "Rendering/SkeletalMeshRenderData.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
+#include "UObject/UObjectIterator.h"
 #include "MassActorSubsystem.h"
 #include "MassCommonFragments.h"
 #include "MassCommonTypes.h"
@@ -30,6 +35,9 @@ namespace
 		case EMassRepresentationType::HighResSpawnedActor: return TEXT("HighResActor");
 		case EMassRepresentationType::LowResSpawnedActor:  return TEXT("LowResActor");
 		case EMassRepresentationType::StaticMeshInstance:  return TEXT("StaticMeshISM");
+		// 이게 빠져 있어서 우리 적 전원이 "Other"로 찍혔다. 표현이 안 잡힌 것처럼 보여
+		// 애니메이션을 엉뚱한 곳에서 찾게 만드는 표시라 반드시 이름이 있어야 한다.
+		case EMassRepresentationType::SkinnedMeshInstance: return TEXT("SkinnedMeshISM");
 		case EMassRepresentationType::None:                return TEXT("None");
 		default:                                           return TEXT("Other");
 		}
@@ -109,7 +117,12 @@ void UTRMassDebugProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 	if (bStatusRequested || bRepeatDue)
 	{
 		NextLogTime = World->GetTimeSeconds() + 1.0;
-		LogStatus(Context, *World);
+		// 렌더 파이프라인 덤프는 컴포넌트마다 한 줄씩 나가므로 매초 찍으면 스팸이다.
+		// 세션당 한 번은 자동으로 남기고(초기 구성 확인용), 그 뒤로는 1회 요청에만 응한다.
+		const bool bIncludeRenderDetails = bStatusRequested || !bLoggedRenderDetailsOnce;
+		bLoggedRenderDetailsOnce = true;
+
+		LogStatus(Context, *World, bIncludeRenderDetails);
 	}
 #endif // !UE_BUILD_SHIPPING
 }
@@ -236,7 +249,7 @@ void UTRMassDebugProcessor::DrawTargetBounds(FMassExecutionContext& Context, UWo
 	});
 }
 
-void UTRMassDebugProcessor::LogStatus(FMassExecutionContext& Context, UWorld& World)
+void UTRMassDebugProcessor::LogStatus(FMassExecutionContext& Context, UWorld& World, bool bIncludeRenderDetails)
 {
 	int32 TotalCount = 0;
 	int32 NoRepresentationFragmentCount = 0;
@@ -250,6 +263,9 @@ void UTRMassDebugProcessor::LogStatus(FMassExecutionContext& Context, UWorld& Wo
 	int32 LODCounts[EMassLOD::Max] = { 0 };
 	TMap<EMassRepresentationType, int32> RepresentationCounts;
 
+	/** 실제로 요청 중인 시퀀스 인덱스 분포. T포즈 진단의 핵심 값. */
+	TMap<int32, int32> SequenceIndexCounts;
+
 	StatusQuery.ForEachEntityChunk(Context, [&](FMassExecutionContext& ChunkContext)
 	{
 		const TConstArrayView<FMassRepresentationFragment> RepresentationList = ChunkContext.GetFragmentView<FMassRepresentationFragment>();
@@ -258,14 +274,15 @@ void UTRMassDebugProcessor::LogStatus(FMassExecutionContext& Context, UWorld& Wo
 		const TConstArrayView<FTRTargetFragment> TargetList = ChunkContext.GetFragmentView<FTRTargetFragment>();
 		const TConstArrayView<FMassNavigationObstacleGridCellLocationFragment> ObstacleGridList =
 			ChunkContext.GetFragmentView<FMassNavigationObstacleGridCellLocationFragment>();
+		const TConstArrayView<FMassRepresentationAnimationFragment> AnimList =
+			ChunkContext.GetFragmentView<FMassRepresentationAnimationFragment>();
 
 		const bool bHasRepresentation = (RepresentationList.Num() > 0);
 		const bool bHasLOD = (LODList.Num() > 0);
 		const bool bHasActor = (ActorList.Num() > 0);
 		const bool bHasTargetFragment = (TargetList.Num() > 0);
 		const bool bHasObstacleGrid = (ObstacleGridList.Num() > 0);
-		const bool bHasAnimFragment =
-			(ChunkContext.GetFragmentView<FMassRepresentationAnimationFragment>().Num() > 0);
+		const bool bHasAnimFragment = (AnimList.Num() > 0);
 
 		for (FMassExecutionContext::FEntityIterator EntityIt = ChunkContext.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
@@ -307,6 +324,14 @@ void UTRMassDebugProcessor::LogStatus(FMassExecutionContext& Context, UWorld& Wo
 			{
 				++NoAnimFragmentCount;
 			}
+			else
+			{
+				// 어떤 시퀀스가 실제로 요청되고 있는지. T포즈 원인을 가르는 값이다 —
+				// 인덱스가 골고루 나오면 선택 프로세서는 정상이고 하류(프로바이더/GPU)가
+				// 문제, 전부 0이면 선택 프로세서가 아예 안 돌고 있다는 뜻이다.
+				const FAnimSequenceTrackAutoPlayData& AnimData = AnimList[EntityIt].AnimData;
+				SequenceIndexCounts.FindOrAdd(AnimData.SequenceIndex)++;
+			}
 
 			if (!bHasTargetFragment)
 			{
@@ -339,6 +364,88 @@ void UTRMassDebugProcessor::LogStatus(FMassExecutionContext& Context, UWorld& Wo
 
 	UE_LOG(LogTRMass, Warning, TEXT("목표  보유 %d / 도달 %d / 타깃프래그먼트없음 %d"),
 		HasTargetCount, ArrivedCount, NoTargetFragmentCount);
+
+	if (NoAnimFragmentCount > 0)
+	{
+		UE_LOG(LogTRMass, Error, TEXT("애님  프래그먼트 없음 %d — 이 개체들은 T포즈로 고정된다"),
+			NoAnimFragmentCount);
+	}
+
+	for (const TPair<int32, int32>& Pair : SequenceIndexCounts)
+	{
+		UE_LOG(LogTRMass, Warning, TEXT("애님  SequenceIndex[%d] = %d"), Pair.Key, Pair.Value);
+	}
+
+	if (!bIncludeRenderDetails)
+	{
+		return;
+	}
+
+	// 인덱스는 잘 쓰이는데 T포즈가 나오면 남은 곳은 여기뿐이다 — 컴포넌트에 프로바이더가
+	// 실제로 붙었는가, 그 안에 시퀀스가 몇 개인가. 붙지 않아도 경고가 안 나므로 직접 본다.
+	for (TObjectIterator<UInstancedSkinnedMeshComponent> It; It; ++It)
+	{
+		UInstancedSkinnedMeshComponent* Component = *It;
+		if (Component == nullptr || Component->GetWorld() != &World)
+		{
+			continue;
+		}
+
+		const UTransformProviderData* Provider = Component->GetTransformProvider();
+		const UAnimSequenceTransformProviderDataInstance* Instance =
+			Cast<UAnimSequenceTransformProviderDataInstance>(Provider);
+
+		// **T포즈 판정의 핵심.** 프로바이더는 IsValidFor 에서 이 조건을 요구하고,
+		// 실패하면 프록시를 만들지 않아 레퍼런스 포즈(T포즈)로 그려진다.
+		// 이게 false 면 스켈레탈 메시 Build Settings 의 'Optimize for Instancing' 이 꺼진 것이다.
+		const USkinnedAsset* SkinnedAsset = Component->GetSkinnedAsset();
+		const FSkeletalMeshRenderData* RenderData =
+			SkinnedAsset ? SkinnedAsset->GetResourceForRendering() : nullptr;
+		const bool bUnifiedBoneMap = RenderData && RenderData->HasUnifiedBoneMap();
+
+		// AnimationMinScreenSize 는 protected 라 게터가 없다. 디버그 목적이라 리플렉션으로 읽는다.
+		// 0 이 아니면 전역 r.Skinning.DefaultAnimationMinScreenSize 를 무시하므로,
+		// 콘솔로 전역값을 낮춰도 T포즈가 그대로인 상황의 원인이 될 수 있다.
+		// **빈 칸이 하나라도 있으면 프로바이더 전체가 무효가 된다**(IsValidFor 가 false 를 반환).
+		// 그러면 인덱스가 아무리 정확해도 전원 레퍼런스 포즈(T포즈)로 그려진다.
+		// 개수만 세면 null 칸도 함께 세어져 정상으로 보이므로 따로 표시한다.
+		int32 NullSequenceCount = 0;
+		if (Instance != nullptr)
+		{
+			for (const FAnimSequenceTransformProviderSequence& Sequence : Instance->GetSequences())
+			{
+				if (Sequence.Sequence == nullptr)
+				{
+					++NullSequenceCount;
+				}
+			}
+		}
+
+		float AnimMinScreenSize = -999.f;
+		if (const FFloatProperty* Prop = CastField<FFloatProperty>(
+			UInstancedSkinnedMeshComponent::StaticClass()->FindPropertyByName(TEXT("AnimationMinScreenSize"))))
+		{
+			AnimMinScreenSize = Prop->GetPropertyValue_InContainer(Component);
+		}
+
+		UE_LOG(LogTRMass, Warning,
+			TEXT("ISM  '%s' 메시=%s | 인스턴스=%d | 프로바이더=%s | 시퀀스=%d | UnifiedBoneMap=%s | AnimMinScreenSize=%.4f"),
+			*Component->GetName(),
+			*GetNameSafe(SkinnedAsset),
+			Component->GetInstanceCount(),
+			Provider ? *Provider->GetClass()->GetName() : TEXT("(없음!)"),
+			Instance ? Instance->GetSequences().Num() : -1,
+			bUnifiedBoneMap ? TEXT("O") : TEXT("X ← Optimize for Instancing 꺼짐"),
+			AnimMinScreenSize);
+
+		if (NullSequenceCount > 0)
+		{
+			UE_LOG(LogTRMass, Error,
+				TEXT("ISM  ↑ 시퀀스 목록에 빈 칸 %d개 — **프로바이더 전체가 무효가 되어 전원 T포즈다.** "
+					 "Sequence List 의 빈 칸을 채우고, TPD 를 다시 저장할 것."),
+				NullSequenceCount);
+		}
+	}
 
 	// 엔티티가 목표를 못 받는 경우, 원인이 Director에 있는지 전파에 있는지 갈라야 한다.
 	if (const UTRTargetDirectorSubsystem* Director = World.GetSubsystem<UTRTargetDirectorSubsystem>())

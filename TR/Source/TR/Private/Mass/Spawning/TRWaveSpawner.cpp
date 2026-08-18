@@ -21,12 +21,6 @@ void ATRWaveSpawner::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// 게임모드가 있는 쪽(서버/스탠드얼론)에서만 진행한다.
-	if (!HasAuthority())
-	{
-		return;
-	}
-
 	if (TargetActor == nullptr)
 	{
 		// 레벨에 기차가 하나뿐인 구성을 전제로 한다. 여러 대가 되면 명시 지정이 필요하다.
@@ -59,6 +53,14 @@ void ATRWaveSpawner::BeginPlay()
 
 	// 적의 폭발 피해가 갈 곳도 위에서 등록한 그 목표다. 따로 걸어줄 것이 없다 —
 	// 전투 서브시스템이 채널의 목표를 그대로 쓴다.
+
+	// 여기까지(목표·표적 구역 등록)는 **클라이언트도 해야 한다.** 복제로 받은 적의
+	// 표현이 기차를 기준으로 놓이고, 디버그 표시도 양쪽에서 같은 기준을 봐야 한다.
+	// 웨이브 진행(스폰 판단)만 서버 권위다 — 그건 아래에서 가른다.
+	if (!HasAuthority())
+	{
+		return;
+	}
 
 	if (UTRWaveDirectorSubsystem* Director = GetWorld()->GetSubsystem<UTRWaveDirectorSubsystem>())
 	{

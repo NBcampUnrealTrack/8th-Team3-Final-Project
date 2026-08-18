@@ -28,7 +28,14 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, Category = "TR|Enemy")
 	FTREnemyCombatParams CombatParams;
-	
+
+	/**
+	 * 원거리 표현(인스턴스 스킨드 메시)의 상태별 시퀀스 인덱스.
+	 * 메시에 물린 AnimSequence Transform Provider의 Sequence List 순서와 맞춰야 한다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "TR|Anim")
+	FTREnemyAnimParams AnimParams;
+
 	UPROPERTY(EditAnywhere, Category = "TR|Chase", meta = (ClampMin = "1.0", ForceUnits = "cm"))
 	float AgentRadius = 40.f;
 };

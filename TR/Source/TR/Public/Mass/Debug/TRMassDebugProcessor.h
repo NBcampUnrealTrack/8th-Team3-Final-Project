@@ -43,7 +43,12 @@ private:
 	void DrawTargetBounds(FMassExecutionContext& Context, UWorld& World);
 
 	/** 엔티티 수, 프래그먼트 유무, LOD/표현 분포, 목표 상태를 로그로 덤프한다. */
-	void LogStatus(FMassExecutionContext& Context, UWorld& World);
+	/**
+	 * @param bIncludeRenderDetails 렌더 파이프라인(ISM 컴포넌트·트랜스폼 프로바이더) 상태까지
+	 *        찍는다. 1회 요청(tr.Mass.Debug.Status)에서만 켠다 — 컴포넌트마다 한 줄씩
+	 *        나가므로 1초 주기 로그에 섞으면 다른 값이 안 보인다.
+	 */
+	void LogStatus(FMassExecutionContext& Context, UWorld& World, bool bIncludeRenderDetails);
 
 	/** 그리기용. 필요한 것만 요구한다. */
 	FMassEntityQuery DrawQuery;
@@ -55,4 +60,7 @@ private:
 	FMassEntityQuery StatusQuery;
 
 	double NextLogTime = 0.0;
+
+	/** 렌더 파이프라인 덤프를 이미 한 번 남겼는지. 세션당 1회는 자동으로 남긴다. */
+	bool bLoggedRenderDetailsOnce = false;
 };

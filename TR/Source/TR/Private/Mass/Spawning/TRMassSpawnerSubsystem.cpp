@@ -12,6 +12,7 @@
 #include "MassSpawnerSubsystem.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Mass/Core/TRMassParams.h"
+#include "Mass/Net/TRMassNetRelay.h"
 #include "Mass/Spawning/TRMassSpawnUtils.h"
 
 namespace
@@ -60,18 +61,59 @@ namespace
 	 *                            같은 경고가 마릿수만큼 찍히는 걸 막는다.
 	 */
 	void InitializeSpawnedEntity(FMassEntityManager& EntityManager, const FMassEntityHandle& Entity,
-		const FTRChaserSpawnParams& Params, const FVector& Location,
-		bool bReportConfigIssues, const UMassEntityConfigAsset* Config)
+		const FTRChaserSpawnParams& Params, const FVector& Location, FRandomStream& RandomStream,
+		bool bReportConfigIssues, const UMassEntityConfigAsset* Config,
+		int32 NetId, uint8 ConfigIndex)
 	{
 		if (FTransformFragment* TransformFragment = EntityManager.GetFragmentDataPtr<FTransformFragment>(Entity))
 		{
 			TransformFragment->GetMutableTransform().SetLocation(Location);
 		}
 
+		const FTRChaseParams* ChaseParams = EntityManager.GetConstSharedFragmentDataPtr<FTRChaseParams>(Entity);
+
+		// 개체별 속도 배수. 이걸 안 뽑으면 한 무리가 통째로 같은 속도로 움직여서
+		// 대열이 얼어붙은 것처럼 보인다. 스폰 시 한 번만 정하고 이후 바꾸지 않는다.
+		{
+			FTRApproachFragment* ApproachFragment = EntityManager.GetFragmentDataPtr<FTRApproachFragment>(Entity);
+
+			if (ApproachFragment != nullptr && ChaseParams != nullptr)
+			{
+				ApproachFragment->SpeedScale = UE::TR::Enemy::MakeSpeedScale(*ChaseParams, RandomStream);
+			}
+		}
+
+		// 첫 지면 트레이스 시각을 개체마다 흩어 놓는다.
+		//
+		// 기본값 0이면 **배치 전원이 스폰 직후 같은 프레임에 트레이스**한다. 한 웨이브가
+		// 수십 마리면 그 프레임만 씬 쿼리가 몰려 눈에 띄게 튄다. 프로세서가 트레이스마다
+		// 지터를 더하고는 있지만, 그건 두 번째 트레이스부터라 정작 가장 몰리는 스폰
+		// 순간에는 아무 효과가 없다.
+		//
+		// 스폰 난수열을 쓰므로 같은 시드면 같은 결과다(클라이언트 시뮬 동기화 대비).
+		if (FTRGroundFragment* GroundFragment = EntityManager.GetFragmentDataPtr<FTRGroundFragment>(Entity))
+		{
+			const float Interval = (ChaseParams != nullptr) ? ChaseParams->GroundTraceInterval : 0.f;
+			if (Interval > 0.f)
+			{
+				const UWorld* World = EntityManager.GetWorld();
+				const float WorldTime = World ? World->GetTimeSeconds() : 0.f;
+
+				GroundFragment->NextTraceTime = WorldTime + RandomStream.FRandRange(0.f, Interval);
+			}
+		}
+
 		// 스폰 시점에 채널을 덮어써서, 같은 Config로 서로 다른 대상을 쫓는 무리를 만들 수 있다.
 		if (FTRChaseChannelFragment* ChannelFragment = EntityManager.GetFragmentDataPtr<FTRChaseChannelFragment>(Entity))
 		{
 			ChannelFragment->Channel = Params.Channel;
+		}
+
+		// 복제 식별자. 이걸 채워야 클라이언트가 이 적을 볼 수 있다.
+		if (FTRMassNetIdFragment* NetIdFragment = EntityManager.GetFragmentDataPtr<FTRMassNetIdFragment>(Entity))
+		{
+			NetIdFragment->NetId = NetId;
+			NetIdFragment->ConfigIndex = ConfigIndex;
 		}
 
 		// 티어 배수를 여기서 한 번만 적용한다. 이후 로직은 배수를 몰라도 되고,
@@ -151,6 +193,15 @@ int32 UTRMassSpawnerSubsystem::SpawnChasersWithHandles(const FTRChaserSpawnParam
 	TArray<FVector> Locations;
 	UE::TR::MassSpawn::ComputeScatterLocations(World, Params.Area, Count, RandomStream, Locations);
 
+	// 이 배치가 어떤 메시로 표현되는지 클라이언트에 알리기 위한 색인.
+	// 릴레이가 없으면(스탠드얼론) 0으로 두고 NetId도 붙지 않는다 — 볼 상대가 없다.
+	uint8 ConfigIndex = 0;
+	if (ATRMassNetRelay* Relay = ATRMassNetRelay::Get(World, /*bCreateIfMissing=*/World->GetNetMode() == NM_ListenServer
+		|| World->GetNetMode() == NM_DedicatedServer))
+	{
+		ConfigIndex = Relay->RegisterConfig(Config);
+	}
+
 	// 생성 컨텍스트가 살아 있는 동안은 옵저버/명령이 보류된다.
 	// 그 사이에 초기값을 다 채워 넣어야 옵저버가 완성된 상태를 보게 된다.
 	{
@@ -160,8 +211,9 @@ int32 UTRMassSpawnerSubsystem::SpawnChasersWithHandles(const FTRChaserSpawnParam
 		for (int32 Index = 0; Index < OutEntities.Num(); ++Index)
 		{
 			InitializeSpawnedEntity(EntityManager, OutEntities[Index], Params,
-				Locations.IsValidIndex(Index) ? Locations[Index] : Params.Area.Origin,
-				/*bReportConfigIssues=*/Index == 0, Config);
+				Locations.IsValidIndex(Index) ? Locations[Index] : Params.Area.Origin, RandomStream,
+				/*bReportConfigIssues=*/Index == 0, Config,
+				/*NetId=*/++NetIdSerial, ConfigIndex);
 		}
 	}
 
