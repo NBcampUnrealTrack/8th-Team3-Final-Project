@@ -79,7 +79,10 @@ namespace
 
 			if (ApproachFragment != nullptr && ChaseParams != nullptr)
 			{
-				ApproachFragment->SpeedScale = UE::TR::Enemy::MakeSpeedScale(*ChaseParams, RandomStream);
+				// 티어 속도 배수를 개체별 흔들림 위에 곱한다. 무리 안의 빠르고 느린 차이는
+				// 유지하면서 티어가 오를수록 전체가 함께 빨라진다.
+				ApproachFragment->SpeedScale = UE::TR::Enemy::MakeSpeedScale(*ChaseParams, RandomStream)
+					* FMath::Max(Params.StatScale.Speed, 0.01f);
 			}
 		}
 
