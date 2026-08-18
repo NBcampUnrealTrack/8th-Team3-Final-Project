@@ -52,6 +52,7 @@ void UTRActionComponent::SetCurrentAction(ETRActionType NewType, AActor* NewTarg
 {
 	CurrentActionType = NewType;
 	CurrentTarget = NewTarget;
+	RefreshOwnerActionEffect();
 
 	ATRGameState* GameState = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
 	if (!IsValid(GameState))
@@ -68,6 +69,19 @@ void UTRActionComponent::SetCurrentAction(ETRActionType NewType, AActor* NewTarg
 	{
 		GameState->SetBuildingComponent(nullptr);
 	}
+}
+
+void UTRActionComponent::RefreshOwnerActionEffect()
+{
+	if (ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(GetOwner()))
+	{
+		Character->SetActionEffect(CurrentActionType);
+	}
+}
+
+void UTRActionComponent::OnRep_CurrentActionType()
+{
+	RefreshOwnerActionEffect();
 }
 
 void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionType, AActor* Target)
@@ -380,6 +394,18 @@ void UTRActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(ActionTimerHandle);
+	}
+
+	const AActor* OwnerActor = GetOwner();
+	if (IsValid(OwnerActor) && OwnerActor->HasAuthority())
+	{
+		SetCurrentAction(ETRActionType::None, nullptr);
+	}
+
+	// 파괴 중에는 마지막 복제가 도착하지 않을 수 있으므로 각 머신에서 즉시 끈다.
+	if (ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(GetOwner()))
+	{
+		Character->SetActionEffect(ETRActionType::None);
 	}
 
 	Super::EndPlay(EndPlayReason);

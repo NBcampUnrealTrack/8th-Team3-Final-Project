@@ -1,4 +1,4 @@
-//TRPlayerCharacter.h
+// TRPlayerCharacter.h
 
 #pragma once
 
@@ -17,6 +17,7 @@ class UNiagaraComponent;
 class UNiagaraSystem;
 class ATRControlConsole;
 class ATRPlayerHUD;
+enum class ETRActionType : uint8;
 
 UCLASS()
 class TR_API ATRPlayerCharacter : public ACharacter
@@ -45,6 +46,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Action")
 	UTRActionComponent* GetActionComponent() const { return ActionComp; }
+
+	// 행동 상태에 맞는 지속 Niagara 이펙트를 적용한다.
+	void SetActionEffect(const ETRActionType InActionType);
 
 	UFUNCTION(BlueprintPure, Category = "UI")
 	bool IsOccupyingControlConsole() const;
@@ -148,6 +152,13 @@ protected:
 	//--- VFX ---
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
 	TObjectPtr<UNiagaraComponent> WalkEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraComponent> RepairEffect;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
+	TObjectPtr<UNiagaraComponent> SupplyEffect;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "VFX")
 	TObjectPtr<UNiagaraSystem> JumpLandEffect;
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "VFX")
@@ -157,7 +168,7 @@ protected:
 	FTimerHandle MoveUpdateTimerHandle;
 	void UpdateMoveEffect();
 
-	//이펙트&연출용 함수
+	// 이펙트 및 연출용 함수
 	virtual void Landed(const FHitResult& Hit) override;
 	UFUNCTION(Server, Unreliable)
 	void ServerPlayJumpLandEffect();

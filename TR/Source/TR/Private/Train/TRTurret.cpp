@@ -9,6 +9,9 @@
 #include "Debug/TRGameplayLog.h"
 #include "GameFramework/Pawn.h"
 #include "Interaction/TRTurretControlComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "MassCommonFragments.h"
 #include "MassEntityManager.h"
 #include "MassEntityUtils.h"
@@ -18,9 +21,6 @@
 
 ATRTurret::ATRTurret()
 {
-	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
-	RootComponent = Root;
-
 	TurretMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("TurretMesh"));
 	TurretMesh->SetupAttachment(Root);
 	// 조준선에 안 걸리게 한다. 탑승은 실내 ConsoleMesh 로만.
@@ -225,7 +225,6 @@ bool ATRTurret::RefillAmmoToMax()
 	return true;
 }
 
-
 bool ATRTurret::IsWithinFireArc(float CameraYaw, float CameraPitch) const
 {
 	const float YawDelta = FMath::Abs(FMath::FindDeltaAngleDegrees(InstallYaw, CameraYaw));
@@ -402,17 +401,34 @@ void ATRTurret::AutoFireTick()
 
 void ATRTurret::MulticastFireEffect_Implementation(FVector HitLocation, bool bEnemyHit)
 {
-	const FVector Muzzle = IsValid(TurretMesh) ? TurretMesh->GetComponentLocation() : GetActorLocation();
+	// 멀티캐스트로 사격 VFX를 스폰하고 Niagara 풀링으로 반환한다.
+	if (GetNetMode() != NM_DedicatedServer && IsValid(FireEffect) && IsValid(TurretMesh))
+	{
+		const bool bAutoDestroy = true;
+		const bool bAutoActivate = true;
+		UNiagaraFunctionLibrary::SpawnSystemAttached(
+			FireEffect,
+			TurretMesh,
+			FireEffectSocketName,	// 추후 포탑 메시 교체 시 총구 위치로 조정 필요.
+			FireEffectLocationOffset,
+			FireEffectRotationOffset,
+			EAttachLocation::KeepRelativeOffset,
+			bAutoDestroy,
+			bAutoActivate,
+			ENCPoolMethod::AutoRelease);
+	}
+
+	const FVector FireOrigin = IsValid(TurretMesh) ? TurretMesh->GetComponentLocation() : GetActorLocation();
 
 #if !UE_BUILD_SHIPPING
 	// 적을 맞힌 지점까지만 그린다.
 	if (bEnemyHit)
 	{
-		DrawDebugLine(GetWorld(), Muzzle, HitLocation, FColor::Cyan, false, 0.4f, SDPG_Foreground, 1.f);
+		DrawDebugLine(GetWorld(), FireOrigin, HitLocation, FColor::Cyan, false, 0.4f, SDPG_Foreground, 1.f);
 	}
 #endif
 
-	// TODO: 총구 화염 · 피탄 이펙트 · 사운드.
+	// TODO: 피탄 이펙트 · 사운드.
 }
 
 

@@ -8,6 +8,7 @@
 
 class UStaticMeshComponent;
 class USceneComponent;
+class UNiagaraSystem;
 class APawn;
 struct FTRTurretLevelRow;
 
@@ -117,9 +118,6 @@ private:
 
 	FTimerHandle AutoFireTimerHandle;
 	
-	UPROPERTY(VisibleAnywhere, Category = "Turret")
-	TObjectPtr<USceneComponent> Root;
-
 	// 기차 외부. 적의 피격 대상이자 탑승 시 카메라가 붙는 지점.
 	UPROPERTY(VisibleAnywhere, Category = "Turret")
 	TObjectPtr<UStaticMeshComponent> TurretMesh;
@@ -127,6 +125,20 @@ private:
 	// 기차 내부 조종 구조물. 탑승·수리·재장전은 전부 여기서 상호작용한다.
 	UPROPERTY(VisibleAnywhere, Category = "Turret")
 	TObjectPtr<UStaticMeshComponent> ConsoleMesh;
+
+	//--- VFX ---
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Turret|VFX", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UNiagaraSystem> FireEffect;
+
+	// 총구 소켓이 없으면 TurretMesh 원점에 아래 상대 오프셋을 적용한다.
+	UPROPERTY(EditAnywhere, Category = "Turret|VFX")
+	FName FireEffectSocketName = NAME_None;
+
+	UPROPERTY(EditAnywhere, Category = "Turret|VFX")
+	FVector FireEffectLocationOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, Category = "Turret|VFX")
+	FRotator FireEffectRotationOffset = FRotator::ZeroRotator;
 
 	UPROPERTY(Replicated)
 	int32 CurrentAmmo = 0;

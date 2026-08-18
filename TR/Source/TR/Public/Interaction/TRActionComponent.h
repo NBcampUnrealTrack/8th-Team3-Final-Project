@@ -54,9 +54,16 @@ private:
 	// 진행 상태를 바꾸는 유일한 통로. GameState 의 재설치 표식도 여기서만 갱신해 둘이 어긋나지 않게 한다.
 	void SetCurrentAction(ETRActionType NewType, AActor* NewTarget);
 
+	// 복제된 행동 상태를 오너 캐릭터의 지속 이펙트에 반영한다.
+	void RefreshOwnerActionEffect();
+
+	UFUNCTION()
+	void OnRep_CurrentActionType();
+
 	bool RequiresMonsterResource(ETRActionType ActionType) const { return ActionType == ETRActionType::Build; }
 	
-	UPROPERTY(Replicated)
+	// RPC 순간값 대신 행동 상태를 복제한다.
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentActionType)
 	ETRActionType CurrentActionType = ETRActionType::None;
 
 	UPROPERTY(Replicated)
