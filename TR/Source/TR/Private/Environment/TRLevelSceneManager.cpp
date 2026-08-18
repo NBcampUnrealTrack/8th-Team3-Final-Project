@@ -428,7 +428,7 @@ void ATRLevelSceneManager::PublishGroundVelocity() const
 	}
 
 	//MoveChunks와 같은 식이어야 한다. 어긋나면 적의 발이 실제 지면과 다른 속도로 움직인다
-	const float EffectiveVisualSpeed = bAutoMove ? FMath::Max(0.f, VisualSpeed) : 0.f;
+	const float EffectiveVisualSpeed = IsSceneMovementAllowed() ? FMath::Max(0.f, VisualSpeed) : 0.f;
 
 	GroundMotion->SetGroundVelocity(-GetActorForwardVector() * EffectiveVisualSpeed);
 }
