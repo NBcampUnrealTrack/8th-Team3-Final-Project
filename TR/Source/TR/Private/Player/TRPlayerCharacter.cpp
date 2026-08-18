@@ -179,7 +179,8 @@ void ATRPlayerCharacter::Move(const FInputActionValue& Input)
 		return;
 	}
 	
-	if (IsValid(ActionComp) && ActionComp->IsActionInProgress())
+	// 재설치는 관제석 버튼으로 시작하는 액션이라 이동과 무관
+	if (IsValid(ActionComp) && ActionComp->IsActionInProgress() && ActionComp->GetCurrentActionType() != ETRActionType::Build)
 	{
 		ActionComp->ServerCancelAction();
 	}
