@@ -42,13 +42,6 @@ namespace
 			{
 				UE_LOG(LogTRMass, Warning, TEXT("[%s] Attack.Duration이 0이다. 공격 포즈에서 못 빠져나온다."), *Name);
 			}
-			// 애니메이션이 준비 시간보다 짧으면 공격 → 대기 → 폭발 순서가 되어 어색하다.
-			else if (Anim.Attack.Duration < Combat.DetonationWindup)
-			{
-				UE_LOG(LogTRMass, Warning,
-					TEXT("[%s] Attack.Duration(%.2f)이 DetonationWindup(%.2f)보다 짧다. 폭발 전에 대기 모션으로 되돌아간다."),
-					*Name, Anim.Attack.Duration, Combat.DetonationWindup);
-			}
 			break;
 
 		case ETREnemyType::Launcher:

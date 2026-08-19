@@ -33,7 +33,7 @@ struct FTRTargetChannelState
 {
 	GENERATED_BODY()
 
-	/** 액터 목표. 유효하면 매 틱 이 액터의 현재 위치를 쓴다(움직이는 열차 대응). */
+	/** 액터 목표. 유효하면 매 틱 이 액터의 현재 위치를 쓴다. */
 	UPROPERTY()
 	TWeakObjectPtr<AActor> TargetActor;
 
@@ -60,7 +60,7 @@ struct FTRTargetChannelState
 	UPROPERTY()
 	bool bHasBounds = false;
 
-	/** 목표를 나눈 구역들. 비어 있으면 LocalBounds 하나를 통째로 쓴다. */
+	/** 목표를 나눈 구역들. 적이 노리는 대상은 이 구역뿐이다. */
 	UPROPERTY()
 	TArray<FTRTargetZoneState> Zones;
 };
@@ -86,77 +86,43 @@ struct FTRResolvedTarget
 	/** 구역별 월드 공간 바운드. 앞에서부터 ZoneCount 개만 유효하다. */
 	FBox ZoneBounds[MaxZones];
 
-	/** 구역이 아직 표적이 될 수 있는지. 번호를 유지하려고 죽은 구역도 자리를 지킨다. */
+	/** 구역 소유자가 살아 있는지. 표적 선택에는 쓰지 않고 진단용으로만 남긴다. */
 	bool ZoneAlive[MaxZones] = {};
 
-	/** 구역별 등급. 낮은 등급이 하나라도 살아 있으면 높은 등급은 고르지 않는다. */
+	/** 구역별 등급. 표적 선택에는 쓰지 않고 진단용으로만 남긴다. */
 	ETRTargetZoneTier ZoneTier[MaxZones] = {};
 
-	/** 등록된 구역 수. 0이면 LocalBounds 하나를 쓴다. */
+	/** 등록된 구역 수. 0이면 노릴 곳이 없다. */
 	int32 ZoneCount = 0;
 
-	/** 표면 최근접점. 구역이 있으면 가장 가까운 구역에서, 없으면 전체 바운드에서 구한다. */
-	FVector GetClosestSurfacePoint(const FVector& From) const
-	{
-		if (ZoneCount > 0)
-		{
-			const int32 Nearest = FindNearestZone(From);
-			if (Nearest != INDEX_NONE)
-			{
-				return GetZoneSurfacePoint(Nearest, From);
-			}
-
-			// 구역이 전부 파괴됐으면 차체로 내려간다(기획서: 포탑 → 장갑 → 차체).
-			//
-			// 여기서 곧장 Center를 돌려주면 안 된다. 그러면 전원이 기차 한가운데 한 점으로
-			// 몰리고, 정지 거리도 그 점에서 재므로 근접형이 차체 안쪽으로 파고든 뒤에야
-			// 도달 판정이 선다. 아래 바운드 경로로 흘려보내면 차체 표면을 노린다.
-		}
-
-		if (!bHasBounds)
-		{
-			return Center;
-		}
-
-		const FVector LocalFrom = Transform.InverseTransformPosition(From);
-		const FVector LocalClosest = LocalBounds.GetClosestPointTo(LocalFrom);
-
-		return Transform.TransformPosition(LocalClosest);
-	}
-
-	/** 살아 있는 구역인지. */
-	bool IsZoneAlive(int32 ZoneIndex) const
-	{
-		return ZoneIndex >= 0 && ZoneIndex < ZoneCount && ZoneAlive[ZoneIndex];
-	}
-
 	/**
-	 * 노려야 할 구역의 번호. 없으면 INDEX_NONE.
-	 * 등급이 낮은 쪽(포탑 → 장갑)을 먼저 비우고, 같은 등급 안에서 가장 가까운 것을 고른다.
+	 * 노릴 지점 — 가장 가까운 구역(장갑·포탑)의 표면 최근접점.
+	 *
+	 * 구역만 표적이다. 차체 전체를 표적으로 두면 최근접점이 객실 표면이 되어
+	 * 적이 장갑을 지나쳐 안으로 들어간다. 노릴 구역이 없으면 false.
 	 */
-	int32 FindNearestZone(const FVector& From) const
+	bool TryGetClosestZonePoint(const FVector& From, FVector& OutPoint) const
 	{
-		for (uint8 Tier = 0; Tier < static_cast<uint8>(ETRTargetZoneTier::MAX); ++Tier)
+		const int32 Nearest = FindNearestZoneAnyTier(From);
+		if (Nearest == INDEX_NONE)
 		{
-			const int32 Nearest = FindNearestZoneInTier(From, static_cast<ETRTargetZoneTier>(Tier));
-			if (Nearest != INDEX_NONE)
-			{
-				return Nearest;
-			}
+			return false;
 		}
 
-		return INDEX_NONE;
+		OutPoint = ZoneBounds[Nearest].GetClosestPointTo(From);
+		return true;
 	}
 
-	/** 지정한 등급 안에서 살아 있는 가장 가까운 구역. 없으면 INDEX_NONE. */
-	int32 FindNearestZoneInTier(const FVector& From, ETRTargetZoneTier Tier) const
+	/** 등급과 파괴 여부를 따지지 않고 가장 가까운 구역. 없으면 INDEX_NONE. */
+	int32 FindNearestZoneAnyTier(const FVector& From) const
 	{
 		int32 Nearest = INDEX_NONE;
 		double NearestDistanceSq = 0.0;
 
 		for (int32 Index = 0; Index < ZoneCount; ++Index)
 		{
-			if (!ZoneAlive[Index] || ZoneTier[Index] != Tier)
+			// 바운드가 비면 최근접점이 월드 원점이 된다. 그 자리를 노리게 두면 안 된다.
+			if (!ZoneBounds[Index].IsValid)
 			{
 				continue;
 			}
@@ -172,16 +138,6 @@ struct FTRResolvedTarget
 		return Nearest;
 	}
 
-	/** 지정한 구역의 표면 최근접점. 죽었거나 번호가 범위를 벗어나면 중심을 돌려준다. */
-	FVector GetZoneSurfacePoint(int32 ZoneIndex, const FVector& From) const
-	{
-		if (!IsZoneAlive(ZoneIndex))
-		{
-			return Center;
-		}
-
-		return ZoneBounds[ZoneIndex].GetClosestPointTo(From);
-	}
 };
 
 /**
@@ -231,7 +187,7 @@ public:
 	 * 워커 스레드에서 불러도 안전하다.
 	 *
 	 * 청크당 한 번만 호출하면 되므로 엔티티 수와 무관하게 저렴하다.
-	 * 표면 최근접점은 결과 구조체의 GetClosestSurfacePoint로 개체마다 구한다.
+	 * 표면 최근접점은 결과 구조체의 TryGetClosestZonePoint로 개체마다 구한다.
 	 */
 	bool GetResolvedTarget(ETRTargetChannel Channel, FTRResolvedTarget& OutTarget) const;
 
