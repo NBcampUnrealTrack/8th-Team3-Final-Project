@@ -50,7 +50,7 @@ namespace
 			}
 
 			// 액터 기준 상대 트랜스폼으로 바운드를 다시 계산한다.
-			// 월드 바운드를 쓰면 등록 당시의 기차 위치가 박제되어, 기차가 움직이는 순간 어긋난다.
+			// 월드 바운드를 쓰면 등록 당시 위치가 박제되어, 액터가 움직이면 어긋난다.
 			const FTransform RelativeTransform = Primitive->GetComponentTransform().GetRelativeTransform(ActorTransform);
 			OutLocalBounds = Primitive->CalcBounds(RelativeTransform).GetBox();
 
@@ -164,7 +164,9 @@ void UTRTargetDirectorSubsystem::RefreshSnapshot()
 				const UPrimitiveComponent* Volume = Zone.Volume.Get();
 				const bool bAlive = (Volume != nullptr) && Zone.Owner.IsValid() && !IsZoneOwnerDestroyed(Zone);
 
-				Resolved.ZoneBounds[Resolved.ZoneCount] = bAlive ? Volume->Bounds.GetBox() : FBox(ForceInit);
+				// 부서져도 자리는 그대로 둔다. 바운드를 비우면 최근접점이 월드 원점이 되어
+				// 표적을 등급 없이 고를 때 적이 차체 안쪽으로 몰린다.
+				Resolved.ZoneBounds[Resolved.ZoneCount] = Volume ? Volume->Bounds.GetBox() : FBox(ForceInit);
 				Resolved.ZoneAlive[Resolved.ZoneCount] = bAlive;
 				Resolved.ZoneTier[Resolved.ZoneCount] = Zone.Tier;
 				++Resolved.ZoneCount;
@@ -214,7 +216,7 @@ void UTRTargetDirectorSubsystem::SetTargetActor(ETRTargetChannel Channel, AActor
 	State.TargetActor = NewTarget;
 	State.bHasTarget = (NewTarget != nullptr);
 
-	// 형상은 등록 시 한 번만 잰다. 기차는 매 프레임 움직이지만 로컬 바운드는 그대로다.
+	// 형상은 등록 시 한 번만 잰다. 액터가 움직여도 로컬 바운드는 그대로다.
 	State.bHasBounds = false;
 
 	State.Zones.Reset();

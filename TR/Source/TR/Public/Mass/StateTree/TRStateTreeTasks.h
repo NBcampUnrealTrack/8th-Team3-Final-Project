@@ -63,12 +63,9 @@ struct FTRDetonateTaskInstanceData
 {
 	GENERATED_BODY()
 
-	/**
-	 * 폭발까지의 준비 시간(초). 플레이어가 반응할 여지를 주는 값이다.
-	 * 이 태스크로 폭발을 걸면 이 값이 FTREnemyCombatParams::DetonationWindup보다 우선한다.
-	 */
+	/** 폭발까지의 준비 시간(초). 0이면 도달한 프레임에 터진다. */
 	UPROPERTY(EditAnywhere, Category = Parameter, meta = (ClampMin = "0.0", ForceUnits = "s"))
-	float WindupDuration = 0.4f;
+	float WindupDuration = 0.f;
 };
 
 /**
