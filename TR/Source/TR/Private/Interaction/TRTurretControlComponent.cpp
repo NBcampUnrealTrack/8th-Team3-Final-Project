@@ -1,4 +1,4 @@
-// TRTurretControlComponent.cpp
+﻿// TRTurretControlComponent.cpp
 
 
 #include "Interaction/TRTurretControlComponent.h"
@@ -18,6 +18,8 @@
 #include "Train/TRInstallablePart.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
+#include "UI/TRPlayerHUD.h"
+#include "UI/TRPlayerHUDWidget.h"
 #include "Mass/Combat/TRMassCombatSubsystem.h"
 
 // 아군 구조물: 기차 선체와 설치 파츠(장갑·포탑).
@@ -417,5 +419,10 @@ void UTRTurretControlComponent::OnRep_MountedTurret()
 	else
 	{
 		ClearMountedViewLimits();
+	}
+
+	if (UTRPlayerHUDWidget* HUDWidget = ATRPlayerHUD::FindPlayerHUDWidget(OwnerPawn))
+	{
+		HUDWidget->SetCrosshairVisible(IsValid(MountedTurret));
 	}
 }

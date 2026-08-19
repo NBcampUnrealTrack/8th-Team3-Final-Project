@@ -229,7 +229,21 @@ void ATRGameState::SetMatchStarted(bool bInStarted)
 		return;
 	}
 
+	// 같은 값을 다시 넣어도 통지가 두 번 나가지 않게 막는다.
+	if (bMatchStarted == bInStarted)
+	{
+		return;
+	}
+
 	bMatchStarted = bInStarted;
+
+	// 서버에는 OnRep 이 오지 않으므로 여기서 직접 알린다.
+	OnMatchStartedChanged.Broadcast(bMatchStarted);
+}
+
+void ATRGameState::OnRep_MatchStarted()
+{
+	OnMatchStartedChanged.Broadcast(bMatchStarted);
 }
 
 void ATRGameState::SetWaveNumber(int32 InWaveNumber)
