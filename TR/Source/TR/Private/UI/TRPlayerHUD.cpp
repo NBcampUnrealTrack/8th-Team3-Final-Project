@@ -119,6 +119,13 @@ void ATRPlayerHUD::Tick(float DeltaSeconds)
 		return;
 	}
 
+	// F8(Eject) 로 빠지면 게임은 계속 돌지만 시점은 에디터 카메라가 잡는다.
+	// 그 상태에서 커서를 중앙으로 되돌리면 에디터 카메라를 아예 돌릴 수 없다.
+	if (ViewportClient->IsSimulateInEditorViewport())
+	{
+		return;
+	}
+
 	int32 SizeX = 0;
 	int32 SizeY = 0;
 	PC->GetViewportSize(SizeX, SizeY);
