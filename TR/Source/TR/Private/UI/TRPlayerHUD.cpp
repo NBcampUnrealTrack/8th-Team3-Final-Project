@@ -293,6 +293,10 @@ void ATRPlayerHUD::ShowGameplayHUD()
 	else
 	{
 		ApplyGameInputMode(PC);
+
+		// HUD가 늦게 스폰되면(중간 합류 같은 경우) BeginPlay가 PC->MyHUD 세팅보다 먼저 돌아버린다.
+		// 그 사이엔 PC->GetHUD()가 비어 있으니 여기선 값을 못 넣는다.
+		bCenterMouse = true;
 	}
 
 	if (!IsValid(PlayerHUDWidgetClass))
