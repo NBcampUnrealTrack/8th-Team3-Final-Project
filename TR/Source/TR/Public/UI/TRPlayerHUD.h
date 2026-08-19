@@ -8,6 +8,7 @@
 
 class ATRGameState;
 class AGameStateBase;
+class APawn;
 class UTRPlayerHUDWidget;
 class UTRControlConsoleWidget;
 class UUserWidget;
@@ -21,6 +22,9 @@ public:
 	UTRPlayerHUDWidget* GetPlayerHUDWidget() const { return PlayerHUDWidget; }
 
 	static void ApplyGameInputMode(APlayerController* PC);
+
+	// 폰의 로컬 컨트롤러가 들고 있는 게임플레이 HUD 위젯. 게임 시작 전이거나 원격 폰이면 nullptr.
+	static UTRPlayerHUDWidget* FindPlayerHUDWidget(const APawn* Pawn);
 
 	// 팝업을 열 때. 커서를 보이고 중앙 고정을 푼다.
 	static void PushPopupInputMode(APlayerController* PC, UUserWidget* FocusWidget);

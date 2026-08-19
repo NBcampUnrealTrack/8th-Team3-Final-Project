@@ -25,6 +25,17 @@ void UTRPlayerHUDWidget::NativeConstruct()
 	SetActionProgress(ETRActionType::None, 0.f);
 	SetCarriedSupply(0);
 	SetTargetInfo(nullptr);
+	SetCrosshairVisible(false);
+}
+
+void UTRPlayerHUDWidget::SetCrosshairVisible(bool bVisible)
+{
+	if (!IsValid(CrossHair))
+	{
+		return;
+	}
+
+	CrossHair->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 }
 
 // 빈 텍스트면 줄을 접고, 아니면 표시 및 텍스트 갱신

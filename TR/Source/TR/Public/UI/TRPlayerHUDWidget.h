@@ -28,6 +28,8 @@ public:
 	// 상호작용 대상의 레벨/HP/탄약 표시
 	void SetTargetInfo(const AActor* Target);
 
+	void SetCrosshairVisible(bool bVisible);
+
 protected:
 	virtual void NativeConstruct() override;
 
@@ -71,6 +73,10 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> ProgressValue;
+	
+	// 포탑 탑승 중에만 보이는 조준선
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UWidget> CrossHair;
 	
 	// 수리 (좌클릭)
 	UPROPERTY(meta = (BindWidget))

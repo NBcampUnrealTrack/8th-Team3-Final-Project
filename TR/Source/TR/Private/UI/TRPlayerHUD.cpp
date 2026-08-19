@@ -7,6 +7,7 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Pawn.h"
 #include "Widgets/SViewport.h"
 #include "UI/TRPlayerHUDWidget.h"
 #include "UI/TRPopupStack.h"
@@ -43,6 +44,14 @@ void ATRPlayerHUD::ApplyGameInputMode(APlayerController* PC)
 	{
 		HUD->bCenterMouse = true;
 	}
+}
+
+UTRPlayerHUDWidget* ATRPlayerHUD::FindPlayerHUDWidget(const APawn* Pawn)
+{
+	const APlayerController* PC = IsValid(Pawn) ? Cast<APlayerController>(Pawn->GetController()) : nullptr;
+	const ATRPlayerHUD* PlayerHUD = IsValid(PC) ? Cast<ATRPlayerHUD>(PC->GetHUD()) : nullptr;
+
+	return IsValid(PlayerHUD) ? PlayerHUD->GetPlayerHUDWidget() : nullptr;
 }
 
 void ATRPlayerHUD::PushPopupInputMode(APlayerController* PC, UUserWidget* FocusWidget)
