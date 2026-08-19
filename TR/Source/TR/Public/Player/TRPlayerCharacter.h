@@ -12,6 +12,7 @@
 class UTRTurretControlComponent;
 class UTRActionComponent;
 class UTRInteractionComponent;
+class UTRNameplateComponent;
 class UCameraComponent;
 class UNiagaraComponent;
 class UNiagaraSystem;
@@ -145,7 +146,11 @@ protected:
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Action")
 	TObjectPtr<UTRTurretControlComponent> TurretControlComp;
-	
+
+	// 머리 위 닉네임. 표시할 위젯은 WidgetClass 에 WBP 를 지정해서 정한다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
+	TObjectPtr<UTRNameplateComponent> NameplateComp;
+
 	FVector2D PendingLookInput = FVector2D::ZeroVector;
 	FVector2D SmoothedLookInput = FVector2D::ZeroVector;
 

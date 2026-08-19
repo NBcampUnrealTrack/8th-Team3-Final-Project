@@ -16,6 +16,8 @@
 
 DECLARE_CYCLE_STAT(TEXT("Chase Separation"), STAT_TRChaseSeparation, STATGROUP_TRMass);
 
+
+
 namespace
 {
 	/**
@@ -50,6 +52,10 @@ void UTRChaseSeparationProcessor::ConfigureQueries(const TSharedRef<FMassEntityM
 	// 시체는 밀려나지 않는다. 산 개체들이 시체를 피해 지나가는 편이 자연스럽고,
 	// 무엇보다 밀리면 "죽은 자리에 남는다"가 깨진다.
 	EntityQuery.AddTagRequirement<FTRDeadTag>(EMassFragmentPresence::None);
+
+	// 도달한 개체는 표적 쪽으로 밀리지 않게 한다. 방향을 깎으려면 표적 위치가 필요하다.
+	EntityQuery.AddTagRequirement<FTRArrivedTag>(EMassFragmentPresence::Optional);
+	EntityQuery.AddRequirement<FTRTargetFragment>(EMassFragmentAccess::ReadOnly);
 
 	EntityQuery.AddConstSharedRequirement<FTRChaseParams>(EMassFragmentPresence::All);
 
@@ -89,6 +95,8 @@ void UTRChaseSeparationProcessor::Execute(FMassEntityManager& EntityManager, FMa
 		const TConstArrayView<FTransformFragment> TransformList = Context.GetFragmentView<FTransformFragment>();
 		const TConstArrayView<FAgentRadiusFragment> RadiusList = Context.GetFragmentView<FAgentRadiusFragment>();
 		const TArrayView<FMassForceFragment> ForceList = Context.GetMutableFragmentView<FMassForceFragment>();
+		const bool bArrivedChunk = Context.DoesArchetypeHaveTag<FTRArrivedTag>();
+		const TConstArrayView<FTRTargetFragment> TargetList = Context.GetFragmentView<FTRTargetFragment>();
 
 		TArray<FMassNavigationObstacleItem, TInlineAllocator<GridQueryInlineCapacity>> Neighbors;
 
@@ -166,7 +174,26 @@ void UTRChaseSeparationProcessor::Execute(FMassEntityManager& EntityManager, FMa
 
 			if (!PushDirection.IsNearlyZero())
 			{
-				ForceList[EntityIt].Value += PushDirection.GetSafeNormal() * ChaseParams.SeparationStrength;
+				// 도달한 개체는 옆으로만 밀린다. 표적 쪽 성분을 남기면 뒤에서 밀려 차체로 들어간다.
+				if (bArrivedChunk && TargetList[EntityIt].bHasTarget)
+				{
+					FVector ToTarget = TargetList[EntityIt].TargetLocation - SelfLocation;
+					ToTarget.Z = 0.f;
+
+					if (ToTarget.Normalize())
+					{
+						const double Inward = FVector::DotProduct(PushDirection, ToTarget);
+						if (Inward > 0.0)
+						{
+							PushDirection -= ToTarget * Inward;
+						}
+					}
+				}
+
+				if (!PushDirection.IsNearlyZero())
+				{
+					ForceList[EntityIt].Value += PushDirection.GetSafeNormal() * ChaseParams.SeparationStrength;
+				}
 			}
 		}
 	});

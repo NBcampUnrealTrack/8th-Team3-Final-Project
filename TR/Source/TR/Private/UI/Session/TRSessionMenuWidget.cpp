@@ -10,6 +10,8 @@
 #include "Components/EditableTextBox.h"
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
+#include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
@@ -138,6 +140,11 @@ void UTRSessionMenuWidget::BindButtons()
 		Button_Close->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleCloseClicked);
 	}
 
+	if (Button_Quit)
+	{
+		Button_Quit->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleQuitClicked);
+	}
+
 	if (Button_Ready)
 	{
 		Button_Ready->OnClicked.AddUniqueDynamic(this, &UTRSessionMenuWidget::HandleReadyClicked);
@@ -252,11 +259,31 @@ void UTRSessionMenuWidget::HandleLeaveClicked()
 	}
 
 	RefreshStatusTexts();
+
+	// 메인메뉴 맵이 아직 없어 복귀할 곳이 없다. 지금 레벨을 다시 열어 방을 비운다.
+	if (UWorld* World = GetWorld())
+	{
+		RequestClose();
+		UGameplayStatics::OpenLevel(World, FName(*World->GetOutermost()->GetName()));
+	}
 }
 
 void UTRSessionMenuWidget::HandleCloseClicked()
 {
 	RequestClose();
+}
+
+void UTRSessionMenuWidget::HandleQuitClicked()
+{
+	// 세션을 남긴 채 끝내면 다음 실행에서 유령 방이 남는다.
+	if (IInterface_TRSession* Session = GetSession())
+	{
+		Session->LeaveSession();
+	}
+
+	RequestClose();
+
+	UKismetSystemLibrary::QuitGame(this, GetOwningPlayer(), EQuitPreference::Quit, /*bIgnorePlatformRestrictions=*/false);
 }
 
 void UTRSessionMenuWidget::RequestClose()

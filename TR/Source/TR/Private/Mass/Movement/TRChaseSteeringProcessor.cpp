@@ -17,6 +17,19 @@ DECLARE_CYCLE_STAT(TEXT("Chase Steering"), STAT_TRChaseSteering, STATGROUP_TRMas
 
 namespace
 {
+	// 유지 거리 안쪽 이만큼까지는 버틴다. 경계에서 앞뒤로 떠는 것을 막는다.
+	constexpr float KeepDistanceDeadband = 0.9f;
+
+	// 정지 거리까지 남은 구간을 이 시간 안에 소진하도록 감속한다.
+	constexpr float ArrivalBrakeTime = 0.35f;
+
+	// 정지 거리보다 이만큼 안쪽을 겨냥해 감속한다. 경계에서 속도가 0이 되면
+	// 도달 판정에 닿지 못하고 바깥에 선다.
+	constexpr float ArrivalBrakeUndershoot = 30.f;
+
+	// 원하는 속도에 이 시간 안에 도달한다. 작을수록 관성이 없다.
+	constexpr float VelocityResponseTime = 0.1f;
+
 	/**
 	 * 회전 기준을 "이동 중"과 "정지"로 섞는 비율. 1이면 이동, 0이면 정지 기준.
 	 *
@@ -232,7 +245,25 @@ void UTRChaseSteeringProcessor::Execute(FMassEntityManager& EntityManager, FMass
 
 				if (!bIsArrived && !TargetDirection.IsZero())
 				{
-					DesiredVelocity = TargetDirection * DesiredSpeed;
+					// 거리를 두고 서는 종류만 미리 감속한다. 접촉해서 터지는 종류는
+					// 속도를 유지한 채 들이받고, 도달하는 순간 멈춘다.
+					float ApproachSpeed = DesiredSpeed;
+
+					if (Approach.bHoldsDistance)
+					{
+						const float Remaining = FMath::Max(
+							Distance - Approach.StopDistance + ArrivalBrakeUndershoot, 0.f);
+						ApproachSpeed = FMath::Min(DesiredSpeed, Remaining / ArrivalBrakeTime);
+					}
+
+					DesiredVelocity = TargetDirection * ApproachSpeed;
+				}
+				else if (Approach.KeepDistance > 0.f && !TargetDirection.IsZero()
+					&& Distance < Approach.KeepDistance * KeepDistanceDeadband)
+				{
+					// 목표가 다가와 유지 거리를 파고들면 그만큼 물러난다.
+					DesiredVelocity = -TargetDirection * DesiredSpeed;
+					bStanding = false;
 				}
 			}
 			else if (Target.bArrived)
@@ -245,13 +276,22 @@ void UTRChaseSteeringProcessor::Execute(FMassEntityManager& EntityManager, FMass
 				EntitiesToSignal.Add(EntityIt.GetEntityHandle());
 			}
 
-			// 조종력 = 원하는 속도와 현재 속도의 차이. 엔진이 MaxAcceleration으로 잘라준다.
+			// 조종력은 가속도라 속도 차이를 응답 시간으로 나눠야 단위가 맞는다.
 			// 분리력은 별도 프로세서가 같은 프래그먼트에 누적한다.
-			ForceList[EntityIt].Value += (DesiredVelocity - CurrentVelocity);
+			const float ResponseTime = FMath::Max(VelocityResponseTime, DeltaTime);
+			ForceList[EntityIt].Value += (DesiredVelocity - CurrentVelocity) / ResponseTime;
 
 			// 이동 중일수록 1에 가깝다. 멈췄거나 목표가 없으면 0(= 정지 기준으로 회전).
-			const float MovingBlend = (bStanding || !Target.bHasTarget)
-				? 0.f : ComputeMovingBlend(DistanceToTarget, OrientationFadeDistance);
+			// 들이받는 종류는 서지 않으므로 끝까지 진행 방향을 본다. 목표 응시로 넘기면
+			// 표적 방위각이 급해지는 마지막 순간에 몸이 홱 돈다.
+			float MovingBlend = 0.f;
+
+			if (!bStanding && Target.bHasTarget)
+			{
+				MovingBlend = Approach.bHoldsDistance
+					? ComputeMovingBlend(DistanceToTarget, OrientationFadeDistance)
+					: 1.f;
+			}
 
 			ApplySmoothOrientation(Transform, ChaseParams, CurrentVelocity, TargetDirection,
 				MovingBlend, DeltaTime);

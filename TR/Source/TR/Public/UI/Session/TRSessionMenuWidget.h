@@ -56,6 +56,10 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_Close;
 
+	/** 게임을 끝낸다. 세션에 들어가 있으면 먼저 정리하고 종료한다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Button_Quit;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UEditableTextBox> Input_RoomName;
 
@@ -148,6 +152,9 @@ private:
 
 	UFUNCTION()
 	void HandleCloseClicked();
+
+	UFUNCTION()
+	void HandleQuitClicked();
 
 	UFUNCTION()
 	void HandleReadyClicked();

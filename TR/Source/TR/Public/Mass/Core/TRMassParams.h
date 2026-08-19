@@ -188,10 +188,6 @@ struct FTREnemyCombatParams : public FMassConstSharedFragment
 	UPROPERTY(EditAnywhere, Category = "Enemy|Detonate", meta = (ClampMin = "0.0", ForceUnits = "cm"))
 	float ContactStopDistance = 130.f;
 
-	//폭발시간
-	UPROPERTY(EditAnywhere, Category = "Enemy|Detonate", meta = (ClampMin = "0.0", ForceUnits = "s"))
-	float DetonationWindup = 0.4f;
-
 	// ── 사출형 ────────────────────────────────────────────────────────────
 
 	/** 상체를 사출하는 거리(표면 기준). 기획서 40m. */
@@ -387,8 +383,14 @@ namespace UE::TR::Enemy
 
 		Approach.LeaveDistance = Approach.StopDistance + LeaveDistanceMargin;
 
-		// 사격형만 표적을 고정한다(기획서). 나머지는 매 틱 가장 가까운 구역으로 붙는다.
-		Approach.bLockTargetZone = (Params.EnemyType == ETREnemyType::Shooter);
+
+		// 사격형은 거리를 두고 나란히 달린다. 기차가 다가오면 그만큼 물러난다.
+		// 나머지는 접촉해서 터지므로 속도를 유지한 채 그대로 들이받는다.
+		if (Params.EnemyType == ETREnemyType::Shooter)
+		{
+			Approach.KeepDistance = Params.StandoffDistance;
+			Approach.bHoldsDistance = true;
+		}
 
 		// 0이면 Mass Movement의 Max Speed를 그대로 쓴다. 종류별 이동 속도는 그쪽에서
 		// 주는 것이 엔진 회피·이동과 일관되므로, 대부분의 적은 여기가 0이다.
@@ -691,7 +693,7 @@ namespace UE::TR::Enemy
 		Approach.StopDistance = Params.ContactStopDistance;
 		Approach.LeaveDistance = Params.ContactStopDistance + LeaveDistanceMargin;
 		Approach.MaxSpeed = Params.LaunchSpeed;
-		Approach.bLockTargetZone = false;
+		Approach.bHoldsDistance = false;
 
 		// 공유 파라미터가 아니라 스폰 때 구워 둔 값을 쓴다. 파라미터 쪽은 T1 기준값이라
 		// 여기서 읽으면 티어 배수가 사라진다.
