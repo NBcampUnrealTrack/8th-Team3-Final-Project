@@ -8,6 +8,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "Debug/TRGameplayLog.h"
+#include "Core/TRGameMode.h"
 #include "TRTypes.h"
 #include "Train/TRArmor.h"
 #include "Train/TRTurret.h"
@@ -114,7 +115,16 @@ float ATRTrain::TakeDamage(float DamageAmount, const FDamageEvent& DamageEvent, 
 void ATRTrain::OnHullDestroyed()
 {
 	UE_LOG(LogTRGameplay, Log, TEXT("Hull destroyed - game over"));
-	// TODO: 게임오버 처리.
+
+	// 판을 끝내는 일 자체는 게임모드가 총괄한다. 기차는 "부서졌다"만 알린다 —
+	// 웨이브 중단·잔존 적 정리·상태 복제는 순서가 중요해서 한 곳에 모아 둔다.
+	//
+	// GetAuthGameMode 는 클라이언트에서 nullptr 이라, 서버 권위 검사가 함께 걸린다.
+	UWorld* World = GetWorld();
+	if (ATRGameMode* GameMode = World ? World->GetAuthGameMode<ATRGameMode>() : nullptr)
+	{
+		GameMode->EndMatch();
+	}
 }
 
 void ATRTrain::ApplyImpactDamage(const FVector& ImpactPoint, float Damage, AController* EventInstigator, AActor* DamageCauser)

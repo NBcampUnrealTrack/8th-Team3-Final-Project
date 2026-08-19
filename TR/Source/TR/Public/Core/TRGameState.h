@@ -1,9 +1,10 @@
-// TRGameState.h
+﻿// TRGameState.h
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
+#include "TRTypes.h"
 #include "TRGameState.generated.h"
 
 class UDataTable;
@@ -15,6 +16,11 @@ struct FTRTurretLevelRow;
 DECLARE_MULTICAST_DELEGATE_OneParam(FTRPartLevelUpgraded, float /*PrevMaxHP*/);
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FTRMatchStartedChanged, bool /*bStarted*/);
+
+// 웨이브 상태 알림. 서버·클라이언트 양쪽에서 값이 바뀐 직후 발화한다.
+// UI 가 매 프레임 값을 폴링하지 않아도 되게 하려고 둔다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTROnWaveNumberReplicated, int32, WaveNumber);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTROnWavePhaseReplicated, ETRWavePhase, Phase);
 
 UCLASS()
 class TR_API ATRGameState : public AGameStateBase
@@ -80,6 +86,53 @@ public:
 	/** 서버에서만 부른다. */
 	void SetMatchStarted(bool bInStarted);
 
+	// ── 웨이브 상태 ─────────────────────────────────────────────────────────
+	//
+	// 웨이브 진행은 서버의 ATRWaveSpawner 가 정하고, **결과만** 여기에 복제된다.
+	// UI 가 스포너를 직접 찾지 않는 이유는 스포너가 bReplicates=false 라
+	// 클라이언트 월드에는 아예 존재하지 않기 때문이다. 상태를 보는 창구는 여기 하나다.
+
+	UFUNCTION(BlueprintPure, Category = "TR|Wave")
+	int32 GetWaveNumber() const { return WaveNumber; }
+
+	UFUNCTION(BlueprintPure, Category = "TR|Wave")
+	ETRWavePhase GetWavePhase() const { return WavePhase; }
+
+	/** 휴식 중인지. 업그레이드·재설치처럼 휴식에만 허용할 행동의 판정에 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "TR|Wave")
+	bool IsResting() const { return WavePhase == ETRWavePhase::Rest; }
+
+	UFUNCTION(BlueprintPure, Category = "TR|Wave")
+	bool IsGameOver() const { return WavePhase == ETRWavePhase::Over; }
+
+	/**
+	 * 휴식이 끝나기까지 남은 시간(초). 휴식 중이 아니면 0.
+	 *
+	 * 남은 시간이 아니라 **끝나는 시각**을 복제하므로 클라이언트에서도 값이 맞는다.
+	 * 남은 시간을 복제하면 복제 주기 사이에 카운트다운이 멈춰 보인다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TR|Wave")
+	float GetRestTimeRemaining() const;
+
+	/** 살아 있는 적 수. 서버가 주기적으로 갱신한다(시체는 세지 않는다). */
+	UFUNCTION(BlueprintPure, Category = "TR|Wave")
+	int32 GetAliveEnemyCount() const { return AliveEnemyCount; }
+
+	// 아래 셋은 서버 전용 — ATRWaveSpawner 와 ATRGameMode 가 유일한 갱신 지점이다.
+
+	void SetWaveNumber(int32 InWaveNumber);
+
+	/** @param InRestEndServerTime 휴식이 끝나는 서버 월드 시각. Rest 단계에서만 의미가 있다. */
+	void SetWavePhase(ETRWavePhase InPhase, float InRestEndServerTime = 0.f);
+
+	void SetAliveEnemyCount(int32 InCount);
+
+	UPROPERTY(BlueprintAssignable, Category = "TR|Wave")
+	FTROnWaveNumberReplicated OnWaveNumberChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "TR|Wave")
+	FTROnWavePhaseReplicated OnWavePhaseChanged;
+
 protected:
 	virtual void BeginPlay() override;
 	
@@ -115,4 +168,31 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_MatchStarted)
 	bool bMatchStarted = false;
+
+	// ── 웨이브 상태(복제) ───────────────────────────────────────────────────
+	//
+	// OnRep 은 클라이언트에서만 발화하므로, 서버 쪽 세터가 직접 한 번 더 부른다.
+	// 그러지 않으면 리슨 서버의 호스트만 UI 가 갱신되지 않는다.
+
+	UPROPERTY(ReplicatedUsing = OnRep_WaveNumber)
+	int32 WaveNumber = 0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_WavePhase)
+	ETRWavePhase WavePhase = ETRWavePhase::None;
+
+	/**
+	 * 휴식이 끝나는 **서버** 월드 시각(초).
+	 * AGameStateBase 가 서버 시간을 이미 복제하므로, 클라이언트도 같은 축으로 잰다.
+	 */
+	UPROPERTY(Replicated)
+	float RestEndServerTime = 0.f;
+
+	UPROPERTY(Replicated)
+	int32 AliveEnemyCount = 0;
+
+	UFUNCTION()
+	void OnRep_WaveNumber();
+
+	UFUNCTION()
+	void OnRep_WavePhase();
 };

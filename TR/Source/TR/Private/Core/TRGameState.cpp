@@ -17,6 +17,10 @@ void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ATRGameState, TurretLevel);
 	DOREPLIFETIME(ATRGameState, BuildingComponent);
 	DOREPLIFETIME(ATRGameState, bMatchStarted);
+	DOREPLIFETIME(ATRGameState, WaveNumber);
+	DOREPLIFETIME(ATRGameState, WavePhase);
+	DOREPLIFETIME(ATRGameState, RestEndServerTime);
+	DOREPLIFETIME(ATRGameState, AliveEnemyCount);
 }
 
 void ATRGameState::BeginPlay()
@@ -240,6 +244,88 @@ void ATRGameState::SetMatchStarted(bool bInStarted)
 void ATRGameState::OnRep_MatchStarted()
 {
 	OnMatchStartedChanged.Broadcast(bMatchStarted);
+}
+
+void ATRGameState::SetWaveNumber(int32 InWaveNumber)
+{
+	if (!ensureMsgf(HasAuthority(), TEXT("웨이브 번호는 서버에서만 바꿀 수 있습니다.")))
+	{
+		return;
+	}
+
+	if (WaveNumber == InWaveNumber)
+	{
+		return;
+	}
+
+	WaveNumber = InWaveNumber;
+
+	// 서버에서는 OnRep 이 발화하지 않는다. 리슨 서버의 호스트도 같은 알림을 받아야
+	// UI 가 클라이언트와 같은 시점에 갱신된다.
+	OnRep_WaveNumber();
+}
+
+void ATRGameState::SetWavePhase(ETRWavePhase InPhase, float InRestEndServerTime)
+{
+	if (!ensureMsgf(HasAuthority(), TEXT("웨이브 단계는 서버에서만 바꿀 수 있습니다.")))
+	{
+		return;
+	}
+
+	// Over 는 종결 상태다. 판이 끝난 뒤에도 정리 과정에서 단계를 바꾸려는 호출이
+	// 이어지는데(스포너의 StopWaves 등), 그걸 그대로 받으면 결과 화면 신호가 사라진다.
+	// 여기서 막아 두면 호출하는 쪽이 순서를 신경 쓰지 않아도 된다.
+	// 다시 판을 하려면 레벨을 새로 열어 GameState 를 새로 만든다.
+	if (WavePhase == ETRWavePhase::Over && InPhase != ETRWavePhase::Over)
+	{
+		return;
+	}
+
+	// 끝나는 시각은 단계가 그대로여도 갱신될 수 있으므로(휴식 연장 등) 먼저 반영한다.
+	RestEndServerTime = (InPhase == ETRWavePhase::Rest) ? InRestEndServerTime : 0.f;
+
+	if (WavePhase == InPhase)
+	{
+		return;
+	}
+
+	WavePhase = InPhase;
+	OnRep_WavePhase();
+}
+
+void ATRGameState::SetAliveEnemyCount(int32 InCount)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	// 값이 그대로면 복제 대상에서 빠지므로 여기서 따로 거를 것은 없지만,
+	// 음수는 UI 가 그대로 찍으므로 여기서 자른다.
+	AliveEnemyCount = FMath::Max(0, InCount);
+}
+
+float ATRGameState::GetRestTimeRemaining() const
+{
+	if (WavePhase != ETRWavePhase::Rest)
+	{
+		return 0.f;
+	}
+
+	// GetServerWorldTimeSeconds 는 클라이언트에서 서버 시간으로 보정된 값을 준다.
+	// 반환형이 double 이라 계산도 double 로 하고 마지막에 한 번만 줄인다.
+	const double Remaining = static_cast<double>(RestEndServerTime) - GetServerWorldTimeSeconds();
+	return static_cast<float>(FMath::Max(0.0, Remaining));
+}
+
+void ATRGameState::OnRep_WaveNumber()
+{
+	OnWaveNumberChanged.Broadcast(WaveNumber);
+}
+
+void ATRGameState::OnRep_WavePhase()
+{
+	OnWavePhaseChanged.Broadcast(WavePhase);
 }
 
 void ATRGameState::EndPlay(const EEndPlayReason::Type EndPlayReason)

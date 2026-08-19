@@ -13,6 +13,7 @@
 #include "Interaction/TRActionComponent.h"
 #include "Interaction/TRInteractionComponent.h"
 #include "Interaction/TRTurretControlComponent.h"
+#include "Player/TRNameplateComponent.h"
 #include "Core/TRGameState.h"
 #include "Net/UnrealNetwork.h"
 #include "UI/TRPlayerHUD.h"
@@ -56,6 +57,9 @@ ATRPlayerCharacter::ATRPlayerCharacter()
 	InteractionComp = CreateDefaultSubobject<UTRInteractionComponent>(TEXT("InteractionComp"));
 	ActionComp = CreateDefaultSubobject<UTRActionComponent>(TEXT("ActionComp"));
 	TurretControlComp = CreateDefaultSubobject<UTRTurretControlComponent>(TEXT("TurretControlComp"));
+
+	NameplateComp = CreateDefaultSubobject<UTRNameplateComponent>(TEXT("NameplateComp"));
+	NameplateComp->SetupAttachment(GetRootComponent());
 }
 
 // Called when the game starts or when spawned

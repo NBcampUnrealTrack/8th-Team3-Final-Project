@@ -26,8 +26,6 @@ void UTRTargetSyncProcessor::ConfigureQueries(const TSharedRef<FMassEntityManage
 	EntityQuery.AddRequirement<FTRTargetFragment>(EMassFragmentAccess::ReadWrite);
 	// 표면 최근접점은 "내가 지금 어디 있는가"에 따라 달라진다.
 	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
-	// 표적 구역을 고정하는 종류인지 여기서 본다.
-	EntityQuery.AddRequirement<FTRApproachFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 
 	// 이 선언이 있어야 프로세서 안에서 서브시스템에 접근할 수 있다.
@@ -52,7 +50,6 @@ void UTRTargetSyncProcessor::Execute(FMassEntityManager& EntityManager, FMassExe
 
 		const TConstArrayView<FTRChaseChannelFragment> ChannelList = Context.GetFragmentView<FTRChaseChannelFragment>();
 		const TConstArrayView<FTransformFragment> TransformList = Context.GetFragmentView<FTransformFragment>();
-		const TConstArrayView<FTRApproachFragment> ApproachList = Context.GetFragmentView<FTRApproachFragment>();
 		const TArrayView<FTRTargetFragment> TargetList = Context.GetMutableFragmentView<FTRTargetFragment>();
 
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
@@ -76,27 +73,17 @@ void UTRTargetSyncProcessor::Execute(FMassEntityManager& EntityManager, FMassExe
 			FTRTargetFragment& Target = TargetList[EntityIt];
 			const FVector SelfLocation = TransformList[EntityIt].GetTransform().GetLocation();
 
-			// 목표는 중심이 아니라 **표면 최근접점**이다. 중심을 주면 길쭉한 기차의
-			// 한 점으로 전원이 수렴해서, 옆구리에 붙어야 할 개체까지 앞뒤로 돌아 들어간다.
+			// 장갑·포탑 구역만 노린다. 등급도 파괴 여부도 보지 않고 가장 가까운 것을 고른다.
 			// 개체마다 다른 점을 향하므로 자연스럽게 기차를 둘러싸는 모양이 된다.
-			// 위치는 매 틱 갱신한다 — 목표(열차)도 나도 움직이기 때문.
-			if (ApproachList[EntityIt].bLockTargetZone)
+			// 최근접점은 내 위치에 따라 달라지므로 매 틱 다시 구한다.
+			FVector ZonePoint;
+			if (!Entry.TryGetClosestZonePoint(SelfLocation, ZonePoint))
 			{
-				// 고정해 둔 구역이 죽었으면 다시 고른다(기획서: 포탑 → 장갑 → 차체).
-				if (!Entry.IsZoneAlive(Target.LockedZone))
-				{
-					Target.LockedZone = Entry.FindNearestZone(SelfLocation);
-				}
-
-				Target.TargetLocation = (Target.LockedZone != INDEX_NONE)
-					? Entry.GetZoneSurfacePoint(Target.LockedZone, SelfLocation)
-					: Entry.GetClosestSurfacePoint(SelfLocation);
-			}
-			else
-			{
-				Target.TargetLocation = Entry.GetClosestSurfacePoint(SelfLocation);
+				Target.bHasTarget = false;
+				continue;
 			}
 
+			Target.TargetLocation = ZonePoint;
 			Target.bHasTarget = true;
 
 			// 도달 상태(bArrived)와 태그는 건드리지 않는다. 그 전이는 Steering 프로세서가

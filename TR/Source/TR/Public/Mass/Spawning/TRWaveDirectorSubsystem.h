@@ -120,6 +120,21 @@ struct FTRWaveGroup
 	int32 TotalCountPerWave = 0;
 
 	/**
+	 * **종류 축** 배수. 이 그룹의 적에게만 추가로 걸린다.
+	 * 웨이브 축 배수(FTRWaveDefinition::TierStatScale) 위에 곱해지며, 전부 1이면 아무 효과가 없다(기본값).
+	 *
+	 * 없으면 "같은 웨이브에서 근접형만 단단하게" 같은 조정을 하려고 Config 애셋을
+	 * 복제해야 하는데, 그건 이 시스템이 애초에 피하려던 것이다 — 복제하면 밸런스를
+	 * 고칠 때마다 전부 손봐야 하고 하나를 빠뜨리면 그 종류만 조용히 어긋난다.
+	 *
+	 * **웨이브 번호 복리(ScaleWaveForNumber)는 여기 걸리지 않는다.** 이 값은 "이 종류가
+	 * 그 난이도에서 얼마나 단단한가"라는 고정 성격이고, 복리는 웨이브 배수 쪽 몫이다.
+	 * 양쪽에 다 걸면 종류 간 격차가 웨이브마다 복리로 벌어져 후반에 손댈 수 없게 된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Group")
+	FTREnemyStatScale TypeStatScale;
+
+	/**
 	 * 동시 상한에 막혀 못 낸 물량을 **몇 배치분까지 쌓아 뒀다가** 나중에 낼지.
 	 *
 	 * 예전에는 상한에 걸리면 그 배치를 그냥 소진시켰다. 그러면 밀리는 플레이어일수록
@@ -163,14 +178,20 @@ struct FTRWaveDefinition
 	ETRTargetChannel Channel = ETRTargetChannel::Train;
 
 	/**
-	 * 티어 배수. T1 기준값에 곱해 그 웨이브의 실제 수치를 만든다.
+	 * **웨이브 축** 배수. T1 기준값에 곱해 그 웨이브의 실제 수치를 만든다.
+	 *
+	 * 배수가 두 축인 이유: 최종 배수는 (웨이브 축) x (종류 축)이다. 표로 치면 행 배수와
+	 * 열 배수라, 하나로 합치면 웨이브 x 종류 조합마다 값을 따로 적어야 한다. 그러면 밸런스를
+	 * 한 번 고칠 때 손대야 하는 칸이 곱으로 늘고, 하나를 빠뜨리면 그 조합만 조용히 어긋난다.
 	 *
 	 * 티어가 바뀌는 웨이브에만 행을 넣으면 된다 — 행이 없는 웨이브는 그보다 작은
 	 * 최대 행을 물려받는다. 기획서 기준 1·4·7행이 T1·T2·T3 이고,
 	 * W10 부터는 ScaleWaveForNumber 가 여기에 복리를 얹는다.
+	 *
+	 * 이 값은 웨이브 전체에 걸린다. 종류마다 다르게 주려면 FTRWaveGroup::TypeStatScale 을 쓴다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave")
-	FTREnemyStatScale StatScale;
+	FTREnemyStatScale TierStatScale;
 
 	/**
 	 * 배치를 다 낸 뒤, 밀린 물량(MaxPendingBatches)을 마저 내보내려고 기다리는 최대 시간(초).
@@ -299,8 +320,32 @@ private:
 	/** 지연이 없는 그룹의 첫 배치를 즉시 낸다. */
 	void SpawnUndelayedGroups();
 
-	/** 타이머가 부르는 그룹 1회 배치 스폰. */
+	/**
+	 * 타이머가 부르는 그룹 1회 주기. 아래 세 단계를 순서대로 돌린다.
+	 *
+	 * 단계를 나눠 둔 이유는 **배치 스케줄과 실제 스폰이 다른 것**이기 때문이다.
+	 * 둘을 한 덩어리로 두면 동시 상한에 막힌 물량이 조용히 사라져, 밀리는 플레이어일수록
+	 * 적이 덜 나오는 난이도 감면이 된다.
+	 */
 	void SpawnGroupBatch(int32 GroupIndex);
+
+	/**
+	 * 1단계 — 이번 주기에 나왔어야 할 물량을 빚(PendingSpawns)에 더한다.
+	 * 동시 상한과 무관하게 진행한다. 이게 웨이브의 리듬을 정하는 값이다.
+	 */
+	void AccrueScheduledBatch(int32 GroupIndex);
+
+	/**
+	 * 2단계 — 성능 예산(웨이브 전체의 동시 생존 상한)이 허락하는 만큼만 실제로 낸다.
+	 * @return 실제로 스폰한 수.
+	 */
+	int32 SpawnPendingWithinBudget(int32 GroupIndex, UTRMassSpawnerSubsystem& Spawner);
+
+	/**
+	 * 3단계 — 이 그룹이 끝났는지 판정하고, 끝났으면 FinishGroup 을 부른다.
+	 * @return 그룹을 종료시켰으면 true. 이 경우 호출자는 GroupStates 를 더 만지면 안 된다.
+	 */
+	bool EvaluateGroupCompletion(int32 GroupIndex);
 
 	/** 그룹을 종료 처리하고, 모든 그룹이 끝났으면 웨이브를 끝낸다. */
 	void FinishGroup(int32 GroupIndex);
