@@ -6,8 +6,10 @@
 #include "Engine/DataTable.h"
 #include "GameFramework/Actor.h"
 #include "Mass/Spawning/TRWaveDirectorSubsystem.h"
+#include "TRTypes.h"
 #include "TRWaveSpawner.generated.h"
 
+class ATRGameState;
 class UDataTable;
 
 /**
@@ -32,6 +34,11 @@ struct FTRWaveRow : public FTableRowBase
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTROnWaveNumberChanged, int32, WaveNumber);
+
+/** @param Duration 이 휴식의 총 길이(초). 남은 시간은 GetRestTimeRemaining 으로 잰다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTROnRestStarted, float, Duration);
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTROnRestEnded);
 
 /**
  * 웨이브 테이블을 읽어 웨이브를 순서대로 진행시키는 레벨 액터.
@@ -68,9 +75,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TR|Wave")
 	int32 GetCurrentWaveNumber() const { return CurrentWaveNumber; }
 
-	/** 휴식 중인지. */
+	/**
+	 * 휴식 중인지.
+	 *
+	 * **서버 전용 판정이다.** 이 액터는 복제되지 않아 클라이언트에는 존재하지 않는다.
+	 * UI 를 비롯한 클라이언트 코드는 ATRGameState::IsResting 을 봐야 한다.
+	 */
 	UFUNCTION(BlueprintPure, Category = "TR|Wave")
 	bool IsResting() const;
+
+	/** 휴식이 끝나기까지 남은 시간(초). 휴식 중이 아니면 0. 서버 전용. */
+	UFUNCTION(BlueprintPure, Category = "TR|Wave")
+	float GetRestTimeRemaining() const;
+
+	/**
+	 * 남은 휴식을 건너뛰고 다음 웨이브를 곧바로 시작한다.
+	 *
+	 * "준비 완료" 버튼처럼 플레이어가 판을 앞당기는 경로를 위해 둔다.
+	 * 휴식 중이 아니면 아무것도 하지 않고 false.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "TR|Wave")
+	bool SkipRest();
 
 	UPROPERTY(BlueprintAssignable, Category = "TR|Wave")
 	FTROnWaveNumberChanged OnWaveStarted;
@@ -78,6 +103,14 @@ public:
 	/** 배치를 다 내보낸 시점. 적이 모두 죽은 시점이 아니다. */
 	UPROPERTY(BlueprintAssignable, Category = "TR|Wave")
 	FTROnWaveNumberChanged OnWaveCleared;
+
+	/** 휴식이 시작된 시점. 업그레이드 UI 를 여는 신호로 쓴다. */
+	UPROPERTY(BlueprintAssignable, Category = "TR|Wave")
+	FTROnRestStarted OnRestStarted;
+
+	/** 휴식이 끝난 시점. 다음 웨이브의 OnWaveStarted 직전에 발화한다. */
+	UPROPERTY(BlueprintAssignable, Category = "TR|Wave")
+	FTROnRestEnded OnRestEnded;
 
 protected:
 	virtual void BeginPlay() override;
@@ -123,9 +156,30 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TR|Wave|Scaling", meta = (ClampMin = "1.0"))
 	float PerWaveMultiplier = 1.05f;
 
+	/**
+	 * 살아 있는 적 수를 GameState 에 밀어 넣는 주기(초).
+	 *
+	 * 매 프레임 셀 필요가 없는 값이다 — 세는 쪽이 핸들 배열을 훑고, 받는 쪽은 UI 라
+	 * 사람 눈에 0.5초 단위면 충분하다. 짧게 줄이면 복제량과 순회 비용만 늘어난다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TR|Wave", meta = (ClampMin = "0.1", ForceUnits = "s"))
+	float AliveCountPushInterval = 0.5f;
+
 private:
 	/** 웨이브 번호에 해당하는 행을 찾는다. 없으면 그보다 작은 번호 중 가장 큰 행. */
 	const FTRWaveRow* FindWaveRow(int32 WaveNumber, int32& OutSourceWaveNumber) const;
+
+	/**
+	 * 테이블 행을 이번 웨이브에 실제로 쓸 정의로 만든다.
+	 * 행 번호가 웨이브 번호와 다르면(= 테이블에 없는 웨이브) 복리로 키운 사본을 준다.
+	 */
+	FTRWaveDefinition ResolveWaveDefinition(const FTRWaveRow& Row, int32 WaveNumber, int32 SourceWaveNumber) const;
+
+	/** 두 축 배수를 로그로 남긴다. 테이블에 적은 값이 왜 안 먹는지 추적하는 유일한 단서다. */
+	void LogWaveStatScales(const FTRWaveDefinition& Definition, int32 WaveNumber) const;
+
+	/** 이 웨이브의 채널에 추적 목표가 등록돼 있는지 확인하고, 없으면 로그로 알린다. */
+	void VerifyWaveTarget(const FTRWaveDefinition& Definition, int32 WaveNumber) const;
 
 	/** 디렉터의 웨이브 종료 알림. */
 	UFUNCTION()
@@ -134,10 +188,34 @@ private:
 	/** 휴식 종료 후 다음 웨이브. */
 	void AdvanceToNextWave();
 
+	/**
+	 * 클라이언트가 볼 수 있는 유일한 창구에 상태를 밀어 넣는다.
+	 * 이 액터는 복제되지 않으므로, 여기를 거치지 않은 값은 서버 밖으로 나가지 않는다.
+	 */
+	ATRGameState* GetTRGameState() const;
+
+	/** @param RestDuration Rest 단계일 때만 쓴다. 끝나는 시각으로 환산해 복제한다. */
+	void PushWavePhase(ETRWavePhase Phase, float RestDuration = 0.f);
+
+	/** 반복 타이머가 부른다. 살아 있는 적 수를 GameState 에 복제한다. */
+	void PushAliveCount();
+
 	UPROPERTY()
 	int32 CurrentWaveNumber = 0;
 
+	/**
+	 * 지금 웨이브가 끝나면 쉴 시간(초). 웨이브를 **시작할 때** 행에서 읽어 둔다.
+	 *
+	 * 끝나는 시점에 테이블을 다시 뒤지지 않기 위해서이기도 하지만, 그보다
+	 * 스폰 규칙과 휴식 시간이 같은 행의 같은 스냅샷에서 나와야 하기 때문이다.
+	 * 양쪽을 다른 시점에 읽으면 진행 중 테이블이 바뀌었을 때 서로 다른 행을 볼 수 있다.
+	 */
+	UPROPERTY()
+	float CurrentRestDuration = 0.f;
+
 	FTimerHandle RestTimerHandle;
+
+	FTimerHandle AliveCountTimerHandle;
 
 	bool bRunning = false;
 };

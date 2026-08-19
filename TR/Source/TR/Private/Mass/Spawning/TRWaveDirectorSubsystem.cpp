@@ -4,6 +4,7 @@
 
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "Mass/Core/TRMassParams.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "TimerManager.h"
 
@@ -235,8 +236,11 @@ FTRWaveDefinition UTRWaveDirectorSubsystem::ScaleWaveForNumber(const FTRWaveDefi
 	const float Multiplier = FMath::Pow(PerWaveMultiplier, static_cast<float>(CompoundSteps));
 
 	// 복리는 체력·피해에만 건다. 속도와 자원은 기획서상 T3 에서 고정이다.
-	Scaled.StatScale.Health = BaseDefinition.StatScale.Health * Multiplier;
-	Scaled.StatScale.Damage = BaseDefinition.StatScale.Damage * Multiplier;
+	// 복리는 웨이브 축에만 건다. 종류 축(TypeStatScale)은 "이 종류가 그 난이도에서 얼마나
+	// 단단한가"라는 고정 성격이라, 양쪽에 다 걸면 종류 간 격차가 웨이브마다 복리로 벌어져
+	// 후반에 손댈 수 없게 된다.
+	Scaled.TierStatScale.Health = BaseDefinition.TierStatScale.Health * Multiplier;
+	Scaled.TierStatScale.Damage = BaseDefinition.TierStatScale.Damage * Multiplier;
 
 	for (int32 GroupIndex = 0; GroupIndex < Scaled.Groups.Num(); ++GroupIndex)
 	{
@@ -261,15 +265,12 @@ void UTRWaveDirectorSubsystem::SpawnGroupBatch(int32 GroupIndex)
 		return;
 	}
 
-	FTRWaveGroupRuntime& State = GroupStates[GroupIndex];
-	if (State.bFinished)
+	if (GroupStates[GroupIndex].bFinished)
 	{
 		return;
 	}
 
-	const FTRWaveGroup& Group = CurrentWave.Groups[GroupIndex];
-
-	UWorld* World = GetWorld();
+	const UWorld* World = GetWorld();
 	UTRMassSpawnerSubsystem* Spawner = World ? World->GetSubsystem<UTRMassSpawnerSubsystem>() : nullptr;
 	if (Spawner == nullptr)
 	{
@@ -277,8 +278,21 @@ void UTRWaveDirectorSubsystem::SpawnGroupBatch(int32 GroupIndex)
 		return;
 	}
 
-	// ── 1. 스케줄: 이번 주기에 나왔어야 할 물량을 빚에 더한다 ──────────────
-	//
+	// 아래 세 단계는 인덱스가 유효하고 그룹이 아직 안 끝났다는 것을 위에서 확인한 뒤에만
+	// 불린다. 그래서 각 단계는 GroupStates[GroupIndex] 를 검사 없이 바로 쓴다.
+	AccrueScheduledBatch(GroupIndex);
+	SpawnPendingWithinBudget(GroupIndex, *Spawner);
+
+	// 종료 판정 뒤에는 GroupStates 를 건드리지 않는다 — 웨이브 종료 알림을 받은 쪽이
+	// 곧바로 다음 웨이브를 시작하면 이 배열이 통째로 갈아엎힌다.
+	EvaluateGroupCompletion(GroupIndex);
+}
+
+void UTRWaveDirectorSubsystem::AccrueScheduledBatch(int32 GroupIndex)
+{
+	FTRWaveGroupRuntime& State = GroupStates[GroupIndex];
+	const FTRWaveGroup& Group = CurrentWave.Groups[GroupIndex];
+
 	// 배치 스케줄과 실제 스폰을 분리한다. 예전에는 상한에 막히면 그 배치를 그냥
 	// 소진시켰는데, 그러면 **밀리는 플레이어일수록 적이 덜 나오는** 암묵적인 난이도
 	// 감면이 된다. 성능 예산이 난이도 조절 장치로 새는 셈이라, 웨이브 총량이
@@ -297,7 +311,7 @@ void UTRWaveDirectorSubsystem::SpawnGroupBatch(int32 GroupIndex)
 		State.PendingSpawns = FMath::Min(State.PendingSpawns, PendingCap);
 
 		// 스케줄은 상한과 무관하게 진행한다. 이게 리듬을 정하는 값이고,
-		// 물량은 아래에서 따로 정산된다.
+		// 물량은 다음 단계에서 따로 정산된다.
 		if (bLimitedBatches)
 		{
 			--State.BatchesRemaining;
@@ -305,86 +319,109 @@ void UTRWaveDirectorSubsystem::SpawnGroupBatch(int32 GroupIndex)
 	}
 
 	// 총량 상한이 있으면 빚도 그 안으로 자른다. 안 자르면 남은 빚 때문에
-	// 아래 종료 판정이 총량을 다 채우고도 계속 기다린다.
+	// 종료 판정이 총량을 다 채우고도 계속 기다린다.
 	if (State.TotalLimit > 0)
 	{
 		State.PendingSpawns = FMath::Min(State.PendingSpawns, State.TotalLimit - State.SpawnedTotal);
 	}
+}
 
-	// ── 2. 정산: 성능 예산이 허락하는 만큼만 실제로 낸다 ──────────────────
-	//
+int32 UTRWaveDirectorSubsystem::SpawnPendingWithinBudget(int32 GroupIndex, UTRMassSpawnerSubsystem& Spawner)
+{
+	FTRWaveGroupRuntime& State = GroupStates[GroupIndex];
+	const FTRWaveGroup& Group = CurrentWave.Groups[GroupIndex];
+
 	// 동시 생존 상한은 웨이브 전체 기준이다. 그룹별로 나누면 종류가 늘어날 때마다
 	// 총량이 함께 늘어나 성능 예산이 무너진다.
-	const int32 AliveCount = Spawner->GetSpawnedCount();
+	const int32 AliveCount = Spawner.GetSpawnedCount();
 	const int32 Allowance = FMath::Max(0, CurrentWave.MaxConcurrent - AliveCount);
 
 	const int32 SpawnCount = FMath::Min(State.PendingSpawns, Allowance);
 
-	if (SpawnCount > 0)
+	if (SpawnCount <= 0)
 	{
-		FTRChaserSpawnParams SpawnParams;
-		SpawnParams.EnemyConfig = Group.EnemyConfig;
-		SpawnParams.Count = SpawnCount;
-		SpawnParams.Channel = CurrentWave.Channel;
-		SpawnParams.StatScale = CurrentWave.StatScale;
+		if (State.PendingSpawns > 0)
+		{
+			UE_LOG(LogTRMass, Verbose, TEXT("그룹 %d(%s) 대기: 동시 상한 도달 (생존 %d / 상한 %d, 밀림 %d)"),
+				GroupIndex, LexToString(Group.EnemyType), AliveCount, CurrentWave.MaxConcurrent,
+				State.PendingSpawns);
+		}
 
-		ResolveSpawnShape(Group, SpawnParams.Area);
-
-		const int32 Spawned = Spawner->SpawnChasers(SpawnParams);
-		State.SpawnedTotal += Spawned;
-		State.PendingSpawns = FMath::Max(0, State.PendingSpawns - Spawned);
-
-		UE_LOG(LogTRMass, Verbose, TEXT("그룹 %d(%s) 배치: %d마리 (생존 %d / 상한 %d, 누적 %d, 밀림 %d)"),
-			GroupIndex, LexToString(Group.EnemyType), Spawned,
-			AliveCount + Spawned, CurrentWave.MaxConcurrent, State.SpawnedTotal, State.PendingSpawns);
-	}
-	else if (State.PendingSpawns > 0)
-	{
-		UE_LOG(LogTRMass, Verbose, TEXT("그룹 %d(%s) 대기: 동시 상한 도달 (생존 %d / 상한 %d, 밀림 %d)"),
-			GroupIndex, LexToString(Group.EnemyType), AliveCount, CurrentWave.MaxConcurrent,
-			State.PendingSpawns);
+		return 0;
 	}
 
-	// ── 3. 종료 판정 ──────────────────────────────────────────────────────
-	//
-	// 이 아래에서 FinishGroup을 부른 뒤에는 GroupStates를 건드리지 않는다 —
-	// 웨이브 종료 알림을 받은 쪽이 곧바로 다음 웨이브를 시작할 수 있다.
+	FTRChaserSpawnParams SpawnParams;
+	SpawnParams.EnemyConfig = Group.EnemyConfig;
+	SpawnParams.Count = SpawnCount;
+	SpawnParams.Channel = CurrentWave.Channel;
+	// 두 축을 곱해 이 배치의 최종 배수를 만든다. 웨이브 축은 "지금 몇 번째 웨이브인가",
+	// 종류 축은 "이 종류가 그 안에서 얼마나 단단한가"다.
+	SpawnParams.StatScale = UE::TR::Enemy::CombineStatScale(CurrentWave.TierStatScale, Group.TypeStatScale);
+
+	ResolveSpawnShape(Group, SpawnParams.Area);
+
+	const int32 Spawned = Spawner.SpawnChasers(SpawnParams);
+	State.SpawnedTotal += Spawned;
+	State.PendingSpawns = FMath::Max(0, State.PendingSpawns - Spawned);
+
+	UE_LOG(LogTRMass, Verbose, TEXT("그룹 %d(%s) 배치: %d마리 (생존 %d / 상한 %d, 누적 %d, 밀림 %d)"),
+		GroupIndex, LexToString(Group.EnemyType), Spawned,
+		AliveCount + Spawned, CurrentWave.MaxConcurrent, State.SpawnedTotal, State.PendingSpawns);
+
+	return Spawned;
+}
+
+bool UTRWaveDirectorSubsystem::EvaluateGroupCompletion(int32 GroupIndex)
+{
+	FTRWaveGroupRuntime& State = GroupStates[GroupIndex];
+	const FTRWaveGroup& Group = CurrentWave.Groups[GroupIndex];
+
+	const bool bLimitedBatches = (Group.BatchCount > 0);
 
 	if ((State.TotalLimit > 0) && (State.SpawnedTotal >= State.TotalLimit))
 	{
 		FinishGroup(GroupIndex);
-		return;
+		return true;
 	}
 
 	// 배치가 남아 있으면 계속 돈다. 무한 그룹도 여기서 걸러진다.
 	if (!bLimitedBatches || State.BatchesRemaining > 0)
 	{
-		return;
+		return false;
 	}
 
 	if (State.PendingSpawns <= 0)
 	{
 		FinishGroup(GroupIndex);
-		return;
+		return true;
 	}
 
 	// 배치는 다 냈는데 빚이 남았다. 타이머는 계속 돌고 있으므로 다음 주기에 마저 낸다.
 	//
 	// 다만 플레이어가 끝내 처리하지 못하면 빚이 영원히 안 빠져 웨이브가 끝나지 않고,
 	// 휴식도 다음 웨이브도 오지 않아 게임이 멈춘 것처럼 보인다. 기다리는 시간에 상한을 둔다.
+	const UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return false;
+	}
+
 	const float WorldTime = World->GetTimeSeconds();
 	if (State.DrainDeadline <= 0.f)
 	{
 		State.DrainDeadline = WorldTime + FMath::Max(0.f, CurrentWave.PendingDrainTime);
 	}
 
-	if (WorldTime >= State.DrainDeadline)
+	if (WorldTime < State.DrainDeadline)
 	{
-		UE_LOG(LogTRMass, Log, TEXT("그룹 %d(%s): 밀린 물량 %d마리를 내보내지 못하고 종료합니다 (대기 %.1f초 초과)."),
-			GroupIndex, LexToString(Group.EnemyType), State.PendingSpawns, CurrentWave.PendingDrainTime);
-
-		FinishGroup(GroupIndex);
+		return false;
 	}
+
+	UE_LOG(LogTRMass, Log, TEXT("그룹 %d(%s): 밀린 물량 %d마리를 내보내지 못하고 종료합니다 (대기 %.1f초 초과)."),
+		GroupIndex, LexToString(Group.EnemyType), State.PendingSpawns, CurrentWave.PendingDrainTime);
+
+	FinishGroup(GroupIndex);
+	return true;
 }
 
 void UTRWaveDirectorSubsystem::FinishGroup(int32 GroupIndex)
