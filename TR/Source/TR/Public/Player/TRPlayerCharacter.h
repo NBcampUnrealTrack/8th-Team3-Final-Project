@@ -133,7 +133,7 @@ protected:
 	float LookInterpolationSpeed = 12.5f;
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Action", meta = (ClampMin = "0.0", ClampMax = "100.0"))
-	float HealPercent = 10.f;
+	float HealPercent = 20.f;
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> CameraComp;
