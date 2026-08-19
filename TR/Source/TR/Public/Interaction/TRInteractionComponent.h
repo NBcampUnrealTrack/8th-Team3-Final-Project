@@ -7,6 +7,8 @@
 #include "TRInteractionComponent.generated.h"
 
 class UTRPlayerHUDWidget;
+class UTRActionComponent;
+enum class ETRActionType : uint8;
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class TR_API UTRInteractionComponent : public UActorComponent
@@ -28,6 +30,9 @@ private:
 	void UpdateTrace();
 
 	void UpdateInteractionWidget();
+
+	// HUD 게이지가 읽을 진행률. 수리는 대상이 사이클을 가지므로 출처가 다르다.
+	float ResolveActionProgress01(const UTRActionComponent& ActionComp, ETRActionType ActionType) const;
 
 	// 로컬 플레이어의 HUD 위젯. 서버/원격 클라이언트에서는 nullptr.
 	UTRPlayerHUDWidget* GetHUDWidget() const;

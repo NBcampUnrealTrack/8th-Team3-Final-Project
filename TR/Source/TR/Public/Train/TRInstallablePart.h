@@ -8,6 +8,7 @@
 
 class UNiagaraComponent;
 class USceneComponent;
+class UTRRepairTargetComponent;
 
 UCLASS(Abstract)
 class TR_API ATRInstallablePart : public AActor
@@ -74,6 +75,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Part")
 	TObjectPtr<USceneComponent> Root;
 
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UTRRepairTargetComponent> RepairTarget;
+	
 	//--- VFX ---
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Part|VFX")
 	TObjectPtr<UNiagaraComponent> DamageEffect;
