@@ -18,37 +18,51 @@
 namespace
 {
 	/**
-	 * 단계 속도가 엔진 클램프(Mass Movement의 Max Speed)를 넘는지 검사한다.
+	 * 이 배치가 내려는 최고 속도가 엔진 클램프(Mass Movement의 Max Speed)를 넘는지 검사한다.
 	 *
 	 * 넘으면 UMassApplyForceProcessor가 잘라내는데, 에러도 경고도 없이 그냥 느리게
 	 * 움직일 뿐이라 원인을 찾기 매우 어렵다. Config를 잘못 채운 순간 알려준다.
+	 *
+	 * **티어 배수(StatScale.Speed)를 반드시 함께 본다.** 예전에는 Config에 적힌 단계
+	 * 속도만 검사했는데, 그러면 가장 흔한 실수를 통째로 놓친다 — SpeedRatio 기본값이
+	 * 1.0이라 기준 속도가 이미 천장이고, 거기에 티어 배수를 곱하면 전부 잘린다.
+	 * 즉 기획서의 T1→T3 속도 성장(5→10 m/s)이 조용히 사라지는데 경고는 안 나왔다.
+	 *
+	 * 해결책이 두 개라 메시지에 둘 다 적는다. Max Speed는 개체별로 바꿀 수 없는
+	 * 공유 파라미터라, **Max Speed를 최고 티어 속도로 잡고 SpeedRatio로 T1을 만드는**
+	 * 방향이 정답이다.
 	 */
 	void WarnIfSpeedExceedsMovementLimit(const FMassEntityManager& EntityManager, const FMassEntityHandle& Entity,
-		const FTREnemyCombatParams& CombatParams, const UMassEntityConfigAsset* Config)
+		const FTREnemyCombatParams& CombatParams, const FTRChaseParams* ChaseParams,
+		const FTREnemyStatScale& StatScale, const UMassEntityConfigAsset* Config)
 	{
 		const FMassMovementParameters* MovementParams =
 			EntityManager.GetConstSharedFragmentDataPtr<FMassMovementParameters>(Entity);
 
-		if (MovementParams == nullptr)
+		if (MovementParams == nullptr || ChaseParams == nullptr)
 		{
 			return;
 		}
 
-		// 접근 속도와 사출 속도 중 이 엔티티가 실제로 낼 수 있어야 하는 최댓값.
-		float RequiredSpeed = CombatParams.ApproachSpeed;
-		if (CombatParams.EnemyType == ETREnemyType::Launcher)
+		const float PeakSpeed = UE::TR::Enemy::ComputePeakSpeed(
+			CombatParams, *ChaseParams, MovementParams->MaxSpeed, StatScale);
+
+		// 같은 값이면 정상이다(Max Speed를 천장으로 삼는 구성). 부동소수 오차만 봐준다.
+		if (PeakSpeed <= MovementParams->MaxSpeed * (1.f + KINDA_SMALL_NUMBER))
 		{
-			RequiredSpeed = FMath::Max(RequiredSpeed, CombatParams.LaunchSpeed);
+			return;
 		}
 
-		if (RequiredSpeed > MovementParams->MaxSpeed)
-		{
-			UE_LOG(LogTRMass, Warning,
-				TEXT("'%s'(%s): 필요한 속도 %.0f cm/s가 Mass Movement의 Max Speed(%.0f)를 넘습니다. ")
-				TEXT("엔진이 잘라내므로 설정한 속도로 움직이지 않습니다. Max Speed를 %.0f 이상으로 올리세요."),
-				*GetNameSafe(Config), LexToString(CombatParams.EnemyType),
-				RequiredSpeed, MovementParams->MaxSpeed, RequiredSpeed);
-		}
+		UE_LOG(LogTRMass, Warning,
+			TEXT("'%s'(%s): 이 배치가 내려는 최고 속도 %.0f cm/s가 Mass Movement의 Max Speed(%.0f)를 넘습니다. ")
+			TEXT("엔진이 잘라내므로 설정한 속도가 나오지 않습니다 — 티어를 올려도 빨라지지 않습니다. ")
+			TEXT("(단계 속도 %.0f x 스탯 배수 %.2f, SpeedRatio %.2f) ")
+			TEXT("Max Speed를 최고 티어 속도(%.0f 이상)로 올리고, T1 속도는 SpeedRatio를 내려 만드세요."),
+			*GetNameSafe(Config), LexToString(CombatParams.EnemyType),
+			PeakSpeed, MovementParams->MaxSpeed,
+			PeakSpeed / FMath::Max(StatScale.Speed, 0.01f), FMath::Max(StatScale.Speed, 0.01f),
+			ChaseParams->SpeedRatio,
+			PeakSpeed);
 	}
 
 	/**
@@ -135,7 +149,8 @@ namespace
 
 		if (bReportConfigIssues)
 		{
-			WarnIfSpeedExceedsMovementLimit(EntityManager, Entity, *CombatParams, Config);
+			WarnIfSpeedExceedsMovementLimit(EntityManager, Entity, *CombatParams, ChaseParams,
+				Params.StatScale, Config);
 		}
 	}
 }
@@ -257,7 +272,35 @@ int32 UTRMassSpawnerSubsystem::GetSpawnedCount()
 {
 	CompactSpawnedEntities();
 
-	return SpawnedEntities.Num();
+	const UWorld* World = GetWorld();
+	if (World == nullptr || SpawnedEntities.IsEmpty())
+	{
+		return 0;
+	}
+
+	const FMassEntityManager& EntityManager = UE::Mass::Utils::GetEntityManagerChecked(*World);
+
+	// 시체는 세지 않는다.
+	//
+	// 이 값이 곧 웨이브의 동시 상한(성능 예산) 판정에 쓰이는데, 죽은 개체는 DeathLinger
+	// 동안 유효한 엔티티로 남는다. 세어 버리면 **플레이어가 많이 죽일수록 다음 물량이
+	// 줄어드는** 방향이 된다 — 잘하는 쪽에 난이도를 깎아 주는 셈이라 의도와 정반대다.
+	//
+	// 판정을 FTRDeadTag가 아니라 행동 상태로 하는 이유는 태그가 명령 버퍼를 거쳐 한 프레임
+	// 늦게 붙기 때문이다. 상태는 죽는 즉시 바뀌므로 그 한 프레임의 오차가 없다.
+	// 상태 프래그먼트가 없는 구성(TR Chaser 트레이트를 안 쓴 Config)은 살아 있는 것으로 본다.
+	int32 AliveCount = 0;
+	for (const FMassEntityHandle& Entity : SpawnedEntities)
+	{
+		const FTREnemyStateFragment* State = EntityManager.GetFragmentDataPtr<FTREnemyStateFragment>(Entity);
+
+		if (State == nullptr || State->ActionState != ETREnemyActionState::Death)
+		{
+			++AliveCount;
+		}
+	}
+
+	return AliveCount;
 }
 
 void UTRMassSpawnerSubsystem::CompactSpawnedEntities()

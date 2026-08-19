@@ -299,10 +299,8 @@ struct FTREnemyCombatFragment : public FMassFragment
 	GENERATED_BODY()
 
 	/**
-	 * 남은 체력.
-	 *
-	 * 아직 이 값을 깎는 경로가 없다(포탑 → Mass 엔티티 피해가 미구현).
-	 * 스폰 시 채워지기만 하고 읽히지 않는 상태다.
+	 * 남은 체력. UTRMassCombatSubsystem::FireHitscan 이 깎고,
+	 * 0 이하가 되면 사망 상태로 넘어간다(삭제는 UTRMassDeathProcessor).
 	 */
 	UPROPERTY()
 	float Health = 25.f;
@@ -317,6 +315,16 @@ struct FTREnemyCombatFragment : public FMassFragment
 	/** 사격 1발 피해. 사격형만 쓴다. */
 	UPROPERTY()
 	float ShotDamage = 25.f;
+
+	/**
+	 * 사출된 상체의 체력. 사출형만 쓴다.
+	 *
+	 * 공유 파라미터에 있는 값을 그때 읽지 않고 스폰 시 구워 두는 이유는 체력과 같다 —
+	 * 파라미터는 T1 기준값이고 티어 배수는 개체마다 다르다. 사출 시점에 파라미터를
+	 * 읽으면 상체만 배수를 못 받아 티어가 올라도 요격 난이도가 그대로다.
+	 */
+	UPROPERTY()
+	float LaunchedHealth = 10.f;
 
 	/** 처치 시 주는 자원. 자폭·자체 폭발로 사라지면 주지 않는다(기획서). */
 	UPROPERTY()

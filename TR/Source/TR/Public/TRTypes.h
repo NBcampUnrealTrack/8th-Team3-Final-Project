@@ -141,3 +141,36 @@ struct FTRTurretLevelRow : public FTableRowBase
 	int32 AutoMagazine = 0;
 };
 #pragma endregion
+
+
+#pragma region Wave
+
+/**
+ * 판의 진행 단계. 클라이언트는 이 값 하나로 HUD 를 가른다.
+ *
+ * 웨이브 번호와 따로 두는 이유는 "웨이브 3 전투 중"과 "웨이브 3을 막 끝내고 휴식 중"이
+ * 번호로는 구분되지 않기 때문이다. 번호만 보내면 UI 가 휴식 화면을 언제 띄울지 알 수 없다.
+ *
+ * Mass 타입을 참조하지 않으므로 여기(프로젝트 공용 헤더)에 둔다 — ATRGameState 가
+ * 이 값을 복제하는데, 웨이브 헤더에 두면 Mass 헤더가 GameState 를 통해 프로젝트
+ * 전역으로 딸려간다.
+ */
+UENUM(BlueprintType)
+enum class ETRWavePhase : uint8
+{
+	/** 진행 중이 아님. 판이 시작되기 전(로비)이거나, 웨이브 진행이 멈춘 상태. */
+	None,
+
+	/** 웨이브 진행 중 — 배치가 계속 나온다. */
+	Combat,
+
+	/** 배치를 다 낸 뒤의 휴식. 남은 시간은 ATRGameState::GetRestTimeRemaining 으로 잰다. */
+	Rest,
+
+	/** 판 종료. 선체가 부서졌다. */
+	Over,
+
+	MAX UMETA(Hidden)
+};
+
+#pragma endregion

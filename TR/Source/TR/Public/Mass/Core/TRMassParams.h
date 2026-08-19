@@ -136,8 +136,9 @@ struct FTREnemyStatScale
 /**
  * 종류별 전투 수치. Config 애셋마다 이 값만 바꾸면 근접형/사출형/사격형이 갈린다.
  *
- * 여기 있는 값은 **T1(기준) 수치**다. 티어별 수치는 스폰 시 배수(StatScale)를 곱해
- * 개체별 FTREnemyCombatFragment에 넣는다. 기획서의 "웨이브당 +5% 복리"가 그 배수다.
+ * 여기 있는 값은 **T1(기준) 수치**다. 실제 수치는 스폰 시 배수(FTREnemyStatScale)를 곱해
+ * 개체별 FTREnemyCombatFragment에 넣는다. 그 배수는 웨이브 테이블에서 두 축
+ * (FTRWaveDefinition::TierStatScale x FTRWaveGroup::TypeStatScale)을 곱해 만들어진다.
  */
 USTRUCT(BlueprintType)
 struct FTREnemyCombatParams : public FMassConstSharedFragment
@@ -433,7 +434,52 @@ namespace UE::TR::Enemy
 		return BaseSpeed * Approach.SpeedScale;
 	}
 
-	/** 스폰 직후의 전투 수치. StatScale은 웨이브 테이블이 준 티어 배수다. */
+	/**
+	 * 두 배수를 합친다. 웨이브 전체 배수 위에 그룹별 배수를 얹을 때 쓴다.
+	 *
+	 * 곱셈으로 합치는 이유는 두 값의 뜻이 다르기 때문이다 — 웨이브 배수는 "이 시점의
+	 * 난이도", 그룹 배수는 "이 종류가 그 난이도에서 얼마나 단단한가"다. 더하기로 합치면
+	 * 웨이브가 깊어질수록 그룹 차이가 상대적으로 묽어져서, 종류별 개성이 후반에 사라진다.
+	 *
+	 * 자원만 가산이다. 곱하면 물가가 복리로 뛴다.
+	 */
+	inline FTREnemyStatScale CombineStatScale(const FTREnemyStatScale& Base, const FTREnemyStatScale& Extra)
+	{
+		FTREnemyStatScale Result;
+
+		Result.Health = Base.Health * Extra.Health;
+		Result.Damage = Base.Damage * Extra.Damage;
+		Result.Speed = Base.Speed * Extra.Speed;
+		Result.ResourceBonus = Base.ResourceBonus + Extra.ResourceBonus;
+
+		return Result;
+	}
+
+	/**
+	 * 이 설정에서 **가장 빠른 개체**가 내려고 하는 속도(cm/s). 설정 검증용이다.
+	 *
+	 * 개체별 흔들림(MakeSpeedScale)은 1 이하로만 내려가므로 배수 1로 본다.
+	 * 사출형은 상체가 되는 순간 접근 속도가 LaunchSpeed로 바뀌므로 둘 중 큰 쪽을 본다.
+	 *
+	 * ComputeDesiredSpeed와 같은 규칙을 따라야 의미가 있다. 한쪽만 고치면 검증이
+	 * 실제 동작과 어긋나서, 경고가 안 나오는데 속도는 잘리는 상태가 된다.
+	 */
+	inline float ComputePeakSpeed(const FTREnemyCombatParams& CombatParams, const FTRChaseParams& ChaseParams,
+		float MovementMaxSpeed, const FTREnemyStatScale& StatScale)
+	{
+		float StageSpeed = (CombatParams.ApproachSpeed > 0.f)
+			? CombatParams.ApproachSpeed
+			: MovementMaxSpeed * ChaseParams.SpeedRatio;
+
+		if (CombatParams.EnemyType == ETREnemyType::Launcher)
+		{
+			StageSpeed = FMath::Max(StageSpeed, CombatParams.LaunchSpeed);
+		}
+
+		return StageSpeed * FMath::Max(StatScale.Speed, 0.01f);
+	}
+
+	/** 스폰 직후의 전투 수치. StatScale은 웨이브 축과 종류 축을 이미 합친 최종 배수다. */
 	inline void InitCombat(const FTREnemyCombatParams& Params, const FTREnemyStatScale& StatScale,
 		FTREnemyCombatFragment& OutCombat)
 	{
@@ -444,6 +490,11 @@ namespace UE::TR::Enemy
 		OutCombat.Health = OutCombat.MaxHealth;
 		OutCombat.ContactDamage = Params.ContactDamage * DamageScale;
 		OutCombat.ShotDamage = Params.ShotDamage * DamageScale;
+
+		// 사출형 상체 체력에도 같은 배수를 건다. 여기서 굽지 않으면 사출 시점에
+		// 공유 파라미터의 T1 값이 그대로 들어가, 본체만 티어를 타고 상체는 영원히
+		// 무른 채로 남는다. 후반에는 "본체는 못 잡고 상체만 요격하는" 최적해가 생긴다.
+		OutCombat.LaunchedHealth = Params.LaunchedHealth * HealthScale;
 
 		// 자원은 밸런스상 물가에 해당한다. 복리로 불리면 후반에 폭주하므로 티어당 가산만 한다.
 		OutCombat.ResourceValue = Params.ResourceValue + FMath::Max(0, StatScale.ResourceBonus);
@@ -642,8 +693,10 @@ namespace UE::TR::Enemy
 		Approach.MaxSpeed = Params.LaunchSpeed;
 		Approach.bLockTargetZone = false;
 
-		Combat.MaxHealth = Params.LaunchedHealth;
-		Combat.Health = FMath::Min(Combat.Health, Params.LaunchedHealth);
+		// 공유 파라미터가 아니라 스폰 때 구워 둔 값을 쓴다. 파라미터 쪽은 T1 기준값이라
+		// 여기서 읽으면 티어 배수가 사라진다.
+		Combat.MaxHealth = Combat.LaunchedHealth;
+		Combat.Health = FMath::Min(Combat.Health, Combat.LaunchedHealth);
 
 		// 사출된 상체를 요격해도 자원은 나오지 않는다(기획서).
 		Combat.ResourceValue = 0;
