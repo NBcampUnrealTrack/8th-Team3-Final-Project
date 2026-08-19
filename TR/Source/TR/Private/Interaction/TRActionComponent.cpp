@@ -28,6 +28,7 @@ void UTRActionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UTRActionComponent, CurrentActionType);
 	DOREPLIFETIME(UTRActionComponent, ActionStartServerTime);
+	DOREPLIFETIME(UTRActionComponent, EffectiveCycleDuration);
 	DOREPLIFETIME(UTRActionComponent, CurrentTarget);
 }
 
@@ -82,6 +83,135 @@ void UTRActionComponent::RefreshOwnerActionEffect()
 void UTRActionComponent::OnRep_CurrentActionType()
 {
 	RefreshOwnerActionEffect();
+}
+
+int32 UTRActionComponent::CountConcurrentWorkers(ETRActionType ActionType, const AActor* Target) const
+{
+	if (ActionType == ETRActionType::None || !IsValid(Target))
+	{
+		return 0;
+	}
+
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = IsValid(World) ? World->GetGameState() : nullptr;
+	if (!IsValid(GameState))
+	{
+		return 0;
+	}
+
+	int32 Count = 0;
+	for (const APlayerState* PlayerState : GameState->PlayerArray)
+	{
+		const APawn* Pawn = IsValid(PlayerState) ? PlayerState->GetPawn() : nullptr;
+		const UTRActionComponent* Action = IsValid(Pawn) ? Pawn->FindComponentByClass<UTRActionComponent>() : nullptr;
+		if (!IsValid(Action))
+		{
+			continue;
+		}
+
+		// 대상과 작업이 모두 같아야 센다.
+		if (Action->CurrentActionType == ActionType && Action->CurrentTarget.Get() == Target)
+		{
+			++Count;
+		}
+	}
+
+	return Count;
+}
+
+float UTRActionComponent::ResolveCycleDuration(ETRActionType ActionType, const FTRActionDef& Def, int32 WorkerCount) const
+{
+	// 협동 보너스는 수리 전용
+	if (ActionType != ETRActionType::Repair || RepairConcurrentSpeedMultipliers.IsEmpty())
+	{
+		return Def.CycleDuration;
+	}
+
+	const int32 Index = FMath::Clamp(WorkerCount - 1, 0, RepairConcurrentSpeedMultipliers.Num() - 1);
+	const float Multiplier = RepairConcurrentSpeedMultipliers[Index];
+
+	// 0 이하 배수 방지
+	if (Multiplier <= 0.f)
+	{
+		UE_LOG(LogTRGameplay, Warning, TEXT("RepairConcurrentSpeedMultipliers[%d] is %.2f — must be positive. Using base duration."),
+			Index, Multiplier);
+		return Def.CycleDuration;
+	}
+
+	return Def.CycleDuration / Multiplier;
+}
+
+void UTRActionComponent::RecomputeCycleTiming()
+{
+	if (CurrentActionType == ETRActionType::None)
+	{
+		return;
+	}
+
+	const FTRActionDef* Def = ActionDefs.Find(CurrentActionType);
+	UWorld* World = GetWorld();
+	if (Def == nullptr || !IsValid(World))
+	{
+		return;
+	}
+
+	const int32 WorkerCount = CountConcurrentWorkers(CurrentActionType, CurrentTarget.Get());
+	const float NewDuration = ResolveCycleDuration(CurrentActionType, *Def, WorkerCount);
+	if (NewDuration <= 0.f || FMath::IsNearlyEqual(NewDuration, EffectiveCycleDuration))
+	{
+		return;
+	}
+
+	// 이미 진행한 몫은 보존한다. 진행률을 축으로 잡아야 진행 바가 튀지 않는다.
+	const float Elapsed01 = GetActionProgress01();
+
+	// 시작 시각을 과거로 역산해 덮는다.
+	const float Now = World->GetTimeSeconds();
+	ActionStartServerTime = Now - NewDuration * Elapsed01;
+	EffectiveCycleDuration = NewDuration;
+
+	// rate 0 이하 방지
+	const float Remaining = FMath::Max(NewDuration * (1.f - Elapsed01), KINDA_SMALL_NUMBER);
+	World->GetTimerManager().SetTimer(
+		ActionTimerHandle,
+		this,
+		&UTRActionComponent::CompleteAction,
+		Remaining,
+		false
+	);
+
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Action retimed: %.2fs (workers %d, progress %.0f%%, remaining %.2fs)"),
+		NewDuration, WorkerCount, Elapsed01 * 100.f, Remaining);
+}
+
+void UTRActionComponent::RefreshConcurrentWorkers(ETRActionType ActionType, AActor* Target)
+{
+	if (ActionType == ETRActionType::None || !IsValid(Target))
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = IsValid(World) ? World->GetGameState() : nullptr;
+	if (!IsValid(GameState))
+	{
+		return;
+	}
+
+	for (const APlayerState* PlayerState : GameState->PlayerArray)
+	{
+		const APawn* Pawn = IsValid(PlayerState) ? PlayerState->GetPawn() : nullptr;
+		UTRActionComponent* Action = IsValid(Pawn) ? Pawn->FindComponentByClass<UTRActionComponent>() : nullptr;
+		if (!IsValid(Action) || Action == this)
+		{
+			continue;
+		}
+
+		if (Action->CurrentActionType == ActionType && Action->CurrentTarget.Get() == Target)
+		{
+			Action->RecomputeCycleTiming();
+		}
+	}
 }
 
 void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionType, AActor* Target)
@@ -150,16 +280,25 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 	}
 	
 	SetCurrentAction(ActionType, Target);
+
+	// 인원 집계에 내가 포함돼야 하므로 SetCurrentAction 뒤에 센다.
+	const int32 WorkerCount = CountConcurrentWorkers(ActionType, Target);
+	EffectiveCycleDuration = ResolveCycleDuration(ActionType, Def, WorkerCount);
 	ActionStartServerTime = World->GetTimeSeconds();
 
 	World->GetTimerManager().SetTimer(
 		ActionTimerHandle,
 		this,
 		&UTRActionComponent::CompleteAction,
-		Def.CycleDuration,
+		FMath::Max(EffectiveCycleDuration, KINDA_SMALL_NUMBER),
 		false
 	);
-	UE_LOG(LogTRGameplay, Verbose, TEXT("Action Started: %.1fs"), Def.CycleDuration);
+
+	// 먼저 붙어 있던 사람들도 늘어난 인원만큼 빨라져야 한다.
+	RefreshConcurrentWorkers(ActionType, Target);
+
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Action Started: %.2fs (workers %d, base %.1fs)"),
+		EffectiveCycleDuration, WorkerCount, Def.CycleDuration);
 }
 
 void UTRActionComponent::ServerCancelAction_Implementation()
@@ -169,15 +308,25 @@ void UTRActionComponent::ServerCancelAction_Implementation()
 		return;
 	}
 
+	// 내가 빠진 뒤 남은 인원을 다시 세야 하므로 지우기 전에 잡아둔다.
+	const ETRActionType PrevActionType = CurrentActionType;
+	AActor* PrevTarget = CurrentTarget.Get();
+
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(ActionTimerHandle);
 	}
 	SetCurrentAction(ETRActionType::None, nullptr);
+	EffectiveCycleDuration = 0.f;
+
+	// 남은 사람들은 줄어든 인원만큼 느려진다.
+	RefreshConcurrentWorkers(PrevActionType, PrevTarget);
 }
 
 void UTRActionComponent::CompleteAction()
 {
+	// 아래에서 상태를 지운 뒤 남은 인원에게 알려야 하므로 미리 잡아둔다.
+	const ETRActionType CompletedType = CurrentActionType;
 	const FTRActionDef* Def = ActionDefs.Find(CurrentActionType);
 	AActor* Target = CurrentTarget.Get();
 
@@ -282,6 +431,10 @@ void UTRActionComponent::CompleteAction()
 	}
 
 	SetCurrentAction(ETRActionType::None, nullptr);
+	EffectiveCycleDuration = 0.f;
+
+	// 내 사이클이 끝나 인원이 줄었다. 계속 붙어 있는 사람들의 시간을 다시 잰다.
+	RefreshConcurrentWorkers(CompletedType, Target);
 }
 
 float UTRActionComponent::GetActionProgress01() const
@@ -304,8 +457,11 @@ float UTRActionComponent::GetActionProgress01() const
 		return 0.f;
 	}
 
+	// 인원 배수가 적용된 시간으로 잰다. 복제가 도착하기 전 한 프레임은 0이므로 기준 시간으로 물러난다.
+	const float Duration = (EffectiveCycleDuration > 0.f) ? EffectiveCycleDuration : Def->CycleDuration;
+
 	const float Elapsed = GameState->GetServerWorldTimeSeconds() - ActionStartServerTime;
-	return FMath::Clamp(Elapsed / Def->CycleDuration, 0.f, 1.f);
+	return FMath::Clamp(Elapsed / Duration, 0.f, 1.f);
 }
 
 bool UTRActionComponent::ValidateActionTarget(ETRActionType ActionType, AActor* Target) const
@@ -399,7 +555,14 @@ void UTRActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	const AActor* OwnerActor = GetOwner();
 	if (IsValid(OwnerActor) && OwnerActor->HasAuthority())
 	{
+		// 접속이 끊기거나 폰이 파괴된 경우 알린다.
+		const ETRActionType PrevActionType = CurrentActionType;
+		AActor* PrevTarget = CurrentTarget.Get();
+
 		SetCurrentAction(ETRActionType::None, nullptr);
+		EffectiveCycleDuration = 0.f;
+
+		RefreshConcurrentWorkers(PrevActionType, PrevTarget);
 	}
 
 	// 파괴 중에는 마지막 복제가 도착하지 않을 수 있으므로 각 머신에서 즉시 끈다.

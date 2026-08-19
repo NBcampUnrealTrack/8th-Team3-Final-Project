@@ -57,6 +57,18 @@ private:
 	// 복제된 행동 상태를 오너 캐릭터의 지속 이펙트에 반영한다.
 	void RefreshOwnerActionEffect();
 
+	// 같은 대상에서 같은 작업을 하는 인원. 자기 자신을 포함한다.
+	int32 CountConcurrentWorkers(ETRActionType ActionType, const AActor* Target) const;
+
+	// 인원수에 맞는 유효 사이클 시간. 수리가 아니거나 배수 배열이 비면 CycleDuration 그대로.
+	float ResolveCycleDuration(ETRActionType ActionType, const FTRActionDef& Def, int32 WorkerCount) const;
+
+	// 지금까지의 진행률을 보존하면서 유효 사이클 시간을 다시 적용한다. 인원이 바뀌는 순간에만 부른다.
+	void RecomputeCycleTiming();
+
+	// 다른 컴포넌트들의 사이클 시간을 다시 계산. 내 상태를 바꾼 뒤에 부를 것(인원 집계에 내가 포함되도록).
+	void RefreshConcurrentWorkers(ETRActionType ActionType, AActor* Target);
+
 	UFUNCTION()
 	void OnRep_CurrentActionType();
 
@@ -69,6 +81,10 @@ private:
 	UPROPERTY(Replicated)
 	float ActionStartServerTime = 0.f;
 
+	// 인원 배수가 적용된 실제 사이클 시간. 진행 바가 이 값으로 진행률을 잰다.
+	UPROPERTY(Replicated)
+	float EffectiveCycleDuration = 0.f;
+
 	UPROPERTY(Replicated)
 	TWeakObjectPtr<AActor> CurrentTarget;
 
@@ -76,4 +92,9 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category="Action")
 	TMap<ETRActionType, FTRActionDef> ActionDefs;
+
+	// 여러 명이 같은 대상을 함께 수리할 때의 속도 배수. 인덱스 = 인원-1.
+	// 수리 전용이다. 재장전·재보급은 인원과 무관하게 기준 시간을 쓴다.
+	UPROPERTY(EditDefaultsOnly, Category="Action")
+	TArray<float> RepairConcurrentSpeedMultipliers = { 1.f, 1.5f, 2.f };
 };
