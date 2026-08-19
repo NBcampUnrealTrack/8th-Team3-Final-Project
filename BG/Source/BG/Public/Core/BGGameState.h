@@ -474,8 +474,15 @@ protected:
 	/**
 	 * 1회성 카드에 줄 다음 InstanceId. **음수로 내려간다.**
 	 * 덱 카드가 1 부터 올라가므로 어느 쪽도 상대를 침범하지 않는다.
+	 *
+	 * ⚠️ **-1 에서 시작하면 안 된다. -1 은 `INDEX_NONE` 이다.**
+	 *    `ServerRequestPlayCard_Validate` / `ServerRequestDiscardCard_Validate` 가
+	 *    `InstanceId != INDEX_NONE` 으로 걸러내는데, UE 는 `_Validate` 가 false 면
+	 *    **연결을 끊는다.** 즉 첫 1회성 카드를 내는 순간 그 플레이어가 매치에서 튕긴다.
+	 *    호스트는 RPC 를 타지 않아 멀쩡하므로 혼자 PIE 로 돌리면 절대 재현되지 않는다.
+	 *    `FBGCardInstance::IsValid()` 와 `UBGHandWidget::FindHeldCard` 도 -1 을 특별 취급한다.
 	 */
-	int32 NextEphemeralInstanceId = -1;
+	int32 NextEphemeralInstanceId = -2;
 
 	void EnterDrawPhase();
 	void EnterPlayPhase();

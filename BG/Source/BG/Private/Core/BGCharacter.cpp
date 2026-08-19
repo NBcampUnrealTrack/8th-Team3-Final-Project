@@ -405,6 +405,15 @@ void ABGCharacter::NotifyDamaged(AActor* DamageInstigator, int32 DamageAmount)
 		return;
 	}
 
+	//	죽은 뒤에는 되받지도 훔치지도 않는다.
+	//	bDead 는 NotifyHealthDepleted 가 즉시 세우지만 사망 규칙 처리(HandleSeatDeath)는 한 틱 뒤다.
+	//	그 사이(또는 그 뒤)에 들어온 피해 GE 도 Delta < 0 이라 여기까지 오므로, 이 검사가 없으면
+	//	**죽은 수도사가 반사하고 죽은 도둑이 카드를 훔친다.**
+	if (bDead)
+	{
+		return;
+	}
+
 	//	가해자가 없거나(다이너마이트 등) 자해면 되받을 대상이 없다.
 	APawn* AttackerPawn = Cast<APawn>(DamageInstigator);
 	if (!AttackerPawn || AttackerPawn == this)
@@ -459,26 +468,39 @@ void ABGCharacter::NotifyDamaged(AActor* DamageInstigator, int32 DamageAmount)
 		UBGDiceComponent* Dice = UBGDiceComponent::Get(this);
 		int32 Stolen = 0;
 
+		//	가해자가 **지금 내고 있는 카드**는 훔칠 수 없다. 그 카드는 GA 가 도는 동안
+		//	아직 손패에 남아 있을 뿐이고, 곧 ConsumeCard 로 버린 패에 간다.
+		//	가져가면 카드가 복제되고 ConsumeCard 가 실패해 덱 총량이 어긋난다.
+		//	평소에는 INDEX_NONE 이고, 손패의 어떤 카드도 그 값을 갖지 않는다
+		//	(덱은 1 부터, 1회성 카드는 -2 부터).
+		const int32 InFlightId = AttackerPS->CardInFlightInstanceId;
+
+		TArray<int32> Candidates;
 		for (int32 i = 0; i < StealCount; ++i)
 		{
 			//	손패는 매번 다시 본다 — 한 장 가져올 때마다 크기가 줄어든다.
-			const TArray<FBGCardInstance>& AttackerHand = AttackerPS->GetHand();
-			if (AttackerHand.IsEmpty())
+			Candidates.Reset();
+			for (const FBGCardInstance& Card : AttackerPS->GetHand())
 			{
-				break;   // 가해자가 빈손이면 아무 일도 일어나지 않는다
+				if (Card.InstanceId != InFlightId)
+				{
+					Candidates.Add(Card.InstanceId);
+				}
 			}
 
-			const int32 Pick = Dice ? Dice->RandomIndex(AttackerHand.Num()) : 0;
-			if (!AttackerHand.IsValidIndex(Pick))
+			if (Candidates.IsEmpty())
+			{
+				break;   // 가해자가 빈손(또는 내고 있는 카드 한 장뿐)이면 아무 일도 일어나지 않는다
+			}
+
+			const int32 Pick = Dice ? Dice->RandomIndex(Candidates.Num()) : 0;
+			if (!Candidates.IsValidIndex(Pick))
 			{
 				break;
 			}
 
-			//	제거 전에 값을 복사해 둔다 — 배열이 줄면 참조가 무효가 된다.
-			const int32 PickedId = AttackerHand[Pick].InstanceId;
-
 			FBGCardInstance Taken;
-			if (!AttackerPS->RemoveCardFromHand(PickedId, Taken))
+			if (!AttackerPS->RemoveCardFromHand(Candidates[Pick], Taken))
 			{
 				break;
 			}

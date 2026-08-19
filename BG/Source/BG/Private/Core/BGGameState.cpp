@@ -817,7 +817,9 @@ int32 ABGGameState::GrantEphemeralCards(ABGPlayerState* PS, FName CardId, int32 
 		}
 
 		FBGCardInstance Card;
-		Card.InstanceId = NextEphemeralInstanceId--;   // 음수. 덱과 겹치지 않는다
+		//	음수. 덱과 겹치지 않는다. -2 부터 내려간다 — -1(INDEX_NONE)은 RPC 검증에서
+		//	무효 취급이라 그 카드를 내는 클라이언트가 연결 종료된다(헤더 주석 참조).
+		Card.InstanceId = NextEphemeralInstanceId--;
 		Card.CardId     = CardId;
 		Card.bEphemeral = true;
 

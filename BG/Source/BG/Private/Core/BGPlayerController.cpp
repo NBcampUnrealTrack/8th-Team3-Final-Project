@@ -104,7 +104,28 @@ void ABGPlayerController::UpdateHandInteractionLock()
 	//	Discard 페이즈는 버리기라 한도와 무관하다.
 	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
 	const int32 MySeat = GetMySeatIndex();
-	const bool bCanPlay    = IsMyTurnToPlay() && GS && GS->HasCardUsesLeft(MySeat);
+
+	//	1회성 카드(암살자)는 한도를 쓰지 않으므로 한도가 찼어도 낼 수 있다.
+	//	서버는 이미 허용하는데(HandlePlayCard) 여기서 잠가 버리면 낼 방법 자체가 없다.
+	//
+	//	⚠️ 잠금 단위가 손패 전체다. 그래서 이건 "1회성 카드가 있으니 손패를 열어 둔다" 이지
+	//	   "아무 카드나 낼 수 있다" 가 아니다 — 한도를 쓰는 카드를 내면 서버가 거부하고
+	//	   사유를 띄운다. 카드 한 장 단위로 막으려면 위젯 쪽에 per-card 잠금이 필요하다.
+	bool bHasEphemeralCard = false;
+	if (const ABGPlayerState* MyPS = GetPlayerState<ABGPlayerState>())
+	{
+		for (const FBGCardInstance& Card : MyPS->GetHand())
+		{
+			if (Card.bEphemeral)
+			{
+				bHasEphemeralCard = true;
+				break;
+			}
+		}
+	}
+
+	const bool bCanPlay    = IsMyTurnToPlay() && GS
+		&& (GS->HasCardUsesLeft(MySeat) || bHasEphemeralCard);
 	const bool bCanDiscard = IsMyTurnToDiscard();
 
 	HandWidget->SetInteractionLocked(bSelectingTarget || !(bCanPlay || bCanDiscard));
@@ -1004,6 +1025,23 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	UE_LOG(LogTemp, Log, TEXT("[BG] ServerRequestPlayCard 수신 — PC=%s Instance=%d TargetSeat=%d"),
 		*GetName(), InstanceId, TargetSeat);
 
+	//	1회성 카드(암살자)인가. **아래 사용 한도 게이트보다 먼저 알아야 한다** —
+	//	한도를 소모하지 않는 카드가 "한도 소진" 으로 거부되면 능력이 사실상 동작하지 않는다
+	//	(기본 한도가 2 라 대성공은 대개 마지막 카드에서 나온다).
+	//	카드 종류·DT Row 조회는 한참 아래에서 하지만, "한도를 쓰는가" 는 손패 인스턴스만 보면 안다.
+	bool bEphemeralCard = false;
+	if (const ABGPlayerState* MyPS = GetPlayerState<ABGPlayerState>())
+	{
+		for (const FBGCardInstance& Card : MyPS->GetHand())
+		{
+			if (Card.InstanceId == InstanceId)
+			{
+				bEphemeralCard = Card.bEphemeral;
+				break;
+			}
+		}
+	}
+
 	// ── 턴/페이즈 검증 ──
 	// 클라의 UI 표시는 힌트일 뿐이므로 서버가 반드시 다시 본다.
 	// TODO: 사거리(WeaponRange vs 거리)·턴당 BANG 한도(BangLimit)는 아직 없다.
@@ -1029,7 +1067,8 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		}
 
 		//	턴당 카드 사용 한도 (GDD §5.2). 버리기는 이 경로를 타지 않으므로 영향받지 않는다.
-		if (GBGIgnoreTurnOrder == 0 && GS && !GS->HasCardUsesLeft(MySeat))
+		//	1회성 카드는 한도를 쓰지 않으므로 한도가 찼어도 낼 수 있다 — 그게 능력의 핵심이다.
+		if (GBGIgnoreTurnOrder == 0 && GS && !bEphemeralCard && !GS->HasCardUsesLeft(MySeat))
 		{
 			const ABGPlayerState* MyPS = GetPlayerState<ABGPlayerState>();
 			BGDebug::Screen(
@@ -1083,7 +1122,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	FGameplayTag EventTag;  // 페이로드/로그용 메커니즘 태그 (Ability.*)
 	const FBGCardRow* CardRow = nullptr;   // 판정 데이터 (OutcomeWeights / OutcomeMagnitudes)
 	FName CardCardId = NAME_None;            // DT Row 이름 (장비 중복 검사용)
-	bool bEphemeralCard = false;             // 1회성 카드(암살자) — 사용한도를 쓰지 않고 소비 시 사라진다
+	//	bEphemeralCard 는 함수 앞에서 이미 구했다 — 사용 한도 게이트가 그 값을 먼저 봐야 하기 때문이다.
 	if (const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
 	{
 		const UGameInstance* GI = GetGameInstance();
@@ -1099,7 +1138,6 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 					EventTag   = Row->AbilityEventTag;
 					CardRow    = Row;        //	판정 비율·등급별 수치를 아래에서 읽는다
 					CardCardId = Card.CardId; //	장비 중복 검사용 Row 이름
-					bEphemeralCard = Card.bEphemeral;
 				}
 				break;
 			}
@@ -1414,7 +1452,21 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		MyPS->IncrementCardsUsedThisTurn();
 	}
 
+	//	낸 카드는 GA 가 도는 동안 **아직 손패에 있다**(아래 ConsumeCard 는 발동 뒤에 온다).
+	//	그사이 남의 손패를 건드리는 효과 — 지금은 도둑 강탈 — 가 이 카드를 집어갈 수 있고,
+	//	집어가면 카드가 도둑 손으로 복제된 뒤 ConsumeCard 가 실패해 버린 패로 가지 않는다.
+	//	발동은 동기로 끝나므로 이 창 밖에서는 강탈이 일어날 수 없다. 딱 이 구간만 표시한다.
+	if (MyPS)
+	{
+		MyPS->CardInFlightInstanceId = InstanceId;
+	}
+
 	const FGameplayAbilitySpecHandle ActivatedHandle = ASC->GiveAbilityAndActivateOnce(Spec, &Payload);
+
+	if (MyPS)
+	{
+		MyPS->CardInFlightInstanceId = INDEX_NONE;
+	}
 
 	// GiveAbilityAndActivateOnce 는 발동에 실패하면 ClearAbility 후 무효 핸들을 돌려준다
 	// (AbilitySystemComponent_Abilities.cpp: InternalTryActivateAbility 실패 분기).

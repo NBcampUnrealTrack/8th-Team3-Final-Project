@@ -70,6 +70,20 @@ public:
 	// (비어 있지 않다면 은닉 정보가 새고 있는 것).
 	const TArray<FBGCardInstance>& GetHand() const { return Hand; }
 
+	/**
+	 * 지금 내고 있는 카드의 InstanceId. 낸 것도 소비된 것도 아닌 **중간 상태**다.
+	 * 서버 전용이며 복제하지 않는다 — 한 호출 스택 안에서만 살아 있다.
+	 *
+	 * `ConsumeCard` 는 GA 발동이 **끝난 뒤**에 온다(발동 실패 시 카드를 손패에 되돌려야 하므로).
+	 * 그래서 GA 가 도는 동안 낸 카드가 아직 손패에 남아 있고, 그사이 **남의 손패를 건드리는
+	 * 효과**(도둑 강탈)가 그 카드를 집어갈 수 있다. 집어가면 카드가 복제되고
+	 * `ConsumeCard` 가 실패해 버린 패로 가지 않는다 → 덱 총량이 어긋난다.
+	 *
+	 * 남의 손패에서 카드를 고르는 코드는 **반드시 이 값을 후보에서 빼야 한다.**
+	 * 설정은 `HandlePlayCard` 가 `TGuardValue` 로 하므로 조기 반환에도 새지 않는다.
+	 */
+	int32 CardInFlightInstanceId = INDEX_NONE;
+
 	//	전원에게 복제되는 공개 장수. 남의 손패 크기는 이 값으로만 알 수 있다.
 	UFUNCTION(BlueprintPure, Category = "BG|Player")
 	int32 GetHandCount() const { return HandCount; }
