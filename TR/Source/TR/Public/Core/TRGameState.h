@@ -14,6 +14,8 @@ struct FTRTurretLevelRow;
 // 파츠 업그레이드 시 CurrentHP의 비율 유지를 위한 델리게이트
 DECLARE_MULTICAST_DELEGATE_OneParam(FTRPartLevelUpgraded, float /*PrevMaxHP*/);
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FTRMatchStartedChanged, bool /*bStarted*/);
+
 UCLASS()
 class TR_API ATRGameState : public AGameStateBase
 {
@@ -46,6 +48,8 @@ public:
 	// 인자는 오르기 전 최대 HP
 	FTRPartLevelUpgraded OnArmorLevelUpgraded;
 	FTRPartLevelUpgraded OnTurretLevelUpgraded;
+
+	FTRMatchStartedChanged OnMatchStartedChanged;
 
 	static constexpr int32 MaxArmorLevel = 4;
 	static constexpr int32 MaxTurretLevel = 3;
@@ -86,6 +90,9 @@ protected:
 private:
 	UFUNCTION()
 	void HandleEnemyKilled(const FVector& Location, int32 ResourceValue);
+
+	UFUNCTION()
+	void OnRep_MatchStarted();
 	
 	UPROPERTY(Replicated)
 	int32 MonsterResource = 0;
@@ -106,6 +113,6 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Level")
 	TObjectPtr<UDataTable> TurretLevelTable;   // FTRTurretLevelRow, RowName = 레벨
 
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_MatchStarted)
 	bool bMatchStarted = false;
 };

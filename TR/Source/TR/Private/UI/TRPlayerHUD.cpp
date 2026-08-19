@@ -5,11 +5,13 @@
 #include "Debug/TRGameplayLog.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Widgets/SViewport.h"
 #include "UI/TRPlayerHUDWidget.h"
 #include "UI/TRPopupStack.h"
 #include "UI/TRControlConsoleWidget.h"
+#include "Core/TRGameState.h"
 
 static UGameViewportClient* GetViewportClient(const APlayerController* PC)
 {
@@ -119,20 +121,162 @@ void ATRPlayerHUD::Tick(float DeltaSeconds)
 	PC->SetMouseLocation(SizeX / 2, SizeY / 2);
 }
 
+static constexpr int32 PreMatchZOrder = 50;
+
 void ATRPlayerHUD::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (APlayerController* PC = GetOwningPlayerController())
+	if (const APlayerController* PC = GetOwningPlayerController())
 	{
-		ApplyGameInputMode(PC);
-
 		if (UTRPopupStack* PopupStack = UTRPopupStack::Get(PC))
 		{
 			PopupStack->Reset();
 		}
+	}
 
-		bCenterMouse = true;
+	BindMatchPhase();
+}
+
+void ATRPlayerHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GameStateSetEvent.Remove(GameStateSetHandle);
+	}
+
+	if (ATRGameState* GameState = BoundGameState.Get())
+	{
+		GameState->OnMatchStartedChanged.RemoveAll(this);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void ATRPlayerHUD::BindMatchPhase()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	if (AGameStateBase* GameState = World->GetGameState())
+	{
+		HandleGameStateSet(GameState);
+		return;
+	}
+
+	// 클라이언트에서는 GameState 가 HUD 보다 늦게 도착한다.
+	GameStateSetHandle = World->GameStateSetEvent.AddUObject(this, &ATRPlayerHUD::HandleGameStateSet);
+}
+
+void ATRPlayerHUD::HandleGameStateSet(AGameStateBase* InGameState)
+{
+	// GameState 가 교체되면 여기가 다시 불린다. 핸들과 이전 구독을 먼저 떼야 통지가 겹치지 않는다.
+	if (UWorld* World = GetWorld())
+	{
+		World->GameStateSetEvent.Remove(GameStateSetHandle);
+		GameStateSetHandle.Reset();
+	}
+
+	ATRGameState* GameState = Cast<ATRGameState>(InGameState);
+	if (!IsValid(GameState))
+	{
+		ApplyMatchPhase(true);
+		return;
+	}
+
+	if (ATRGameState* Previous = BoundGameState.Get())
+	{
+		Previous->OnMatchStartedChanged.RemoveAll(this);
+	}
+
+	BoundGameState = GameState;
+	GameState->OnMatchStartedChanged.AddUObject(this, &ATRPlayerHUD::ApplyMatchPhase);
+
+	ApplyMatchPhase(GameState->IsMatchStarted());
+}
+
+void ATRPlayerHUD::ApplyMatchPhase(bool bStarted)
+{
+	EScreenPhase Wanted = bStarted ? EScreenPhase::Gameplay : EScreenPhase::PreMatch;
+
+	if (Wanted == EScreenPhase::PreMatch && !IsValid(PreMatchWidgetClass))
+	{
+		UE_LOG(LogTRGameplay, Warning, TEXT("PreMatchWidgetClass is not set"));
+		Wanted = EScreenPhase::Gameplay;
+	}
+
+	if (AppliedPhase == Wanted)
+	{
+		return;
+	}
+
+	AppliedPhase = Wanted;
+
+	if (Wanted == EScreenPhase::PreMatch)
+	{
+		ShowPreMatchScreen();
+		return;
+	}
+
+	ShowGameplayHUD();
+}
+
+void ATRPlayerHUD::ShowPreMatchScreen()
+{
+	APlayerController* PC = GetOwningPlayerController();
+
+	PreMatchWidget = CreateWidget<UUserWidget>(PC, PreMatchWidgetClass);
+	if (!IsValid(PreMatchWidget))
+	{
+		return;
+	}
+
+	if (IsValid(PlayerHUDWidget))
+	{
+		PlayerHUDWidget->RemoveFromParent();
+		PlayerHUDWidget = nullptr;
+	}
+
+	PreMatchWidget->AddToViewport(PreMatchZOrder);
+
+	PushPopupInputMode(PC, PreMatchWidget);
+	bPreMatchInputSuppressed = true;
+
+	if (IsValid(PC))
+	{
+		PC->SetIgnoreLookInput(true);
+		PC->SetIgnoreMoveInput(true);
+	}
+}
+
+void ATRPlayerHUD::ShowGameplayHUD()
+{
+	APlayerController* PC = GetOwningPlayerController();
+
+	if (IsValid(PreMatchWidget))
+	{
+		PreMatchWidget->RemoveFromParent();
+		PreMatchWidget = nullptr;
+	}
+
+	if (bPreMatchInputSuppressed)
+	{
+		bPreMatchInputSuppressed = false;
+
+		if (IsValid(PC))
+		{
+			PC->SetIgnoreLookInput(false);
+			PC->SetIgnoreMoveInput(false);
+		}
+
+		PopPopupInputMode(PC);
+	}
+	else
+	{
+		ApplyGameInputMode(PC);
 	}
 
 	if (!IsValid(PlayerHUDWidgetClass))
@@ -141,7 +285,7 @@ void ATRPlayerHUD::BeginPlay()
 		return;
 	}
 
-	PlayerHUDWidget = CreateWidget<UTRPlayerHUDWidget>(GetOwningPlayerController(), PlayerHUDWidgetClass);
+	PlayerHUDWidget = CreateWidget<UTRPlayerHUDWidget>(PC, PlayerHUDWidgetClass);
 	if (IsValid(PlayerHUDWidget))
 	{
 		PlayerHUDWidget->AddToViewport();
