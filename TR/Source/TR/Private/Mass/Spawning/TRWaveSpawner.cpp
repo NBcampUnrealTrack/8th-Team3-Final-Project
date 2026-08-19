@@ -4,6 +4,7 @@
 
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Core/TRGameState.h"
 #include "Mass/Core/TRMassParams.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Mass/Targeting/TRTargetDirectorSubsystem.h"
@@ -92,6 +93,15 @@ void ATRWaveSpawner::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ATRWaveSpawner::StartWaves()
 {
 	bRunning = true;
+
+	// 생존 수 갱신은 웨이브가 도는 동안에만 필요하다. 판 시작 전이나 종료 뒤에
+	// 계속 돌면 아무도 안 보는 값을 위해 핸들 배열만 훑게 된다.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(AliveCountTimerHandle, this,
+			&ATRWaveSpawner::PushAliveCount, FMath::Max(0.1f, AliveCountPushInterval), /*bLoop=*/true);
+	}
+
 	StartWaveNumber(FirstWaveNumber);
 }
 
@@ -102,12 +112,85 @@ void ATRWaveSpawner::StopWaves()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(RestTimerHandle);
+		World->GetTimerManager().ClearTimer(AliveCountTimerHandle);
 
 		if (UTRWaveDirectorSubsystem* Director = World->GetSubsystem<UTRWaveDirectorSubsystem>())
 		{
 			Director->StopWave();
 		}
 	}
+
+	// 진행이 멈췄다는 사실을 클라이언트도 알아야 한다. 안 그러면 HUD 가 마지막
+	// 웨이브 화면이나 다 끝난 휴식 카운트다운(0초)에 그대로 멈춰 있는다.
+	//
+	// 판 종료로 불려 온 경우에는 이 호출이 무시된다 — Over 는 종결 상태라
+	// ATRGameState::SetWavePhase 가 벗어나는 전이를 받지 않는다.
+	PushWavePhase(ETRWavePhase::None);
+}
+
+bool ATRWaveSpawner::SkipRest()
+{
+	if (!bRunning || !IsResting())
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return false;
+	}
+
+	// 남은 시간은 타이머를 지우기 전에 읽는다.
+	UE_LOG(LogTRMass, Log, TEXT("휴식을 건너뜁니다 (남은 %.1f초)."), GetRestTimeRemaining());
+
+	World->GetTimerManager().ClearTimer(RestTimerHandle);
+
+	AdvanceToNextWave();
+	return true;
+}
+
+ATRGameState* ATRWaveSpawner::GetTRGameState() const
+{
+	const UWorld* World = GetWorld();
+	return World ? World->GetGameState<ATRGameState>() : nullptr;
+}
+
+void ATRWaveSpawner::PushWavePhase(ETRWavePhase Phase, float RestDuration)
+{
+	ATRGameState* GameState = GetTRGameState();
+	if (GameState == nullptr || !HasAuthority())
+	{
+		return;
+	}
+
+	// 남은 시간이 아니라 **끝나는 시각**을 넘긴다. 남은 시간을 복제하면 복제 주기
+	// 사이에 클라이언트의 카운트다운이 계단처럼 멈춰 보인다.
+	const float RestEndServerTime = (Phase == ETRWavePhase::Rest)
+		? GetWorld()->GetTimeSeconds() + RestDuration
+		: 0.f;
+
+	GameState->SetWavePhase(Phase, RestEndServerTime);
+}
+
+void ATRWaveSpawner::PushAliveCount()
+{
+	ATRGameState* GameState = GetTRGameState();
+	if (GameState == nullptr)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	UTRWaveDirectorSubsystem* Director = World ? World->GetSubsystem<UTRWaveDirectorSubsystem>() : nullptr;
+
+	// 디렉터가 없으면 셀 방법이 없다. 0으로 덮으면 UI 가 "전멸"로 오해하므로 그대로 둔다.
+	if (Director == nullptr)
+	{
+		return;
+	}
+
+	GameState->SetAliveEnemyCount(Director->GetAliveCount());
 }
 
 void ATRWaveSpawner::StartWaveNumber(int32 WaveNumber)
@@ -121,6 +204,11 @@ void ATRWaveSpawner::StartWaveNumber(int32 WaveNumber)
 
 	World->GetTimerManager().ClearTimer(RestTimerHandle);
 
+	// 휴식 중이었는지는 단계를 덮기 **전에** 봐야 한다. 타이머만으로는 판정할 수 없다 —
+	// 정상 진행이면 이 시점엔 이미 타이머가 발화해 사라진 뒤다.
+	ATRGameState* GameState = GetTRGameState();
+	const bool bWasResting = (GameState != nullptr) && GameState->IsResting();
+
 	int32 SourceWaveNumber = WaveNumber;
 	const FTRWaveRow* Row = FindWaveRow(WaveNumber, SourceWaveNumber);
 	if (Row == nullptr)
@@ -133,45 +221,114 @@ void ATRWaveSpawner::StartWaveNumber(int32 WaveNumber)
 	CurrentWaveNumber = WaveNumber;
 	bRunning = true;
 
-	// 테이블에 그 웨이브가 없으면 마지막 행을 복리로 키워서 쓴다.
-	// 이렇게 하면 테이블에 웨이브를 무한히 나열하지 않아도 된다.
-	FTRWaveDefinition Definition = Row->Wave;
-	if (SourceWaveNumber != WaveNumber)
-	{
-		Definition = UTRWaveDirectorSubsystem::ScaleWaveForNumber(
-			Row->Wave, WaveNumber, SourceWaveNumber, ScalingStartWave, PerWaveMultiplier);
+	// 스폰 규칙과 휴식 시간을 같은 행에서 함께 읽어 둔다. 휴식은 이 웨이브가
+	// 끝난 뒤에 쓰지만, 그때 다시 찾으면 시작 때와 다른 행을 볼 수 있다.
+	CurrentRestDuration = Row->RestDuration;
 
-		UE_LOG(LogTRMass, Log, TEXT("웨이브 %d: 테이블에 없어 %d행을 스케일링 (그룹 %d개)"),
-			WaveNumber, SourceWaveNumber, Definition.Groups.Num());
+	// 휴식을 빠져나오는 모든 경로(타이머 만료, SkipRest, 테스트용 점프)가 여기를 지난다.
+	if (bWasResting)
+	{
+		OnRestEnded.Broadcast();
 	}
 
-	UE_LOG(LogTRMass, Log, TEXT("웨이브 %d 배수: 체력 ×%.2f, 피해 ×%.2f, 속도 ×%.2f, 자원 +%d"),
-		WaveNumber, Definition.StatScale.Health, Definition.StatScale.Damage,
-		Definition.StatScale.Speed, Definition.StatScale.ResourceBonus);
+	const FTRWaveDefinition Definition = ResolveWaveDefinition(*Row, WaveNumber, SourceWaveNumber);
 
-	// 이 웨이브가 쓰는 채널에 목표가 없으면 적이 스폰만 되고 움직이지 않는다.
-	// 에러 없이 조용히 실패하는 지점이라 여기서 먼저 잡는다.
-	if (const UTRTargetDirectorSubsystem* TargetDirector = World->GetSubsystem<UTRTargetDirectorSubsystem>())
-	{
-		if (!TargetDirector->HasTarget(Definition.Channel))
-		{
-			UE_LOG(LogTRMass, Error,
-				TEXT("웨이브 %d: 채널[%d]에 목표가 없습니다. 적이 스폰되어도 추적하지 않습니다. ")
-				TEXT("웨이브 테이블의 Channel과 스포너의 Target Channel이 같은지 확인하세요."),
-				WaveNumber, static_cast<int32>(Definition.Channel));
-		}
-	}
+	LogWaveStatScales(Definition, WaveNumber);
+	VerifyWaveTarget(Definition, WaveNumber);
 
 	UE_LOG(LogTRMass, Log, TEXT("웨이브 %d 시작"), WaveNumber);
 
+	// 클라이언트로 나가는 값은 여기서 갱신한다. 스폰을 시작하기 **전**이라,
+	// 첫 배치가 나오는 순간에는 이미 HUD 가 새 웨이브 번호를 들고 있다.
+	if (GameState != nullptr)
+	{
+		GameState->SetWaveNumber(WaveNumber);
+	}
+	PushWavePhase(ETRWavePhase::Combat);
+
 	OnWaveStarted.Broadcast(WaveNumber);
 	Director->StartWave(Definition, TargetActor);
+}
+
+FTRWaveDefinition ATRWaveSpawner::ResolveWaveDefinition(const FTRWaveRow& Row, int32 WaveNumber, int32 SourceWaveNumber) const
+{
+	// 행 번호가 웨이브 번호와 같으면 테이블에 그 웨이브가 있다는 뜻이다. 그대로 쓴다.
+	if (SourceWaveNumber == WaveNumber)
+	{
+		return Row.Wave;
+	}
+
+	// 없으면 마지막 행을 복리로 키워서 쓴다. 덕분에 테이블에 웨이브를 무한히 나열하지 않아도 된다.
+	FTRWaveDefinition Scaled = UTRWaveDirectorSubsystem::ScaleWaveForNumber(
+		Row.Wave, WaveNumber, SourceWaveNumber, ScalingStartWave, PerWaveMultiplier);
+
+	UE_LOG(LogTRMass, Log, TEXT("웨이브 %d: 테이블에 없어 %d행을 스케일링 (그룹 %d개)"),
+		WaveNumber, SourceWaveNumber, Scaled.Groups.Num());
+
+	return Scaled;
+}
+
+void ATRWaveSpawner::LogWaveStatScales(const FTRWaveDefinition& Definition, int32 WaveNumber) const
+{
+	UE_LOG(LogTRMass, Log, TEXT("웨이브 %d 배수(웨이브 축): 체력 ×%.2f, 피해 ×%.2f, 속도 ×%.2f, 자원 +%d"),
+		WaveNumber, Definition.TierStatScale.Health, Definition.TierStatScale.Damage,
+		Definition.TierStatScale.Speed, Definition.TierStatScale.ResourceBonus);
+
+	// 종류 축 배수는 그룹마다 다르므로 1이 아닌 것만 따로 찍는다. 로그에 안 보이면
+	// 테이블에 적어 둔 종류별 차등이 왜 안 먹는지 추적할 방법이 없다.
+	for (int32 GroupIndex = 0; GroupIndex < Definition.Groups.Num(); ++GroupIndex)
+	{
+		const FTREnemyStatScale& TypeScale = Definition.Groups[GroupIndex].TypeStatScale;
+
+		const bool bIsIdentity = FMath::IsNearlyEqual(TypeScale.Health, 1.f)
+			&& FMath::IsNearlyEqual(TypeScale.Damage, 1.f)
+			&& FMath::IsNearlyEqual(TypeScale.Speed, 1.f)
+			&& (TypeScale.ResourceBonus == 0);
+
+		if (!bIsIdentity)
+		{
+			UE_LOG(LogTRMass, Log, TEXT("  그룹 %d(%s) 배수(종류 축): 체력 ×%.2f, 피해 ×%.2f, 속도 ×%.2f, 자원 +%d"),
+				GroupIndex, LexToString(Definition.Groups[GroupIndex].EnemyType),
+				TypeScale.Health, TypeScale.Damage, TypeScale.Speed, TypeScale.ResourceBonus);
+		}
+	}
+}
+
+void ATRWaveSpawner::VerifyWaveTarget(const FTRWaveDefinition& Definition, int32 WaveNumber) const
+{
+	const UWorld* World = GetWorld();
+	const UTRTargetDirectorSubsystem* TargetDirector =
+		World ? World->GetSubsystem<UTRTargetDirectorSubsystem>() : nullptr;
+
+	if (TargetDirector == nullptr || TargetDirector->HasTarget(Definition.Channel))
+	{
+		return;
+	}
+
+	// 채널에 목표가 없으면 적이 스폰만 되고 움직이지 않는다.
+	// 에러 없이 조용히 실패하는 지점이라 여기서 먼저 잡는다.
+	UE_LOG(LogTRMass, Error,
+		TEXT("웨이브 %d: 채널[%d]에 목표가 없습니다. 적이 스폰되어도 추적하지 않습니다. ")
+		TEXT("웨이브 테이블의 Channel과 스포너의 Target Channel이 같은지 확인하세요."),
+		WaveNumber, static_cast<int32>(Definition.Channel));
 }
 
 bool ATRWaveSpawner::IsResting() const
 {
 	const UWorld* World = GetWorld();
 	return World && World->GetTimerManager().IsTimerActive(RestTimerHandle);
+}
+
+float ATRWaveSpawner::GetRestTimeRemaining() const
+{
+	const UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return 0.f;
+	}
+
+	// 타이머가 없으면 -1 이 나온다. 휴식이 아니라는 뜻이므로 0 으로 정리해서 준다.
+	return FMath::Max(0.f, World->GetTimerManager().GetTimerRemaining(RestTimerHandle));
 }
 
 const FTRWaveRow* ATRWaveSpawner::FindWaveRow(int32 WaveNumber, int32& OutSourceWaveNumber) const
@@ -231,10 +388,8 @@ void ATRWaveSpawner::HandleWaveFinished()
 
 	OnWaveCleared.Broadcast(CurrentWaveNumber);
 
-	// 방금 끝난 웨이브의 휴식 시간을 쓴다.
-	int32 SourceWaveNumber = CurrentWaveNumber;
-	const FTRWaveRow* Row = FindWaveRow(CurrentWaveNumber, SourceWaveNumber);
-	const float RestDuration = Row ? Row->RestDuration : 0.f;
+	// 방금 끝난 웨이브의 휴식 시간. 시작할 때 그 행에서 읽어 둔 값이다.
+	const float RestDuration = CurrentRestDuration;
 
 	UE_LOG(LogTRMass, Log, TEXT("웨이브 %d 배치 종료. 휴식 %.1f초"), CurrentWaveNumber, RestDuration);
 
@@ -242,9 +397,16 @@ void ATRWaveSpawner::HandleWaveFinished()
 	{
 		GetWorld()->GetTimerManager().SetTimer(RestTimerHandle, this,
 			&ATRWaveSpawner::AdvanceToNextWave, RestDuration, /*bLoop=*/false);
+
+		// 타이머를 건 **뒤에** 알린다. 받은 쪽이 곧바로 GetRestTimeRemaining 을
+		// 물어봐도 값이 나오도록.
+		PushWavePhase(ETRWavePhase::Rest, RestDuration);
+		OnRestStarted.Broadcast(RestDuration);
 	}
 	else
 	{
+		// 휴식이 0초면 Rest 단계를 거치지 않는다. 한 프레임짜리 단계를 만들면
+		// UI 가 휴식 화면을 띄웠다 지우며 깜빡인다.
 		AdvanceToNextWave();
 	}
 }

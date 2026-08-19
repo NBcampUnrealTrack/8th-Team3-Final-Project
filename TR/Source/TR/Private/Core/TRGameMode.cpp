@@ -8,6 +8,7 @@
 #include "Core/TRGameState.h"
 #include "Core/TRPlayerState.h"
 #include "Mass/Debug/TRMassDebug.h"
+#include "Mass/Spawning/TRMassSpawnerSubsystem.h"
 #include "Mass/Spawning/TRWaveSpawner.h"
 
 void ATRGameMode::PostLogin(APlayerController* NewPlayer)
@@ -42,6 +43,48 @@ bool ATRGameMode::StartMatch()
 
 	UE_LOG(LogTRMass, Log, TEXT("판 시작 — 웨이브 스포너 %d개 가동 (준비 %d/%d)"),
 		Started, State->GetReadyPlayerCount(), State->GetRequiredReadyCount());
+
+	return true;
+}
+
+bool ATRGameMode::EndMatch()
+{
+	ATRGameState* State = GetGameState<ATRGameState>();
+	if (State == nullptr || State->IsGameOver())
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return false;
+	}
+
+	// 단계를 **먼저** 바꾼다. 아래 정리 과정에서 무엇이 다시 EndMatch 를 부르더라도
+	// 위 검사에 걸려 되돌아온다.
+	State->SetWavePhase(ETRWavePhase::Over);
+
+	// 1. 새 웨이브가 더 시작되지 않게 한다.
+	int32 Stopped = 0;
+	for (TActorIterator<ATRWaveSpawner> It(World); It; ++It)
+	{
+		It->StopWaves();
+		++Stopped;
+	}
+
+	// 2. 남아 있는 적을 지운다. 스포너만 멈추면 이미 나온 적이 부서진 기차를 계속 때리고,
+	//    결과 화면 뒤에서 전투음과 폭발이 이어진다.
+	int32 Removed = 0;
+	if (UTRMassSpawnerSubsystem* Spawner = World->GetSubsystem<UTRMassSpawnerSubsystem>())
+	{
+		Removed = Spawner->DespawnChasers(0);
+	}
+
+	State->SetAliveEnemyCount(0);
+
+	UE_LOG(LogTRMass, Log, TEXT("판 종료 — 도달 웨이브 %d, 스포너 %d개 정지, 잔존 적 %d마리 정리"),
+		State->GetWaveNumber(), Stopped, Removed);
 
 	return true;
 }
