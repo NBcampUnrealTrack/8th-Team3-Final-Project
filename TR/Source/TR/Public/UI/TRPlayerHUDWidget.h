@@ -30,6 +30,9 @@ public:
 
 	void SetCrosshairVisible(bool bVisible);
 
+	// 포탑 탑승 여부에 따라 조작법 안내를 전환
+	void SetTurretControlsVisible(bool bMounted);
+
 protected:
 	virtual void NativeConstruct() override;
 
@@ -78,6 +81,20 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UWidget> CrossHair;
 	
+	// 조작법 안내
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UWidget> Repair;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UWidget> Cancel;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UWidget> Move;
+
+	// 조작법 안내 — 포탑 탑승 중
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UWidget> Fire;
+
 	// 수리 (좌클릭)
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UWidget> PlayerInteraction_Repair;

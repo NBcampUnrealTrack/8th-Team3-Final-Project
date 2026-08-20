@@ -423,6 +423,8 @@ void UTRTurretControlComponent::OnRep_MountedTurret()
 
 	if (UTRPlayerHUDWidget* HUDWidget = ATRPlayerHUD::FindPlayerHUDWidget(OwnerPawn))
 	{
-		HUDWidget->SetCrosshairVisible(IsValid(MountedTurret));
+		const bool bMounted = IsValid(MountedTurret);
+		HUDWidget->SetCrosshairVisible(bMounted);
+		HUDWidget->SetTurretControlsVisible(bMounted);
 	}
 }
