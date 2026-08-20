@@ -7,6 +7,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Rendering/DrawElements.h"
+#include "Types/SlateVector2.h"
 #include "Mass/Radar/TRRadarSubsystem.h"
 #include "Train/TRTrain.h"
 
@@ -31,8 +32,24 @@ namespace
 	 */
 	constexpr double MinPulseIntervalSeconds = 0.05;
 
+	/** 파형 이동 시간의 하한. 0이면 진행도 계산이 0으로 나눠진다. */
+	constexpr double MinPulseTravelSeconds = 0.05;
+
+	/**
+	 * 선 두께의 하한.
+	 *
+	 * 0 이하는 Slate 에서 정의되지 않은 취급이라 렌더러마다 다르게 나온다.
+	 * 두께 값은 전부 블루프린트에서도 바뀔 수 있으므로 그리기 직전에 눌러 둔다.
+	 */
+	constexpr float MinLineThickness = 0.1f;
+
 	/** 브러시 없는 파형의 링 사이 간격(진행도 기준). */
 	constexpr double PulseTrailSpacing = 0.045;
+
+	FVector2f ToSlate(const FVector2D& Value)
+	{
+		return UE::Slate::CastToVector2f(Value);
+	}
 
 	/**
 	 * 반지름에 맞는 분할 수. 작은 레이더에 48각형을 그릴 이유가 없다.
@@ -42,23 +59,6 @@ namespace
 	int32 CircleSegmentsFor(double Radius)
 	{
 		return FMath::Clamp(FMath::RoundToInt(Radius / 6.0), 12, 48);
-	}
-
-	/** 원 위의 점들. 마지막에 첫 점을 다시 넣어 닫는다. */
-	TArray<FVector2f> MakeCirclePoints(const FVector2D& Center, double Radius, int32 Segments)
-	{
-		TArray<FVector2f> Points;
-		Points.Reserve(Segments + 1);
-
-		for (int32 Index = 0; Index <= Segments; ++Index)
-		{
-			const double Angle = (2.0 * UE_DOUBLE_PI * Index) / Segments;
-			Points.Emplace(
-				static_cast<float>(Center.X + FMath::Sin(Angle) * Radius),
-				static_cast<float>(Center.Y - FMath::Cos(Angle) * Radius));
-		}
-
-		return Points;
 	}
 
 	/**
@@ -71,12 +71,59 @@ namespace
 	{
 		return FVector2D(FMath::Sin(AngleRad), -FMath::Cos(AngleRad));
 	}
+
+	/** 같은 규칙의 역방향. 화면 오프셋이 가리키는 방위각을 돌려준다. */
+	float ScreenAngleFromDirection(const FVector2D& Direction)
+	{
+		return FMath::Atan2(Direction.X, -Direction.Y);
+	}
+
+	/** 크기를 지정한 지점 중앙에 놓는 그리기 영역. 브러시를 그릴 때마다 필요하다. */
+	FPaintGeometry CenteredGeometry(const FGeometry& Geometry, const FVector2D& Center, const FVector2D& Size)
+	{
+		return Geometry.ToPaintGeometry(Size, FSlateLayoutTransform(Center - Size * 0.5));
+	}
+
+	void DrawSegment(const FTRRadarPaintContext& Context, int32 Layer,
+		const FVector2D& From, const FVector2D& To, const FLinearColor& Tint, float Thickness)
+	{
+		FSlateDrawElement::MakeLines(Context.Out, Layer, Context.Geometry.ToPaintGeometry(),
+			TArray<FVector2f>{ ToSlate(From), ToSlate(To) }, ESlateDrawEffect::None,
+			Tint, /*bAntialias=*/true, FMath::Max(Thickness, MinLineThickness));
+	}
+
+	void DrawCircle(const FTRRadarPaintContext& Context, int32 Layer,
+		double Radius, const FLinearColor& Tint, float Thickness)
+	{
+		const int32 Segments = CircleSegmentsFor(Radius);
+
+		TArray<FVector2f> Points;
+		Points.Reserve(Segments + 1);
+
+		// 마지막에 첫 점을 다시 넣어 닫는다.
+		for (int32 Index = 0; Index <= Segments; ++Index)
+		{
+			const double Angle = (2.0 * UE_DOUBLE_PI * Index) / Segments;
+			Points.Emplace(
+				static_cast<float>(Context.Center.X + FMath::Sin(Angle) * Radius),
+				static_cast<float>(Context.Center.Y - FMath::Cos(Angle) * Radius));
+		}
+
+		FSlateDrawElement::MakeLines(Context.Out, Layer, Context.Geometry.ToPaintGeometry(),
+			MoveTemp(Points), ESlateDrawEffect::None,
+			Tint, /*bAntialias=*/true, FMath::Max(Thickness, MinLineThickness));
+	}
 }
 
 bool UTRRadarWidget::HasAuthoredArt(const FSlateBrush& Brush)
 {
 	return Brush.GetResourceObject() != nullptr
 		|| Brush.DrawAs == ESlateBrushDrawType::RoundedBox;
+}
+
+double UTRRadarWidget::GetPulseTravelSeconds() const
+{
+	return FMath::Max(static_cast<double>(PulseTravelSeconds), MinPulseTravelSeconds);
 }
 
 AActor* UTRRadarWidget::ResolveCenterActor() const
@@ -100,10 +147,18 @@ AActor* UTRRadarWidget::ResolveCenterActor() const
 	const APlayerController* PC = GetOwningPlayer();
 	APawn* PawnFallback = PC ? PC->GetPawn() : nullptr;
 
+	const double Now = World->GetTimeSeconds();
+
+	// 월드 시간이 되감기면(레벨 재시작 등) 예약이 먼 미래에 남아 탐색이 몇 분씩
+	// 막힌다. 한 번의 쿨다운보다 더 먼 예약은 그 이유로만 생길 수 있으므로 버린다.
+	if (Now + TrainSearchCooldownSeconds < NextTrainSearchTime)
+	{
+		NextTrainSearchTime = Now;
+	}
+
 	// 실패한 탐색에 쿨다운을 건다. 기차가 없는 맵에서 이걸 매 프레임 돌리면
 	// 레벨 전체 훑기가 게임 스레드에 그대로 얹힌다. 그리기는 프레임당 여러 번
 	// 불릴 수도 있어서 실제로는 더 나쁘다.
-	const double Now = World->GetTimeSeconds();
 	if (Now < NextTrainSearchTime)
 	{
 		return PawnFallback;
@@ -172,8 +227,7 @@ double UTRRadarWidget::RollPulseInterval(double TravelSeconds) const
 		Interval = FMath::Max(Interval, TravelSeconds);
 	}
 
-	// **0 간격은 무한 루프다.** 아래 따라잡기 루프가 시간을 전혀 못 밀어낸다.
-	// 블루프린트에서도 값을 넣을 수 있으므로 바닥은 여기서 깐다.
+	// **0 간격은 무한 루프다.** 따라잡기 루프가 시간을 전혀 못 밀어낸다.
 	return FMath::Max(Interval, MinPulseIntervalSeconds);
 }
 
@@ -192,7 +246,7 @@ void UTRRadarWidget::PushPulseStart(double StartTime) const
 
 void UTRRadarWidget::AdvancePulseSchedule(double Now) const
 {
-	const double Travel = FMath::Max(static_cast<double>(PulseTravelSeconds), 0.05);
+	const double Travel = GetPulseTravelSeconds();
 
 	if (!bPulseScheduleReady)
 	{
@@ -210,10 +264,28 @@ void UTRRadarWidget::AdvancePulseSchedule(double Now) const
 	}
 
 	// 시간이 크게 튀었으면 따라잡지 않는다. 그 사이의 파형은 아무도 못 봤다.
-	if (Now > NextPulseStartTime + PulseCatchUpLimitSeconds)
+	//
+	// **뒤로 간 경우도 같이 막는다.** 레벨을 다시 시작하면 월드 시간이 0으로
+	// 돌아가는데, 예약이 미래에 남아 있으면 따라잡기 루프가 아예 안 돌고
+	// 기록된 시작 시각도 전부 미래가 된다. 그러면 링도 안 그려지고 점도
+	// 각성하지 않아서, 시간이 따라붙을 때까지 레이더가 죽은 것처럼 보인다.
+	const bool bTimeWentBackward = (PulseStartCount > 0) && (Now < PulseStartTimes[0]);
+
+	if (bTimeWentBackward || Now > NextPulseStartTime + PulseCatchUpLimitSeconds)
 	{
 		PulseStartCount = 0;
+
+		// **직전에 한 번 훑고 지나간 것으로 둔다.**
+		//
+		// 이 리셋은 위젯이 한동안 숨겨졌다가 다시 보일 때 걸린다(메뉴 중 HUD를
+		// 감추는 등). 기록만 비우면 모든 점이 최소 불투명도로 떨어졌다가 새 링에
+		// 하나씩 복구되어, 다시 보이는 순간 화면이 통째로 어두워진다.
+		//
+		// 처음 켤 때(bPulseScheduleReady 분기)는 이걸 안 한다. 그때는 정말로
+		// 아직 아무것도 훑지 않았고, 첫 링이 훑어 나가는 그림이 맞다.
+		PushPulseStart(Now - Travel);
 		PushPulseStart(Now);
+
 		NextPulseStartTime = Now + RollPulseInterval(Travel);
 
 		return;
@@ -246,26 +318,15 @@ bool UTRRadarWidget::TryGetLastPulseHitTime(double Now, double NormalizedDistanc
 	return false;
 }
 
-void UTRRadarWidget::PaintGrid(const FGeometry& Geometry, FSlateWindowElementList& Out, int32 Layer,
-	const FVector2D& Center, double RadiusPx) const
+void UTRRadarWidget::PaintGrid(const FTRRadarPaintContext& Context, int32 Layer) const
 {
-	const FPaintGeometry PaintGeometry = Geometry.ToPaintGeometry();
-
-	// 0 이하 두께는 Slate 에서 정의되지 않은 취급이라 렌더러마다 다르게 나온다.
-	// 블루프린트로도 바꿀 수 있으므로 여기서 바닥을 깐다.
-	const float LineThickness = FMath::Max(GridThickness, 0.1f);
-
 	// 바깥 테두리를 포함해 균등 간격으로 나눈다. RangeRingCount 가 2면
-	// 1/3, 2/3, 그리고 사거리 경계에 하나씩 놓인다. 상한을 두는 이유는
+	// 1/3, 2/3, 그리고 사거리 경계에 하나씩 놓인다. 상한이 있는 이유는
 	// 블루프린트가 큰 값을 넣으면 링 하나당 드로우 콜이 그대로 늘기 때문이다.
-	const int32 RingCount = FMath::Clamp(RangeRingCount, 0, 16) + 1;
+	const int32 RingCount = FMath::Clamp(RangeRingCount, 0, 8) + 1;
 	for (int32 Ring = 1; Ring <= RingCount; ++Ring)
 	{
-		const double Radius = (RadiusPx * Ring) / RingCount;
-
-		FSlateDrawElement::MakeLines(Out, Layer, PaintGeometry,
-			MakeCirclePoints(Center, Radius, CircleSegmentsFor(Radius)), ESlateDrawEffect::None,
-			GridTint, /*bAntialias=*/true, LineThickness);
+		DrawCircle(Context, Layer, (Context.Radius * Ring) / RingCount, GridTint, GridThickness);
 	}
 
 	if (!bDrawCrosshair)
@@ -273,95 +334,75 @@ void UTRRadarWidget::PaintGrid(const FGeometry& Geometry, FSlateWindowElementLis
 		return;
 	}
 
-	const float CenterX = static_cast<float>(Center.X);
-	const float CenterY = static_cast<float>(Center.Y);
-	const float Extent = static_cast<float>(RadiusPx);
+	const FVector2D Horizontal(Context.Radius, 0.0);
+	const FVector2D Vertical(0.0, Context.Radius);
 
-	FSlateDrawElement::MakeLines(Out, Layer, PaintGeometry,
-		TArray<FVector2f>{ FVector2f(CenterX - Extent, CenterY), FVector2f(CenterX + Extent, CenterY) },
-		ESlateDrawEffect::None, GridTint, /*bAntialias=*/true, LineThickness);
-
-	FSlateDrawElement::MakeLines(Out, Layer, PaintGeometry,
-		TArray<FVector2f>{ FVector2f(CenterX, CenterY - Extent), FVector2f(CenterX, CenterY + Extent) },
-		ESlateDrawEffect::None, GridTint, /*bAntialias=*/true, LineThickness);
+	DrawSegment(Context, Layer, Context.Center - Horizontal, Context.Center + Horizontal, GridTint, GridThickness);
+	DrawSegment(Context, Layer, Context.Center - Vertical, Context.Center + Vertical, GridTint, GridThickness);
 }
 
-void UTRRadarWidget::PaintSweep(const FGeometry& Geometry, FSlateWindowElementList& Out, int32 Layer,
-	const FVector2D& Center, double RadiusPx, float SweepAngleRad) const
+void UTRRadarWidget::PaintSweep(const FTRRadarPaintContext& Context, int32 Layer, float SweepAngleRad) const
 {
 	// 브러시가 있으면 그림 한 장을 돌리는 게 항상 낫다. 아래의 선 부채꼴은
 	// 애셋 없이도 형태가 보이게 하려는 대용품이다.
 	if (HasAuthoredArt(SweepBrush))
 	{
-		const FVector2D BrushSize(RadiusPx * 2.0, RadiusPx * 2.0);
-		const FPaintGeometry SweepGeometry = Geometry.ToPaintGeometry(
-			BrushSize, FSlateLayoutTransform(Center - BrushSize * 0.5));
+		const FVector2D BrushSize(Context.Radius * 2.0, Context.Radius * 2.0);
 
-		FSlateDrawElement::MakeRotatedBox(Out, Layer, SweepGeometry, &SweepBrush,
+		FSlateDrawElement::MakeRotatedBox(Context.Out, Layer,
+			CenteredGeometry(Context.Geometry, Context.Center, BrushSize), &SweepBrush,
 			ESlateDrawEffect::None, SweepAngleRad, TOptional<FVector2f>(),
 			FSlateDrawElement::RelativeToElement, PingTint);
 
 		return;
 	}
 
-	const FPaintGeometry PaintGeometry = Geometry.ToPaintGeometry();
-
-	// 세 값 모두 블루프린트에서 바뀔 수 있다. 분할 수는 그대로 드로우 콜이 되고,
-	// 잔광 폭이 한 바퀴를 넘으면 자기 자신을 덮어 스윕이 원판처럼 보인다.
+	// 분할 수는 그대로 드로우 콜이 되고, 잔광 폭이 한 바퀴를 넘으면 자기 자신을
+	// 덮어 스윕이 원판처럼 보인다. 둘 다 블루프린트에서 바뀔 수 있다.
 	const int32 Segments = FMath::Clamp(SweepTrailSegments, 1, 64);
 	const float TrailRad = FMath::DegreesToRadians(FMath::Clamp(SweepTrailDegrees, 1.f, 180.f));
-	const float LineThickness = FMath::Max(SweepThickness, 0.1f);
 
 	// 선두에서 뒤로 갈수록 어두워진다. 잔광이 남은 것처럼 읽히는 최소한의 장치다.
 	for (int32 Index = 0; Index < Segments; ++Index)
 	{
 		const float Ratio = static_cast<float>(Index) / static_cast<float>(Segments);
-		const float Angle = SweepAngleRad - TrailRad * Ratio;
 
 		FLinearColor LineTint = PingTint;
 		LineTint.A *= (1.f - Ratio);
 
-		const FVector2D Edge = Center + ScreenDirectionFromAngle(Angle) * RadiusPx;
+		const FVector2D Edge = Context.Center
+			+ ScreenDirectionFromAngle(SweepAngleRad - TrailRad * Ratio) * Context.Radius;
 
-		FSlateDrawElement::MakeLines(Out, Layer, PaintGeometry,
-			TArray<FVector2f>{
-				FVector2f(static_cast<float>(Center.X), static_cast<float>(Center.Y)),
-				FVector2f(static_cast<float>(Edge.X), static_cast<float>(Edge.Y)) },
-			ESlateDrawEffect::None, LineTint, /*bAntialias=*/true, LineThickness);
+		DrawSegment(Context, Layer, Context.Center, Edge, LineTint, SweepThickness);
 	}
 }
 
-void UTRRadarWidget::PaintPulses(const FGeometry& Geometry, FSlateWindowElementList& Out, int32 Layer,
-	const FVector2D& Center, double RadiusPx, double Now) const
+void UTRRadarWidget::PaintPulses(const FTRRadarPaintContext& Context, int32 Layer) const
 {
-	const double Travel = FMath::Max(static_cast<double>(PulseTravelSeconds), 0.05);
+	const double Travel = GetPulseTravelSeconds();
 	const int32 DrawLimit = FMath::Clamp(MaxConcurrentPulses, 1, TrackedPulseCount);
 
 	int32 Drawn = 0;
 	for (int32 Index = 0; Index < PulseStartCount && Drawn < DrawLimit; ++Index)
 	{
-		const double Progress = (Now - PulseStartTimes[Index]) / Travel;
+		// 이미 가장자리를 넘은 파형은 그려지지 않지만 목록에서 빼지도 않는다 —
+		// 그리기는 끝났어도 점을 각성시킨 기록으로는 남는다.
+		const double Progress = (Context.Now - PulseStartTimes[Index]) / Travel;
 
-		// 아직 시작 전이거나 이미 가장자리를 넘은 파형은 건너뛴다. 목록에서
-		// 빼지는 않는다 — 그리기는 끝났어도 점을 각성시킨 기록으로는 남는다.
-		if (Progress < 0.0 || Progress > 1.0)
+		if (PaintPulseRing(Context, Layer, Progress))
 		{
-			continue;
+			++Drawn;
 		}
-
-		PaintPulseRing(Geometry, Out, Layer, Center, RadiusPx, Progress);
-		++Drawn;
 	}
 }
 
-void UTRRadarWidget::PaintPulseRing(const FGeometry& Geometry, FSlateWindowElementList& Out, int32 Layer,
-	const FVector2D& Center, double RadiusPx, double Progress) const
+bool UTRRadarWidget::PaintPulseRing(const FTRRadarPaintContext& Context, int32 Layer, double Progress) const
 {
 	// 쉬는 중이면 그릴 것이 없다. 이게 파형의 절반이다 — 아무것도 없는 시간이
 	// 있어야 다음 파형이 사건으로 읽힌다.
 	if (Progress < 0.0 || Progress > 1.0)
 	{
-		return;
+		return false;
 	}
 
 	// 가장자리에 가까워질수록 옅어진다. 끝에서 뚝 끊기면 벽에 부딪힌 것처럼 보인다.
@@ -369,24 +410,20 @@ void UTRRadarWidget::PaintPulseRing(const FGeometry& Geometry, FSlateWindowEleme
 
 	if (HasAuthoredArt(PulseBrush))
 	{
-		const double Diameter = FMath::Max(RadiusPx * 2.0 * Progress, 1.0);
+		const double Diameter = FMath::Max(Context.Radius * 2.0 * Progress, 1.0);
 		const FVector2D BrushSize(Diameter, Diameter);
-
-		const FPaintGeometry PulseGeometry = Geometry.ToPaintGeometry(
-			BrushSize, FSlateLayoutTransform(Center - BrushSize * 0.5));
 
 		FLinearColor Tint = PingTint;
 		Tint.A *= EdgeFade;
 
-		FSlateDrawElement::MakeBox(Out, Layer, PulseGeometry, &PulseBrush,
+		FSlateDrawElement::MakeBox(Context.Out, Layer,
+			CenteredGeometry(Context.Geometry, Context.Center, BrushSize), &PulseBrush,
 			ESlateDrawEffect::None, Tint);
 
-		return;
+		return true;
 	}
 
-	const FPaintGeometry PaintGeometry = Geometry.ToPaintGeometry();
 	const int32 Rings = FMath::Clamp(PulseTrailRings, 1, 8);
-	const float LineThickness = FMath::Max(PulseThickness, 0.1f);
 
 	// 선두 링 뒤로 몇 겹을 더 깔아 띠처럼 보이게 한다. 뒤쪽일수록 옅다.
 	for (int32 Ring = 0; Ring < Rings; ++Ring)
@@ -397,118 +434,45 @@ void UTRRadarWidget::PaintPulseRing(const FGeometry& Geometry, FSlateWindowEleme
 			break;
 		}
 
-		const double Radius = RadiusPx * RingProgress;
-
 		FLinearColor RingTint = PingTint;
 		RingTint.A *= EdgeFade * (1.f - static_cast<float>(Ring) / static_cast<float>(Rings));
 
-		FSlateDrawElement::MakeLines(Out, Layer, PaintGeometry,
-			MakeCirclePoints(Center, Radius, CircleSegmentsFor(Radius)), ESlateDrawEffect::None,
-			RingTint, /*bAntialias=*/true, LineThickness);
+		DrawCircle(Context, Layer, Context.Radius * RingProgress, RingTint, PulseThickness);
 	}
+
+	return true;
 }
 
-int32 UTRRadarWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
-	const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId,
-	const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+void UTRRadarWidget::PaintBlips(const FTRRadarPaintContext& Context, int32 Layer,
+	const UTRRadarSubsystem& Radar, float SweepAngleRad, bool bFading) const
 {
-	LayerId = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId,
-		InWidgetStyle, bParentEnabled);
-
-	const UWorld* World = GetWorld();
-	const UTRRadarSubsystem* Radar = World ? World->GetSubsystem<UTRRadarSubsystem>() : nullptr;
-	if (Radar == nullptr)
-	{
-		return LayerId;
-	}
-
-	FVector ViewCenter = FVector::ZeroVector;
-	float ViewYaw = 0.f;
-	if (!ResolveViewPoint(ViewCenter, ViewYaw))
-	{
-		return LayerId;
-	}
-
-	const FVector2D LocalSize = AllottedGeometry.GetLocalSize();
-	const FVector2D WidgetCenter = LocalSize * 0.5;
-
-	// 원형 레이더라 짧은 변이 반지름을 정한다. 가로로 늘어난 칸에 넣어도
-	// 점이 밖으로 새지 않는다.
-	const double RadiusPx = FMath::Min(WidgetCenter.X, WidgetCenter.Y);
-
-	// 레이아웃이 아직 안 잡힌 프레임에는 크기가 0이거나, 드물게 유한하지 않은
-	// 값이 온다(애니메이션 중인 스케일이 0으로 나눠질 때 등). 그대로 그리면
-	// 화면 전체를 덮는 쓰레기 사각형이 나온다.
-	if (!FMath::IsFinite(RadiusPx) || RadiusPx <= 0.0 || RadarRangeCm <= 0.f)
-	{
-		return LayerId;
-	}
-
-	const double PixelPerCm = RadiusPx / RadarRangeCm;
-
-	const int32 GridLayer = LayerId + 1;
-	const int32 PingLayer = LayerId + 2;
-	const int32 BlipLayer = LayerId + 3;
-	const int32 CenterLayer = LayerId + 4;
-
-	if (bDrawGrid)
-	{
-		PaintGrid(AllottedGeometry, OutDrawElements, GridLayer, WidgetCenter, RadiusPx);
-	}
-
-	// 게임 시간을 쓴다. 일시정지 중에는 핑도 멈추는 편이 맞다 —
-	// 도는 스윕이나 퍼지는 파형은 "정보가 갱신되는 중"이라는 신호인데,
-	// 멈춘 게임에서는 거짓말이다.
-	const double Now = World->GetTimeSeconds();
-	const float TwoPi = 2.f * UE_PI;
-
-	float SweepAngle = 0.f;
-
-	switch (PingMode)
-	{
-	case ETRRadarPingMode::Sweep:
-		if (SweepPeriodSeconds > 0.f)
-		{
-			SweepAngle = FMath::Fmod(static_cast<float>(Now) / SweepPeriodSeconds, 1.f) * TwoPi;
-			PaintSweep(AllottedGeometry, OutDrawElements, PingLayer, WidgetCenter, RadiusPx, SweepAngle);
-		}
-		break;
-
-	case ETRRadarPingMode::Pulse:
-		AdvancePulseSchedule(Now);
-		PaintPulses(AllottedGeometry, OutDrawElements, PingLayer, WidgetCenter, RadiusPx, Now);
-		break;
-
-	default:
-		break;
-	}
-
-	const bool bFading = bFadeBlipsWithPing && PingMode != ETRRadarPingMode::None;
-
 	// 수집이 멈춘 뒤에도 배열은 마지막 내용을 들고 있다. 그 점들은 이제 아무
 	// 뜻도 없으므로 그리지 않는다. 격자·핑·중심 표식은 계속 그린다 —
 	// 레이더 자체가 사라지는 것보다 "적이 안 잡힌다"가 정직한 표현이다.
-	const TArray<FTRRadarBlip>& Blips = Radar->GetBlips();
-	const int32 BlipCount = Radar->IsDataFresh()
+	const TArray<FTRRadarBlip>& Blips = Radar.GetBlips();
+	const int32 BlipCount = Radar.IsDataFresh()
 		? FMath::Min(Blips.Num(), FMath::Max(MaxDrawnBlips, 1))
 		: 0;
+
+	const double Travel = GetPulseTravelSeconds();
+	const float Power = FMath::Max(BlipFadePower, 0.01f);
 
 	for (int32 BlipIndex = 0; BlipIndex < BlipCount; ++BlipIndex)
 	{
 		const FTRRadarBlip& Blip = Blips[BlipIndex];
 
 		// 1) 중심 기준 평면 오프셋. 높이는 버린다 — 탑다운은 평면 정보다.
-		const FVector Delta = Blip.Location - ViewCenter;
+		const FVector Delta = Blip.Location - Context.ViewCenter;
 		FVector2D Planar(Delta.X, Delta.Y);
 
 		// 2) 월드 벡터를 기준 방향으로 되돌린다. Yaw 가 0이면 항등이다.
-		if (ViewYaw != 0.f)
+		if (Context.ViewYaw != 0.f)
 		{
-			Planar = Planar.GetRotated(-ViewYaw);
+			Planar = Planar.GetRotated(-Context.ViewYaw);
 		}
 
 		// 3) 월드(X 앞, Y 오른쪽) → 화면(X 오른쪽, Y 아래). Y 부호가 뒤집힌다.
-		FVector2D ScreenOffset(Planar.Y * PixelPerCm, -Planar.X * PixelPerCm);
+		FVector2D ScreenOffset(Planar.Y * Context.PixelPerCm, -Planar.X * Context.PixelPerCm);
 
 		const double Distance = ScreenOffset.Size();
 
@@ -519,11 +483,7 @@ int32 UTRRadarWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Allot
 			continue;
 		}
 
-		const bool bOffRange = (Distance > RadiusPx);
-
-		// 페이드는 원래 거리로 판단한다. 가장자리로 끌어당긴 뒤의 거리를 쓰면
-		// 사거리 밖 적이 전부 같은 시점에 깜빡여서 한 덩어리로 보인다.
-		const double TrueDistance = Distance;
+		const bool bOffRange = (Distance > Context.Radius);
 
 		if (bOffRange)
 		{
@@ -533,35 +493,36 @@ int32 UTRRadarWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Allot
 			}
 
 			// 가장자리로 끌어당긴다. 거리는 잃지만 방향은 남는다.
-			ScreenOffset *= RadiusPx / Distance;
+			ScreenOffset *= Context.Radius / Distance;
 		}
 
 		const FTRRadarBlipStyle* Style = BlipStyles.Find(Blip.Type);
 		const FTRRadarBlipStyle& Resolved = (Style != nullptr) ? *Style : DefaultBlipStyle;
 
+		// 크기가 0 이하인 스타일은 그릴 것이 없다. Slate 에 넘기면 조용히
+		// 무시되지만, 드로우 엘리먼트만 쌓이므로 여기서 끊는다.
+		if (Resolved.Size.X <= 0.0 || Resolved.Size.Y <= 0.0)
+		{
+			continue;
+		}
+
 		FLinearColor Tint = Resolved.Tint;
 
 		if (bFading)
 		{
-			// 지수는 블루프린트에서도 쓸 수 있으므로 여기서 한 번 더 막는다.
-			// 0이면 Pow 가 항상 1을 돌려줘 페이드가 조용히 사라지고, 음수면
-			// 밑이 0에 가까울 때 무한대가 나온다.
-			const float Power = FMath::Max(BlipFadePower, 0.01f);
 			float Freshness = 1.f;
 
 			if (PingMode == ETRRadarPingMode::Sweep)
 			{
 				// 스윕이 이 방위를 지난 뒤 얼마나 돌았는가. 등속 회전이라
 				// 각도 차이가 곧 경과 시간이고, 그래서 기록이 필요 없다.
-				const float BlipAngle = FMath::Atan2(ScreenOffset.X, -ScreenOffset.Y);
-
-				float Behind = FMath::Fmod(SweepAngle - BlipAngle, TwoPi);
+				float Behind = FMath::Fmod(SweepAngleRad - ScreenAngleFromDirection(ScreenOffset), UE_TWO_PI);
 				if (Behind < 0.f)
 				{
-					Behind += TwoPi;
+					Behind += UE_TWO_PI;
 				}
 
-				Freshness = FMath::Pow(1.f - (Behind / TwoPi), Power);
+				Freshness = FMath::Pow(1.f - (Behind / UE_TWO_PI), Power);
 			}
 			else
 			{
@@ -571,14 +532,16 @@ int32 UTRRadarWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Allot
 				// 파형이 겹칠 수 있으므로 살아 있는 것 중 **가장 최근에 지나간**
 				// 링을 찾아야 한다. 최신 하나만 보면, 그 링이 아직 여기까지
 				// 오지 않았을 때 이미 지나간 앞 링의 각성을 놓친다.
-				const double Travel = FMath::Max(static_cast<double>(PulseTravelSeconds), 0.05);
-				const double Normalized = FMath::Clamp(TrueDistance / RadiusPx, 0.0, 1.0);
+				//
+				// 사거리 밖은 거리가 1로 잘리므로 전부 같은 순간에 깨어난다.
+				// 가장자리에 몰려 있는 점들이라 그 편이 오히려 덜 어수선하다.
+				const double Normalized = FMath::Clamp(Distance / Context.Radius, 0.0, 1.0);
 
 				double HitTime = 0.0;
-				if (TryGetLastPulseHitTime(Now, Normalized, Travel, HitTime))
+				if (TryGetLastPulseHitTime(Context.Now, Normalized, Travel, HitTime))
 				{
 					const double FadeSeconds = FMath::Max(static_cast<double>(BlipFadeSeconds), 0.05);
-					const double Age = FMath::Clamp((Now - HitTime) / FadeSeconds, 0.0, 1.0);
+					const double Age = FMath::Clamp((Context.Now - HitTime) / FadeSeconds, 0.0, 1.0);
 
 					Freshness = FMath::Pow(1.f - static_cast<float>(Age), Power);
 				}
@@ -592,43 +555,136 @@ int32 UTRRadarWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Allot
 			Tint.A *= FMath::Clamp(FMath::Max(Freshness, MinBlipOpacity), 0.f, 1.f);
 		}
 
-		// 크기가 0 이하인 스타일은 그릴 것이 없다. Slate 에 넘기면 조용히
-		// 무시되지만, 드로우 엘리먼트만 쌓이므로 여기서 끊는다.
-		if (Resolved.Size.X <= 0.0 || Resolved.Size.Y <= 0.0)
-		{
-			continue;
-		}
+		const FPaintGeometry BlipGeometry = CenteredGeometry(
+			Context.Geometry, Context.Center + ScreenOffset, Resolved.Size);
 
-		const FVector2D DrawPos = WidgetCenter + ScreenOffset - Resolved.Size * 0.5;
-		const FPaintGeometry BlipGeometry = AllottedGeometry.ToPaintGeometry(
-			Resolved.Size, FSlateLayoutTransform(DrawPos));
-
-		const bool bUseArrow = bOffRange && HasAuthoredArt(OffRangeBrush);
-		if (bUseArrow)
+		if (bOffRange && HasAuthoredArt(OffRangeBrush))
 		{
 			// 위(-Y)를 향하는 브러시를 바깥 방향으로 돌린다.
-			const FVector2D Direction = ScreenOffset / RadiusPx;
-			const float Angle = FMath::Atan2(Direction.X, -Direction.Y);
+			const float Angle = ScreenAngleFromDirection(ScreenOffset / Context.Radius);
 
-			FSlateDrawElement::MakeRotatedBox(OutDrawElements, BlipLayer, BlipGeometry,
+			FSlateDrawElement::MakeRotatedBox(Context.Out, Layer, BlipGeometry,
 				&OffRangeBrush, ESlateDrawEffect::None, Angle, TOptional<FVector2f>(),
 				FSlateDrawElement::RelativeToElement, Tint);
 		}
 		else
 		{
-			FSlateDrawElement::MakeBox(OutDrawElements, BlipLayer, BlipGeometry,
+			FSlateDrawElement::MakeBox(Context.Out, Layer, BlipGeometry,
 				&Resolved.Brush, ESlateDrawEffect::None, Tint);
 		}
+	}
+}
+
+int32 UTRRadarWidget::NativePaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry,
+	const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId,
+	const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
+{
+	LayerId = Super::NativePaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId,
+		InWidgetStyle, bParentEnabled);
+
+	// 월드가 없으면 시각도 서브시스템도 없어서 그릴 근거 자체가 없다.
+	const UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return LayerId;
+	}
+
+	// 서브시스템이 없는 것은 "적 목록을 못 얻는다"는 뜻일 뿐이다. 레이더 틀은
+	// 그대로 그린다 — 아래의 중심 액터와 같은 이유다.
+	const UTRRadarSubsystem* Radar = World->GetSubsystem<UTRRadarSubsystem>();
+
+	// 중심 액터가 필요한 건 **점뿐**이다. 격자·핑·기차 표식은 레이더 자체의
+	// 모양이라 중심을 못 구해도 그린다.
+	//
+	// 여기서 통째로 반환하면 UMG 디자이너에서 위젯이 빈 칸으로 보인다.
+	// 프리뷰 월드에는 기차도 폰도 없기 때문이다. 그러면 색·두께·링 개수를
+	// 플레이해야만 확인할 수 있고, 런타임에도 기차가 스폰되기 전 몇 프레임
+	// 레이더 테두리가 깜빡인다.
+	FVector ViewCenter = FVector::ZeroVector;
+	float ViewYaw = 0.f;
+	const bool bHasViewPoint = ResolveViewPoint(ViewCenter, ViewYaw);
+
+	const FVector2D WidgetCenter = AllottedGeometry.GetLocalSize() * 0.5;
+
+	// 원형 레이더라 짧은 변이 반지름을 정한다. 가로로 늘어난 칸에 넣어도
+	// 점이 밖으로 새지 않는다.
+	const double RadiusPx = FMath::Min(WidgetCenter.X, WidgetCenter.Y);
+
+	// 레이아웃이 아직 안 잡힌 프레임에는 크기가 0이거나, 드물게 유한하지 않은
+	// 값이 온다(애니메이션 중인 스케일이 0으로 나눠질 때 등). 그대로 그리면
+	// 화면 전체를 덮는 쓰레기 사각형이 나온다.
+	if (!FMath::IsFinite(RadiusPx) || RadiusPx <= 0.0 || RadarRangeCm <= 0.f)
+	{
+		return LayerId;
+	}
+
+	// 게임 시간을 쓴다. 일시정지 중에는 핑도 멈추는 편이 맞다 —
+	// 도는 스윕이나 퍼지는 파형은 "정보가 갱신되는 중"이라는 신호인데,
+	// 멈춘 게임에서는 거짓말이다.
+	const FTRRadarPaintContext Context
+	{
+		AllottedGeometry,
+		OutDrawElements,
+		WidgetCenter,
+		RadiusPx,
+		RadiusPx / RadarRangeCm,
+		ViewCenter,
+		ViewYaw,
+		World->GetTimeSeconds()
+	};
+
+	const int32 GridLayer = LayerId + 1;
+	const int32 PingLayer = LayerId + 2;
+	const int32 BlipLayer = LayerId + 3;
+	const int32 CenterLayer = LayerId + 4;
+
+	if (bDrawGrid)
+	{
+		PaintGrid(Context, GridLayer);
+	}
+
+	float SweepAngle = 0.f;
+
+	// **모드가 아니라 "실제로 돌았는가"를 기록한다.**
+	//
+	// 모드만 보면, 주기가 0으로 설정돼 스윕이 그려지지도 않은 상태에서 페이드만
+	// 걸린다. 각도가 0에 고정된 채 방위각에 따라 밝기가 갈리므로, 스윕은 안
+	// 보이는데 점 절반만 어두운 화면이 영원히 남는다.
+	bool bPingActive = false;
+
+	switch (PingMode)
+	{
+	case ETRRadarPingMode::Sweep:
+		if (SweepPeriodSeconds > 0.f)
+		{
+			SweepAngle = FMath::Fmod(static_cast<float>(Context.Now) / SweepPeriodSeconds, 1.f) * UE_TWO_PI;
+			PaintSweep(Context, PingLayer, SweepAngle);
+			bPingActive = true;
+		}
+		break;
+
+	case ETRRadarPingMode::Pulse:
+		// 이동 시간에 바닥이 깔려 있어 여기는 항상 성립한다.
+		AdvancePulseSchedule(Context.Now);
+		PaintPulses(Context, PingLayer);
+		bPingActive = true;
+		break;
+
+	default:
+		break;
+	}
+
+	if (bHasViewPoint && Radar != nullptr)
+	{
+		PaintBlips(Context, BlipLayer, *Radar, SweepAngle, bFadeBlipsWithPing && bPingActive);
 	}
 
 	// 기차 표식은 항상 맨 위에. 점에 가려지면 중심을 놓친다.
 	if (CenterSize.X > 0.0 && CenterSize.Y > 0.0)
 	{
-		const FPaintGeometry MarkerGeometry = AllottedGeometry.ToPaintGeometry(
-			CenterSize, FSlateLayoutTransform(WidgetCenter - CenterSize * 0.5));
-
-		FSlateDrawElement::MakeBox(OutDrawElements, CenterLayer, MarkerGeometry,
-			&CenterBrush, ESlateDrawEffect::None, CenterTint);
+		FSlateDrawElement::MakeBox(OutDrawElements, CenterLayer,
+			CenteredGeometry(AllottedGeometry, WidgetCenter, CenterSize), &CenterBrush,
+			ESlateDrawEffect::None, CenterTint);
 	}
 
 	return CenterLayer;

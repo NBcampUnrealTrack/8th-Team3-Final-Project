@@ -70,6 +70,43 @@ struct FTRRadarBlipStyle
 	FVector2D Size = FVector2D(10.f, 10.f);
 };
 
+class UTRRadarSubsystem;
+
+/**
+ * 한 번의 그리기에 필요한, 프레임마다 새로 구해지는 값들.
+ *
+ * 그리기 함수마다 (Geometry, Out, 중심, 반지름, 시각, 배율, 시야)를 하나씩
+ * 받아 넘기면 인자 목록이 함수 다섯 곳에서 똑같이 반복된다. 값 하나를 더할
+ * 때마다 다섯 군데를 고쳐야 하고, 그 중 한 곳을 빠뜨리면 그리기마다 기준이
+ * 어긋난다. 한 프레임 동안 변하지 않는 값이므로 묶어서 한 번만 만든다.
+ *
+ * 레이어는 일부러 넣지 않았다. 그리기마다 달라지는 유일한 값이라 여기 있으면
+ * "묶어 둔 것은 프레임 내내 그대로"라는 규칙이 깨진다.
+ */
+struct FTRRadarPaintContext
+{
+	const FGeometry& Geometry;
+	FSlateWindowElementList& Out;
+
+	/** 위젯 로컬 좌표의 중심(px). */
+	FVector2D Center = FVector2D::ZeroVector;
+
+	/** 레이더 반지름(px). 짧은 변의 절반. */
+	double Radius = 0.0;
+
+	/** 월드 cm 를 픽셀로 바꾸는 배율. */
+	double PixelPerCm = 0.0;
+
+	/** 레이더 중심의 월드 위치. */
+	FVector ViewCenter = FVector::ZeroVector;
+
+	/** 화면 위쪽이 가리키는 방향(도). */
+	float ViewYaw = 0.f;
+
+	/** 이번 그리기의 월드 시각(초). */
+	double Now = 0.0;
+};
+
 /**
  * 기차를 중심으로 한 탑다운 레이더. 점을 위젯으로 만들지 않고 Slate 에 직접 그린다.
  *
@@ -125,20 +162,31 @@ private:
 	bool ResolveViewPoint(FVector& OutCenter, float& OutYaw) const;
 
 	/** 십자선과 사거리 링. 점보다 아래 레이어에 깔린다. */
-	void PaintGrid(const FGeometry& Geometry, FSlateWindowElementList& Out, int32 Layer,
-		const FVector2D& Center, double RadiusPx) const;
+	void PaintGrid(const FTRRadarPaintContext& Context, int32 Layer) const;
 
 	/** 도는 스윕. 브러시가 있으면 회전시키고, 없으면 선을 부채꼴로 겹쳐 잔광을 흉내낸다. */
-	void PaintSweep(const FGeometry& Geometry, FSlateWindowElementList& Out, int32 Layer,
-		const FVector2D& Center, double RadiusPx, float SweepAngleRad) const;
+	void PaintSweep(const FTRRadarPaintContext& Context, int32 Layer, float SweepAngleRad) const;
 
 	/** 살아 있는 파형들을 그린다. 겹쳐 있으면 겹친 만큼 링이 나온다. */
-	void PaintPulses(const FGeometry& Geometry, FSlateWindowElementList& Out, int32 Layer,
-		const FVector2D& Center, double RadiusPx, double Now) const;
+	void PaintPulses(const FTRRadarPaintContext& Context, int32 Layer) const;
 
-	/** 링 하나. Progress 는 0(중심)에서 1(가장자리). 범위 밖이면 아무것도 안 그린다. */
-	void PaintPulseRing(const FGeometry& Geometry, FSlateWindowElementList& Out, int32 Layer,
-		const FVector2D& Center, double RadiusPx, double Progress) const;
+	/**
+	 * 링 하나. Progress 는 0(중심)에서 1(가장자리).
+	 * 범위 밖이면 아무것도 안 그리고 false 를 돌려준다 — 부르는 쪽이 이걸로 개수를 센다.
+	 */
+	bool PaintPulseRing(const FTRRadarPaintContext& Context, int32 Layer, double Progress) const;
+
+	/** 적 점들. 좌표 변환과 페이드가 전부 여기 있다. */
+	void PaintBlips(const FTRRadarPaintContext& Context, int32 Layer, const UTRRadarSubsystem& Radar,
+		float SweepAngleRad, bool bFading) const;
+
+	/**
+	 * 파형이 중심에서 가장자리까지 가는 시간. 바닥이 깔린 값이다.
+	 *
+	 * 일정 계산·그리기·페이드 세 곳이 같은 값을 봐야 한다. 각자 클램프하면
+	 * 한 곳만 고쳤을 때 링이 지나간 자리와 점이 밝아지는 자리가 어긋난다.
+	 */
+	double GetPulseTravelSeconds() const;
 
 	/**
 	 * 파형 일정을 현재 시각까지 진행시킨다.
@@ -424,9 +472,9 @@ private:
 	/**
 	 * 쉬는 시간을 뽑는 난수원.
 	 *
-	 * 전역 FMath::FRand 를 쓰지 않는 이유는, 순전히 보기 위한 연출이 게임 로직이
-	 * 쓰는 난수 흐름을 건드리게 되기 때문이다. 재현이 필요한 버그를 쫓을 때
-	 * 그런 오염이 제일 성가시다.
+	 * 전역 FMath::FRand 를 매번 쓰지 않는 이유는, 순전히 보기 위한 연출이 게임
+	 * 로직의 난수 흐름을 계속 밀어내게 되기 때문이다. 재현이 필요한 버그를 쫓을 때
+	 * 그런 오염이 제일 성가시다. 씨앗 한 번만 전역에서 받아 오고 그 뒤로는 격리된다.
 	 */
 	mutable FRandomStream PulseStream;
 

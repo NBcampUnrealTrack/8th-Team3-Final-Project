@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/World.h"
 #include "Mass/ExternalSubsystemTraits.h"
 #include "Mass/Core/TRMassTypes.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -98,6 +99,21 @@ public:
 	 */
 	bool IsDataFresh(uint64 ToleranceFrames = 3) const
 	{
+		// **일시정지는 예외다.**
+		//
+		// 멈춘 동안 Mass 프로세싱은 서지만(틱커블은 기본적으로 일시정지 중에
+		// 돌지 않는다) GFrameCounter 는 계속 오른다. 그대로 두면 몇 프레임 만에
+		// "끊겼다"로 판정되어 적이 화면에서 통째로 사라진다.
+		//
+		// 멈춘 것과 끊긴 것은 다르다. 멈춰 있는 동안 마지막 위치는 여전히 맞다.
+		if (const UWorld* World = GetWorld())
+		{
+			if (World->IsPaused())
+			{
+				return true;
+			}
+		}
+
 		// LastGatherFrame 이 0(한 번도 수집 안 됨)이면 뺄셈이 거대한 값이 되어
 		// 자연스럽게 false 가 된다. 별도 분기가 필요 없다.
 		return (GFrameCounter - LastGatherFrame) <= ToleranceFrames;
