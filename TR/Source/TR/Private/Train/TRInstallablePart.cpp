@@ -7,6 +7,7 @@
 #include "Debug/TRGameplayLog.h"
 #include "Net/UnrealNetwork.h"
 #include "NiagaraComponent.h"
+#include "Train/TRRepairTargetComponent.h"
 
 ATRInstallablePart::ATRInstallablePart()
 {
@@ -16,6 +17,8 @@ ATRInstallablePart::ATRInstallablePart()
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	RootComponent = Root;
 
+	RepairTarget = CreateDefaultSubobject<UTRRepairTargetComponent>(TEXT("RepairTarget"));
+	
 	DamageEffect = CreateDefaultSubobject<UNiagaraComponent>(TEXT("DamageEffect"));
 	DamageEffect->SetupAttachment(Root);
 	DamageEffect->bAutoActivate = false;

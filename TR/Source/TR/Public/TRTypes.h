@@ -25,6 +25,7 @@ struct FTRActionDef
 {
 	GENERATED_BODY()
 
+	// 수리는 이 값을 쓰지 않는다.
 	UPROPERTY(EditAnywhere)
 	float CycleDuration = 5.f;  // 1사이클 소요
 	

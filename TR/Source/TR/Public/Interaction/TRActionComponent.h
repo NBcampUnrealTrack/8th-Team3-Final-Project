@@ -34,12 +34,16 @@ public:
 	// 지금 작업 중인 대상. 진행 중이 아니면 nullptr.
 	UFUNCTION(BlueprintPure, Category="Action")
 	AActor* GetCurrentActionTarget() const { return CurrentTarget.Get(); }
-
+		
+	UFUNCTION(BlueprintPure, Category="Action")
+	float GetActionProgress01() const;
+	
 	// 재설치는 열차 전체에서 한 번에 하나만 돈다. 진행 중인 컴포넌트를 찾는다. 없으면 nullptr.
 	static UTRActionComponent* FindBuildingComponent(UWorld* World);
 
-	UFUNCTION(BlueprintPure, Category="Action")
-	float GetActionProgress01() const;
+	static void GatherRepairWorkers(const UWorld* World, const AActor* Target, TArray<UTRActionComponent*>& OutWorkers);
+	
+	bool CommitRepairContribution();
 
 private:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -56,6 +60,8 @@ private:
 
 	// 복제된 행동 상태를 오너 캐릭터의 지속 이펙트에 반영한다.
 	void RefreshOwnerActionEffect();
+
+	void NotifyRepairTarget(ETRActionType ActionType, AActor* Target);
 
 	UFUNCTION()
 	void OnRep_CurrentActionType();

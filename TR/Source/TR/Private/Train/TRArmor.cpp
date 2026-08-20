@@ -9,11 +9,14 @@
 
 ATRArmor::ATRArmor()
 {
-	// 창문 방범창 — 실내에서 수리·설치를 상호작용하는 지점.
-	CollisionBox = CreateDefaultSubobject<UBoxComponent>(TEXT("CollisionBox"));
-	CollisionBox->SetupAttachment(Root);
+	WindowCollision1 = CreateDefaultSubobject<UBoxComponent>(TEXT("WindowCollision1"));
+	WindowCollision1->SetupAttachment(Root);
 	// 박스 기본 프로파일은 Visibility 가 Overlap 이라 상호작용 트레이스에 안 잡힌다. 지우면 안 됨.
-	CollisionBox->SetCollisionProfileName(TRCollisionProfile::Interactable);
+	WindowCollision1->SetCollisionProfileName(TRCollisionProfile::Interactable);
+
+	WindowCollision2 = CreateDefaultSubobject<UBoxComponent>(TEXT("WindowCollision2"));
+	WindowCollision2->SetupAttachment(Root);
+	WindowCollision2->SetCollisionProfileName(TRCollisionProfile::Interactable);
 
 	// 이 장갑이 지키는 구역. 파괴돼도 반응은 유지한다 — 흡수 여부는 ATRTrain::FindArmorAt 이 판정한다.
 	DamageVolume = CreateDefaultSubobject<UBoxComponent>(TEXT("DamageVolume"));
