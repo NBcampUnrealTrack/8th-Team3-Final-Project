@@ -3,6 +3,7 @@
 #include "UI/TRControlConsoleWidget.h"
 #include "UI/TRConsoleButton.h"
 #include "UI/TRPlayerHUD.h"
+#include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Core/TRGameState.h"
 #include "Debug/TRGameplayLog.h"
@@ -131,7 +132,29 @@ void UTRControlConsoleWidget::CollectSlotRow(const UEnum* SlotEnum, const TCHAR*
 void UTRControlConsoleWidget::Refresh()
 {
 	RefreshResourceAndLevels();
+	RefreshTrainHull();
 	RefreshSlots();
+}
+
+void UTRControlConsoleWidget::RefreshTrainHull()
+{
+	if (!IsValid(PB_TrainHull))
+	{
+		return;
+	}
+
+	const ATRTrain* Train = GetTrain();
+	const float MaxHull = IsValid(Train) ? Train->GetMaxHullHealth() : 0.f;
+	const float Hull01 = MaxHull > 0.f ? Train->GetCurrentHullHealth() / MaxHull : 0.f;
+
+	// 매 프레임 도는 갱신이라 바뀐 값만 넘긴다.
+	if (Hull01 == LastHullHealth01)
+	{
+		return;
+	}
+	LastHullHealth01 = Hull01;
+
+	PB_TrainHull->SetPercent(Hull01);
 }
 
 void UTRControlConsoleWidget::RefreshResourceAndLevels()
