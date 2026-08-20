@@ -421,10 +421,11 @@ void ATRTurret::MulticastFireEffect_Implementation(FVector HitLocation, bool bEn
 	const FVector FireOrigin = IsValid(TurretMesh) ? TurretMesh->GetComponentLocation() : GetActorLocation();
 
 #if !UE_BUILD_SHIPPING
-	// 적을 맞힌 지점까지만 그린다.
+	// 적을 맞힌 지점까지만 그린다. SDPG_World 라서 차체에 가려진다 —
+	// SDPG_Foreground 로 두면 벽 뒤 사격선까지 실내에 겹쳐 보여 방향을 잘못 읽는다.
 	if (bEnemyHit)
 	{
-		DrawDebugLine(GetWorld(), FireOrigin, HitLocation, FColor::Cyan, false, 0.4f, SDPG_Foreground, 1.f);
+		DrawDebugLine(GetWorld(), FireOrigin, HitLocation, FColor::Cyan, false, 0.4f, SDPG_World, 1.f);
 	}
 #endif
 

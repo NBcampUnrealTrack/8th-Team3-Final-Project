@@ -16,6 +16,7 @@
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
 #include "GameFramework/GameStateBase.h"
+#include "Train/TRRepairTargetComponent.h"
 
 UTRActionComponent::UTRActionComponent()
 {
@@ -48,12 +49,125 @@ UTRActionComponent* UTRActionComponent::FindBuildingComponent(UWorld* World)
 	return IsValid(GameState) ? GameState->GetBuildingComponent() : nullptr;
 }
 
+void UTRActionComponent::GatherRepairWorkers(const UWorld* World, const AActor* Target, TArray<UTRActionComponent*>& OutWorkers)
+{
+	OutWorkers.Reset();
+
+	const AGameStateBase* GameState = IsValid(World) ? World->GetGameState() : nullptr;
+	if (!IsValid(GameState) || !IsValid(Target))
+	{
+		return;
+	}
+
+	for (const APlayerState* PlayerState : GameState->PlayerArray)
+	{
+		const APawn* Pawn = IsValid(PlayerState) ? PlayerState->GetPawn() : nullptr;
+		UTRActionComponent* Action = IsValid(Pawn) ? Pawn->FindComponentByClass<UTRActionComponent>() : nullptr;
+		if (!IsValid(Action))
+		{
+			continue;
+		}
+
+		if (Action->CurrentActionType == ETRActionType::Repair && Action->CurrentTarget.Get() == Target)
+		{
+			OutWorkers.Add(Action);
+		}
+	}
+}
+
+bool UTRActionComponent::CommitRepairContribution()
+{
+	APawn* OwnerPawn = Cast<APawn>(GetOwner());
+	if (!IsValid(OwnerPawn) || !OwnerPawn->HasAuthority() || CurrentActionType != ETRActionType::Repair)
+	{
+		return false;
+	}
+
+	AActor* Target = CurrentTarget.Get();
+	const FTRActionDef* Def = ActionDefs.Find(ETRActionType::Repair);
+	if (!IsValid(Target) || Def == nullptr)
+	{
+		return false;
+	}
+
+	ATRPlayerState* PS = Cast<ATRPlayerState>(OwnerPawn->GetPlayerState());
+	if (!IsValid(PS))
+	{
+		return false;
+	}
+
+	// 사이클이 연속으로 도는 동안 물자가 바닥날 수 있다.
+	// 시작할 때 한 번 본 것으로는 부족해서 매 완료마다 다시 본다.
+	if (PS->GetCarriedSupply() < Def->ResourceAmount)
+	{
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Repair stopped: %s out of supply"), *OwnerPawn->GetName());
+		return false;
+	}
+
+	const ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
+	const float HealPercent = IsValid(Character) ? Character->GetHealPercent() : 0.f;
+
+	bool bRepaired = false;
+	if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
+	{
+		if (Part->CanBeRepaired())
+		{
+			Part->ApplyRepair(Part->GetMaxHP() * (HealPercent / 100.f));
+			UE_LOG(LogTRGameplay, Verbose, TEXT("Repair applied: %s HP %.0f / %.0f"),
+				*Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
+			bRepaired = true;
+		}
+	}
+	else if (ATRTrain* Train = Cast<ATRTrain>(Target))
+	{
+		if (Train->CanBeRepaired())
+		{
+			Train->ApplyRepair(Train->GetMaxHullHealth() * (HealPercent / 100.f));
+			UE_LOG(LogTRGameplay, Verbose, TEXT("Repair applied: Hull HP %.0f / %.0f"),
+				Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
+			bRepaired = true;
+		}
+	}
+
+	if (!bRepaired)
+	{
+		return false;
+	}
+
+	PS->ConsumeCarriedSupply(Def->ResourceAmount);
+	return true;
+}
+
+void UTRActionComponent::NotifyRepairTarget(ETRActionType ActionType, AActor* Target)
+{
+	if (ActionType != ETRActionType::Repair || !IsValid(Target))
+	{
+		return;
+	}
+
+	UTRRepairTargetComponent* RepairTarget = Target->FindComponentByClass<UTRRepairTargetComponent>();
+	if (!IsValid(RepairTarget))
+	{
+		return;
+	}
+
+	TArray<UTRActionComponent*> Workers;
+	GatherRepairWorkers(GetWorld(), Target, Workers);
+	RepairTarget->RefreshCycle(Workers.Num());
+}
+
 void UTRActionComponent::SetCurrentAction(ETRActionType NewType, AActor* NewTarget)
 {
+	const ETRActionType PrevType = CurrentActionType;
+	AActor* PrevTarget = CurrentTarget.Get();
+	
 	CurrentActionType = NewType;
 	CurrentTarget = NewTarget;
 	RefreshOwnerActionEffect();
 
+	NotifyRepairTarget(PrevType, PrevTarget);
+	NotifyRepairTarget(NewType, NewTarget);
+	
 	ATRGameState* GameState = GetWorld() ? GetWorld()->GetGameState<ATRGameState>() : nullptr;
 	if (!IsValid(GameState))
 	{
@@ -152,6 +266,12 @@ void UTRActionComponent::ServerStartAction_Implementation(ETRActionType ActionTy
 	SetCurrentAction(ActionType, Target);
 	ActionStartServerTime = World->GetTimeSeconds();
 
+	if (ActionType == ETRActionType::Repair)
+	{
+		UE_LOG(LogTRGameplay, Verbose, TEXT("Repair attached: %s"), *Target->GetName());
+		return;
+	}
+
 	World->GetTimerManager().SetTimer(
 		ActionTimerHandle,
 		this,
@@ -188,43 +308,6 @@ void UTRActionComponent::CompleteAction()
 
 		switch (CurrentActionType)
 		{
-			case ETRActionType::Repair:
-			{
-				ATRPlayerCharacter* Character = Cast<ATRPlayerCharacter>(OwnerPawn);
-				const float HealPercent = IsValid(Character) ? Character->GetHealPercent() : 0.f;
-				bool bRepaired = false;
-				if (ATRInstallablePart* Part = Cast<ATRInstallablePart>(Target))
-				{
-					if (Part->CanBeRepaired())
-					{
-						Part->ApplyRepair(Part->GetMaxHP() * (HealPercent / 100.f));
-						UE_LOG(LogTRGameplay, Verbose, TEXT("Repair complete: %s HP %.0f / %.0f"), *Part->GetName(), Part->GetCurrentHP(), Part->GetMaxHP());
-						bRepaired = true;
-					}
-					else
-					{
-						UE_LOG(LogTRGameplay, Verbose, TEXT("Repair skipped: %s no longer repairable"), *Part->GetName());
-					}
-				}
-				else if (ATRTrain* Train = Cast<ATRTrain>(Target))
-				{
-					if (Train->CanBeRepaired())
-					{
-						Train->ApplyRepair(Train->GetMaxHullHealth() * (HealPercent / 100.f));
-						UE_LOG(LogTRGameplay, Verbose, TEXT("Repair complete: Hull HP %.0f / %.0f"), Train->GetCurrentHullHealth(), Train->GetMaxHullHealth());
-						bRepaired = true;
-					}
-					else
-					{
-						UE_LOG(LogTRGameplay, Verbose, TEXT("Repair skipped: Train no longer repairable"));
-					}
-				}
-				if (bRepaired && PS)
-				{
-					PS->ConsumeCarriedSupply(Def->ResourceAmount);
-				}
-				break;
-			}
 			case ETRActionType::Reload:
 			{
 				bool bReloaded = false;
@@ -286,7 +369,7 @@ void UTRActionComponent::CompleteAction()
 
 float UTRActionComponent::GetActionProgress01() const
 {
-	if (CurrentActionType == ETRActionType::None)
+	if (CurrentActionType == ETRActionType::None || CurrentActionType == ETRActionType::Repair)
 	{
 		return 0.f;
 	}
@@ -303,7 +386,7 @@ float UTRActionComponent::GetActionProgress01() const
 	{
 		return 0.f;
 	}
-
+	
 	const float Elapsed = GameState->GetServerWorldTimeSeconds() - ActionStartServerTime;
 	return FMath::Clamp(Elapsed / Def->CycleDuration, 0.f, 1.f);
 }
@@ -399,6 +482,7 @@ void UTRActionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	const AActor* OwnerActor = GetOwner();
 	if (IsValid(OwnerActor) && OwnerActor->HasAuthority())
 	{
+		// 접속이 끊기거나 폰이 파괴된 경우. SetCurrentAction 이 대상에게 이탈을 알린다.
 		SetCurrentAction(ETRActionType::None, nullptr);
 	}
 

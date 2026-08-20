@@ -6,6 +6,9 @@
 #include "GameFramework/HUD.h"
 #include "TRPlayerHUD.generated.h"
 
+class ATRGameState;
+class AGameStateBase;
+class APawn;
 class UTRPlayerHUDWidget;
 class UTRControlConsoleWidget;
 class UUserWidget;
@@ -19,6 +22,9 @@ public:
 	UTRPlayerHUDWidget* GetPlayerHUDWidget() const { return PlayerHUDWidget; }
 
 	static void ApplyGameInputMode(APlayerController* PC);
+
+	// 폰의 로컬 컨트롤러가 들고 있는 게임플레이 HUD 위젯. 게임 시작 전이거나 원격 폰이면 nullptr.
+	static UTRPlayerHUDWidget* FindPlayerHUDWidget(const APawn* Pawn);
 
 	// 팝업을 열 때. 커서를 보이고 중앙 고정을 푼다.
 	static void PushPopupInputMode(APlayerController* PC, UUserWidget* FocusWidget);
@@ -36,11 +42,30 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	virtual void Tick(float DeltaSeconds) override;
 
 private:
 	// 팝업 수를 건드리지 않고 입력 모드만 바꾼다.
 	static void ApplyPopupInputMode(APlayerController* PC, UUserWidget* FocusWidget);
+
+	enum class EScreenPhase : uint8
+	{
+		None,
+		PreMatch,
+		Gameplay
+	};
+
+	void BindMatchPhase();
+
+	void HandleGameStateSet(AGameStateBase* InGameState);
+
+	void ApplyMatchPhase(bool bStarted);
+
+	void ShowPreMatchScreen();
+
+	void ShowGameplayHUD();
 
 protected:
 
@@ -57,4 +82,20 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UTRControlConsoleWidget> ControlConsoleWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSubclassOf<UUserWidget> PreMatchWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> PreMatchWidget;
+
+private:
+	TWeakObjectPtr<ATRGameState> BoundGameState;
+
+	FDelegateHandle GameStateSetHandle;
+
+	EScreenPhase AppliedPhase = EScreenPhase::None;
+
+	// 팝업 카운터를 정확히 한 번씩 짝지었는가. Push/Pop 판단은 위젯 포인터가 아니라 이 값만 본다.
+	bool bPreMatchInputSuppressed = false;
 };

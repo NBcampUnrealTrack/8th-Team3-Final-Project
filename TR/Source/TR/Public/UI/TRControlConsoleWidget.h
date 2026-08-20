@@ -1,4 +1,4 @@
-// TRControlConsoleWidget.h
+﻿// TRControlConsoleWidget.h
 //
 // 관제석 팝업 — 파괴된 파츠 재설치와 장갑/포탑 업그레이드.
 // 여닫는 판단은 ATRPlayerHUD 가 한다. 이 위젯은 떠 있는 동안의 입력 상태만 책임진다.
@@ -15,6 +15,7 @@ class ATRPlayerCharacter;
 class UTRActionComponent;
 class UTRConsoleButton;
 class UCommonButtonBase;
+class UProgressBar;
 class UTextBlock;
 
 UCLASS(Abstract)
@@ -45,6 +46,9 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCommonButtonBase> Btn_Close;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UProgressBar> PB_TrainHull;
+
 private:
 	// 버튼 하나 = 열차 슬롯 하나.
 	// UPROPERTY 가 아니라 GC 가 추적하지 않으므로 약참조로 잡는다. 버튼의 수명은 위젯 트리가 쥔다.
@@ -59,6 +63,7 @@ private:
 
 	void Refresh();
 	void RefreshResourceAndLevels();
+	void RefreshTrainHull();
 	void RefreshSlots();
 
 	// 레벨에서 슬롯 할당이 누락되면 nullptr.
@@ -82,6 +87,8 @@ private:
 	int32 LastMonsterResource = INDEX_NONE;
 	int32 LastArmorLevel = INDEX_NONE;
 	int32 LastTurretLevel = INDEX_NONE;
+
+	float LastHullHealth01 = MAX_flt;
 
 	// 열차는 레벨에 하나뿐이므로 한 번 찾아 들고 있는다.
 	TWeakObjectPtr<ATRTrain> CachedTrain;

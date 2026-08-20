@@ -17,7 +17,9 @@
 #include "Train/TRTurret.h"
 #include "Train/TRSupplyPoint.h"
 #include "Train/TRControlConsole.h"
+#include "Train/TRRepairTargetComponent.h"
 #include "GameFramework/PlayerController.h"
+
 
 UTRInteractionComponent::UTRInteractionComponent()
 {
@@ -162,6 +164,22 @@ UTRPlayerHUDWidget* UTRInteractionComponent::GetHUDWidget() const
 	return PlayerHUD->GetPlayerHUDWidget();
 }
 
+float UTRInteractionComponent::ResolveActionProgress01(const UTRActionComponent& ActionComp, ETRActionType ActionType) const
+{
+	// 수리는 사이클을 대상이 갖는다 — 같은 대상을 수리하는 전원이 같은 게이지를 봐야 하므로,
+	// 사람마다 시작 시각이 다른 내 타이머가 아니라 대상의 사이클을 읽는다.
+	if (ActionType != ETRActionType::Repair)
+	{
+		return ActionComp.GetActionProgress01();
+	}
+
+	const AActor* Target = ActionComp.GetCurrentActionTarget();
+	const UTRRepairTargetComponent* RepairTarget =
+		IsValid(Target) ? Target->FindComponentByClass<UTRRepairTargetComponent>() : nullptr;
+
+	return IsValid(RepairTarget) ? RepairTarget->GetCycleProgress01() : 0.f;
+}
+
 void UTRInteractionComponent::UpdateInteractionWidget()
 {
 	const ATRPlayerCharacter* OwnerCharacter = Cast<ATRPlayerCharacter>(GetOwner());
@@ -181,7 +199,8 @@ void UTRInteractionComponent::UpdateInteractionWidget()
 
 	const UTRActionComponent* ActionComp = OwnerCharacter->GetActionComponent();
 	const ETRActionType CurrentAction = IsValid(ActionComp) ? ActionComp->GetCurrentActionType() : ETRActionType::None;
-	HUDWidget->SetActionProgress(CurrentAction, IsValid(ActionComp) ? ActionComp->GetActionProgress01() : 0.f);
+	const float ActionProgress = IsValid(ActionComp) ? ResolveActionProgress01(*ActionComp, CurrentAction) : 0.f;
+	HUDWidget->SetActionProgress(CurrentAction, ActionProgress);
 
 	const ATRPlayerState* PlayerState = OwnerCharacter->GetPlayerState<ATRPlayerState>();
 	if (IsValid(PlayerState))
