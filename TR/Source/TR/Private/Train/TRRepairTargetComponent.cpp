@@ -101,13 +101,13 @@ float UTRRepairTargetComponent::ResolveCycleDuration(int32 WorkerCount) const
 		return 0.f;
 	}
 	
-	if (ConcurrentSpeedMultipliers.IsEmpty())
+	if (ConcurrentCycleSpeedup.IsEmpty())
 	{
 		return BaseCycleDuration;
 	}
 	
-	const int32 Index = FMath::Clamp(WorkerCount -1, 0, ConcurrentSpeedMultipliers.Num() - 1);
-	const float Multiplier = ConcurrentSpeedMultipliers[Index];
+	const int32 Index = FMath::Clamp(WorkerCount -1, 0, ConcurrentCycleSpeedup.Num() - 1);
+	const float Multiplier = ConcurrentCycleSpeedup[Index];
 	
 	if (Multiplier <= 0.f)
 	{

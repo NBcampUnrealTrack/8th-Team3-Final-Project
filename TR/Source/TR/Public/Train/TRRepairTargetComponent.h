@@ -48,7 +48,7 @@ private:
 	
 	// 인원이 늘수록 사이클이 짧아지는 배수. 인덱스 = 인원-1.
 	UPROPERTY(EditDefaultsOnly, Category="Repair")
-	TArray<float> ConcurrentSpeedMultipliers = { 1.f, 1.5f, 2.f };
+	TArray<float> ConcurrentCycleSpeedup = { 1.f, 1.5f, 2.f };
 
 	// 사이클 시작 서버 시각. 인원이 바뀌면 진행률을 보존하려고 과거로 역산해 덮는다.
 	UPROPERTY(Replicated)
