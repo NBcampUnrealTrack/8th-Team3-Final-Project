@@ -39,6 +39,11 @@ void UTRMassActorSyncProcessor::ConfigureQueries(const TSharedRef<FMassEntityMan
 	EntityQuery.AddRequirement<FMassActorFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FMassVelocityFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 	EntityQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
+
+	// 손상도 표시용. Optional 인 이유는 전투 프래그먼트가 없는 개체(연출용 등)도
+	// 위치 동기화는 받아야 하기 때문이다. 없으면 손상 표현만 빠진다.
+	EntityQuery.AddRequirement<FTREnemyCombatFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
+
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 
 	// 애님 파라미터는 선택 사항이다. 표현 액터만 붙이고 애니메이션은 BP가 알아서 하는
@@ -63,9 +68,11 @@ void UTRMassActorSyncProcessor::Execute(FMassEntityManager& EntityManager, FMass
 		const TArrayView<FMassActorFragment> ActorList = Context.GetMutableFragmentView<FMassActorFragment>();
 		const TConstArrayView<FMassVelocityFragment> VelocityList = Context.GetFragmentView<FMassVelocityFragment>();
 		const TConstArrayView<FTREnemyStateFragment> StateList = Context.GetFragmentView<FTREnemyStateFragment>();
+		const TConstArrayView<FTREnemyCombatFragment> CombatList = Context.GetFragmentView<FTREnemyCombatFragment>();
 
 		const bool bHasVelocity = (VelocityList.Num() > 0);
 		const bool bHasState = (StateList.Num() > 0);
+		const bool bHasCombat = (CombatList.Num() > 0);
 
 		const FTREnemyAnimParams* AnimParams = Context.GetConstSharedFragmentPtr<FTREnemyAnimParams>();
 		const FVector GroundVelocity =
@@ -109,6 +116,19 @@ void UTRMassActorSyncProcessor::Execute(FMassEntityManager& EntityManager, FMass
 					: UE::TR::Enemy::FAnimResolution();
 
 				EnemyActor->SetMassState(AnimContext, Anim, DeltaTime);
+
+				// 손상도. 체력 비율을 뒤집어 "얼마나 망가졌나"로 만든다 —
+				// 머테리얼이 0을 멀쩡함으로 읽어야 값을 못 받았을 때(인덱스 불일치,
+				// 전투 프래그먼트 없음) 새 개체처럼 보이지 파괴 직전으로 보이지 않는다.
+				if (bHasCombat)
+				{
+					const FTREnemyCombatFragment& Combat = CombatList[EntityIt];
+					const float DamageRatio = (Combat.MaxHealth > 0.f)
+						? 1.f - FMath::Clamp(Combat.Health / Combat.MaxHealth, 0.f, 1.f)
+						: 0.f;
+
+					EnemyActor->UpdateDamageVisuals(DamageRatio, DeltaTime);
+				}
 			}
 		}
 	});
