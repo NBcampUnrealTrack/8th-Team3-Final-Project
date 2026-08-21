@@ -27,6 +27,14 @@ enum class ETRSpawnDirection : uint8
 	Sides UMETA(DisplayName = "Sides (Left + Right)"),
 
 	All UMETA(DisplayName = "All (360)"),
+
+	/**
+	 * 좌 / 우 / 협공 중 하나를 무작위로 고른다. 후보 목록은 FTRWaveGroup::RandomDirections 다.
+	 *
+	 * **목록의 맨 뒤에 둔다.** 이 열거형은 DataTable 에 값으로 저장되므로 중간에 끼워 넣으면
+	 * 뒤쪽 값이 전부 한 칸씩 밀려, 이미 저장된 웨이브 행의 방위가 조용히 바뀐다.
+	 */
+	Random UMETA(DisplayName = "Random (from candidates)"),
 };
 
 /**
@@ -204,6 +212,39 @@ struct FTRWaveDefinition
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave", meta = (ClampMin = "0.0", ForceUnits = "s"))
 	float PendingDrainTime = 30.f;
+
+	/**
+	 * 방위가 Random 인 그룹들이 함께 뽑을 후보. 기본값은 좌 / 우 / 협공 셋이다.
+	 *
+	 * **웨이브 전체가 한 번 뽑아 같이 쓴다.** 그룹마다 따로 뽑으면 근접형은 왼쪽,
+	 * 사격형은 오른쪽으로 갈려서 "이번엔 왼쪽에서 온다"는 판단 자체가 성립하지 않는다.
+	 * 협공(Sides)이 뽑혔을 때도 종류가 흩어지면 협공으로 읽히지 않는다.
+	 *
+	 * 목록으로 둔 이유는 "뒤에서도 가끔 온다" 같은 조정을 코드 수정 없이 하기 위해서다.
+	 * 같은 값을 두 번 넣으면 그만큼 자주 나온다 — 가중치 필드를 따로 두는 것보다
+	 * 테이블에서 읽기 쉽다. Random 자신을 넣으면 무시된다.
+	 *
+	 * 비워 두면 협공으로 떨어지고 웨이브 시작 때 경고를 남긴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave")
+	TArray<ETRSpawnDirection> RandomDirections = {
+		ETRSpawnDirection::Left,
+		ETRSpawnDirection::Right,
+		ETRSpawnDirection::Sides
+	};
+
+	/**
+	 * 웨이브 도중 방위를 다시 뽑는 주기(초). **0이면 웨이브당 한 번만 뽑는다(기본).**
+	 *
+	 * 0이면 그 웨이브 내내 방향이 고정이라 플레이어가 대응 전략을 세울 수 있다.
+	 * 값을 주면 그 간격마다 방향이 바뀌어 사방을 계속 확인해야 한다 — 후반 웨이브의
+	 * 난이도 장치로 쓸 수 있다.
+	 *
+	 * 그룹의 배치 간격이 아니라 **웨이브 시각 기준**이다. 그래야 서로 다른 타이머로
+	 * 도는 그룹들이 같은 순간에 같은 방향을 본다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float RandomDirectionInterval = 0.f;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTROnWaveFinished);
@@ -350,8 +391,27 @@ private:
 	/** 그룹을 종료 처리하고, 모든 그룹이 끝났으면 웨이브를 끝낸다. */
 	void FinishGroup(int32 GroupIndex);
 
-	/** 그룹의 모양·방위 설정을 스폰 파라미터로 옮긴다. */
-	void ResolveSpawnShape(const FTRWaveGroup& Group, FTRSpawnAreaParams& OutParams) const;
+	/**
+	 * 그룹의 모양·방위 설정을 스폰 파라미터로 옮긴다.
+	 *
+	 * @param Direction 이 배치에 쓸 방위. Group.Direction 을 직접 보지 않는 이유는
+	 *                  Random 일 때 실제 값이 런타임 상태(RolledDirection)에 있기 때문이다.
+	 */
+	void ResolveSpawnShape(const FTRWaveGroup& Group, ETRSpawnDirection Direction,
+		FTRSpawnAreaParams& OutParams) const;
+
+	/**
+	 * 웨이브 공용 방위를 다시 뽑아야 할 때가 됐으면 뽑는다.
+	 *
+	 * 배치를 내기 직전마다 부른다. 주기가 0이면 웨이브 시작 시 한 번 뽑은 값을 계속 쓴다.
+	 *
+	 * @param bWarnOnEmpty 후보가 비었을 때 경고를 남길지. 웨이브 시작 때만 남기고
+	 *                     배치마다 반복하지 않으려고 나눠 둔다.
+	 */
+	void UpdateRolledDirection(bool bWarnOnEmpty);
+
+	/** 이 그룹이 이번 배치에 실제로 쓸 방위. Random 이면 웨이브 공용 값을 준다. */
+	ETRSpawnDirection ResolveGroupDirection(const FTRWaveGroup& Group) const;
 
 	UPROPERTY()
 	FTRWaveDefinition CurrentWave;
@@ -362,6 +422,17 @@ private:
 
 	UPROPERTY()
 	TWeakObjectPtr<AActor> CurrentTarget;
+
+	/**
+	 * 방위가 Random 인 그룹들이 **함께** 쓰는 값. 웨이브 단위로 뽑는다.
+	 *
+	 * 그룹 런타임이 아니라 여기 두는 것이 요점이다 — 그룹마다 들고 있으면 각자 다른
+	 * 값을 갖게 되고, 그러면 웨이브 전체가 한 방향에서 온다는 성질이 깨진다.
+	 */
+	ETRSpawnDirection RolledDirection = ETRSpawnDirection::Sides;
+
+	/** 다음으로 방위를 다시 뽑을 월드 시각(초). 주기가 0이면 쓰이지 않는다. */
+	float NextDirectionRollTime = 0.f;
 
 	bool bWaveActive = false;
 };

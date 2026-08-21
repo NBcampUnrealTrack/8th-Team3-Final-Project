@@ -43,6 +43,11 @@ void UTRWaveDirectorSubsystem::StartWave(const FTRWaveDefinition& WaveDefinition
 		return;
 	}
 
+	// 방위를 웨이브 시작 시점에 한 번 뽑는다. 첫 배치가 나가기 전이어야 하고,
+	// 지난 웨이브의 다음 추첨 시각이 남아 있으면 안 되므로 0으로 되돌린 뒤 부른다.
+	NextDirectionRollTime = 0.f;
+	UpdateRolledDirection(/*bWarnOnEmpty=*/true);
+
 	// 타이머를 먼저 다 걸어두고, 그 다음에 지연 없는 그룹의 첫 배치를 낸다.
 	// 즉시 스폰이 웨이브를 끝내버리는 경우(배치 1회짜리 그룹만 있는 웨이브)에도
 	// 타이머가 남지 않도록 순서를 이렇게 잡는다.
@@ -358,7 +363,10 @@ int32 UTRWaveDirectorSubsystem::SpawnPendingWithinBudget(int32 GroupIndex, UTRMa
 	// 종류 축은 "이 종류가 그 안에서 얼마나 단단한가"다.
 	SpawnParams.StatScale = UE::TR::Enemy::CombineStatScale(CurrentWave.TierStatScale, Group.TypeStatScale);
 
-	ResolveSpawnShape(Group, SpawnParams.Area);
+	// 방위는 배치를 낼 때마다 확인한다. 주기가 지났으면 여기서 다시 뽑히고,
+	// 그 뒤에 나오는 모든 그룹이 같은 값을 본다.
+	UpdateRolledDirection(/*bWarnOnEmpty=*/false);
+	ResolveSpawnShape(Group, ResolveGroupDirection(Group), SpawnParams.Area);
 
 	const int32 Spawned = Spawner.SpawnChasers(SpawnParams);
 	State.SpawnedTotal += Spawned;
@@ -461,7 +469,62 @@ void UTRWaveDirectorSubsystem::FinishGroup(int32 GroupIndex)
 		FTimerDelegate::CreateWeakLambda(this, [this]() { OnWaveFinished.Broadcast(); }));
 }
 
-void UTRWaveDirectorSubsystem::ResolveSpawnShape(const FTRWaveGroup& Group, FTRSpawnAreaParams& OutParams) const
+void UTRWaveDirectorSubsystem::UpdateRolledDirection(bool bWarnOnEmpty)
+{
+	const UWorld* World = GetWorld();
+	const float WorldTime = World ? World->GetTimeSeconds() : 0.f;
+
+	// 주기가 0이면 웨이브 시작 때 뽑은 값을 그대로 쓴다(기본 동작).
+	const bool bPeriodic = (CurrentWave.RandomDirectionInterval > 0.f);
+	if (bPeriodic && WorldTime < NextDirectionRollTime)
+	{
+		return;
+	}
+
+	// Random 자신은 후보에서 뺀다. 넣으면 자기를 다시 뽑는 뜻이라 의미가 없다.
+	TArray<ETRSpawnDirection, TInlineAllocator<8>> Candidates;
+	for (const ETRSpawnDirection Candidate : CurrentWave.RandomDirections)
+	{
+		if (Candidate != ETRSpawnDirection::Random)
+		{
+			Candidates.Add(Candidate);
+		}
+	}
+
+	if (Candidates.Num() == 0)
+	{
+		// 협공으로 떨어뜨린다. 좌우 어느 한쪽으로 몰면 그 웨이브가 통째로 한 방향
+		// 방어만 요구하게 되는데, 설정 실수의 결과로는 그게 더 나쁘다.
+		RolledDirection = ETRSpawnDirection::Sides;
+
+		if (bWarnOnEmpty)
+		{
+			UE_LOG(LogTRMass, Warning,
+				TEXT("웨이브 방위: RandomDirections 가 비어 있습니다. 협공(Sides)으로 진행합니다."));
+		}
+	}
+	else
+	{
+		RolledDirection = Candidates[FMath::RandHelper(Candidates.Num())];
+	}
+
+	if (bPeriodic)
+	{
+		NextDirectionRollTime = WorldTime + CurrentWave.RandomDirectionInterval;
+	}
+
+	UE_LOG(LogTRMass, Verbose, TEXT("웨이브 방위 추첨: %s"), *UEnum::GetValueAsString(RolledDirection));
+}
+
+ETRSpawnDirection UTRWaveDirectorSubsystem::ResolveGroupDirection(const FTRWaveGroup& Group) const
+{
+	// 고정 방위 그룹은 추첨과 무관하다. 한 웨이브 안에서 "뒤는 항상 근접형"처럼
+	// 고정된 축과 무작위 축을 섞을 수 있어야 한다.
+	return (Group.Direction == ETRSpawnDirection::Random) ? RolledDirection : Group.Direction;
+}
+
+void UTRWaveDirectorSubsystem::ResolveSpawnShape(const FTRWaveGroup& Group, ETRSpawnDirection Direction,
+	FTRSpawnAreaParams& OutParams) const
 {
 	// 기준 방향은 대상 액터의 정면(기차 진행 방향)이다.
 	const float ForwardYaw = CurrentTarget.IsValid() ? CurrentTarget->GetActorRotation().Yaw : 0.f;
@@ -469,7 +532,7 @@ void UTRWaveDirectorSubsystem::ResolveSpawnShape(const FTRWaveGroup& Group, FTRS
 	// 각 구역은 90도 호이고, 아래 값은 그 호의 중심 각도다.
 	// Sides는 좌(+90)를 기준으로 잡고 대칭 플래그로 우(-90)를 함께 쓴다.
 	float DirectionOffset = 0.f;
-	switch (Group.Direction)
+	switch (Direction)
 	{
 	case ETRSpawnDirection::Back:  DirectionOffset = 180.f; break;
 	case ETRSpawnDirection::Left:  DirectionOffset = 90.f;  break;
@@ -484,7 +547,7 @@ void UTRWaveDirectorSubsystem::ResolveSpawnShape(const FTRWaveGroup& Group, FTRS
 	// 모양을 추가해도 방위 처리를 다시 짤 일이 없다.
 	OutParams.OrientationYawDegrees = ForwardYaw;
 	OutParams.DirectionOffsetDegrees = DirectionOffset;
-	OutParams.bMirrorDirection = (Group.Direction == ETRSpawnDirection::Sides);
+	OutParams.bMirrorDirection = (Direction == ETRSpawnDirection::Sides);
 
 	// 모양·크기는 사람이 정한 값 그대로다. 옮겨 담지 않는다.
 	OutParams.ShapeParams = Group.ShapeParams;
@@ -493,7 +556,7 @@ void UTRWaveDirectorSubsystem::ResolveSpawnShape(const FTRWaveGroup& Group, FTRS
 	//
 	// 고리 — 방위 축을 중심으로 좌우 45도씩. 전방위면 축과 무관하게 한 바퀴.
 	constexpr float ArcWidth = 90.f;
-	const bool bFullCircle = (Group.Direction == ETRSpawnDirection::All);
+	const bool bFullCircle = (Direction == ETRSpawnDirection::All);
 
 	OutParams.InnerRadius = Group.SpawnDistance;
 	OutParams.OuterRadius = Group.SpawnDistance + Group.SpawnDistanceJitter;

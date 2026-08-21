@@ -30,6 +30,16 @@ namespace TRVisualToneParams
 
 	/** 웨이브가 시작되는 순간 1로 튀었다가 0으로 감쇠. 짧은 붉은 섬광용. */
 	inline const FName WavePulse(TEXT("WavePulse"));
+
+	/**
+	 * 지면이 흐르는 속도. 0 = 정지(로비), 1 = 기준 속도.
+	 *
+	 * **트레드밀 구조에서 속도감을 만드는 유일한 근거다.** 기차는 월드 좌표상 멈춰 있고
+	 * 지형이 흐르므로, 카메라도 기차도 "빠르다"는 신호를 내지 않는다. 엔진 모션블러도
+	 * 기대할 수 없다 — 청크가 재활용될 때 순간이동해서 그 프레임의 모션벡터가 튄다.
+	 * 속도선·UV 스트레치처럼 머테리얼이 직접 그리는 수밖에 없고, 그 재료가 이 값이다.
+	 */
+	inline const FName GroundSpeed(TEXT("GroundSpeed"));
 }
 
 /**
@@ -68,6 +78,30 @@ public:
 	/** 웨이브 시작 섬광이 사라지기까지의 시간(초). 0이면 섬광을 쓰지 않는다. */
 	UPROPERTY(Config, EditAnywhere, Category = "Visual Tone", meta = (ClampMin = "0.0", ForceUnits = "s"))
 	float WavePulseDuration = 0.8f;
+
+	/**
+	 * GroundSpeed 가 1.0 이 되는 지면 속도(cm/s).
+	 *
+	 * ATRLevelSceneManager::VisualSpeed 의 기본값과 맞춰 둔다. 여기를 기준으로 정규화하는
+	 * 이유는 머테리얼이 원시 cm/s 로는 아무것도 못 하기 때문이다 — Lerp 도 마스크도
+	 * 0~1 을 전제한다. 원시 값이 필요한 게임플레이 코드는 UTRGroundMotionSubsystem 을
+	 * 직접 읽으면 된다.
+	 *
+	 * 연출상 기차를 더 빠르게 굴리면 이 값도 같이 올린다. 안 올리면 1.0 에 붙어 버려
+	 * 속도가 더 올라가도 화면이 반응하지 않는다.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Visual Tone", meta = (ClampMin = "1.0", ForceUnits = "cm/s"))
+	float SpeedReference = 1000.f;
+
+	/**
+	 * 지면 속도가 화면에 반영되기까지의 시간(초).
+	 *
+	 * 지면 속도는 판이 시작하는 순간 0에서 최고 속도로 **한 프레임 만에 뛴다**
+	 * (ATRLevelSceneManager 가 판 시작 전에는 0을 낸다). 그대로 쓰면 속도선이
+	 * 갑자기 튀어나와 출발한 것이 아니라 화면이 깨진 것처럼 보인다.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Visual Tone", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float SpeedTransitionTime = 1.2f;
 };
 
 /**
@@ -95,6 +129,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "TR|Visual")
 	float GetHullDanger() const { return HullDanger; }
+
+	/** 정규화된 지면 속도(0~1). 기준은 UTRVisualToneSettings::SpeedReference. */
+	UFUNCTION(BlueprintPure, Category = "TR|Visual")
+	float GetGroundSpeed() const { return GroundSpeed; }
 
 	/**
 	 * 웨이브 시작 섬광을 강제로 터뜨린다.
@@ -150,11 +188,13 @@ private:
 	float TargetTension = 0.f;
 	float HullDanger = 0.f;
 	float Pulse = 0.f;
+	float GroundSpeed = 0.f;
 
 	/** MPC 에 마지막으로 쓴 값. 셋 다 문턱 안이면 쓰기를 통째로 건너뛴다. */
 	float LastPushedTension = -1.f;
 	float LastPushedDanger = -1.f;
 	float LastPushedPulse = -1.f;
+	float LastPushedSpeed = -1.f;
 
 	/** 다음으로 기차를 찾아볼 월드 시각(초). 기차가 없는 레벨에서 매 틱 순회하지 않게 한다. */
 	float NextTrainSearchTime = 0.f;
