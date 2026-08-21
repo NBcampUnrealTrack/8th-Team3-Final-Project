@@ -32,7 +32,7 @@ ATRPlayerCharacter::ATRPlayerCharacter()
 
 	// 카메라 컴포넌트
 	CameraComp = CreateDefaultSubobject<UCameraComponent>(TEXT("CameraComp"));
-	CameraComp->SetupAttachment(GetMesh(), FName("head"));
+	CameraComp->SetupAttachment(GetMesh(), FName("root"));
 	CameraComp->SetRelativeLocationAndRotation(FVector(-2.8f, 5.89f, 0.0f), FRotator(0.0f, 90.0f, -90.0f));
 	CameraComp->bUsePawnControlRotation = true;
 	CameraComp->bEnableFirstPersonFieldOfView = true;
