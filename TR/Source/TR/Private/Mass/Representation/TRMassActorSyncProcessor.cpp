@@ -39,6 +39,15 @@ void UTRMassActorSyncProcessor::ConfigureQueries(const TSharedRef<FMassEntityMan
 	EntityQuery.AddRequirement<FMassActorFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FMassVelocityFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 	EntityQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
+
+	// 손상도 표시용. Optional 인 이유는 손상 프래그먼트가 없는 개체(연출용 등)도
+	// 위치 동기화는 받아야 하기 때문이다. 없으면 손상 표현만 빠진다.
+	//
+	// 전투 프래그먼트(체력)를 직접 읽지 않는 이유는 그 값이 서버에만 있기 때문이다.
+	// 이 프로세서는 클라이언트에서도 도는데, 거기서 체력을 읽으면 스폰 시 채워진
+	// 만피가 그대로라 적이 영원히 멀쩡해 보인다.
+	EntityQuery.AddRequirement<FTREnemyVisualFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
+
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 
 	// 애님 파라미터는 선택 사항이다. 표현 액터만 붙이고 애니메이션은 BP가 알아서 하는
@@ -63,9 +72,11 @@ void UTRMassActorSyncProcessor::Execute(FMassEntityManager& EntityManager, FMass
 		const TArrayView<FMassActorFragment> ActorList = Context.GetMutableFragmentView<FMassActorFragment>();
 		const TConstArrayView<FMassVelocityFragment> VelocityList = Context.GetFragmentView<FMassVelocityFragment>();
 		const TConstArrayView<FTREnemyStateFragment> StateList = Context.GetFragmentView<FTREnemyStateFragment>();
+		const TConstArrayView<FTREnemyVisualFragment> VisualList = Context.GetFragmentView<FTREnemyVisualFragment>();
 
 		const bool bHasVelocity = (VelocityList.Num() > 0);
 		const bool bHasState = (StateList.Num() > 0);
+		const bool bHasVisual = (VisualList.Num() > 0);
 
 		const FTREnemyAnimParams* AnimParams = Context.GetConstSharedFragmentPtr<FTREnemyAnimParams>();
 		const FVector GroundVelocity =
@@ -109,6 +120,14 @@ void UTRMassActorSyncProcessor::Execute(FMassEntityManager& EntityManager, FMass
 					: UE::TR::Enemy::FAnimResolution();
 
 				EnemyActor->SetMassState(AnimContext, Anim, DeltaTime);
+
+				// 손상도. 계산은 UTRMassEnemyVisualProcessor(서버)와 ATRMassNetRelay(클라이언트)가
+				// 끝내 놓았고, 여기서는 옮기기만 한다. 피격 플래시는 액터가 값의 변화로
+				// 직접 감지하므로 넘기지 않는다.
+				if (bHasVisual)
+				{
+					EnemyActor->UpdateDamageVisuals(VisualList[EntityIt].DamageRatio, DeltaTime);
+				}
 			}
 		}
 	});

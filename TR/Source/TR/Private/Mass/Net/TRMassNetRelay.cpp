@@ -15,6 +15,58 @@
 #include "Mass/Core/TRMassFragments.h"
 #include "Mass/Debug/TRMassDebug.h"
 
+// ── FTRMassAgentSnapshot — 굽기와 되돌리기 ──────────────────────────────────
+//
+// 두 함수는 서로의 거울이다. 한쪽에만 필드를 더하면 그 값은 클라이언트에서 조용히
+// 기본값으로 남는다(헤더의 주석 참고). 고칠 때는 항상 둘을 같이 본다.
+
+void FTRMassAgentSnapshot::CollectFrom(const FTransform& Transform, const FTRMassNetIdFragment& NetIdFragment,
+	const FTREnemyStateFragment* State, const FTREnemyVisualFragment* Visual)
+{
+	NetId = NetIdFragment.NetId;
+	ConfigIndex = NetIdFragment.ConfigIndex;
+	Location = Transform.GetLocation();
+
+	// Yaw 를 1바이트로. 음수 각도도 감싸도록 0~360 으로 정규화한 뒤 나눈다.
+	const float YawDegrees = FRotator::ClampAxis(Transform.GetRotation().Rotator().Yaw);
+	Yaw = static_cast<uint8>(FMath::RoundToInt(YawDegrees * (256.f / 360.f)));
+
+	ActionState = (State != nullptr) ? State->ActionState : ETREnemyActionState::None;
+
+	// 0~1 을 1바이트로. 256등분이면 손상 단계 하나가 수십 칸이라 눈에 띄는 계단이 없다.
+	const float Damage = (Visual != nullptr) ? FMath::Clamp(Visual->DamageRatio, 0.f, 1.f) : 0.f;
+	DamageRatio = static_cast<uint8>(FMath::RoundToInt(Damage * 255.f));
+}
+
+void FTRMassAgentSnapshot::ApplyTo(FMassEntityManager& EntityManager, FMassEntityHandle Entity,
+	float ClientWorldTime) const
+{
+	// 행동 상태를 그대로 옮긴다. 클라이언트의 애니메이션 선택이 이 값을 읽는다.
+	if (FTREnemyStateFragment* State = EntityManager.GetFragmentDataPtr<FTREnemyStateFragment>(Entity))
+	{
+		// 진입 시각은 서버 시각이 아니라 **클라이언트가 그 상태를 처음 본 시각**이어야
+		// 한다. 두 월드의 시간 원점이 다르므로 서버 값을 그대로 쓰면 단발 애니메이션의
+		// 경과 시간이 엉뚱하게 계산된다.
+		TryEnterActionState(*State, ActionState, ClientWorldTime);
+	}
+
+	// 손상도. 클라이언트에는 전투 프로세서가 없으므로 이 경로가 유일한 출처다.
+	// 이게 없으면 클라이언트 화면의 적은 아무리 맞아도 영원히 멀쩡해 보인다.
+	if (FTREnemyVisualFragment* Visual = EntityManager.GetFragmentDataPtr<FTREnemyVisualFragment>(Entity))
+	{
+		const float NewRatio = DamageRatio / 255.f;
+
+		// 서버와 같은 규칙 — 값이 올라간 것만 피격으로 본다. 스냅샷 주기보다 짧은
+		// 간격으로 두 대 맞으면 한 번만 번쩍이지만, 그 차이는 눈에 보이지 않는다.
+		if (NewRatio > Visual->DamageRatio + KINDA_SMALL_NUMBER)
+		{
+			Visual->LastHitTime = ClientWorldTime;
+		}
+
+		Visual->DamageRatio = NewRatio;
+	}
+}
+
 ATRMassNetRelay::ATRMassNetRelay()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -249,14 +301,9 @@ void ATRMassNetRelay::ApplySnapshotToEntities(float DeltaSeconds)
 			Transform.SetRotation(FRotator(0.f, NewYaw, 0.f).Quaternion());
 		}
 
-		// 행동 상태를 그대로 옮긴다. 클라이언트의 애니메이션 선택이 이 값을 읽는다.
-		if (FTREnemyStateFragment* StateFragment = EntityManager->GetFragmentDataPtr<FTREnemyStateFragment>(Entity))
-		{
-			// 진입 시각은 서버 시각이 아니라 **클라이언트가 그 상태를 처음 본 시각**이어야
-			// 한다. 두 월드의 시간 원점이 다르므로 서버 값을 그대로 쓰면 단발 애니메이션의
-			// 경과 시간이 엉뚱하게 계산된다.
-			TryEnterActionState(*StateFragment, Agent.ActionState, World->GetTimeSeconds());
-		}
+		// 보간이 필요 없는 값들은 스냅샷이 스스로 되돌린다. 굽는 쪽(CollectFrom)과
+		// 나란히 있어 필드를 늘릴 때 한쪽만 고치는 일을 줄인다.
+		Agent.ApplyTo(*EntityManager, Entity, World->GetTimeSeconds());
 	}
 
 	DestroyMissingEntities(LiveNetIds);

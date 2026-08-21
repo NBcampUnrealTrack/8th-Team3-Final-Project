@@ -13,6 +13,7 @@
 #include "MassSimulationLOD.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Mass/Core/TRMassParams.h"
+#include "Mass/Net/TRMassNetContract.h"
 
 DECLARE_CYCLE_STAT(TEXT("Chase Separation"), STAT_TRChaseSeparation, STATGROUP_TRMass);
 
@@ -51,11 +52,11 @@ void UTRChaseSeparationProcessor::ConfigureQueries(const TSharedRef<FMassEntityM
 
 	// 시체는 밀려나지 않는다. 산 개체들이 시체를 피해 지나가는 편이 자연스럽고,
 	// 무엇보다 밀리면 "죽은 자리에 남는다"가 깨진다.
-	EntityQuery.AddTagRequirement<FTRDeadTag>(EMassFragmentPresence::None);
+	UE::TR::Mass::AddServerAuthoredTagRequirement<FTRDeadTag>(EntityQuery, *this, EMassFragmentPresence::None);
 
 	// 도달한 개체는 표적 쪽으로 밀리지 않게 한다. 방향을 깎으려면 표적 위치가 필요하다.
-	EntityQuery.AddTagRequirement<FTRArrivedTag>(EMassFragmentPresence::Optional);
-	EntityQuery.AddRequirement<FTRTargetFragment>(EMassFragmentAccess::ReadOnly);
+	UE::TR::Mass::AddServerAuthoredTagRequirement<FTRArrivedTag>(EntityQuery, *this, EMassFragmentPresence::Optional);
+	UE::TR::Mass::AddServerAuthoredRequirement<FTRTargetFragment>(EntityQuery, *this, EMassFragmentAccess::ReadOnly);
 
 	EntityQuery.AddConstSharedRequirement<FTRChaseParams>(EMassFragmentPresence::All);
 

@@ -7,6 +7,7 @@
 #include "MassExecutionContext.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Mass/Core/TRMassFragments.h"
+#include "Mass/Net/TRMassNetContract.h"
 #include "Mass/Targeting/TRTargetDirectorSubsystem.h"
 
 DECLARE_CYCLE_STAT(TEXT("Target Sync"), STAT_TRTargetSync, STATGROUP_TRMass);
@@ -23,7 +24,7 @@ UTRTargetSyncProcessor::UTRTargetSyncProcessor()
 void UTRTargetSyncProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
 {
 	EntityQuery.AddRequirement<FTRChaseChannelFragment>(EMassFragmentAccess::ReadOnly);
-	EntityQuery.AddRequirement<FTRTargetFragment>(EMassFragmentAccess::ReadWrite);
+	UE::TR::Mass::AddServerAuthoredRequirement<FTRTargetFragment>(EntityQuery, *this, EMassFragmentAccess::ReadWrite);
 	// 표면 최근접점은 "내가 지금 어디 있는가"에 따라 달라진다.
 	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);

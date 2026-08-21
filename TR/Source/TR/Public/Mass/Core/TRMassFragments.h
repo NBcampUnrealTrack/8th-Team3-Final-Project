@@ -340,3 +340,76 @@ struct FTREnemyCombatFragment : public FMassFragment
 	UPROPERTY()
 	int32 ShotsFired = 0;
 };
+
+/**
+ * 표현 계층만 쓰는 손상 상태. 전투 수치에서 파생되며 게임플레이 판정에는 쓰지 않는다.
+ *
+ * **왜 전투 프래그먼트를 직접 읽지 않는가**
+ *
+ * 체력은 서버에만 있다. 클라이언트의 FTREnemyCombatFragment 는 스폰 시 기준값으로
+ * 채워진 뒤 아무도 건드리지 않으므로, 표현이 그걸 읽으면 클라이언트에서는 모든 적이
+ * 영원히 멀쩡해 보인다(리슨 서버의 호스트 화면에서만 손상이 보인다 — 찾기 어려운 종류다).
+ *
+ * 이 프래그먼트는 양쪽에서 채워진다. 서버는 UTRMassEnemyVisualProcessor 가 체력에서
+ * 계산해 넣고, 클라이언트는 ATRMassNetRelay 가 스냅샷으로 받은 값을 넣는다. 표현 쪽
+ * 두 경로(액터·ISM)는 출처를 몰라도 되고, 같은 값을 본다.
+ */
+USTRUCT()
+struct FTREnemyVisualFragment : public FMassFragment
+{
+	GENERATED_BODY()
+
+	/**
+	 * 0 = 멀쩡, 1 = 파괴 직전.
+	 *
+	 * 체력 비율이 아니라 그 **반대**인 이유는 머테리얼이 값을 못 받았을 때(인덱스 불일치,
+	 * 프래그먼트 없음) 0을 읽기 때문이다. 0이 멀쩡함이어야 새 개체처럼 보이지,
+	 * 전원이 파괴 직전으로 보이지 않는다.
+	 */
+	UPROPERTY()
+	float DamageRatio = 0.f;
+
+	/**
+	 * 마지막으로 피해를 받은 월드 시각(초). 피격 플래시의 감쇠를 여기서 잰다.
+	 *
+	 * 남은 플래시 값을 저장하지 않는 이유는 그러면 매 틱 감쇠시켜 줄 프로세서가
+	 * 필요해지기 때문이다. 시각을 두면 읽는 쪽이 그때그때 경과 시간으로 계산한다.
+	 *
+	 * 큰 음수가 기본값이다. 0으로 두면 월드 시각 0 근처, 즉 판이 시작하자마자
+	 * 전원이 한 번 번쩍인다.
+	 */
+	UPROPERTY()
+	float LastHitTime = -1000.f;
+};
+
+namespace UE::TR::Enemy
+{
+	/**
+	 * 피격 플래시가 사라지기까지의 시간(초).
+	 *
+	 * 짧을수록 타격이 날카롭다. 길게 주면 연사를 맞는 동안 계속 하얗게 떠 있어
+	 * 정작 손상도가 안 보인다. ATRMassEnemyActor::HitFlashDuration 의 기본값과
+	 * 같은 값이며, 두 표현의 플래시 길이가 눈에 띄게 갈리지 않게 하려는 것이다.
+	 */
+	inline constexpr float HitFlashDuration = 0.12f;
+
+	/**
+	 * 지금 남은 피격 플래시(1 = 방금 맞음, 0 = 없음).
+	 *
+	 * 프래그먼트에 남은 값을 저장해 두고 매 틱 깎는 대신 여기서 경과 시간으로 계산한다.
+	 * 그래야 값을 감쇠시켜 줄 프로세서가 따로 필요 없고, 표현 경로가 늘어나도
+	 * 플래시 규칙이 한 곳에만 있는다.
+	 */
+	inline float ComputeHitFlash(const FTREnemyVisualFragment& Visual, float WorldTime)
+	{
+		static_assert(HitFlashDuration > 0.f, "0 이면 아래 나눗셈이 무한대가 된다. 플래시를 끄려면 머테리얼에서 끊을 것.");
+
+		const float Elapsed = WorldTime - Visual.LastHitTime;
+
+		// 음수는 클라이언트가 서버보다 이른 시각을 볼 때 나온다. 그때 1을 돌려주면
+		// 접속 직후 화면의 적이 전부 한 번 번쩍인다.
+		return (Elapsed < 0.f || Elapsed >= HitFlashDuration)
+			? 0.f
+			: (1.f - Elapsed / HitFlashDuration);
+	}
+}

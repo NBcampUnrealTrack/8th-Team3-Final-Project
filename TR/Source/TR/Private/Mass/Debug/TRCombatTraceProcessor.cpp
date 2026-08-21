@@ -12,6 +12,7 @@
 #include "Core/TRGameMode.h"
 #include "Mass/Combat/TRMassCombatSubsystem.h"
 #include "Mass/Core/TRMassFragments.h"
+#include "Mass/Net/TRMassNetContract.h"
 #include "Mass/Core/TRMassParams.h"
 #include "Mass/Targeting/TRTargetDirectorSubsystem.h"
 #include "Mass/Debug/TRMassDebug.h"
@@ -118,7 +119,12 @@ UTRCombatTraceProcessor::UTRCombatTraceProcessor()
 	bAutoRegisterWithProcessingPhases = true;
 #endif
 
-	ExecutionFlags = (int32)EProcessorExecutionFlags::AllNetModes;
+	// **서버 전용이다.** 이 프로세서가 재는 것(사격 수, 상태 전이 거리, 표적 침투)은
+	// 전부 시뮬레이션의 산물이고, 시뮬레이션은 서버에만 있다. 예전에는 AllNetModes 였는데
+	// 그러면 클라이언트에서 ShotsFired 가 영영 0이라 사격 로그가 한 줄도 안 나오고,
+	// FTRTargetFragment 가 비어 있어 거리가 늘 -1 로 찍혔다. 계측 도구가 틀린 수치를 내는
+	// 것은 아무 수치도 안 내는 것보다 나쁘다. (TRMassNetContract.h 참고)
+	ExecutionFlags = (int32)EProcessorExecutionFlags::Server | (int32)EProcessorExecutionFlags::Standalone;
 
 	// 이동과 상태 갱신이 모두 끝난 값을 본다.
 	ExecutionOrder.ExecuteInGroup = UE::Mass::ProcessorGroupNames::UpdateWorldFromMass;
@@ -131,9 +137,9 @@ void UTRCombatTraceProcessor::ConfigureQueries(const TSharedRef<FMassEntityManag
 {
 	TraceQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
 	TraceQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadOnly);
-	TraceQuery.AddRequirement<FTREnemyCombatFragment>(EMassFragmentAccess::ReadOnly);
-	TraceQuery.AddRequirement<FTRTargetFragment>(EMassFragmentAccess::ReadOnly);
-	TraceQuery.AddRequirement<FTRApproachFragment>(EMassFragmentAccess::ReadOnly);
+	UE::TR::Mass::AddServerAuthoredRequirement<FTREnemyCombatFragment>(TraceQuery, *this, EMassFragmentAccess::ReadOnly);
+	UE::TR::Mass::AddServerAuthoredRequirement<FTRTargetFragment>(TraceQuery, *this, EMassFragmentAccess::ReadOnly);
+	UE::TR::Mass::AddServerAuthoredRequirement<FTRApproachFragment>(TraceQuery, *this, EMassFragmentAccess::ReadOnly);
 	TraceQuery.AddRequirement<FTRChaseChannelFragment>(EMassFragmentAccess::ReadOnly);
 	TraceQuery.AddConstSharedRequirement<FTREnemyCombatParams>(EMassFragmentPresence::All);
 	TraceQuery.AddSubsystemRequirement<UTRTargetDirectorSubsystem>(EMassFragmentAccess::ReadOnly);

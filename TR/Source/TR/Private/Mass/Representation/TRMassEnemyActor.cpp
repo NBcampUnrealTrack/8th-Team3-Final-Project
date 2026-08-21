@@ -109,6 +109,53 @@ void ATRMassEnemyActor::SetMassState(const UE::TR::Enemy::FAnimContext& Context,
 	}
 }
 
+void ATRMassEnemyActor::UpdateDamageVisuals(float InDamageRatio, float DeltaSeconds)
+{
+	const float Clamped = FMath::Clamp(InDamageRatio, 0.f, 1.f);
+
+	// ── 피격 플래시 ──────────────────────────────────────────────────────────
+	//
+	// 피격 이벤트를 따로 받지 않고 손상도가 **올라간 것**으로 감지한다. 전투 쪽에
+	// 이벤트를 추가하면 그 이벤트가 표현 계층까지 오는 경로(프래그먼트든 델리게이트든)를
+	// 하나 더 유지해야 하는데, 이미 매 틱 들어오는 값으로 같은 판단을 할 수 있다.
+	//
+	// 첫 갱신(LastDamageRatio < 0)에서는 터뜨리지 않는다. ISM 으로 있는 동안 맞은
+	// 개체가 근거리로 넘어오는 순간 값이 0에서 껑충 뛰는데, 그건 방금 맞은 게 아니다.
+	const bool bFirstDamageUpdate = (LastDamageRatio < 0.f);
+	const bool bTookDamage = !bFirstDamageUpdate && (Clamped > LastDamageRatio + DamageWriteThreshold);
+
+	if (bTookDamage && HitFlashDuration > 0.f)
+	{
+		HitFlash = 1.f;
+	}
+	else if (HitFlash > 0.f)
+	{
+		// 지속 시간이 0이면 즉시 꺼진다. 나눗셈을 피하려고 분기해 둔다.
+		HitFlash = (HitFlashDuration > 0.f)
+			? FMath::Max(0.f, HitFlash - DeltaSeconds / HitFlashDuration)
+			: 0.f;
+	}
+
+	// 감쇠 중에는 매 틱 써야 하지만, 0에 닿은 뒤로는 쓸 것이 없다.
+	if (!FMath::IsNearlyEqual(HitFlash, LastWrittenHitFlash, DamageWriteThreshold) || (HitFlash <= 0.f && LastWrittenHitFlash > 0.f))
+	{
+		LastWrittenHitFlash = HitFlash;
+		MeshComp->SetCustomPrimitiveDataFloat(HitFlashCustomDataIndex, HitFlash);
+	}
+
+	// ── 손상도 ───────────────────────────────────────────────────────────────
+	//
+	// 체력은 피격 때만 변하는데 이 함수는 매 틱 불린다. 문턱이 없으면 개체 수백이
+	// 매 프레임 렌더 상태를 더럽힌다.
+	if (FMath::Abs(Clamped - LastDamageRatio) < DamageWriteThreshold)
+	{
+		return;
+	}
+
+	LastDamageRatio = Clamped;
+	MeshComp->SetCustomPrimitiveDataFloat(DamageCustomDataIndex, Clamped);
+}
+
 void ATRMassEnemyActor::PrepareForPooling_Implementation()
 {
 	SetActorHiddenInGame(true);
@@ -130,6 +177,16 @@ void ATRMassEnemyActor::PrepareForGame_Implementation()
 	// 값만 지워서는 부족하다. AnimBP의 상태머신은 이전 개체가 남긴 스테이트에 그대로 머물러 있다.
 	bFirstUpdate = true;
 	bPoseResetPending = true;
+
+	// 상처도 물려받는다. 머테리얼에 즉시 0을 써서 멀쩡한 상태로 나가게 하고,
+	// 마지막 값을 무효로 돌려 다음 갱신이 문턱에 걸려 생략되지 않게 한다.
+	// 음수는 "아직 쓴 적 없음"이라 첫 갱신에서 피격 플래시가 잘못 터지는 것도 막는다.
+	LastDamageRatio = -1.f;
+	MeshComp->SetCustomPrimitiveDataFloat(DamageCustomDataIndex, 0.f);
+
+	HitFlash = 0.f;
+	LastWrittenHitFlash = 0.f;
+	MeshComp->SetCustomPrimitiveDataFloat(HitFlashCustomDataIndex, 0.f);
 
 	if (UAnimInstance* AnimInstance = MeshComp->GetAnimInstance())
 	{
