@@ -10,6 +10,7 @@
 #include "MassMovementFragments.h"
 #include "Mass/Combat/TRMassCombatSubsystem.h"
 #include "Mass/Core/TRMassParams.h"
+#include "Mass/Net/TRMassNetContract.h"
 #include "Mass/Debug/TRMassDebug.h"
 
 DECLARE_CYCLE_STAT(TEXT("Enemy Attack"), STAT_TREnemyAttack, STATGROUP_TRMass);
@@ -54,15 +55,15 @@ void UTREnemyAttackProcessor::ConfigureQueries(const TSharedRef<FMassEntityManag
 {
 	// ── 폭발 예약 → 실행 ──────────────────────────────────────────────────
 	DetonationQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
-	DetonationQuery.AddRequirement<FTREnemyCombatFragment>(EMassFragmentAccess::ReadOnly);
+	UE::TR::Mass::AddServerAuthoredRequirement<FTREnemyCombatFragment>(DetonationQuery, *this, EMassFragmentAccess::ReadOnly);
 	// 피해를 받을 액터를 고르는 근거. 판단은 하지 않고 채널만 실어 보낸다.
 	DetonationQuery.AddRequirement<FTRChaseChannelFragment>(EMassFragmentAccess::ReadOnly);
 	DetonationQuery.AddConstSharedRequirement<FTREnemyCombatParams>(EMassFragmentPresence::All);
-	DetonationQuery.AddTagRequirement<FTRDetonatingTag>(EMassFragmentPresence::All);
+	UE::TR::Mass::AddServerAuthoredTagRequirement<FTRDetonatingTag>(DetonationQuery, *this, EMassFragmentPresence::All);
 
 	// 준비 중에 죽은 개체는 터지지 않는다. 예약만 해두고 사살된 적이 시체 상태로
 	// 폭발하면 플레이어가 막아낸 것이 무의미해진다.
-	DetonationQuery.AddTagRequirement<FTRDeadTag>(EMassFragmentPresence::None);
+	UE::TR::Mass::AddServerAuthoredTagRequirement<FTRDeadTag>(DetonationQuery, *this, EMassFragmentPresence::None);
 	DetonationQuery.AddSubsystemRequirement<UTRMassCombatSubsystem>(EMassFragmentAccess::ReadWrite);
 }
 

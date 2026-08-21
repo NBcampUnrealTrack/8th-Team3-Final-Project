@@ -12,6 +12,7 @@
 #include "MassStateTreeTypes.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Mass/Core/TRMassParams.h"
+#include "Mass/Net/TRMassNetContract.h"
 
 DECLARE_CYCLE_STAT(TEXT("Chase Steering"), STAT_TRChaseSteering, STATGROUP_TRMass);
 
@@ -104,18 +105,18 @@ UTRChaseSteeringProcessor::UTRChaseSteeringProcessor()
 void UTRChaseSteeringProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
 {
 	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadWrite);
-	EntityQuery.AddRequirement<FTRTargetFragment>(EMassFragmentAccess::ReadWrite);
+	UE::TR::Mass::AddServerAuthoredRequirement<FTRTargetFragment>(EntityQuery, *this, EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddRequirement<FMassVelocityFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FMassForceFragment>(EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 
 	// 시체는 조종하지 않는다. 죽은 자리에 남아 있어야 한다.
 	// 태그는 아키타입 단위로 빠르게 걸러주고, 태그가 붙기 전 한 프레임은 아래 상태 값이 막는다.
-	EntityQuery.AddTagRequirement<FTRDeadTag>(EMassFragmentPresence::None);
+	UE::TR::Mass::AddServerAuthoredTagRequirement<FTRDeadTag>(EntityQuery, *this, EMassFragmentPresence::None);
 	EntityQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 
 	// 정지 거리와 속도는 개체마다 다르다(종류·사출 여부). TR Chaser 트레이트가 항상 붙인다.
-	EntityQuery.AddRequirement<FTRApproachFragment>(EMassFragmentAccess::ReadOnly);
+	UE::TR::Mass::AddServerAuthoredRequirement<FTRApproachFragment>(EntityQuery, *this, EMassFragmentAccess::ReadOnly);
 
 	EntityQuery.AddConstSharedRequirement<FTRChaseParams>(EMassFragmentPresence::All);
 	// 최고 속도는 MassMovement가 관리한다. 여기서 중복 정의하지 않고 그 값을 그대로 쓴다.

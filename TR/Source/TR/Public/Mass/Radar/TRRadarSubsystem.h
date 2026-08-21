@@ -6,6 +6,8 @@
 #include "Engine/World.h"
 #include "Mass/ExternalSubsystemTraits.h"
 #include "Mass/Core/TRMassTypes.h"
+// AddBlip 의 NaN 경고가 Mass 로그로 나가야 한다. 이 헤더가 인라인이라 여기서 끌어온다.
+#include "Mass/Debug/TRMassDebug.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "TRRadarSubsystem.generated.h"
 
@@ -75,7 +77,7 @@ public:
 		// 실제 원인은 늘 그 엔티티를 움직인 쪽이므로, 조용히 버리되 흔적을 남긴다.
 		if (Location.ContainsNaN())
 		{
-			UE_LOG(LogTemp, Verbose, TEXT("TRRadar: NaN 위치를 가진 엔티티를 건너뛴다."));
+			UE_LOG(LogTRMass, Verbose, TEXT("TRRadar: NaN 위치를 가진 엔티티를 건너뛴다."));
 			return;
 		}
 

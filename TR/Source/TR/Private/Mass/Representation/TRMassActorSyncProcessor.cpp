@@ -40,9 +40,13 @@ void UTRMassActorSyncProcessor::ConfigureQueries(const TSharedRef<FMassEntityMan
 	EntityQuery.AddRequirement<FMassVelocityFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 	EntityQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 
-	// 손상도 표시용. Optional 인 이유는 전투 프래그먼트가 없는 개체(연출용 등)도
+	// 손상도 표시용. Optional 인 이유는 손상 프래그먼트가 없는 개체(연출용 등)도
 	// 위치 동기화는 받아야 하기 때문이다. 없으면 손상 표현만 빠진다.
-	EntityQuery.AddRequirement<FTREnemyCombatFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
+	//
+	// 전투 프래그먼트(체력)를 직접 읽지 않는 이유는 그 값이 서버에만 있기 때문이다.
+	// 이 프로세서는 클라이언트에서도 도는데, 거기서 체력을 읽으면 스폰 시 채워진
+	// 만피가 그대로라 적이 영원히 멀쩡해 보인다.
+	EntityQuery.AddRequirement<FTREnemyVisualFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 
@@ -68,11 +72,11 @@ void UTRMassActorSyncProcessor::Execute(FMassEntityManager& EntityManager, FMass
 		const TArrayView<FMassActorFragment> ActorList = Context.GetMutableFragmentView<FMassActorFragment>();
 		const TConstArrayView<FMassVelocityFragment> VelocityList = Context.GetFragmentView<FMassVelocityFragment>();
 		const TConstArrayView<FTREnemyStateFragment> StateList = Context.GetFragmentView<FTREnemyStateFragment>();
-		const TConstArrayView<FTREnemyCombatFragment> CombatList = Context.GetFragmentView<FTREnemyCombatFragment>();
+		const TConstArrayView<FTREnemyVisualFragment> VisualList = Context.GetFragmentView<FTREnemyVisualFragment>();
 
 		const bool bHasVelocity = (VelocityList.Num() > 0);
 		const bool bHasState = (StateList.Num() > 0);
-		const bool bHasCombat = (CombatList.Num() > 0);
+		const bool bHasVisual = (VisualList.Num() > 0);
 
 		const FTREnemyAnimParams* AnimParams = Context.GetConstSharedFragmentPtr<FTREnemyAnimParams>();
 		const FVector GroundVelocity =
@@ -117,17 +121,12 @@ void UTRMassActorSyncProcessor::Execute(FMassEntityManager& EntityManager, FMass
 
 				EnemyActor->SetMassState(AnimContext, Anim, DeltaTime);
 
-				// 손상도. 체력 비율을 뒤집어 "얼마나 망가졌나"로 만든다 —
-				// 머테리얼이 0을 멀쩡함으로 읽어야 값을 못 받았을 때(인덱스 불일치,
-				// 전투 프래그먼트 없음) 새 개체처럼 보이지 파괴 직전으로 보이지 않는다.
-				if (bHasCombat)
+				// 손상도. 계산은 UTRMassEnemyVisualProcessor(서버)와 ATRMassNetRelay(클라이언트)가
+				// 끝내 놓았고, 여기서는 옮기기만 한다. 피격 플래시는 액터가 값의 변화로
+				// 직접 감지하므로 넘기지 않는다.
+				if (bHasVisual)
 				{
-					const FTREnemyCombatFragment& Combat = CombatList[EntityIt];
-					const float DamageRatio = (Combat.MaxHealth > 0.f)
-						? 1.f - FMath::Clamp(Combat.Health / Combat.MaxHealth, 0.f, 1.f)
-						: 0.f;
-
-					EnemyActor->UpdateDamageVisuals(DamageRatio, DeltaTime);
+					EnemyActor->UpdateDamageVisuals(VisualList[EntityIt].DamageRatio, DeltaTime);
 				}
 			}
 		}

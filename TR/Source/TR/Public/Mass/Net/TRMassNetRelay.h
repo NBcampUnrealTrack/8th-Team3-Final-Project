@@ -9,6 +9,10 @@
 #include "TRMassNetRelay.generated.h"
 
 class UMassEntityConfigAsset;
+struct FMassEntityManager;
+struct FTRMassNetIdFragment;
+struct FTREnemyStateFragment;
+struct FTREnemyVisualFragment;
 
 /**
  * 적 한 마리의 복제 상태. 한 개체당 12바이트 남짓으로 눌러 담는다.
@@ -39,6 +43,50 @@ struct FTRMassAgentSnapshot
 	/** ConfigPalette 색인. 어떤 메시로 그릴지. */
 	UPROPERTY()
 	uint8 ConfigIndex = 0;
+
+	/**
+	 * 손상도를 1바이트로 압축(0 = 멀쩡, 255 = 파괴 직전).
+	 *
+	 * 체력 자체가 아니라 비율만 보내는 이유는 클라이언트가 이 값으로 판정을 하지 않기
+	 * 때문이다 — 머테리얼에 넣을 0~1 하나면 충분하고, 티어마다 다른 최대 체력을 함께
+	 * 보낼 필요도 없어진다.
+	 */
+	UPROPERTY()
+	uint8 DamageRatio = 0;
+
+	// ── 굽기 / 되돌리기 ──────────────────────────────────────────────────
+	//
+	// **필드를 늘리면 이 두 함수를 같이 고친다.** 둘을 여기 나란히 둔 이유가 그것이다.
+	//
+	// 예전에는 필드 선언(이 구조체), 값 수집(UTRMassNetSnapshotProcessor), 값 적용
+	// (ATRMassNetRelay) 이 서로 다른 세 파일에 흩어져 있었다. 그래서 필드를 더하고
+	// 수집이나 적용 중 하나를 빠뜨려도 컴파일이 되고, 클라이언트에서 그 값만 조용히
+	// 기본값으로 남았다 — 호스트에서는 재현되지 않는 종류의 버그다.
+	//
+	// 이제 한쪽만 고치면 바로 옆 함수가 눈에 들어온다. 컴파일러가 잡아주지는 못하지만,
+	// 최소한 "다른 파일에 있는 줄 몰랐다"는 없어진다.
+
+	/**
+	 * 서버 — 엔티티의 현재 상태를 스냅샷에 굽는다.
+	 *
+	 * @param State   없으면 ActionState 를 None 으로 둔다(전투 구성이 아닌 개체).
+	 * @param Visual  없으면 손상도를 0으로 둔다.
+	 */
+	void CollectFrom(const FTransform& Transform, const FTRMassNetIdFragment& NetIdFragment,
+		const FTREnemyStateFragment* State, const FTREnemyVisualFragment* Visual);
+
+	/**
+	 * 클라이언트 — 스냅샷을 로컬 엔티티에 되돌린다.
+	 *
+	 * **위치와 회전은 여기서 다루지 않는다.** 그 둘은 스냅샷 사이를 보간해야 해서
+	 * 릴레이가 들고 있는 진행도(FInterpState)가 필요하고, 그 상태는 이 구조체 밖에 있다.
+	 * 여기서 처리하는 것은 보간 없이 그대로 옮기는 값들이다.
+	 *
+	 * @param ClientWorldTime 클라이언트의 월드 시각. **서버 시각을 넣으면 안 된다** —
+	 *                        두 월드는 시간 원점이 달라서 단발 애니메이션의 경과 시간과
+	 *                        피격 플래시가 엉뚱하게 계산된다.
+	 */
+	void ApplyTo(FMassEntityManager& EntityManager, FMassEntityHandle Entity, float ClientWorldTime) const;
 };
 
 /**

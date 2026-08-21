@@ -33,6 +33,9 @@ void UTRMassNetSnapshotProcessor::ConfigureQueries(const TSharedRef<FMassEntityM
 	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FTRMassNetIdFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
+
+	// 손상도 복제용. 클라이언트에는 전투 프로세서가 없어 이 값이 유일한 출처다.
+	EntityQuery.AddRequirement<FTREnemyVisualFragment>(EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 }
 
@@ -73,8 +76,10 @@ void UTRMassNetSnapshotProcessor::Execute(FMassEntityManager& EntityManager, FMa
 		const TConstArrayView<FTransformFragment> TransformList = Context.GetFragmentView<FTransformFragment>();
 		const TConstArrayView<FTRMassNetIdFragment> NetIdList = Context.GetFragmentView<FTRMassNetIdFragment>();
 		const TConstArrayView<FTREnemyStateFragment> StateList = Context.GetFragmentView<FTREnemyStateFragment>();
+		const TConstArrayView<FTREnemyVisualFragment> VisualList = Context.GetFragmentView<FTREnemyVisualFragment>();
 
 		const bool bHasState = (StateList.Num() > 0);
+		const bool bHasVisual = (VisualList.Num() > 0);
 
 		for (FMassExecutionContext::FEntityIterator EntityIt = Context.CreateEntityIterator(); EntityIt; ++EntityIt)
 		{
@@ -85,18 +90,15 @@ void UTRMassNetSnapshotProcessor::Execute(FMassEntityManager& EntityManager, FMa
 				continue;
 			}
 
-			const FTransform& Transform = TransformList[EntityIt].GetTransform();
-
+			// 무엇을 어떻게 눌러 담을지는 스냅샷 구조체가 안다. 이 프로세서는 "어느
+			// 엔티티를" 만 고른다 — 굽는 규칙이 되돌리는 규칙 바로 옆에 있어야
+			// 필드를 늘릴 때 한쪽만 고치는 일이 줄어든다(FTRMassAgentSnapshot 주석 참고).
 			FTRMassAgentSnapshot& Agent = Snapshot.AddDefaulted_GetRef();
-			Agent.NetId = NetId.NetId;
-			Agent.ConfigIndex = NetId.ConfigIndex;
-			Agent.Location = Transform.GetLocation();
-
-			// Yaw 를 1바이트로. 음수 각도도 감싸도록 0~360 으로 정규화한 뒤 나눈다.
-			const float Yaw = FRotator::ClampAxis(Transform.GetRotation().Rotator().Yaw);
-			Agent.Yaw = static_cast<uint8>(FMath::RoundToInt(Yaw * (256.f / 360.f))) ;
-
-			Agent.ActionState = bHasState ? StateList[EntityIt].ActionState : ETREnemyActionState::None;
+			Agent.CollectFrom(
+				TransformList[EntityIt].GetTransform(),
+				NetId,
+				bHasState ? &StateList[EntityIt] : nullptr,
+				bHasVisual ? &VisualList[EntityIt] : nullptr);
 		}
 	});
 
