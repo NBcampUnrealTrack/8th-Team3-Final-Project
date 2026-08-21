@@ -12,6 +12,10 @@ class TR_API UTRMenuButton : public UCommonButtonBase
 {
 	GENERATED_BODY()
 
+public:
+	// 준비/준비 취소처럼 상태에 따라 글자가 바뀌는 버튼을 위해 열어 둔다.
+	void SetLabelText(const FText& InLabelText);
+
 protected:
 	virtual void NativePreConstruct() override;
 

@@ -3,6 +3,16 @@
 #include "UI/TRMenuButton.h"
 #include "Components/TextBlock.h"
 
+void UTRMenuButton::SetLabelText(const FText& InLabelText)
+{
+	LabelText = InLabelText;
+
+	if (IsValid(Txt_Label))
+	{
+		Txt_Label->SetText(LabelText);
+	}
+}
+
 void UTRMenuButton::NativePreConstruct()
 {
 	Super::NativePreConstruct();

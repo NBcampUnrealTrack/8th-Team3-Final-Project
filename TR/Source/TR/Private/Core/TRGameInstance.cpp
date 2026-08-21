@@ -298,7 +298,8 @@ bool UTRGameInstance::StartListen()
 	}
 
 	// 메인메뉴에서 호스트하면 게임 맵으로 한 번 이동해야 한다. 이미 게임 맵이면 그대로 연다.
-	const FString CurrentMap = World->GetOutermost()->GetName();
+	// PIE 에서는 패키지 이름에 UEDPIE_N_ 이 붙으므로 없애야 같은 맵으로 인식된다.
+	const FString CurrentMap = UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
 	if (CurrentMap == GameMapPath)
 	{
 		return StartListenInPlace();
