@@ -11,6 +11,7 @@
 #include "Core/TRGameMode.h"
 #include "TRTypes.h"
 #include "Train/TRArmor.h"
+#include "Train/TRRepairTargetComponent.h"
 #include "Train/TRTurret.h"
 
 // 비어 있는 슬롯 이름들을 이어 반환한다. 전부 채워졌으면 빈 문자열.
@@ -46,6 +47,8 @@ ATRTrain::ATRTrain()
 
 	MeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshComp"));
 	RootComponent = MeshComp;
+	
+	RepairTarget = CreateDefaultSubobject<UTRRepairTargetComponent>(TEXT("RepairTarget"));
 }
 
 void ATRTrain::BeginPlay()
