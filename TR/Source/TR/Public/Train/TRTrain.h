@@ -10,6 +10,7 @@
 class ATRArmor;
 class ATRTurret;
 class ATRInstallablePart;
+class UTRRepairTargetComponent;
 
 UCLASS()
 class TR_API ATRTrain : public AActor
@@ -78,6 +79,9 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Train")
 	TObjectPtr<UStaticMeshComponent> MeshComp;
 
+	UPROPERTY(VisibleAnywhere)
+	TObjectPtr<UTRRepairTargetComponent> RepairTarget;
+	
 	UPROPERTY(EditDefaultsOnly, Category = "Train")
 	float MaxHullHealth = 2000.f;
 
