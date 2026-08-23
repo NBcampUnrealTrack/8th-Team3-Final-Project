@@ -11,6 +11,7 @@
 #include "Environment/TRGroundMotionSubsystem.h"
 #include "Mass/Core/TRMassFragments.h"
 #include "Mass/Core/TRMassParams.h"
+#include "Mass/Net/TRMassNetContract.h"
 #include "Mass/Debug/TRMassDebug.h"
 
 DECLARE_CYCLE_STAT(TEXT("Enemy Death"), STAT_TRMassDeath, STATGROUP_TRMass);
@@ -34,7 +35,7 @@ void UTRMassDeathProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager
 {
 	EntityQuery.AddRequirement<FTREnemyStateFragment>(EMassFragmentAccess::ReadOnly);
 	EntityQuery.AddConstSharedRequirement<FTREnemyCombatParams>(EMassFragmentPresence::All);
-	EntityQuery.AddTagRequirement<FTRDeadTag>(EMassFragmentPresence::All);
+	UE::TR::Mass::AddServerAuthoredTagRequirement<FTRDeadTag>(EntityQuery, *this, EMassFragmentPresence::All);
 
 	/**
 	 * **DesiredVelocity 가 이동의 진짜 상태다.**

@@ -394,7 +394,7 @@ void UTRTurretControlComponent::OnRep_MountedTurret()
 			{
 				// 원래 자리(캐릭터 머리)로 복귀 — 생성자에서 붙인 위치와 동일
 				Camera->AttachToComponent(Character->GetMesh(),
-					FAttachmentTransformRules::SnapToTargetNotIncludingScale, FName("head"));
+					FAttachmentTransformRules::SnapToTargetNotIncludingScale, FName("root"));
 				
 				if (bCameraLastTransform)
 				{

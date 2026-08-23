@@ -10,6 +10,7 @@
 #include "MassSimulationLOD.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Mass/Core/TRMassParams.h"
+#include "Mass/Net/TRMassNetContract.h"
 #include "Mass/Core/TRMassGroundQuery.h"
 
 DECLARE_CYCLE_STAT(TEXT("Ground Follow"), STAT_TRGroundFollow, STATGROUP_TRMass);
@@ -47,12 +48,12 @@ UTRGroundFollowProcessor::UTRGroundFollowProcessor()
 void UTRGroundFollowProcessor::ConfigureQueries(const TSharedRef<FMassEntityManager>& EntityManager)
 {
 	EntityQuery.AddRequirement<FTransformFragment>(EMassFragmentAccess::ReadWrite);
-	EntityQuery.AddRequirement<FTRGroundFragment>(EMassFragmentAccess::ReadWrite);
+	UE::TR::Mass::AddServerAuthoredRequirement<FTRGroundFragment>(EntityQuery, *this, EMassFragmentAccess::ReadWrite);
 	EntityQuery.AddTagRequirement<FTRChaserTag>(EMassFragmentPresence::All);
 
 	// 사출된 상체는 날아가는 중이라 지면을 따르면 안 된다. 따르게 두면 25 m/s로
 	// 땅을 훑고 지나가서 투사체로 보이지 않는다.
-	EntityQuery.AddTagRequirement<FTRLaunchedTag>(EMassFragmentPresence::None);
+	UE::TR::Mass::AddServerAuthoredTagRequirement<FTRLaunchedTag>(EntityQuery, *this, EMassFragmentPresence::None);
 
 	EntityQuery.AddConstSharedRequirement<FTRChaseParams>(EMassFragmentPresence::All);
 

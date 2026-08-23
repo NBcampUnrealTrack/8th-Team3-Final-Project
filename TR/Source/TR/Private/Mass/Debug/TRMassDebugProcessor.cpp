@@ -131,7 +131,20 @@ void UTRMassDebugProcessor::Execute(FMassEntityManager& EntityManager, FMassExec
 
 void UTRMassDebugProcessor::DrawEntities(FMassExecutionContext& Context, UWorld& World)
 {
-	DrawQuery.ForEachEntityChunk(Context, [&World](FMassExecutionContext& ChunkContext)
+	// **표적 정보는 클라이언트에 없다.** FTRTargetFragment 를 채우는 프로세서가 전부
+	// Server|Standalone 이라, 원격 클라이언트에서는 스폰 기본값(bHasTarget=false)이 그대로다.
+	//
+	// 그래도 이 프로세서를 서버 전용으로 좁히지 않는 이유는, 캡슐과 화살표가 그리는
+	// **위치와 회전은 클라이언트에서도 유효하기 때문**이다(릴레이가 보간해 넣는다).
+	// 서버와 클라이언트의 적 위치가 어긋나는지 보는 것이 이 그리기의 주 용도다.
+	//
+	// 대신 색을 표적 기준으로 칠하면 안 된다. 그대로 두면 클라이언트에서 전원이
+	// "목표 없음" 빨강으로 찍혀 표적 시스템이 고장 난 것처럼 보인다 — 없는 정보를
+	// 있는 것처럼 그리는 셈이다. 클라이언트에서는 중립색으로 칠하고 표적선은 생략한다.
+	// (TRMassNetContract.h 참고)
+	const bool bHasServerState = World.GetNetMode() != NM_Client;
+
+	DrawQuery.ForEachEntityChunk(Context, [&World, bHasServerState](FMassExecutionContext& ChunkContext)
 	{
 		const TConstArrayView<FTransformFragment> TransformList = ChunkContext.GetFragmentView<FTransformFragment>();
 		const TConstArrayView<FTRTargetFragment> TargetList = ChunkContext.GetFragmentView<FTRTargetFragment>();
@@ -142,8 +155,10 @@ void UTRMassDebugProcessor::DrawEntities(FMassExecutionContext& Context, UWorld&
 			const FTRTargetFragment& Target = TargetList[EntityIt];
 
 			// 도달했으면 초록, 추적 중이면 노랑, 목표가 없으면 빨강.
-			const FColor Color = !Target.bHasTarget ? FColor::Red
-				: (Target.bArrived ? FColor::Green : FColor::Yellow);
+			// 클라이언트에는 표적 정보가 없으므로 판단하지 않고 중립색(하양)으로 둔다.
+			const FColor Color = !bHasServerState ? FColor::White
+				: (!Target.bHasTarget ? FColor::Red
+					: (Target.bArrived ? FColor::Green : FColor::Yellow));
 
 			const FVector Location = Transform.GetLocation();
 			const FVector CapsuleCenter = Location + FVector(0.f, 0.f, CapsuleHalfHeight);
@@ -155,7 +170,7 @@ void UTRMassDebugProcessor::DrawEntities(FMassExecutionContext& Context, UWorld&
 				CapsuleCenter + Transform.GetRotation().GetForwardVector() * ForwardArrowLength,
 				20.f, Color, false, -1.f);
 
-			if (Target.bHasTarget && !Target.bArrived)
+			if (bHasServerState && Target.bHasTarget && !Target.bArrived)
 			{
 				DrawDebugLine(&World, Location, Target.TargetLocation, FColor(80, 80, 80), false, -1.f, 0, 1.f);
 			}
@@ -231,6 +246,14 @@ void UTRMassDebugProcessor::DrawTargetBounds(FMassExecutionContext& Context, UWo
 	// ── 각 적이 향하는 표면 최근접점 ──────────────────────────────────────
 	// 점들이 박스 면에 고르게 붙어 있으면 표면 추적이 정상이다.
 	// 한 점에 뭉쳐 있으면 바운드를 못 잡아 중심을 쫓고 있다는 뜻이다.
+	//
+	// 클라이언트에는 표적 정보 자체가 없어 그릴 점이 하나도 없다. 빈 화면을 "표적
+	// 추적이 죽었다"로 읽지 않도록 아예 들어오지 않는다. (TRMassNetContract.h 참고)
+	if (World.GetNetMode() == NM_Client)
+	{
+		return;
+	}
+
 	DrawQuery.ForEachEntityChunk(Context, [&World](FMassExecutionContext& ChunkContext)
 	{
 		const TConstArrayView<FTRTargetFragment> TargetList = ChunkContext.GetFragmentView<FTRTargetFragment>();

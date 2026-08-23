@@ -25,6 +25,7 @@ public class TR : ModuleRules
             "MassLOD",        // LOD 수집기 및 가변 틱
             "MassSignals",    // StateTree를 깨우는 신호
             "MassAIBehavior",
+            "DeveloperSettings",   // 프로젝트 세팅에 노출되는 UTRVisualToneSettings
             "StateTreeModule"
 			});
 

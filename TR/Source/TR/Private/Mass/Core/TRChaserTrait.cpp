@@ -97,6 +97,11 @@ void UTRChaserTrait::BuildTemplate(FMassEntityTemplateBuildContext& BuildContext
 
 	BuildContext.AddFragment<FTRTargetFragment>();
 	BuildContext.AddFragment<FTREnemyStateFragment>();
+
+	// 표현 전용 손상 상태. 서버는 프로세서가, 클라이언트는 넷 릴레이가 채운다.
+	// 트레이트가 항상 보장해야 하는 이유는 클라이언트 개체도 이 값을 받아야 하는데
+	// 클라이언트에는 전투 프로세서가 없어 다른 경로로는 생기지 않기 때문이다.
+	BuildContext.AddFragment<FTREnemyVisualFragment>();
 	BuildContext.AddFragment<FTRGroundFragment>();
 	BuildContext.AddTag<FTRChaserTag>();
 
