@@ -8,6 +8,7 @@
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Session/Interface_TRSession.h"
 #include "Session/TRNetLog.h"
@@ -25,15 +26,14 @@ void UTRMainMenuWidget::NativeConstruct()
 		Btn_FindGame->OnClicked().AddUObject(this, &UTRMainMenuWidget::HandleFindGameClicked);
 	}
 
-	// 세션 패널은 Btn_FindGame 을 누를 때까지 접어 둔다.
-	if (IsValid(Border_Session))
-	{
-		Border_Session->SetVisibility(ESlateVisibility::Collapsed);
-	}
+	SettingsButton = GetWidgetFromName(TEXT("Btn_Settings"));
+
+	ShowOnlyPanel(nullptr);
 
 	BindSessionButtons();
 	BindSessionEvents();
 	ApplyPhaseLocks(ETRSessionPhase::Idle);
+	RefreshSessionPresence();
 	RefreshStatusTexts();
 	RefreshLobbyControls();
 
@@ -57,13 +57,80 @@ void UTRMainMenuWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+void UTRMainMenuWidget::ShowOnlyPanel(UWidget* PanelToShow)
+{
+	for (UWidget* Panel : { Border_Session.Get(), Border_Find.Get() })
+	{
+		if (!IsValid(Panel))
+		{
+			continue;
+		}
+
+		// 안쪽 버튼이 눌려야 하므로 펼칠 때도 자기만 입력을 비운다.
+		Panel->SetVisibility(Panel == PanelToShow
+			? ESlateVisibility::SelfHitTestInvisible
+			: ESlateVisibility::Collapsed);
+	}
+
+	bPanelOpen = PanelToShow != nullptr;
+	RefreshSettingsVisibility();
+}
+
+void UTRMainMenuWidget::RefreshSettingsVisibility()
+{
+	if (!IsValid(SettingsButton))
+	{
+		return;
+	}
+
+	const bool bShow = !bPanelOpen && !IsInSession();
+	SettingsButton->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+}
+
+bool UTRMainMenuWidget::IsInSession() const
+{
+	const UWorld* World = GetWorld();
+	return World != nullptr && World->GetNetMode() != NM_Standalone;
+}
+
+bool UTRMainMenuWidget::HasHostedRoom() const
+{
+	const IInterface_TRSession* Session = GetSession();
+	return Session != nullptr && !Session->GetRoomCode().IsEmpty();
+}
+
+void UTRMainMenuWidget::RefreshSessionPresence()
+{
+	const bool bInSession = IsInSession();
+	if (LastInSession.IsSet() && LastInSession.GetValue() == bInSession)
+	{
+		return;
+	}
+
+	LastInSession = bInSession;
+
+	UWidget* const EntryButtons[] = { Btn_FindGame, Btn_Host };
+	for (UWidget* Entry : EntryButtons)
+	{
+		if (IsValid(Entry))
+		{
+			Entry->SetVisibility(bInSession ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+		}
+	}
+
+	if (IsValid(Btn_Leave))
+	{
+		Btn_Leave->SetVisibility(bInSession ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+
+	RefreshSettingsVisibility();
+}
+
 void UTRMainMenuWidget::HandleFindGameClicked()
 {
-	// 세션 패널은 이 버튼으로만 열린다. 안쪽 버튼이 눌려야 하므로 자기만 입력을 비운다.
-	if (IsValid(Border_Session))
-	{
-		Border_Session->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
-	}
+	// 빈 목록으로 열리지 않게 검색을 한 번 걸어 준다.
+	ShowOnlyPanel(Border_Find);
+	HandleRefreshClicked();
 }
 
 IInterface_TRSession* UTRMainMenuWidget::GetSession() const
@@ -78,6 +145,7 @@ void UTRMainMenuWidget::BindSessionButtons()
 	const TPair<UTRMenuButton*, void (UTRMainMenuWidget::*)()> Bindings[] =
 	{
 		{ Btn_Host,       &UTRMainMenuWidget::HandleHostClicked },
+		{ Btn_RenameRoom, &UTRMainMenuWidget::HandleRenameRoomClicked },
 		{ Btn_JoinByCode, &UTRMainMenuWidget::HandleJoinByCodeClicked },
 		{ Btn_Refresh,    &UTRMainMenuWidget::HandleRefreshClicked },
 		{ Btn_Invite,     &UTRMainMenuWidget::HandleInviteClicked },
@@ -142,6 +210,9 @@ void UTRMainMenuWidget::UnbindSessionEvents()
 
 void UTRMainMenuWidget::HandleHostClicked()
 {
+	// 생성 상태를 볼 수 있어야 하므로 요청보다 패널을 먼저 펼친다.
+	ShowOnlyPanel(Border_Session);
+
 	IInterface_TRSession* Session = GetSession();
 	if (!ensure(Session))
 	{
@@ -149,6 +220,25 @@ void UTRMainMenuWidget::HandleHostClicked()
 	}
 
 	const FString RoomName = Input_RoomName ? Input_RoomName->GetText().ToString() : FString();
+	Session->HostCreateRoom(RoomName);
+}
+
+void UTRMainMenuWidget::HandleRenameRoomClicked()
+{
+	IInterface_TRSession* Session = GetSession();
+	if (!ensure(Session))
+	{
+		return;
+	}
+
+	// 세션 이름만 갱신하는 경로가 없어 방을 다시 만드는 것이 전부다.
+	const FString RoomName = Input_RoomName ? Input_RoomName->GetText().ToString() : FString();
+	if (RoomName.TrimStartAndEnd().IsEmpty())
+	{
+		SetStatus(TEXT("방 이름을 입력하세요"));
+		return;
+	}
+
 	Session->HostCreateRoom(RoomName);
 }
 
@@ -191,7 +281,19 @@ void UTRMainMenuWidget::HandleLeaveClicked()
 		Session->LeaveSession();
 	}
 
-	// 메인 메뉴는 이미 나갈 곳이라 레벨을 다시 열지 않는다. 표시만 맞춘다.
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+
+	if (World->GetNetMode() != NM_Standalone)
+	{
+		// PIE 에서는 패키지 이름에 UEDPIE_N_ 이 붙으므로 벗겨야 열린다.
+		UGameplayStatics::OpenLevel(World, FName(*UWorld::RemovePIEPrefix(World->GetOutermost()->GetName())));
+		return;
+	}
+
 	RefreshStatusTexts();
 }
 
@@ -239,9 +341,17 @@ void UTRMainMenuWidget::HandlePhaseChanged(ETRSessionPhase Phase, const FString&
 void UTRMainMenuWidget::ApplyPhaseLocks(ETRSessionPhase Phase)
 {
 	// 생성이 끝나기 전에 또 누르면 세션을 파기하고 다시 만든다. 그 사이에는 잠근다.
+	const bool bCreateIdle = Phase != ETRSessionPhase::Creating;
+
 	if (IsValid(Btn_Host))
 	{
-		Btn_Host->SetIsEnabled(Phase != ETRSessionPhase::Creating);
+		Btn_Host->SetLocked(!bCreateIdle);
+	}
+
+	// 방 이름 변경도 결국 생성 요청이다.
+	if (IsValid(Btn_RenameRoom))
+	{
+		Btn_RenameRoom->SetLocked(!bCreateIdle);
 	}
 
 	// 검색은 코드 참가와 목록 갱신이 공유한다. 하나가 도는 동안 둘 다 막는다.
@@ -249,12 +359,12 @@ void UTRMainMenuWidget::ApplyPhaseLocks(ETRSessionPhase Phase)
 
 	if (IsValid(Btn_JoinByCode))
 	{
-		Btn_JoinByCode->SetIsEnabled(bSearchIdle);
+		Btn_JoinByCode->SetLocked(!bSearchIdle);
 	}
 
 	if (IsValid(Btn_Refresh))
 	{
-		Btn_Refresh->SetIsEnabled(bSearchIdle);
+		Btn_Refresh->SetLocked(!bSearchIdle);
 	}
 }
 
@@ -304,7 +414,7 @@ void UTRMainMenuWidget::ApplySlot(int32 SlotIndex, const FTRSessionSearchResult*
 		JoinButton->SetVisibility(RowVisibility);
 
 		// 정원이 찼거나 난입이 막힌 방은 눌러도 소용없다.
-		JoinButton->SetIsEnabled(Result && Result->bCanJoin);
+		JoinButton->SetLocked(!(Result && Result->bCanJoin));
 	}
 }
 
@@ -349,6 +459,9 @@ void UTRMainMenuWidget::RefreshStatusTexts()
 
 void UTRMainMenuWidget::RefreshLobbyControls()
 {
+	// 세션에 들고 나는 것은 알림이 따로 없다. 여기서 같이 확인한다.
+	RefreshSessionPresence();
+
 	IInterface_TRSession* Session = GetSession();
 	if (Session == nullptr)
 	{
@@ -357,6 +470,8 @@ void UTRMainMenuWidget::RefreshLobbyControls()
 
 	const FTRLobbyStatus Status = Session->GetLobbyStatus();
 	const bool bHost = Session->IsHost();
+	const bool bInSession = IsInSession();
+	const bool bHasRoom = HasHostedRoom();
 
 	// 값이 그대로면 아무것도 건드리지 않는다. 포커스를 가진 버튼을 다시 껐다 켜면
 	// Slate 가 키보드 포커스를 놓아 버린다.
@@ -365,7 +480,9 @@ void UTRMainMenuWidget::RefreshLobbyControls()
 		&& Status.bMatchStarted == bLastMatchStarted
 		&& Status.bLocalReady == bLastLocalReady
 		&& Status.ReadyPlayers == LastReadyPlayers
-		&& Status.RequiredPlayers == LastRequiredPlayers)
+		&& Status.RequiredPlayers == LastRequiredPlayers
+		&& bInSession == bLastInSessionControls
+		&& bHasRoom == bLastHasHostedRoom)
 	{
 		return;
 	}
@@ -376,6 +493,8 @@ void UTRMainMenuWidget::RefreshLobbyControls()
 	bLastLocalReady = Status.bLocalReady;
 	LastReadyPlayers = Status.ReadyPlayers;
 	LastRequiredPlayers = Status.RequiredPlayers;
+	bLastInSessionControls = bInSession;
+	bLastHasHostedRoom = bHasRoom;
 
 	if (Txt_Ready)
 	{
@@ -387,7 +506,7 @@ void UTRMainMenuWidget::RefreshLobbyControls()
 	// 판이 돌기 시작하면 둘 다 할 일이 없으므로 감춘다.
 	if (Btn_Ready)
 	{
-		const bool bShow = !bHost && !Status.bMatchStarted;
+		const bool bShow = bInSession && !bHost && !Status.bMatchStarted;
 		Btn_Ready->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 
 		// 누르면 무엇이 되는지를 적는다. 준비한 사람에게는 취소 버튼으로 보인다.
@@ -398,9 +517,9 @@ void UTRMainMenuWidget::RefreshLobbyControls()
 
 	if (Btn_Start)
 	{
-		const bool bShow = bHost && !Status.bMatchStarted;
+		const bool bShow = bHasRoom && bHost && !Status.bMatchStarted;
 		Btn_Start->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-		Btn_Start->SetIsEnabled(Status.bCanStart);
+		Btn_Start->SetLocked(!Status.bCanStart);
 	}
 }
 

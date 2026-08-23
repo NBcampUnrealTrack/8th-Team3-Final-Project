@@ -13,6 +13,14 @@ void UTRMenuButton::SetLabelText(const FText& InLabelText)
 	}
 }
 
+void UTRMenuButton::SetLocked(bool bInLocked)
+{
+	SetIsLocked(bInLocked);
+
+	// 색은 여기서 직접 맞춘다.
+	ApplyLabelColor();
+}
+
 void UTRMenuButton::NativePreConstruct()
 {
 	Super::NativePreConstruct();
@@ -43,6 +51,13 @@ void UTRMenuButton::ApplyLabelColor()
 {
 	if (!IsValid(Txt_Label))
 	{
+		return;
+	}
+
+	// 잠긴 버튼은 호버해도 눌리지 않으므로 잠금색이 우선이다.
+	if (GetLocked())
+	{
+		Txt_Label->SetColorAndOpacity(FSlateColor(LabelLockedColor));
 		return;
 	}
 

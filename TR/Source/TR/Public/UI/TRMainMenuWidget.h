@@ -25,9 +25,18 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UCommonButtonBase> Btn_FindGame;
 
-	/** 세션 패널 전체. 처음에는 접어 두고 Btn_FindGame 으로 펼친다. */
+	/** 방/로비 패널. 처음에는 접어 두고 Btn_Host 로 펼친다. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> Border_Session;
+
+	/** 캔버스에서 Border_Session 과 같은 자리를 쓴다. 한 번에 하나만 보인다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Border_Find;
+
+	// BindWidget 을 쓰면 WBP 가 들고 있는 Btn_Settings 변수와 이름이 충돌해
+	// 위젯 컴파일이 깨진다. 그래서 이름으로 찾아 둔다.
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> SettingsButton;
 
 	// 아래는 세션 패널. WBP 가 만들지 않은 것은 그냥 없는 기능이 된다.
 
@@ -39,6 +48,10 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTRMenuButton> Btn_Refresh;
+
+	/** 입력한 이름으로 방을 다시 만든다. 방 코드가 새로 나오고 들어와 있던 사람은 끊긴다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTRMenuButton> Btn_RenameRoom;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTRMenuButton> Btn_Invite;
@@ -113,6 +126,7 @@ private:
 	// 세션 버튼.
 
 	void HandleHostClicked();
+	void HandleRenameRoomClicked();
 	void HandleJoinByCodeClicked();
 	void HandleRefreshClicked();
 	void HandleInviteClicked();
@@ -153,16 +167,33 @@ private:
 	/** 요청이 도는 중에는 그 요청을 다시 걸 수 있는 버튼을 잠근다. */
 	void ApplyPhaseLocks(ETRSessionPhase Phase);
 
+	void ShowOnlyPanel(UWidget* PanelToShow);
+
+	bool IsInSession() const;
+
+	// PIE를 리슨 서버로 띄우면 넷모드는 처음부터 서버다. 방 코드로 봐야 방 만들기를 실제로 했는지 구분된다.
+	bool HasHostedRoom() const;
+
+	void RefreshSettingsVisibility();
+
+	void RefreshSessionPresence();
+
 	/** 지금 화면에 올라간 목록. 자리 번호 → 검색 인덱스. */
 	TArray<int32> SlotResultIndices;
 
 	FTimerHandle LobbyRefreshTimer;
 
 	// 직전에 반영한 값. 바뀐 것이 없으면 위젯을 건드리지 않는다.
+	// 처음 한 번은 반드시 적용되도록 비워 둔다.
+	TOptional<bool> LastInSession;
+
 	bool bLastHost = false;
 	bool bLastCanStart = false;
 	bool bLastMatchStarted = false;
 	bool bLastLocalReady = false;
 	int32 LastReadyPlayers = -1;
 	int32 LastRequiredPlayers = -1;
+	bool bLastInSessionControls = false;
+	bool bLastHasHostedRoom = false;
+	bool bPanelOpen = false;
 };
