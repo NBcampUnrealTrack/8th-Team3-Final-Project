@@ -144,6 +144,41 @@ struct FTRTurretLevelRow : public FTableRowBase
 #pragma endregion
 
 
+#pragma region Biome
+
+/**
+ * 배경 풍경의 종류.
+ *
+ * 웨이브 테이블(FTRWaveRow::Biome)이 언제 바뀔지를 정하고,
+ * ATRLevelSceneManager 의 Biomes 맵이 각 종류가 어떤 소품·지면인지를 정의한다.
+ *
+ * **이름으로 맞추지 않고 열거형으로 두는 이유**는 오타가 조용히 실패하기 때문이다.
+ * 문자열이면 한 글자만 달라도 에디터가 잡아주지 않고, 화면에는 "웨이브는 넘어갔는데
+ * 풍경만 그대로"로 나타나 원인을 찾기 어렵다. 열거형은 드롭다운이라 애초에 틀릴 수 없다.
+ *
+ * 종류를 늘리려면 **목록 맨 뒤에 추가한다.** 중간에 끼우면 DataTable 에 저장된 기존
+ * 행의 값이 한 칸씩 밀려 조용히 다른 풍경이 된다.
+ *
+ * Mass 타입을 참조하지 않으므로 여기(프로젝트 공용 헤더)에 둔다 — ATRGameState 가
+ * 이 값을 복제하기 때문이다.
+ */
+UENUM(BlueprintType)
+enum class ETRBiomeType : uint8
+{
+	/** 지정하지 않음. 웨이브 행에서는 "직전 풍경을 유지한다"는 뜻이다. */
+	None UMETA(DisplayName = "None (유지)"),
+
+	Wasteland UMETA(DisplayName = "황무지"),
+	Canyon    UMETA(DisplayName = "붉은 협곡"),
+	Snowfield UMETA(DisplayName = "눈밭"),
+	Ruins     UMETA(DisplayName = "폐허"),
+
+	MAX UMETA(Hidden),
+};
+
+#pragma endregion
+
+
 #pragma region Wave
 
 /**

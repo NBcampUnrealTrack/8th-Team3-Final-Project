@@ -31,6 +31,19 @@ struct FTRWaveRow : public FTableRowBase
 	/** 이 웨이브가 끝나고 다음 웨이브까지의 휴식(초). 기획서 기준 40초. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave", meta = (ClampMin = "0.0", ForceUnits = "s"))
 	float RestDuration = 40.f;
+
+	/**
+	 * 이 웨이브의 풍경. 드롭다운에서 고른다.
+	 *
+	 * **None 이면 직전 풍경을 그대로 유지한다.** 그래서 바뀌는 웨이브에만 지정하면 되고,
+	 * 이미 만들어 둔 행을 손댈 필요가 없다.
+	 *
+	 * 웨이브 번호를 두 곳에 적지 않으려고 여기에 둔다. 풍경 쪽에도 시작 웨이브를
+	 * 적어 두면 한쪽만 고쳤을 때 조용히 어긋나는데, 그때 화면에 나오는 것은
+	 * "웨이브는 넘어갔는데 풍경만 그대로"라 원인을 찾기 어렵다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wave")
+	ETRBiomeType Biome = ETRBiomeType::None;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FTROnWaveNumberChanged, int32, WaveNumber);
@@ -199,6 +212,15 @@ private:
 
 	/** 반복 타이머가 부른다. 살아 있는 적 수를 GameState 에 복제한다. */
 	void PushAliveCount();
+
+	/**
+	 * 그 웨이브 행의 풍경을 GameState 에 밀어 넣는다. None 이면 아무것도 하지 않는다.
+	 *
+	 * **테이블을 읽는 곳을 여기 하나로 유지하려고 둔다.** 레벨 매니저가 테이블을 직접
+	 * 읽게 하면 행이 없을 때의 승계 규칙을 두 곳에서 구현해야 하고, 두 참조가 서로 다른
+	 * 테이블을 가리키는 사고도 생긴다.
+	 */
+	void PushBiomeForWave(int32 WaveNumber);
 
 	UPROPERTY()
 	int32 CurrentWaveNumber = 0;
