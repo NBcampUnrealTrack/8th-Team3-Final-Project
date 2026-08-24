@@ -113,6 +113,30 @@ public:
 	float GetWorldSpeed() const { return CurrentVelocity.Size(); }
 
 	/**
+	 * 손상도(0 = 멀쩡, 1 = 파괴 직전)를 메시 머테리얼에 전달한다. Mass가 매 틱 밀어넣는다.
+	 *
+	 * 값은 **Custom Primitive Data** 로 나간다. 개체마다 동적 머테리얼 인스턴스를 만들면
+	 * 개체 수만큼 머테리얼이 생기고 배칭이 깨진다 — 수백 마리가 목표인 이 게임에서는
+	 * 그 비용이 그대로 프레임으로 돌아온다. 커스텀 프리미티브 데이터는 머테리얼을
+	 * 공유한 채 인스턴스별 상수만 바꾸므로 배칭이 유지된다.
+	 *
+	 * 머테리얼 쪽에서는 Custom Primitive Data 노드의 인덱스를 DamageCustomDataIndex 로 맞춘다.
+	 */
+	void UpdateDamageVisuals(float InDamageRatio, float DeltaSeconds);
+
+	/**
+	 * 손상도가 실릴 Custom Primitive Data 인덱스.
+	 *
+	 * **머테리얼의 Custom Primitive Data 노드와 반드시 같아야 한다.** 어긋나면 값이
+	 * 조용히 0으로 읽혀 손상이 영원히 안 보인다 — 에러도 경고도 없는 종류의 실패라,
+	 * 양쪽이 같은 숫자를 본다는 사실을 여기 한 곳에 적어 둔다.
+	 */
+	static constexpr int32 DamageCustomDataIndex = 0;
+
+	/** 피격 플래시(0~1)가 실릴 인덱스. 위와 같은 주의사항이 그대로 적용된다. */
+	static constexpr int32 HitFlashCustomDataIndex = 1;
+
+	/**
 	 * 직전 프레임의 이동 판정. 히스테리시스를 이어가려고 Mass가 되읽는다.
 	 * 액터가 자기 속력으로 다시 판정하면 ISM과 임계값이 어긋난다.
 	 */
@@ -162,6 +186,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "TR|Enemy", meta = (ClampMin = "0.0"))
 	float SpeedInterpRate = 10.f;
 
+	/**
+	 * 피격 플래시가 사라지기까지의 시간(초). 0이면 플래시를 쓰지 않는다.
+	 *
+	 * 짧을수록 타격이 날카롭게 느껴진다. 길게 주면 연사를 맞는 동안 계속 하얗게 떠 있어
+	 * 정작 손상도가 안 보인다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "TR|Enemy|VFX", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float HitFlashDuration = 0.12f;
+
 private:
 	/** AnimBP에 노출되는 값 묶음. Mass가 밀어넣은 값에서 파생된다. */
 	FTREnemyAnimData AnimData;
@@ -176,4 +209,25 @@ private:
 
 	/** AnimBP가 포즈를 되돌려야 하는지. ConsumePoseReset이 내린다. */
 	bool bPoseResetPending = true;
+
+	/**
+	 * 머테리얼에 마지막으로 써 넣은 손상도. 음수는 "아직 쓴 적 없음"이라
+	 * 다음 SetDamageRatio가 값과 무관하게 반드시 쓰게 만든다(풀 재사용 직후).
+	 */
+	float LastDamageRatio = -1.f;
+
+	/** 남은 피격 플래시(1 = 방금 맞음, 0 = 없음). 매 틱 감쇠한다. */
+	float HitFlash = 0.f;
+
+	/** 머테리얼에 마지막으로 써 넣은 플래시 값. 0으로 떨어진 뒤 계속 쓰지 않게 한다. */
+	float LastWrittenHitFlash = 0.f;
+
+	/**
+	 * 이만큼 안 바뀌면 머테리얼에 쓰지 않는다.
+	 *
+	 * 커스텀 프리미티브 데이터를 쓰면 렌더 상태가 더러워진다. 체력은 피격 때만
+	 * 변하지만 값 자체는 매 틱 들어오므로, 문턱이 없으면 개체 수백이 매 프레임
+	 * 렌더 상태를 갱신한다. 0.005는 손상 단계 하나가 200등분되는 정도라 눈에 안 보인다.
+	 */
+	static constexpr float DamageWriteThreshold = 0.005f;
 };
