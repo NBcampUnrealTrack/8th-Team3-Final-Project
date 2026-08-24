@@ -1534,8 +1534,10 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		{
 			if (ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
 			{
-				const FName GrantId = GetDefault<UBGDataSettings>()->EphemeralAttackCardId;
-				const int32 Granted = GS->GrantEphemeralCards(MyPS, GrantId, GrantCount);
+				//	어떤 카드를 주는지도, 그게 일회용인지도 여기서 정하지 않는다 —
+				//	카드는 설정이, 일회용 여부는 DT 의 Card.Trait.Ephemeral 이 정한다.
+				const FGameplayTag GrantId = GetDefault<UBGDataSettings>()->EphemeralAttackCardId;
+				const int32 Granted = GS->GrantCards(MyPS, GrantId, GrantCount);
 
 				if (Granted > 0)
 				{

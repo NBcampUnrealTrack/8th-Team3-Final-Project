@@ -1,5 +1,6 @@
 ﻿#include "Card/BGDataSubsystem.h"
 
+#include "BGGameplayTags.h"                 // Card::Trait::Ephemeral (덱 제외)
 #include "Debug/BGCardLog.h"
 #include "Card/BGDataSettings.h"
 #include "Card/BGCardType.h"
@@ -40,6 +41,18 @@ void UBGDataSubsystem::BuildDeck(TArray<FBGCardInstance>& OutDeck) const
 			continue;   // QuantityOfCard 0 = 의도적 제외 (아직 미구현 카드 등)
 		}
 
+		//	일회용 카드는 덱에서 나오지 않는다 — 규칙이 손패에 직접 만들어 주는 카드다
+		//	(GrantCards). 덱에 섞이면 사용 한도를 안 쓰는 카드를 아무나 뽑게 되고,
+		//	소비 시 버린 패로 가지 않으므로 판이 갈수록 덱 총량이 줄어든다.
+		//
+		//	⚠️ QuantityOfCard 를 보지 않고 태그만 본다. 매수를 실수로 적어 넣어도 덱에 안 들어간다 —
+		//	   "매수 0 으로 두면 빠진다" 에만 기대면 그 0 이 '일회용이라 0' 인지
+		//	   '아직 미구현이라 0' 인지 구분이 사라진다(요정 갑옷이 후자다).
+		if (Row->TraitTags.HasTag(BG::Card::Trait::Ephemeral.GetTag()))
+		{
+			continue;
+		}
+
 		for (int32 i = 0; i < Row->QuantityOfCard; ++i)
 		{
 			FBGCardInstance Card;
@@ -51,6 +64,20 @@ void UBGDataSubsystem::BuildDeck(TArray<FBGCardInstance>& OutDeck) const
 	}
 
 	UE_LOG(LogBGCard, Log, TEXT("BuildDeck:%d 종류 →%d 장"), NumKinds, OutDeck.Num());
+}
+
+void UBGDataSubsystem::GetAllCardRowNames(TArray<FName>& OutNames) const
+{
+	OutNames.Reset();
+	if (!CardTable)
+	{
+		return;
+	}
+
+	OutNames = CardTable->GetRowNames();
+
+	//	BuildDeck 과 같은 정렬을 쓴다 — 두 목록을 나란히 놓고 보게 되므로 순서가 같아야 한다.
+	OutNames.Sort([](const FName& A, const FName& B) { return A.Compare(B) < 0; });
 }
 
 UBGDataSubsystem::UBGDataSubsystem()

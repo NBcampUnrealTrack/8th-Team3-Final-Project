@@ -11,4 +11,5 @@ Card.Id.Brace,대비,Brown,5,,?,0,0,100,0,-,-,ApplyStatus Status.NextCard.KeepCa
 Card.Id.DwarfGloves,드워프 장갑,Blue,2,,-,-,-,-,-,-,-,-,-,GE_Equip_DwarfGloves,장착 중 내 카드가 실패하지 않는다.,판정하지 않는다 — 장착 경로로 빠진다
 Card.Id.WitchCharm,마녀의 부적,Blue,2,,-,-,-,-,-,-,-,-,-,GE_Equip_WitchCharm,장착 중 대성공과 대실패 확률이 두 배가 된다.,승산 보정(WeightMult) 방식
 Card.Id.FairyArmor,요정 갑옷,Blue,0,,-,-,-,-,-,-,-,-,-,GE_Equip_FairyArmor,나에게 들어오는 공격이 25% 확률로 무효화된다.,매수 0 — 넣으려면 다른 카드에서 그만큼 빼야 한다
-합계,,,64,,,,,,,,,,,,,BG.ExpectedDeckSize 64 와 반드시 일치해야 한다
+Card.Id.ShadowStrike,그림자 일격,Brown,-,O,?,0,10,75,15,-,-,DamageTarget 1,DamageTarget 2,-,단 한 번만 쓸 수 있는 기습. 카드 사용 한도를 쓰지 않고 사용하면 사라진다.,일회용(Card.Trait.Ephemeral) — 덱에 들어가지 않는다. 매수는 의미 없어 "-"로 둔다(0 은 FairyArmor 처럼 "아직 미구현"이라는 뜻이라 겹치면 안 된다). 암살자(EphemeralCardOnCritical) 전용 지급 카드
+합계,,,64,,,,,,,,,,,,,BG.ExpectedDeckSize 64 와 반드시 일치해야 한다(일회용 카드는 덱 밖이라 이 합계에 포함되지 않는다)

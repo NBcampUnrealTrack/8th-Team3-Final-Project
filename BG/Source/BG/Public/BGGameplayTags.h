@@ -73,6 +73,9 @@ namespace BG
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(DwarfGloves)     // 드워프 장갑
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(FairyArmor)      // 요정 갑옷
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(WitchCharm)      // 마녀의 부적
+
+			//  일회용 (덱에 들어가지 않고 규칙이 지급한다 — Card.Trait.Ephemeral)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(ShadowStrike)    // 그림자 일격 — 암살자가 대성공으로 얻는다
 		}
 		
 		namespace Trait
@@ -96,6 +99,24 @@ namespace BG
 			 *    태그를 빼도 카드 자체는 멀쩡히 동작하므로 조용히 어긋난다 — BG_DumpDeck 으로 확인할 것.
 			 */
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Attack)
+
+			/**
+			 * 일회용 카드 — 덱에서 나오지 않고 규칙이 손패에 직접 만들어 주는 카드.
+			 *
+			 * 이 태그가 붙은 Row 는 세 가지가 다르다:
+			 *   · `BuildDeck` 이 **QuantityOfCard 와 무관하게** 건너뛴다 (덱에 절대 안 들어간다)
+			 *   · 사용해도 **카드 사용 한도를 소모하지 않는다**
+			 *   · 사용하면 버린 패로 가지 않고 **사라진다** (덱 총량이 늘지 않는다)
+			 *
+			 * 지급은 `ABGGameState::GrantCards(PS, 태그, 장수)` 하나로 한다. 일회용인지는
+			 * 그 함수가 이 태그를 보고 정하므로 **호출자는 일회용 여부를 몰라도 된다** —
+			 * PvE 에서 "이 카드 N장 줘" 가 카드 종류에 따라 알아서 갈린다.
+			 *
+			 * ⚠️ 덱에 없으므로 `BG_DumpDeck` 의 덱 집계에 잡히지 않는다. 대신 같은 명령이
+			 *    "덱 밖 카드" 구획에서 따로 검사한다 — 그 구획을 지우면 이 카드군의
+			 *    OutcomeEffects 가 비어도 아무도 알려주지 않는다.
+			 */
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ephemeral)
 
 			//	사용 시 연출을 재생한다 (아트 기획서 "전투 연출" — 사용자 공격 연출을 확대해
 			//	보여주고, 판정 결과에 따라 피해자 연출로 이어진다).

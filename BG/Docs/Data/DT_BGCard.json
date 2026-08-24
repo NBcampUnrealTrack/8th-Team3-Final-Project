@@ -608,5 +608,65 @@
       "Success": [],
       "CriticalSuccess": []
     }
+  },
+  {
+    "Name": "Card.Id.ShadowStrike",
+    "CardIdTag": "Card.Id.ShadowStrike",
+    "DisplayName": "그림자 일격",
+    "Description": "단 한 번만 쓸 수 있는 기습. 카드 사용 한도를 쓰지 않고, 사용하면 사라진다.",
+    "TypeTag": "Card.Type.Brown",
+    "TraitTags": {
+      "GameplayTags": [
+        {
+          "TagName": "Card.Trait.NeedsTargetSeat"
+        },
+        {
+          "TagName": "Card.Trait.Attack"
+        },
+        {
+          "TagName": "Card.Trait.Ephemeral"
+        }
+      ]
+    },
+    "AbilityEventTag": "",
+    "EquipEffect": "",
+    "Magnitude": 0,
+    "QuantityOfCard": 0,
+    "CheckChance": 0,
+    "OutcomeWeights": {
+      "CriticalFailure": 0,
+      "Failure": 10,
+      "Success": 75,
+      "CriticalSuccess": 15
+    },
+    "OutcomeMagnitudes": {
+      "CriticalFailure": 0,
+      "Failure": 0,
+      "Success": 0,
+      "CriticalSuccess": 0
+    },
+    "ModifierTags": {
+      "GameplayTags": []
+    },
+    "OutcomeEffects": {
+      "CriticalFailure": [],
+      "Failure": [],
+      "Success": [
+        {
+          "Op": "DamageTarget",
+          "Amount": 1,
+          "StatusTag": "",
+          "bToTarget": false
+        }
+      ],
+      "CriticalSuccess": [
+        {
+          "Op": "DamageTarget",
+          "Amount": 2,
+          "StatusTag": "",
+          "bToTarget": false
+        }
+      ]
+    }
   }
 ]

@@ -55,6 +55,9 @@ namespace BG
 			UE_DEFINE_GAMEPLAY_TAG(DwarfGloves,    "Card.Id.DwarfGloves")
 			UE_DEFINE_GAMEPLAY_TAG(FairyArmor,     "Card.Id.FairyArmor")
 			UE_DEFINE_GAMEPLAY_TAG(WitchCharm,     "Card.Id.WitchCharm")
+
+			//  일회용 (덱에 안 들어간다)
+			UE_DEFINE_GAMEPLAY_TAG(ShadowStrike,   "Card.Id.ShadowStrike")
 		}
 
 		namespace Trait
@@ -65,6 +68,7 @@ namespace BG
 			UE_DEFINE_GAMEPLAY_TAG(RangeLimited,    "Card.Trait.RangeLimited")
 			UE_DEFINE_GAMEPLAY_TAG(Attack,          "Card.Trait.Attack")
 			UE_DEFINE_GAMEPLAY_TAG(Cinematic,       "Card.Trait.Cinematic")
+			UE_DEFINE_GAMEPLAY_TAG(Ephemeral,       "Card.Trait.Ephemeral")
 		}
 	}
 

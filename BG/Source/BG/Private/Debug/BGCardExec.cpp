@@ -187,6 +187,68 @@ void ABGGameMode::BG_DumpDeck()
 			TEXT("InstanceId 중복 %d 건 — BuildDeck 의 NextInstanceId 카운터를 확인하세요."),
 			NumDuplicateIds);
 	}
+
+	// ── 덱 밖 카드 ────────────────────────────────────────────────────
+	//
+	//	위 집계는 **덱**을 돈다. 덱에 없는 카드는 한 줄도 나오지 않는다.
+	//	그런데 일회용 카드(Card.Trait.Ephemeral)는 덱에 없으면서 실제로 손에 들어오고 사용된다 —
+	//	즉 **가장 중요한 검사인 "효과 데이터가 비었는가" 를 통째로 빠져나간다.**
+	//	그 실패 모양은 위 NumNoEffectData 경고문이 설명하는 것과 똑같다(판정·발동·소비 전부 정상,
+	//	효과만 0). 이 구획이 없으면 일회용 카드를 늘릴수록 검증 사각지대가 커진다.
+	//
+	//	매수 0 인 카드는 함께 나열하되 효과는 따지지 않는다 — 아직 안 만든 카드라는 뜻이라
+	//	경고를 내면 노이즈가 되고, 진짜 문제가 거기 묻힌다(§1.1 이 겪은 오탐과 같은 구조).
+	{
+		TArray<FName> AllRows;
+		Data->GetAllCardRowNames(AllRows);
+
+		int32 NumEphemeralNoEffect = 0;
+		int32 NumOutOfDeck = 0;
+
+		for (const FName& RowName : AllRows)
+		{
+			if (Counts.Contains(RowName))
+			{
+				continue;   // 덱에 있다 — 위에서 이미 검사했다
+			}
+
+			const FBGCardRow* Row = Data->GetCardRow(RowName);
+			if (!Row)
+			{
+				continue;
+			}
+
+			++NumOutOfDeck;
+
+			const bool bEphemeral = Row->TraitTags.HasTag(BG::Card::Trait::Ephemeral.GetTag());
+			const bool bIsEquip   = Row->TypeTag == BG::Card::Type::Blue.GetTag();
+
+			//	일회용만 효과를 따진다. 갈색은 OutcomeEffects, 파란(장비)은 EquipEffect 다.
+			const bool bNoEffect = bEphemeral &&
+				(bIsEquip ? (Row->EquipEffect == nullptr) : Row->OutcomeEffects.IsEmpty());
+			if (bNoEffect)
+			{
+				++NumEphemeralNoEffect;
+			}
+
+			UE_LOG(LogBGCard, Log, TEXT("  %-32s   -  %s%s"),
+				*RowName.ToString(),
+				bEphemeral ? TEXT("[일회용] 덱 제외") : TEXT("[매수 0] 덱 제외"),
+				bNoEffect ? TEXT("   [!! 효과 데이터 없음 — 지급돼도 아무 일도 일어나지 않음]")
+				          : TEXT(""));
+		}
+
+		UE_LOG(LogBGCard, Log, TEXT("덱 밖 카드 %d 종"), NumOutOfDeck);
+
+		if (NumEphemeralNoEffect > 0)
+		{
+			UE_LOG(LogBGCard, Error,
+				TEXT("효과 데이터가 빈 일회용 카드 %d 종. 손패에는 들어오고 사용도 되지만 "
+				     "아무 일도 일어나지 않습니다 — 덱에 없어 위 집계에 잡히지 않으므로 "
+				     "이 줄이 유일한 경고입니다."),
+				NumEphemeralNoEffect);
+		}
+	}
 #endif // !UE_BUILD_SHIPPING
 }
 

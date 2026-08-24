@@ -37,6 +37,15 @@ public:
 	void BuildDeck(TArray<FBGCardInstance>& OutDeck) const;
 
 	/**
+	 * DT_BGCard 의 모든 Row 이름. 이름순으로 정렬해서 준다.
+	 *
+	 * **덱에 없는 카드를 찾기 위한 것이다.** BuildDeck 결과만 보면 일회용 카드
+	 * (`Card.Trait.Ephemeral`)와 매수 0 인 카드가 통째로 시야에서 사라진다 —
+	 * `BG_DumpDeck` 이 이 목록과 덱을 대조해 "지급은 되는데 효과가 비어 있는" 카드를 잡는다.
+	 */
+	void GetAllCardRowNames(TArray<FName>& OutNames) const;
+
+	/**
 	 * 지속 이펙트 Row 조회. Key 는 장비 CardId 이거나 상태 태그 이름이다 — 둘 다 FName 이라
 	 * 표 하나로 받는다 (FBGStatusFXRow 주석 참고).
 	 *

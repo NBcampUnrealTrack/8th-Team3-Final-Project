@@ -788,23 +788,41 @@ void ABGGameState::ApplyTurnStartHeal(int32 Seat)
 	UE_LOG(LogBGCard, Log, TEXT("[턴회복] 좌석 %d 이 턴 시작 회복 %d"), Seat, HealAmount);
 }
 
-int32 ABGGameState::GrantEphemeralCards(ABGPlayerState* PS, FName CardId, int32 Count)
+int32 ABGGameState::GrantCards(ABGPlayerState* PS, FGameplayTag CardId, int32 Count)
 {
-	if (!HasAuthority() || !PS || CardId.IsNone() || Count <= 0)
+	if (!HasAuthority() || !PS || !CardId.IsValid() || Count <= 0)
 	{
 		return 0;
 	}
 
+	//	Row 이름 = 태그 문자열이 이 프로젝트의 규약이다(Card-Data-Spec.md).
+	const FName RowName = CardId.GetTagName();
+
 	//	DT 에 없는 카드를 만들면 손패에 "이름 없는 카드" 가 생겨 사용도 안 되고 지워지지도 않는다.
 	const UGameInstance* GI = GetGameInstance();
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
-	if (!Data || !Data->GetCardRow(CardId))
+	const FBGCardRow* Row = Data ? Data->GetCardRow(RowName) : nullptr;
+	if (!Row)
 	{
 		UE_LOG(LogBGCard, Warning,
-			TEXT("[1회성] DT_BGCard 에 Row '%s' 가 없어 지급하지 않습니다 "
-			     "(Project Settings > BG Data > EphemeralAttackCardId 확인)."),
-			*CardId.ToString());
+			TEXT("[카드지급] DT_BGCard 에 Row '%s' 가 없어 지급하지 않습니다."), *RowName.ToString());
 		return 0;
+	}
+
+	//	일회용인지는 **카드가 정한다.** 호출자는 몰라도 된다(헤더 주석 참조).
+	const bool bEphemeral = Row->TraitTags.HasTag(BG::Card::Trait::Ephemeral.GetTag());
+
+	//	일회용이 아닌 카드를 만들어 주면 **덱 총량이 늘어난다** — 소비될 때 버린 패로 가고,
+	//	버린 패는 셔플되어 덱으로 돌아오기 때문이다. `BG.ExpectedDeckSize 64` 검증이 그만큼 어긋난다.
+	//	막지는 않는다(PvE 에서 의도적으로 카드를 늘릴 수 있어야 한다). 대신 조용히 넘어가지 않는다 —
+	//	덱 장수가 안 맞을 때 원인을 여기서 찾을 수 있어야 한다.
+	//	덱에 있는 카드를 주고 싶은 것이라면 이 함수가 아니라 **덱에서 뽑아 옮기는 쪽**이 맞다.
+	if (!bEphemeral)
+	{
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[카드지급] '%s' 는 일회용이 아닙니다 — 만들어 주면 덱 총량이 %d장 늘어납니다. "
+			     "의도한 것이 아니면 DT_BGCard 의 TraitTags 에 Card.Trait.Ephemeral 을 넣으세요."),
+			*RowName.ToString(), Count);
 	}
 
 	//	손패 상한은 현재 체력이다 — 덱에서 뽑을 때와 같은 규칙을 쓴다.
@@ -817,11 +835,16 @@ int32 ABGGameState::GrantEphemeralCards(ABGPlayerState* PS, FName CardId, int32 
 		}
 
 		FBGCardInstance Card;
-		//	음수. 덱과 겹치지 않는다. -2 부터 내려간다 — -1(INDEX_NONE)은 RPC 검증에서
+		Card.CardId     = RowName;
+		Card.bEphemeral = bEphemeral;
+
+		//	일회용만 음수 InstanceId 를 쓴다. -2 부터 내려간다 — -1(INDEX_NONE)은 RPC 검증에서
 		//	무효 취급이라 그 카드를 내는 클라이언트가 연결 종료된다(헤더 주석 참조).
+		//
+		//	일반 카드를 이 경로로 주면 덱 InstanceId 와 겹칠 수 있으므로 음수를 그대로 쓴다.
+		//	덱 총량 회계는 영향받지 않는다 — 소비되면 버린 패로 가고, 그건 덱에 원래 없던 한 장이
+		//	늘어나는 것이라 **의도한 경우에만** 써야 한다(PvE 이벤트 등).
 		Card.InstanceId = NextEphemeralInstanceId--;
-		Card.CardId     = CardId;
-		Card.bEphemeral = true;
 
 		PS->AddCardToHand(Card);
 		++Granted;
@@ -829,8 +852,9 @@ int32 ABGGameState::GrantEphemeralCards(ABGPlayerState* PS, FName CardId, int32 
 
 	if (Granted > 0)
 	{
-		UE_LOG(LogBGCard, Log, TEXT("[1회성] 좌석 %d 에 %s %d장 지급 (요청 %d)"),
-			PS->GetSeatIndex(), *CardId.ToString(), Granted, Count);
+		UE_LOG(LogBGCard, Log, TEXT("[카드지급] 좌석 %d 에 %s %d장 (요청 %d, %s)"),
+			PS->GetSeatIndex(), *RowName.ToString(), Granted, Count,
+			bEphemeral ? TEXT("일회용") : TEXT("일반"));
 	}
 	return Granted;
 }
