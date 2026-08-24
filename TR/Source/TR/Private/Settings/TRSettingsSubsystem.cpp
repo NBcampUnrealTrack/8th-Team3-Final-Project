@@ -237,49 +237,6 @@ int32 UTRSettingsSubsystem::GetDisplayIndex() const
 	return Settings ? Settings->GetDisplayIndex() : -1;
 }
 
-//--- HDR 설정 조회 ---
-bool UTRSettingsSubsystem::SupportsHDRDisplayOutput() const
-{
-	const UTRGameUserSettings* Settings = GetUserSettings();
-	return Settings && Settings->SupportsHDRDisplayOutput();
-}
-
-bool UTRSettingsSubsystem::IsHDREnabled() const
-{
-	const UTRGameUserSettings* Settings = GetUserSettings();
-	return Settings && Settings->IsHDREnabled();
-}
-
-int32 UTRSettingsSubsystem::GetHDRDisplayNits() const
-{
-	const UTRGameUserSettings* Settings = GetUserSettings();
-	return Settings ? Settings->GetMaximumHDRDisplayNits() : 1000;
-}
-
-float UTRSettingsSubsystem::GetHDRPaperWhiteNits() const
-{
-	const UTRGameUserSettings* Settings = GetUserSettings();
-	return Settings ? Settings->GetHDRPaperWhiteNits() : 203.0f;
-}
-
-float UTRSettingsSubsystem::GetHDRUILuminanceNits() const
-{
-	const UTRGameUserSettings* Settings = GetUserSettings();
-	return Settings ? Settings->GetHDRUILuminanceNits() : 203.0f;
-}
-
-bool UTRSettingsSubsystem::IsHDRUILuminanceSeparate() const
-{
-	const UTRGameUserSettings* Settings = GetUserSettings();
-	return Settings && Settings->IsHDRUILuminanceSeparate();
-}
-
-bool UTRSettingsSubsystem::IsHDRCalibrationUsed() const
-{
-	const UTRGameUserSettings* Settings = GetUserSettings();
-	return Settings && Settings->IsHDRCalibrationUsed();
-}
-
 // 유효한 양수 해상도만 Preview 값으로 등록
 void UTRSettingsSubsystem::SetScreenResolution(const FIntPoint Value)
 {
@@ -421,56 +378,6 @@ void UTRSettingsSubsystem::SetDisplayProperties(const FString& ID, const int32 I
 	if (UTRGameUserSettings* Settings = GetUserSettings())
 	{
 		Settings->SetDisplayProperties(ID, Index);
-	}
-}
-
-// 현재 출력 장치가 HDR을 지원할 때만 활성화 허용
-void UTRSettingsSubsystem::SetHDREnabled(const bool bValue)
-{
-	if (UTRGameUserSettings* Settings = GetUserSettings())
-	{
-		Settings->SetHDREnabled(bValue && Settings->SupportsHDRDisplayOutput());
-	}
-}
-
-// HDR 최대 밝기를 UI 제공 범위로 보정
-void UTRSettingsSubsystem::SetHDRDisplayNits(const int32 Value)
-{
-	if (UTRGameUserSettings* Settings = GetUserSettings())
-	{
-		Settings->SetMaximumHDRDisplayNits(FMath::Clamp(Value, 400, 4000));
-	}
-}
-
-void UTRSettingsSubsystem::SetHDRPaperWhiteNits(const float Value)
-{
-	if (UTRGameUserSettings* Settings = GetUserSettings())
-	{
-		Settings->SetHDRPaperWhiteNits(FMath::Clamp(Value, 80.0f, 500.0f));
-	}
-}
-
-void UTRSettingsSubsystem::SetHDRUILuminanceNits(const float Value)
-{
-	if (UTRGameUserSettings* Settings = GetUserSettings())
-	{
-		Settings->SetHDRUILuminanceNits(FMath::Clamp(Value, 80.0f, 500.0f));
-	}
-}
-
-void UTRSettingsSubsystem::SetHDRUILuminanceSeparate(const bool bValue)
-{
-	if (UTRGameUserSettings* Settings = GetUserSettings())
-	{
-		Settings->SetHDRUILuminanceSeparate(bValue);
-	}
-}
-
-void UTRSettingsSubsystem::SetHDRCalibrationUsed(const bool bValue)
-{
-	if (UTRGameUserSettings* Settings = GetUserSettings())
-	{
-		Settings->SetHDRCalibrationUsed(bValue);
 	}
 }
 

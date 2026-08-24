@@ -12,6 +12,7 @@ class UEditableTextBox;
 class UTextBlock;
 class UWidget;
 class UTRMenuButton;
+class UTRSettingsWidget;
 
 UCLASS(Abstract)
 class TR_API UTRMainMenuWidget : public UCommonUserWidget
@@ -37,6 +38,10 @@ protected:
 	// 위젯 컴파일이 깨진다. 그래서 이름으로 찾아 둔다.
 	UPROPERTY(Transient)
 	TObjectPtr<UWidget> SettingsButton;
+
+	// Btn_Settings 로 띄울 설정 WBP. WBP_TRMainMenu 의 클래스 디폴트에서 고른다.
+	UPROPERTY(EditDefaultsOnly, Category = "TR|UI")
+	TSoftClassPtr<UTRSettingsWidget> SettingsWidgetClass;
 
 	// 아래는 세션 패널. WBP 가 만들지 않은 것은 그냥 없는 기능이 된다.
 
@@ -123,6 +128,11 @@ private:
 
 	void HandleFindGameClicked();
 
+	void HandleSettingsClicked();
+
+	// 위젯이 스스로 비활성화될 때도 불린다.
+	void CloseSettings();
+
 	// 세션 버튼.
 
 	void HandleHostClicked();
@@ -181,6 +191,9 @@ private:
 	/** 지금 화면에 올라간 목록. 자리 번호 → 검색 인덱스. */
 	TArray<int32> SlotResultIndices;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UTRSettingsWidget> SettingsPopup;
+
 	FTimerHandle LobbyRefreshTimer;
 
 	// 직전에 반영한 값. 바뀐 것이 없으면 위젯을 건드리지 않는다.
@@ -195,5 +208,9 @@ private:
 	int32 LastRequiredPlayers = -1;
 	bool bLastInSessionControls = false;
 	bool bLastHasHostedRoom = false;
+	bool bLastFindPanelOpen = false;
 	bool bPanelOpen = false;
+
+	// 목록 패널 위에 겹쳐 보이는 버튼을 접는 데 쓴다.
+	bool bFindPanelOpen = false;
 };

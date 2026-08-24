@@ -7,12 +7,14 @@
 #include "Settings/TRSettingsTypes.h"
 #include "TRSettingsWidget.generated.h"
 
+class UCommonAnimatedSwitcher;
+class UCommonButtonBase;
 class UTextBlock;
 class UTRSettingComboWidget;
 class UTRSettingInfoWidget;
 class UTRSettingsCommonButton;
 class UTRSettingsSubsystem;
-class UWidgetSwitcher;
+class UTRSettingsTabList;
 
 // 설정 데이터와 Designer에서 구성한 WBP_Settings를 연결하는 CommonUI 화면
 UCLASS(Abstract, Blueprintable)
@@ -34,14 +36,26 @@ protected:
 	//--- 공통 내비게이션 및 명령 버튼 ---
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UTRSettingsCommonButton> BackButton;
+	// 탭 버튼은 이 위젯이 런타임에 만든다. 배타 선택도 이쪽이 맡는다.
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTRSettingsCommonButton> GraphicsTabButton;
+	TObjectPtr<UTRSettingsTabList> TabList;
+
+	// 전환 애니메이션을 위해 UWidgetSwitcher 대신 CommonUI 쪽 스위처를 쓴다.
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTRSettingsCommonButton> AudioTabButton;
+	TObjectPtr<UCommonAnimatedSwitcher> SettingsSwitcher;
+
+	// 탭이 가리키는 페이지. 스위처의 자식이라 이름만 맞으면 붙는다.
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTRSettingsCommonButton> ControlTabButton;
+	TObjectPtr<UWidget> GraphicsPage;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UWidgetSwitcher> SettingsSwitcher;
+	TObjectPtr<UWidget> AudioPage;
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
+	TObjectPtr<UWidget> ControlPage;
+
+	// 탭 줄에 찍어낼 버튼 WBP. WBP_TRSettings 의 클래스 디폴트에서 고른다.
+	// 글자를 넣으려면 UTRSettingsCommonButton 이어야 한다 — 타입으로 막아 둔다.
+	UPROPERTY(EditDefaultsOnly, Category = "TR|Settings|CommonUI")
+	TSubclassOf<UTRSettingsCommonButton> TabButtonClass;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UTextBlock> StatusText;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
@@ -60,18 +74,6 @@ protected:
 	TObjectPtr<UTRSettingComboWidget> DisplayMonitorSetting;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UTRSettingComboWidget> ResolutionSetting;
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTRSettingComboWidget> HDRSetting;
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTRSettingComboWidget> HDRUISeparateSetting;
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTRSettingComboWidget> HDRCalibrationSetting;
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTRSettingInfoWidget> HDRDisplayNitsSetting;
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTRSettingInfoWidget> HDRPaperWhiteSetting;
-	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
-	TObjectPtr<UTRSettingInfoWidget> HDRUILuminanceSetting;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	TObjectPtr<UTRSettingComboWidget> OverallQualitySetting;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
@@ -122,8 +124,11 @@ private:
 	UTRSettingsSubsystem* GetSettingsSubsystem() const;
 	void SetStatus(const FString& Message, bool bSuccess);
 
-	// 탭 전환과 선택 상태 동기화
-	void SetGraphicsTab();
+	// 탭 줄을 스위처에 잇고 세 페이지를 등록한다. 이후 전환은 CommonUI 가 맡는다.
+	void SetUpTabs();
+
+	// 버튼은 런타임에 만들어지므로 등록 후에 부른다.
+	void ApplyTabLabel(FName TabId, const FText& InLabel) const;
 
 	//--- 설정값 변경 이벤트 ---
 	UFUNCTION()
@@ -132,12 +137,6 @@ private:
 	void HandleOptionChanged(ETRSettingId SettingId, const FString& SelectedOption);
 
 	//--- 버튼 입력 이벤트 ---
-	UFUNCTION()
-	void HandleGraphicsTabClicked();
-	UFUNCTION()
-	void HandleAudioTabClicked();
-	UFUNCTION()
-	void HandleControlTabClicked();
 	UFUNCTION()
 	void HandleApplyClicked();
 	UFUNCTION()

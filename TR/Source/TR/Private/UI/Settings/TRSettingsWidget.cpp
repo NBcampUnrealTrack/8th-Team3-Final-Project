@@ -4,7 +4,8 @@
 
 #include "CommonInputModeTypes.h"
 #include "Components/TextBlock.h"
-#include "Components/WidgetSwitcher.h"
+#include "CommonAnimatedSwitcher.h"
+#include "UI/Settings/TRSettingsTabList.h"
 #include "Engine/GameInstance.h"
 #include "Settings/TRSettingsSubsystem.h"
 #include "UI/Settings/TRSettingComboWidget.h"
@@ -104,12 +105,6 @@ UTRSettingsWidget::UTRSettingsWidget()
 void UTRSettingsWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	GraphicsTabButton->OnClicked().RemoveAll(this);
-	GraphicsTabButton->OnClicked().AddUObject(this, &UTRSettingsWidget::HandleGraphicsTabClicked);
-	AudioTabButton->OnClicked().RemoveAll(this);
-	AudioTabButton->OnClicked().AddUObject(this, &UTRSettingsWidget::HandleAudioTabClicked);
-	ControlTabButton->OnClicked().RemoveAll(this);
-	ControlTabButton->OnClicked().AddUObject(this, &UTRSettingsWidget::HandleControlTabClicked);
 	DefaultsButton->OnClicked().RemoveAll(this);
 	DefaultsButton->OnClicked().AddUObject(this, &UTRSettingsWidget::HandleDefaultsClicked);
 	CancelButton->OnClicked().RemoveAll(this);
@@ -120,14 +115,13 @@ void UTRSettingsWidget::NativeConstruct()
 	AutoDetectButton->OnClicked().AddUObject(this, &UTRSettingsWidget::HandleAutoDetectClicked);
 	BackButton->OnClicked().RemoveAll(this);
 	BackButton->OnClicked().AddUObject(this, &UTRSettingsWidget::HandleBackClicked);
-	for (UTRSettingsCommonButton* Tab : {GraphicsTabButton.Get(), AudioTabButton.Get(), ControlTabButton.Get()})
-	{
-		Tab->SetIsSelectable(true);
-		Tab->SetIsInteractableWhenSelected(true);
-	}
+	SetUpTabs();
 	InitializeRows();
 	RefreshFromSettings();
-	SetGraphicsTab();
+
+	// bAutoActivate 로 Super::NativeConstruct 안에서 이미 활성화됐다. 그때는 탭이
+	// 없어 포커스가 BackButton 으로 떨어지므로, 탭이 생긴 지금 다시 잡는다.
+	RequestRefreshFocus();
 }
 
 // 화면 재진입 시 외부에서 변경된 설정값과 포커스 갱신
@@ -145,10 +139,19 @@ bool UTRSettingsWidget::NativeOnHandleBackAction()
 	return true;
 }
 
-// 키보드/게임패드 입력 시작 포커스를 Graphics 탭으로 지정
+// 키보드/게임패드 입력 시작 포커스를 지금 선택된 탭으로 지정
 UWidget* UTRSettingsWidget::NativeGetDesiredFocusTarget() const
 {
-	return GraphicsTabButton;
+	if (IsValid(TabList))
+	{
+		if (UCommonButtonBase* ActiveTab = TabList->GetTabButtonBaseByID(TabList->GetSelectedTabId()))
+		{
+			return ActiveTab;
+		}
+	}
+
+	// 탭이 아직 없으면 뒤로 버튼이라도 잡아 준다. 포커스가 없으면 Back 액션이 안 온다.
+	return BackButton;
 }
 
 // 설정 화면 활성화 중 게임 입력 대신 CommonUI Menu 입력 사용
@@ -175,17 +178,6 @@ void UTRSettingsWidget::InitializeRows()
 	DisplayModeSetting->InitializeSetting(ETRSettingId::DisplayMode, FText::FromString(TEXT("Display Mode")), TRSettingsUI::DisplayModeOptions, TEXT("Borderless"));
 	DisplayMonitorSetting->InitializeSetting(ETRSettingId::DisplayMonitor, FText::FromString(TEXT("Display Monitor")), S->GetAvailableMonitorOptions(), S->GetCurrentMonitorOption());
 	ResolutionSetting->InitializeSetting(ETRSettingId::Resolution, FText::FromString(TEXT("Display Resolution")), ResolutionOptions, TRSettingsUI::ResolutionToString(S->GetScreenResolution()));
-	HDRSetting->InitializeSetting(ETRSettingId::HDR, FText::FromString(S->SupportsHDRDisplayOutput() ? TEXT("HDR Output") : TEXT("HDR Output (Unsupported)")), TRSettingsUI::ToggleOptions, TEXT("Off"));
-	HDRDisplayNitsSetting->InitializeSetting(ETRSettingId::HDRDisplayNits, FText::FromString(TEXT("HDR Peak Brightness (nits)")), 400.0f, 4000.0f, 50.0f, S->GetHDRDisplayNits());
-	HDRPaperWhiteSetting->InitializeSetting(ETRSettingId::HDRPaperWhite, FText::FromString(TEXT("HDR Paper White (nits)")), 80.0f, 500.0f, 1.0f, S->GetHDRPaperWhiteNits());
-	HDRUILuminanceSetting->InitializeSetting(ETRSettingId::HDRUILuminance, FText::FromString(TEXT("HDR UI Brightness (nits)")), 80.0f, 500.0f, 1.0f, S->GetHDRUILuminanceNits());
-	HDRUISeparateSetting->InitializeSetting(ETRSettingId::HDRUISeparate, FText::FromString(TEXT("Separate HDR UI Brightness")), TRSettingsUI::ToggleOptions, TEXT("Off"));
-	HDRCalibrationSetting->InitializeSetting(ETRSettingId::HDRCalibration, FText::FromString(TEXT("Use HDR Calibration")), TRSettingsUI::ToggleOptions, TEXT("Off"));
-	UWidget* const HDRRows[] = {HDRSetting.Get(), HDRDisplayNitsSetting.Get(), HDRPaperWhiteSetting.Get(), HDRUILuminanceSetting.Get(), HDRUISeparateSetting.Get(), HDRCalibrationSetting.Get()};
-	for (UWidget* HDRRow : HDRRows)
-	{
-		HDRRow->SetIsEnabled(S->SupportsHDRDisplayOutput());
-	}
 	OverallQualitySetting->InitializeSetting(ETRSettingId::OverallQuality, FText::FromString(TEXT("Overall Graphics")), TRSettingsUI::OverallQualityOptions, TEXT("Custom"));
 	ResolutionScaleSetting->InitializeSetting(ETRSettingId::ResolutionScale, FText::FromString(TEXT("Resolution Scale")), 25.0f, 100.0f, 1.0f, S->GetResolutionScale());
 	VSyncSetting->InitializeSetting(ETRSettingId::VSync, FText::FromString(TEXT("V-Sync")), TRSettingsUI::ToggleOptions, TEXT("Off"));
@@ -217,11 +209,11 @@ void UTRSettingsWidget::InitializeRows()
 	EffectsVolumeSetting->InitializeSetting(ETRSettingId::EffectsVolume, FText::FromString(TEXT("Sound Effects")), 0.0f, 1.0f, 0.01f, S->GetEffectsVolume());
 	SensitivitySetting->InitializeSetting(ETRSettingId::LookSensitivity, FText::FromString(TEXT("Look Sensitivity")), 0.1f, 5.0f, 0.05f, S->GetLookSensitivity());
 
-	for (UTRSettingInfoWidget* Row : {ResolutionScaleSetting.Get(), HDRDisplayNitsSetting.Get(), HDRPaperWhiteSetting.Get(), HDRUILuminanceSetting.Get(), MasterVolumeSetting.Get(), MusicVolumeSetting.Get(), EffectsVolumeSetting.Get(), SensitivitySetting.Get()})
+	for (UTRSettingInfoWidget* Row : {ResolutionScaleSetting.Get(), MasterVolumeSetting.Get(), MusicVolumeSetting.Get(), EffectsVolumeSetting.Get(), SensitivitySetting.Get()})
 	{
 		Row->OnSettingValueChanged.AddUniqueDynamic(this, &UTRSettingsWidget::HandleSliderValueChanged);
 	}
-	for (UTRSettingComboWidget* Row : {DisplayModeSetting.Get(), DisplayMonitorSetting.Get(), ResolutionSetting.Get(), HDRSetting.Get(), HDRUISeparateSetting.Get(), HDRCalibrationSetting.Get(), OverallQualitySetting.Get(), VSyncSetting.Get(), DynamicResolutionSetting.Get(), FrameRateSetting.Get()})
+	for (UTRSettingComboWidget* Row : {DisplayModeSetting.Get(), DisplayMonitorSetting.Get(), ResolutionSetting.Get(), OverallQualitySetting.Get(), VSyncSetting.Get(), DynamicResolutionSetting.Get(), FrameRateSetting.Get()})
 	{
 		Row->OnSettingOptionChanged.AddUniqueDynamic(this, &UTRSettingsWidget::HandleOptionChanged);
 	}
@@ -240,12 +232,6 @@ void UTRSettingsWidget::RefreshFromSettings()
 	DisplayModeSetting->SetSelectedOption(TRSettingsUI::DisplayModeOptions[Mode]);
 	DisplayMonitorSetting->SetSelectedOption(S->GetCurrentMonitorOption());
 	ResolutionSetting->SetSelectedOption(TRSettingsUI::ResolutionToString(S->GetScreenResolution()));
-	HDRSetting->SetSelectedOption(TRSettingsUI::ToggleToString(S->IsHDREnabled()));
-	HDRDisplayNitsSetting->SetValue(S->GetHDRDisplayNits());
-	HDRPaperWhiteSetting->SetValue(S->GetHDRPaperWhiteNits());
-	HDRUILuminanceSetting->SetValue(S->GetHDRUILuminanceNits());
-	HDRUISeparateSetting->SetSelectedOption(TRSettingsUI::ToggleToString(S->IsHDRUILuminanceSeparate()));
-	HDRCalibrationSetting->SetSelectedOption(TRSettingsUI::ToggleToString(S->IsHDRCalibrationUsed()));
 	OverallQualitySetting->SetSelectedOption(TRSettingsUI::OverallQualityToString(S->GetOverallQuality()));
 	ResolutionScaleSetting->SetValue(S->GetResolutionScale());
 	VSyncSetting->SetSelectedOption(TRSettingsUI::ToggleToString(S->IsVSyncEnabled()));
@@ -292,15 +278,6 @@ void UTRSettingsWidget::HandleSliderValueChanged(const ETRSettingId SettingId, c
 	{
 	case ETRSettingId::ResolutionScale:
 		S->SetResolutionScale(NewValue);
-		break;
-	case ETRSettingId::HDRDisplayNits:
-		S->SetHDRDisplayNits(FMath::RoundToInt(NewValue));
-		break;
-	case ETRSettingId::HDRPaperWhite:
-		S->SetHDRPaperWhiteNits(NewValue);
-		break;
-	case ETRSettingId::HDRUILuminance:
-		S->SetHDRUILuminanceNits(NewValue);
 		break;
 	case ETRSettingId::MasterVolume:
 		S->SetMasterVolume(NewValue);
@@ -355,15 +332,6 @@ void UTRSettingsWidget::HandleOptionChanged(const ETRSettingId SettingId, const 
 		S->SetScreenResolution(Resolution);
 		break;
 	}
-	case ETRSettingId::HDR:
-		S->SetHDREnabled(SelectedOption == TEXT("On"));
-		break;
-	case ETRSettingId::HDRUISeparate:
-		S->SetHDRUILuminanceSeparate(SelectedOption == TEXT("On"));
-		break;
-	case ETRSettingId::HDRCalibration:
-		S->SetHDRCalibrationUsed(SelectedOption == TEXT("On"));
-		break;
 	case ETRSettingId::OverallQuality:
 	{
 		const TOptional<ETRQualityLevel> Level = TRSettingsUI::StringToQuality(SelectedOption);
@@ -400,34 +368,52 @@ void UTRSettingsWidget::HandleOptionChanged(const ETRSettingId SettingId, const 
 	SetStatus(TEXT("Previewing unsaved changes"), true);
 }
 
-// Graphics/Audio/Control 페이지와 탭 선택 색상 동기화
-void UTRSettingsWidget::HandleGraphicsTabClicked()
+// 등록만 해 두면 클릭·전환·배타 선택·게임패드 이동은 CommonUI 가 알아서 한다.
+void UTRSettingsWidget::SetUpTabs()
 {
-	SetGraphicsTab();
+	if (!ensure(TabList) || !ensure(SettingsSwitcher))
+	{
+		return;
+	}
+
+	// 탭 버튼 WBP 를 안 골라 두면 탭이 하나도 안 생긴다. 조용히 비면 원인을 알 수 없다.
+	if (!ensureMsgf(TabButtonClass, TEXT("WBP 의 TabButtonClass 가 비어 있다")))
+	{
+		return;
+	}
+
+	TabList->SetLinkedSwitcher(SettingsSwitcher);
+
+	// 페이지는 이미 스위처의 자식이다. 등록은 탭과 페이지를 짝지어 주기만 한다.
+	const TPair<FName, UWidget*> Pages[] =
+	{
+		{ TEXT("Graphics"), GraphicsPage },
+		{ TEXT("Audio"),    AudioPage },
+		{ TEXT("Control"),  ControlPage },
+	};
+
+	for (const TPair<FName, UWidget*>& Page : Pages)
+	{
+		if (IsValid(Page.Value))
+		{
+			TabList->RegisterTab(Page.Key, TabButtonClass, Page.Value);
+		}
+	}
+
+	// 버튼은 등록 시점에 만들어지므로 글자는 그 뒤에 넣는다.
+	ApplyTabLabel(TEXT("Graphics"), NSLOCTEXT("TR", "SettingsTabGraphics", "GRAPHICS"));
+	ApplyTabLabel(TEXT("Audio"), NSLOCTEXT("TR", "SettingsTabAudio", "AUDIO"));
+	ApplyTabLabel(TEXT("Control"), NSLOCTEXT("TR", "SettingsTabControl", "CONTROL"));
+
+	TabList->SelectTabByID(TEXT("Graphics"), true);
 }
 
-void UTRSettingsWidget::HandleAudioTabClicked()
+void UTRSettingsWidget::ApplyTabLabel(const FName TabId, const FText& InLabel) const
 {
-	SettingsSwitcher->SetActiveWidgetIndex(1);
-	GraphicsTabButton->SetSettingsSelected(false);
-	AudioTabButton->SetSettingsSelected(true);
-	ControlTabButton->SetSettingsSelected(false);
-}
-
-void UTRSettingsWidget::HandleControlTabClicked()
-{
-	SettingsSwitcher->SetActiveWidgetIndex(2);
-	GraphicsTabButton->SetSettingsSelected(false);
-	AudioTabButton->SetSettingsSelected(false);
-	ControlTabButton->SetSettingsSelected(true);
-}
-
-void UTRSettingsWidget::SetGraphicsTab()
-{
-	SettingsSwitcher->SetActiveWidgetIndex(0);
-	GraphicsTabButton->SetSettingsSelected(true);
-	AudioTabButton->SetSettingsSelected(false);
-	ControlTabButton->SetSettingsSelected(false);
+	if (UTRSettingsCommonButton* TabButton = Cast<UTRSettingsCommonButton>(TabList->GetTabButtonBaseByID(TabId)))
+	{
+		TabButton->SetButtonText(InLabel);
+	}
 }
 
 // Preview 설정을 게임에 적용하고 GameUserSettings.ini에 저장

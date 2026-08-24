@@ -57,22 +57,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TR|Settings|Graphics|Display")
 	int32 GetDisplayIndex() const;
 
-	//--- HDR 설정 조회 ---
-	UFUNCTION(BlueprintPure, Category = "TR|Settings|Graphics|HDR")
-	bool SupportsHDRDisplayOutput() const;
-	UFUNCTION(BlueprintPure, Category = "TR|Settings|Graphics|HDR")
-	bool IsHDREnabled() const;
-	UFUNCTION(BlueprintPure, Category = "TR|Settings|Graphics|HDR")
-	int32 GetHDRDisplayNits() const;
-	UFUNCTION(BlueprintPure, Category = "TR|Settings|Graphics|HDR")
-	float GetHDRPaperWhiteNits() const;
-	UFUNCTION(BlueprintPure, Category = "TR|Settings|Graphics|HDR")
-	float GetHDRUILuminanceNits() const;
-	UFUNCTION(BlueprintPure, Category = "TR|Settings|Graphics|HDR")
-	bool IsHDRUILuminanceSeparate() const;
-	UFUNCTION(BlueprintPure, Category = "TR|Settings|Graphics|HDR")
-	bool IsHDRCalibrationUsed() const;
-
 	//--- 그래픽 설정 변경 ---
 	UFUNCTION(BlueprintCallable, Category = "TR|Settings|Graphics")
 	void SetScreenResolution(FIntPoint Value);
@@ -96,20 +80,6 @@ public:
 	void SetMonitorOption(const FString& Option);
 	UFUNCTION(BlueprintCallable, Category = "TR|Settings|Graphics|Display")
 	void SetDisplayProperties(const FString& ID, int32 Index);
-
-	//--- HDR 설정 변경 ---
-	UFUNCTION(BlueprintCallable, Category = "TR|Settings|Graphics|HDR")
-	void SetHDREnabled(bool bValue);
-	UFUNCTION(BlueprintCallable, Category = "TR|Settings|Graphics|HDR")
-	void SetHDRDisplayNits(int32 Value);
-	UFUNCTION(BlueprintCallable, Category = "TR|Settings|Graphics|HDR")
-	void SetHDRPaperWhiteNits(float Value);
-	UFUNCTION(BlueprintCallable, Category = "TR|Settings|Graphics|HDR")
-	void SetHDRUILuminanceNits(float Value);
-	UFUNCTION(BlueprintCallable, Category = "TR|Settings|Graphics|HDR")
-	void SetHDRUILuminanceSeparate(bool bValue);
-	UFUNCTION(BlueprintCallable, Category = "TR|Settings|Graphics|HDR")
-	void SetHDRCalibrationUsed(bool bValue);
 
 	// 하드웨어 성능 측정 후 권장 Scalability 값을 Preview 상태로 적용
 	UFUNCTION(BlueprintCallable, Category = "TR|Settings|Graphics")

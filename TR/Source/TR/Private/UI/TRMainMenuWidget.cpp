@@ -15,6 +15,7 @@
 #include "Session/TRSessionFlow.h"
 #include "TimerManager.h"
 #include "UI/TRMenuButton.h"
+#include "UI/Settings/TRSettingsWidget.h"
 
 void UTRMainMenuWidget::NativeConstruct()
 {
@@ -27,6 +28,12 @@ void UTRMainMenuWidget::NativeConstruct()
 	}
 
 	SettingsButton = GetWidgetFromName(TEXT("Btn_Settings"));
+
+	if (UCommonButtonBase* SettingsAsButton = Cast<UCommonButtonBase>(SettingsButton))
+	{
+		SettingsAsButton->OnClicked().RemoveAll(this);
+		SettingsAsButton->OnClicked().AddUObject(this, &UTRMainMenuWidget::HandleSettingsClicked);
+	}
 
 	ShowOnlyPanel(nullptr);
 
@@ -47,6 +54,8 @@ void UTRMainMenuWidget::NativeConstruct()
 
 void UTRMainMenuWidget::NativeDestruct()
 {
+	CloseSettings();
+
 	UnbindSessionEvents();
 
 	if (UWorld* World = GetWorld())
@@ -73,7 +82,11 @@ void UTRMainMenuWidget::ShowOnlyPanel(UWidget* PanelToShow)
 	}
 
 	bPanelOpen = PanelToShow != nullptr;
+	bFindPanelOpen = PanelToShow != nullptr && PanelToShow == Border_Find;
+
 	RefreshSettingsVisibility();
+
+	RefreshLobbyControls();
 }
 
 void UTRMainMenuWidget::RefreshSettingsVisibility()
@@ -109,15 +122,6 @@ void UTRMainMenuWidget::RefreshSessionPresence()
 
 	LastInSession = bInSession;
 
-	UWidget* const EntryButtons[] = { Btn_FindGame, Btn_Host };
-	for (UWidget* Entry : EntryButtons)
-	{
-		if (IsValid(Entry))
-		{
-			Entry->SetVisibility(bInSession ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
-		}
-	}
-
 	if (IsValid(Btn_Leave))
 	{
 		Btn_Leave->SetVisibility(bInSession ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
@@ -131,6 +135,51 @@ void UTRMainMenuWidget::HandleFindGameClicked()
 	// 빈 목록으로 열리지 않게 검색을 한 번 걸어 준다.
 	ShowOnlyPanel(Border_Find);
 	HandleRefreshClicked();
+}
+
+void UTRMainMenuWidget::HandleSettingsClicked()
+{
+	if (SettingsPopup)
+	{
+		return;
+	}
+
+	TSubclassOf<UTRSettingsWidget> Class = SettingsWidgetClass.LoadSynchronous();
+	if (!ensureMsgf(Class, TEXT("WBP 의 SettingsWidgetClass 가 비었거나 로드에 실패했습니다: %s"),
+		*SettingsWidgetClass.ToString()))
+	{
+		return;
+	}
+
+	SettingsPopup = CreateWidget<UTRSettingsWidget>(GetOwningPlayer(), Class);
+	if (!ensure(SettingsPopup))
+	{
+		return;
+	}
+
+	// 뒤로 버튼은 위젯을 비활성화만 한다. 뷰포트에서 내리는 것은 띄운 쪽 몫이다.
+	// UTRSettingsWidget 은 bAutoActivate 가 참이라 AddToViewport 안에서 곧바로
+	// 활성화된다. 먼저 걸어 두지 않으면 그 사이의 비활성화를 놓쳐 팝업이 남는다.
+	SettingsPopup->OnDeactivated().AddWeakLambda(this, [this]()
+	{
+		CloseSettings();
+	});
+
+	SettingsPopup->AddToViewport(200);
+
+	// bAutoActivate 가 꺼진 WBP 로 갈아끼워도 열리게 해 둔다. 이미 활성이면 무시된다.
+	SettingsPopup->ActivateWidget();
+}
+
+void UTRMainMenuWidget::CloseSettings()
+{
+	if (!SettingsPopup)
+	{
+		return;
+	}
+
+	SettingsPopup->RemoveFromParent();
+	SettingsPopup = nullptr;
 }
 
 IInterface_TRSession* UTRMainMenuWidget::GetSession() const
@@ -212,6 +261,14 @@ void UTRMainMenuWidget::HandleHostClicked()
 {
 	// 생성 상태를 볼 수 있어야 하므로 요청보다 패널을 먼저 펼친다.
 	ShowOnlyPanel(Border_Session);
+
+	// 세션에 들어가 있으면 패널만 펼치고 끝낸다. HostCreateRoom 은 기존 세션을 파기하므로
+	// 호스트는 손님을 끊고, 남의 방에 참가한 클라이언트는 자기가 그 방에서 튕겨 나간다.
+	// HasHostedRoom 은 호스트만 참이라 클라이언트를 막지 못한다 — 넷모드도 함께 본다.
+	if (IsInSession() || HasHostedRoom())
+	{
+		return;
+	}
 
 	IInterface_TRSession* Session = GetSession();
 	if (!ensure(Session))
@@ -482,7 +539,8 @@ void UTRMainMenuWidget::RefreshLobbyControls()
 		&& Status.ReadyPlayers == LastReadyPlayers
 		&& Status.RequiredPlayers == LastRequiredPlayers
 		&& bInSession == bLastInSessionControls
-		&& bHasRoom == bLastHasHostedRoom)
+		&& bHasRoom == bLastHasHostedRoom
+		&& bFindPanelOpen == bLastFindPanelOpen)
 	{
 		return;
 	}
@@ -495,6 +553,7 @@ void UTRMainMenuWidget::RefreshLobbyControls()
 	LastRequiredPlayers = Status.RequiredPlayers;
 	bLastInSessionControls = bInSession;
 	bLastHasHostedRoom = bHasRoom;
+	bLastFindPanelOpen = bFindPanelOpen;
 
 	if (Txt_Ready)
 	{
@@ -502,8 +561,15 @@ void UTRMainMenuWidget::RefreshLobbyControls()
 			Status.ReadyPlayers, Status.RequiredPlayers));
 	}
 
+	// HandleHostClicked 와 같은 기준을 봐야 글자와 실제 동작이 어긋나지 않는다.
+	if (Btn_Host)
+	{
+		Btn_Host->SetLabelText(bInSession || bHasRoom
+			? NSLOCTEXT("TR", "MainMenuViewRoom", "방 보기")
+			: NSLOCTEXT("TR", "MainMenuHostRoom", "방 만들기"));
+	}
+
 	// 호스트는 준비를 누르지 않는다. 시작 버튼이 그 역할을 한다.
-	// 판이 돌기 시작하면 둘 다 할 일이 없으므로 감춘다.
 	if (Btn_Ready)
 	{
 		const bool bShow = bInSession && !bHost && !Status.bMatchStarted;
@@ -517,7 +583,7 @@ void UTRMainMenuWidget::RefreshLobbyControls()
 
 	if (Btn_Start)
 	{
-		const bool bShow = bHasRoom && bHost && !Status.bMatchStarted;
+		const bool bShow = bHasRoom && bHost && !Status.bMatchStarted && !bFindPanelOpen;
 		Btn_Start->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		Btn_Start->SetLocked(!Status.bCanStart);
 	}
