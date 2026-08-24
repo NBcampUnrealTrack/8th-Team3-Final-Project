@@ -9,6 +9,9 @@
       "GameplayTags": [
         {
           "TagName": "Card.Trait.NeedsTargetSeat"
+        },
+        {
+          "TagName": "Card.Trait.Attack"
         }
       ]
     },
@@ -160,6 +163,9 @@
       "GameplayTags": [
         {
           "TagName": "Card.Trait.NeedsTargetSeat"
+        },
+        {
+          "TagName": "Card.Trait.Attack"
         }
       ]
     },

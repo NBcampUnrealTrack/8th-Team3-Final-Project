@@ -722,34 +722,58 @@ void ABGCharacter::ApplyJobVisual()
 	}
 
 	const FBGCharacterRow* Row = DataSubsystem->GetCharacterRow(JobTag);
-	if (!Row || Row->SkeletalMesh.IsNull())
+	if (!Row)
 	{
-		// 아직 직업 메쉬를 안 꽂았을 뿐이다 — BP 기본 메쉬로 계속 간다.
+		//	Row 자체가 없는 경우는 GrantJobAbilities 가 이미 경고한다(스탯도 같이 비는 상태다).
 		return;
 	}
 
-	USkeletalMesh* NewMesh = Row->SkeletalMesh.LoadSynchronous();
-	if (!NewMesh)
+	//	⚠️ 메쉬와 ABP 는 **각자 판단한다.** 하나로 묶으면 둘 다 조용히 깨진다.
+	//	  · 메쉬만 비어 있어도 ABP 까지 건너뛴다 — 지금 12종 메쉬가 전부 미정이라
+	//	    ABP 를 채워도 아무 일이 일어나지 않는다.
+	//	  · 두 직업이 같은 플레이스홀더 메쉬를 쓰면 "메쉬가 이미 같다" 로 조기 반환해
+	//	    나중 직업의 ABP 가 통째로 무시된다.
+	//	둘 다 "애니메이션이 안 바뀌는데 ABP 어디를 봐도 원인이 없는" 모양으로 나타난다.
+
+	// ── 메쉬 ──
+	bool bMeshChanged = false;
+	if (!Row->SkeletalMesh.IsNull())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[BG] 직업 메쉬 로드 실패 — %s (%s)"),
-			*JobTag.ToString(), *Row->SkeletalMesh.ToString());
-		return;
+		if (USkeletalMesh* NewMesh = Row->SkeletalMesh.LoadSynchronous())
+		{
+			//	같은 메쉬를 다시 꽂으면 AnimInstance 만 헛되이 재초기화된다.
+			if (MeshComp->GetSkeletalMeshAsset() != NewMesh)
+			{
+				MeshComp->SetSkeletalMeshAsset(NewMesh);
+				bMeshChanged = true;
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[BG] 직업 메쉬 로드 실패 — %s (%s)"),
+				*JobTag.ToString(), *Row->SkeletalMesh.ToString());
+		}
 	}
 
-	if (MeshComp->GetSkeletalMeshAsset() == NewMesh)
-	{
-		return; // 이미 같은 메쉬 — 다시 꽂으면 AnimInstance 만 헛되이 재초기화된다.
-	}
-
-	MeshComp->SetSkeletalMeshAsset(NewMesh);
-
-	// 직업 전용 ABP 가 있을 때만 갈아끼운다. 비워 두면 BP_BGCharacter 의 ABP 가 그대로
-	// 재초기화된다 — 단, 새 메쉬의 스켈레톤이 그 ABP 와 호환될 때만 정상 동작한다.
-	if (Row->AnimClass)
+	// ── ABP ──
+	//	직업 전용 ABP 가 있을 때만 갈아끼운다. 비워 두면 BP_BGCharacter 의 ABP 를 그대로 쓴다
+	//	(메쉬를 바꿨다면 위에서 이미 그 ABP 로 재초기화됐다).
+	//
+	//	메쉬를 **먼저** 꽂는 순서를 지킬 것 — ABP 는 새 메쉬의 스켈레톤 위에서 초기화돼야 한다.
+	//	메쉬와 ABP 를 둘 다 바꾸면 초기화가 두 번 도는데, 직업 배정 때 한 번뿐이라 문제되지 않는다.
+	bool bAnimChanged = false;
+	if (Row->AnimClass && MeshComp->GetAnimClass() != Row->AnimClass.Get())
 	{
 		MeshComp->SetAnimInstanceClass(Row->AnimClass);
+		bAnimChanged = true;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("[BG] 직업 외형 적용 — %s → %s (%s)"),
-		*GetName(), *NewMesh->GetName(), *JobTag.ToString());
+	if (bMeshChanged || bAnimChanged)
+	{
+		const USkeletalMesh* AppliedMesh = MeshComp->GetSkeletalMeshAsset();
+		UE_LOG(LogTemp, Log, TEXT("[BG] 직업 외형 적용 — %s (%s) 메쉬=%s / ABP=%s"),
+			*GetName(), *JobTag.ToString(),
+			bMeshChanged && AppliedMesh ? *AppliedMesh->GetName() : TEXT("그대로"),
+			bAnimChanged ? *Row->AnimClass->GetName() : TEXT("그대로"));
+	}
 }
