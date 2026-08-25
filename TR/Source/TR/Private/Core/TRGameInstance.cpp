@@ -3,7 +3,6 @@
 #include "Session/TRNetLog.h"
 #include "Session/TROssPolicy.h"
 #include "Session/TRSessionFlow.h"
-#include "UI/Session/TRSessionMenuController.h"
 
 #include "Engine/Engine.h"
 #include "Engine/NetDriver.h"
@@ -298,7 +297,8 @@ bool UTRGameInstance::StartListen()
 	}
 
 	// 메인메뉴에서 호스트하면 게임 맵으로 한 번 이동해야 한다. 이미 게임 맵이면 그대로 연다.
-	const FString CurrentMap = World->GetOutermost()->GetName();
+	// PIE 에서는 패키지 이름에 UEDPIE_N_ 이 붙으므로 없애야 같은 맵으로 인식된다.
+	const FString CurrentMap = UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
 	if (CurrentMap == GameMapPath)
 	{
 		return StartListenInPlace();
@@ -352,7 +352,7 @@ void UTRGameInstance::ReturnToMainMenu()
 	}
 
 	// 이미 메인메뉴다. 정상 상태이므로 조용히 빠져나간다.
-	const FString CurrentMap = World->GetOutermost()->GetName();
+	const FString CurrentMap = UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
 	if (CurrentMap == MainMenuMapPath)
 	{
 		return;
@@ -677,14 +677,6 @@ void UTRGameInstance::HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver,
 //
 //		UE_LOG(LogTRNet, Log, TEXT("난입 허용 = %d"), bAllow);
 //	}
-
-void UTRGameInstance::TR_SessionUI()
-{
-	if (UTRSessionMenuController* Controller = GetSubsystem<UTRSessionMenuController>())
-	{
-		Controller->Toggle();
-	}
-}
 
 void UTRGameInstance::TR_JoinCode(const FString& RoomCode)
 {

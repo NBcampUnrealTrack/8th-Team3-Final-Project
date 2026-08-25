@@ -12,6 +12,9 @@
 #include "UI/TRPlayerHUDWidget.h"
 #include "UI/TRPopupStack.h"
 #include "UI/TRControlConsoleWidget.h"
+#include "UI/TRPauseMenuWidget.h"
+#include "Components/InputComponent.h"
+#include "InputCoreTypes.h"
 #include "Core/TRGameState.h"
 
 static UGameViewportClient* GetViewportClient(const APlayerController* PC)
@@ -139,6 +142,7 @@ void ATRPlayerHUD::Tick(float DeltaSeconds)
 
 static constexpr int32 PreMatchZOrder = 50;
 
+// 설정된 HUD 위젯 클래스를 생성해 플레이어 화면에 표시
 void ATRPlayerHUD::BeginPlay()
 {
 	Super::BeginPlay();
@@ -152,6 +156,16 @@ void ATRPlayerHUD::BeginPlay()
 	}
 
 	BindMatchPhase();
+
+	// F9 가 쓰는 DebugExecBindings 는 Shipping 에서 no-op 이라 퍼즈 메뉴에는 못 쓴다.
+	if (APlayerController* PC = GetOwningPlayerController())
+	{
+		EnableInput(PC);
+		if (IsValid(InputComponent))
+		{
+			InputComponent->BindKey(PauseKey, IE_Pressed, this, &ATRPlayerHUD::TogglePauseMenu);
+		}
+	}
 }
 
 void ATRPlayerHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -333,6 +347,47 @@ void ATRPlayerHUD::ToggleControlConsole()
 	{
 		ControlConsoleWidget->AddToViewport(ControlConsoleZOrder);
 	}
+}
+
+static constexpr int32 PauseMenuZOrder = 200;
+
+void ATRPlayerHUD::TogglePauseMenu()
+{
+	if (IsPauseMenuOpen())
+	{
+		ClosePauseMenu();
+		return;
+	}
+
+	// 메인 메뉴, 프리매치 화면에서는 ESC 로 열 것이 없다.
+	if (AppliedPhase != EScreenPhase::Gameplay)
+	{
+		return;
+	}
+
+	if (!IsValid(PauseMenuWidgetClass))
+	{
+		UE_LOG(LogTRGameplay, Warning, TEXT("PauseMenuWidgetClass is not set"));
+		return;
+	}
+
+	PauseMenuWidget = CreateWidget<UTRPauseMenuWidget>(GetOwningPlayerController(), PauseMenuWidgetClass);
+	if (IsValid(PauseMenuWidget))
+	{
+		PauseMenuWidget->AddToViewport(PauseMenuZOrder);
+	}
+}
+
+void ATRPlayerHUD::ClosePauseMenu()
+{
+	if (!IsPauseMenuOpen())
+	{
+		return;
+	}
+
+	// 커서와 입력 원복은 위젯의 NativeDestruct 가 한다.
+	PauseMenuWidget->RemoveFromParent();
+	PauseMenuWidget = nullptr;
 }
 
 void ATRPlayerHUD::CloseControlConsole()
