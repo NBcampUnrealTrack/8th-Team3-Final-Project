@@ -7,7 +7,6 @@
 
 class UHorizontalBox;
 
-// 설정 화면의 탭 줄.
 UCLASS(Abstract)
 class TR_API UTRSettingsTabList : public UCommonTabListWidgetBase
 {

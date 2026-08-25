@@ -368,7 +368,7 @@ void UTRSettingsWidget::HandleOptionChanged(const ETRSettingId SettingId, const 
 	SetStatus(TEXT("Previewing unsaved changes"), true);
 }
 
-// 등록만 해 두면 클릭·전환·배타 선택·게임패드 이동은 CommonUI 가 알아서 한다.
+// 등록만 해 두면 클릭, 전환, 배타 선택, 게임패드 이동은 CommonUI 가 알아서 한다.
 void UTRSettingsWidget::SetUpTabs()
 {
 	if (!ensure(TabList) || !ensure(SettingsSwitcher))
@@ -453,12 +453,14 @@ void UTRSettingsWidget::HandleAutoDetectClicked()
 }
 
 // 저장하지 않은 변경을 폐기한 뒤 CommonUI 화면 비활성화
+// 저장 안 한 변경을 되돌리고 닫는다. AUTO DETECT, DEFAULTS 는 누른 즉시 실행 상태를 바꾼다.
 void UTRSettingsWidget::HandleBackClicked()
 {
 	if (UTRSettingsSubsystem* S = GetSettingsSubsystem())
 	{
 		S->ReloadSettings();
 	}
+
 	DeactivateWidget();
 }
 

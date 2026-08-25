@@ -9,8 +9,7 @@
 UTRSettingsTabList::UTRSettingsTabList(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	// 이 값이 꺼져 있으면 베이스가 입력을 아예 듣지 않아 탭 순환 액션이 죽는다.
-	// 실제로 좌우로 넘기려면 Next/PreviousTabInputActionData 행도 채워야 한다.
+	// 꺼져 있으면 베이스가 입력을 안 듣는다. 실제 이동은 Next/PreviousTabInputActionData 도 필요.
 	bAutoListenForInput = true;
 }
 

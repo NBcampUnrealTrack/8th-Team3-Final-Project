@@ -53,7 +53,7 @@ protected:
 	TObjectPtr<UWidget> ControlPage;
 
 	// 탭 줄에 찍어낼 버튼 WBP. WBP_TRSettings 의 클래스 디폴트에서 고른다.
-	// 글자를 넣으려면 UTRSettingsCommonButton 이어야 한다 — 타입으로 막아 둔다.
+	// 글자를 넣으려면 UTRSettingsCommonButton 이어야 해서 타입으로 막아 둔다.
 	UPROPERTY(EditDefaultsOnly, Category = "TR|Settings|CommonUI")
 	TSubclassOf<UTRSettingsCommonButton> TabButtonClass;
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))

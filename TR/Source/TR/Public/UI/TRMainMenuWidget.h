@@ -184,8 +184,6 @@ private:
 	// PIE를 리슨 서버로 띄우면 넷모드는 처음부터 서버다. 방 코드로 봐야 방 만들기를 실제로 했는지 구분된다.
 	bool HasHostedRoom() const;
 
-	void RefreshSettingsVisibility();
-
 	void RefreshSessionPresence();
 
 	/** 지금 화면에 올라간 목록. 자리 번호 → 검색 인덱스. */
@@ -209,7 +207,6 @@ private:
 	bool bLastInSessionControls = false;
 	bool bLastHasHostedRoom = false;
 	bool bLastFindPanelOpen = false;
-	bool bPanelOpen = false;
 
 	// 목록 패널 위에 겹쳐 보이는 버튼을 접는 데 쓴다.
 	bool bFindPanelOpen = false;

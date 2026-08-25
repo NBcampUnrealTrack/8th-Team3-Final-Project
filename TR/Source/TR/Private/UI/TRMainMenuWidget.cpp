@@ -81,23 +81,9 @@ void UTRMainMenuWidget::ShowOnlyPanel(UWidget* PanelToShow)
 			: ESlateVisibility::Collapsed);
 	}
 
-	bPanelOpen = PanelToShow != nullptr;
 	bFindPanelOpen = PanelToShow != nullptr && PanelToShow == Border_Find;
 
-	RefreshSettingsVisibility();
-
 	RefreshLobbyControls();
-}
-
-void UTRMainMenuWidget::RefreshSettingsVisibility()
-{
-	if (!IsValid(SettingsButton))
-	{
-		return;
-	}
-
-	const bool bShow = !bPanelOpen && !IsInSession();
-	SettingsButton->SetVisibility(bShow ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 }
 
 bool UTRMainMenuWidget::IsInSession() const
@@ -126,8 +112,6 @@ void UTRMainMenuWidget::RefreshSessionPresence()
 	{
 		Btn_Leave->SetVisibility(bInSession ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	}
-
-	RefreshSettingsVisibility();
 }
 
 void UTRMainMenuWidget::HandleFindGameClicked()
@@ -264,7 +248,7 @@ void UTRMainMenuWidget::HandleHostClicked()
 
 	// 세션에 들어가 있으면 패널만 펼치고 끝낸다. HostCreateRoom 은 기존 세션을 파기하므로
 	// 호스트는 손님을 끊고, 남의 방에 참가한 클라이언트는 자기가 그 방에서 튕겨 나간다.
-	// HasHostedRoom 은 호스트만 참이라 클라이언트를 막지 못한다 — 넷모드도 함께 본다.
+	// HasHostedRoom 은 호스트만 참이라 클라이언트를 못 막으므로 넷모드도 함께 본다.
 	if (IsInSession() || HasHostedRoom())
 	{
 		return;
