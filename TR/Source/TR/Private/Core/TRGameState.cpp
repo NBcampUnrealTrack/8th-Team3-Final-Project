@@ -3,6 +3,7 @@
 
 #include "Core/TRGameState.h"
 #include "TRTypes.h"
+#include "Debug/TRGameplayLog.h"
 #include "Engine/DataTable.h"
 #include "Interaction/TRActionComponent.h"
 #include "Net/UnrealNetwork.h"
@@ -21,6 +22,7 @@ void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ATRGameState, WavePhase);
 	DOREPLIFETIME(ATRGameState, RestEndServerTime);
 	DOREPLIFETIME(ATRGameState, AliveEnemyCount);
+	DOREPLIFETIME(ATRGameState, Biome);
 }
 
 void ATRGameState::BeginPlay()
@@ -293,6 +295,26 @@ void ATRGameState::SetWavePhase(ETRWavePhase InPhase, float InRestEndServerTime)
 	OnRep_WavePhase();
 }
 
+void ATRGameState::SetBiome(const ETRBiomeType InBiome)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (Biome == InBiome)
+	{
+		return;
+	}
+
+	// 이 값은 OnRep 이 없어서(단순 복제) 클라이언트 쪽 시점은 여기에 안 남는다.
+	// 클라이언트가 실제로 언제 받았는지는 ATRLevelSceneManager 의 풍경 전환 로그를 볼 것.
+	UE_LOG(LogTRGameplay, Log, TEXT("[Wave] 서버 웨이브 %d 의 풍경을 %s 로 지정"),
+		WaveNumber, *UEnum::GetValueAsString(InBiome));
+
+	Biome = InBiome;
+}
+
 void ATRGameState::SetAliveEnemyCount(int32 InCount)
 {
 	if (!HasAuthority())
@@ -320,11 +342,21 @@ float ATRGameState::GetRestTimeRemaining() const
 
 void ATRGameState::OnRep_WaveNumber()
 {
+	// **여기가 서버와 클라이언트가 만나는 유일한 지점이다.** 서버는 SetWaveNumber 가
+	// 직접 부르고 클라이언트는 복제가 부르므로, 이 한 곳에 찍으면 양쪽 로그를 나란히
+	// 놓고 어긋난 시점을 찾을 수 있다. 세터에 찍으면 클라이언트 로그가 통째로 빈다.
+	UE_LOG(LogTRGameplay, Log, TEXT("[Wave] %s 웨이브 %d"),
+		HasAuthority() ? TEXT("서버") : TEXT("클라"), WaveNumber);
+
 	OnWaveNumberChanged.Broadcast(WaveNumber);
 }
 
 void ATRGameState::OnRep_WavePhase()
 {
+	UE_LOG(LogTRGameplay, Log, TEXT("[Wave] %s 웨이브 %d 단계 -> %s"),
+		HasAuthority() ? TEXT("서버") : TEXT("클라"), WaveNumber,
+		*UEnum::GetValueAsString(WavePhase));
+
 	OnWavePhaseChanged.Broadcast(WavePhase);
 }
 

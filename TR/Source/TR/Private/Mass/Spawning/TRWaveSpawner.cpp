@@ -173,6 +173,32 @@ void ATRWaveSpawner::PushWavePhase(ETRWavePhase Phase, float RestDuration)
 	GameState->SetWavePhase(Phase, RestEndServerTime);
 }
 
+void ATRWaveSpawner::PushBiomeForWave(const int32 WaveNumber)
+{
+	ATRGameState* GameState = GetTRGameState();
+	if (GameState == nullptr || !HasAuthority())
+	{
+		return;
+	}
+
+	int32 SourceWaveNumber = 0;
+	const FTRWaveRow* Row = FindWaveRow(WaveNumber, SourceWaveNumber);
+	if (Row == nullptr || Row->Biome == ETRBiomeType::None)
+	{
+		// None 은 "직전 풍경 유지"다. 지우는 뜻이 아니므로 덮어쓰지 않는다.
+		return;
+	}
+
+	if (Row->Biome == GameState->GetBiome())
+	{
+		return;
+	}
+
+	GameState->SetBiome(Row->Biome);
+
+	UE_LOG(LogTRMass, Log, TEXT("웨이브 %d 풍경: %s"), WaveNumber, *UEnum::GetValueAsString(Row->Biome));
+}
+
 void ATRWaveSpawner::PushAliveCount()
 {
 	ATRGameState* GameState = GetTRGameState();
@@ -245,6 +271,10 @@ void ATRWaveSpawner::StartWaveNumber(int32 WaveNumber)
 		GameState->SetWaveNumber(WaveNumber);
 	}
 	PushWavePhase(ETRWavePhase::Combat);
+
+	// 판이 막 시작됐거나 휴식을 건너뛴 경우를 위해 여기서도 한 번 맞춘다.
+	// 정상 흐름에서는 휴식에 들어갈 때 이미 밀어 넣었으므로 같은 값이 다시 들어간다.
+	PushBiomeForWave(WaveNumber);
 
 	OnWaveStarted.Broadcast(WaveNumber);
 	Director->StartWave(Definition, TargetActor);
@@ -397,6 +427,11 @@ void ATRWaveSpawner::HandleWaveFinished()
 	{
 		GetWorld()->GetTimerManager().SetTimer(RestTimerHandle, this,
 			&ATRWaveSpawner::AdvanceToNextWave, RestDuration, /*bLoop=*/false);
+
+		// **다음** 웨이브의 바이옴을 지금 알린다. 배경은 휴식 동안 흘러 들어와야
+		// 전투가 시작될 때 이미 바뀌어 있다. 전투가 시작된 뒤에 바꾸면 싸우는 도중에
+		// 풍경이 흘러와 산만하고, 그때는 볼 여유도 없다.
+		PushBiomeForWave(CurrentWaveNumber + 1);
 
 		// 타이머를 건 **뒤에** 알린다. 받은 쪽이 곧바로 GetRestTimeRemaining 을
 		// 물어봐도 값이 나오도록.

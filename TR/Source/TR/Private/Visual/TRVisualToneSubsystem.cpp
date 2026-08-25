@@ -7,6 +7,7 @@
 #include "Materials/MaterialParameterCollection.h"
 #include "Materials/MaterialParameterCollectionInstance.h"
 #include "Core/TRGameState.h"
+#include "Environment/TRGroundMotionSubsystem.h"
 #include "Debug/TRGameplayLog.h"
 #include "Train/TRTrain.h"
 
@@ -161,6 +162,26 @@ void UTRVisualToneSubsystem::Tick(float DeltaTime)
 	const float Threshold = FMath::Max(Settings->HullDangerThreshold, KINDA_SMALL_NUMBER);
 	HullDanger = FMath::Clamp((Threshold - HullRatio) / Threshold, 0.f, 1.f);
 
+	// ── 지면 속도 ────────────────────────────────────────────────────────────
+	//
+	// 지형이 흐르는 속도가 곧 기차의 속도다. 기차 액터는 월드에서 멈춰 있으므로
+	// 액터의 속도를 재면 언제나 0이다(트레드밀 좌표계).
+	{
+		const UTRGroundMotionSubsystem* GroundMotion = GetWorld()
+			? GetWorld()->GetSubsystem<UTRGroundMotionSubsystem>()
+			: nullptr;
+
+		const float RawSpeed = (GroundMotion != nullptr)
+			? static_cast<float>(GroundMotion->GetGroundVelocity().Size())
+			: 0.f;
+
+		const float TargetSpeed = FMath::Clamp(RawSpeed / FMath::Max(Settings->SpeedReference, 1.f), 0.f, 1.f);
+
+		GroundSpeed = (Settings->SpeedTransitionTime > KINDA_SMALL_NUMBER)
+			? FMath::FInterpConstantTo(GroundSpeed, TargetSpeed, DeltaTime, 1.f / Settings->SpeedTransitionTime)
+			: TargetSpeed;
+	}
+
 	// ── 웨이브 섬광 ──────────────────────────────────────────────────────────
 	if (Pulse > 0.f)
 	{
@@ -180,8 +201,9 @@ void UTRVisualToneSubsystem::PushToCollection()
 	const bool bDangerSettled = FMath::IsNearlyEqual(HullDanger, LastPushedDanger, PushThreshold);
 	const bool bPulseSettled = FMath::IsNearlyEqual(Pulse, LastPushedPulse, PushThreshold)
 		&& !(Pulse <= 0.f && LastPushedPulse > 0.f);
+	const bool bSpeedSettled = FMath::IsNearlyEqual(GroundSpeed, LastPushedSpeed, PushThreshold);
 
-	if (bTensionSettled && bDangerSettled && bPulseSettled)
+	if (bTensionSettled && bDangerSettled && bPulseSettled && bSpeedSettled)
 	{
 		return;
 	}
@@ -216,18 +238,20 @@ void UTRVisualToneSubsystem::PushToCollection()
 	LastPushedTension = Tension;
 	LastPushedDanger = HullDanger;
 	LastPushedPulse = Pulse;
+	LastPushedSpeed = GroundSpeed;
 
 	// SetScalarParameterValue 는 이름이 컬렉션에 없으면 false 를 돌려주고 조용히 넘어간다.
 	// 그 조용함이 이 기능이 실패하는 가장 흔한 방식이라, 처음 한 번은 짚어준다.
 	const bool bWrote = Instance->SetScalarParameterValue(TRVisualToneParams::WaveTension, Tension)
 		&& Instance->SetScalarParameterValue(TRVisualToneParams::HullDanger, HullDanger)
-		&& Instance->SetScalarParameterValue(TRVisualToneParams::WavePulse, Pulse);
+		&& Instance->SetScalarParameterValue(TRVisualToneParams::WavePulse, Pulse)
+		&& Instance->SetScalarParameterValue(TRVisualToneParams::GroundSpeed, GroundSpeed);
 
 	if (!bWrote && !bWarnedMissingCollection)
 	{
 		bWarnedMissingCollection = true;
 		UE_LOG(LogTRGameplay, Warning,
-			TEXT("[VisualTone] 컬렉션에 WaveTension/HullDanger/WavePulse 스칼라 파라미터가 없다. 이름이 정확히 일치해야 한다."));
+			TEXT("[VisualTone] 컬렉션에 WaveTension/HullDanger/WavePulse/GroundSpeed 스칼라 파라미터가 없다. 이름이 정확히 일치해야 한다."));
 	}
 }
 

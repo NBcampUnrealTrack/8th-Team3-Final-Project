@@ -118,6 +118,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TR|Wave")
 	int32 GetAliveEnemyCount() const { return AliveEnemyCount; }
 
+	/**
+	 * 지금 진행 중이거나 곧 시작할 웨이브의 풍경.
+	 *
+	 * 휴식에 들어가는 순간 **다음 웨이브의 값**으로 바뀐다. 그래야 배경이 휴식 동안
+	 * 미리 흘러 들어와 전투가 시작될 때는 이미 바뀌어 있다.
+	 *
+	 * 값의 출처는 웨이브 테이블(FTRWaveRow::Biome)이고, 서버의 ATRWaveSpawner 만
+	 * 갱신한다. 클라이언트가 테이블을 직접 읽지 않는 이유는 행 승계 규칙을 두 곳에서
+	 * 구현하지 않기 위해서다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "TR|Wave")
+	ETRBiomeType GetBiome() const { return Biome; }
+
 	// 아래 셋은 서버 전용 — ATRWaveSpawner 와 ATRGameMode 가 유일한 갱신 지점이다.
 
 	void SetWaveNumber(int32 InWaveNumber);
@@ -126,6 +139,8 @@ public:
 	void SetWavePhase(ETRWavePhase InPhase, float InRestEndServerTime = 0.f);
 
 	void SetAliveEnemyCount(int32 InCount);
+
+	void SetBiome(ETRBiomeType InBiome);
 
 	UPROPERTY(BlueprintAssignable, Category = "TR|Wave")
 	FTROnWaveNumberReplicated OnWaveNumberChanged;
@@ -189,6 +204,10 @@ private:
 
 	UPROPERTY(Replicated)
 	int32 AliveEnemyCount = 0;
+
+	/** 배경 풍경. ATRLevelSceneManager 가 이 값으로 자기 Biomes 맵에서 고른다. */
+	UPROPERTY(Replicated)
+	ETRBiomeType Biome = ETRBiomeType::None;
 
 	UFUNCTION()
 	void OnRep_WaveNumber();

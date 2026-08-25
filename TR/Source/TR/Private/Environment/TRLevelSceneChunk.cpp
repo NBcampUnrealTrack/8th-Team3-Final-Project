@@ -29,6 +29,19 @@ void ATRLevelSceneChunk::InitializeChunk(const TArray<FTRLevelSceneMeshDefinitio
 	RebuildInstanceComponents();
 }
 
+//바이옴 교체. 같은 바이옴이면 건너뛴다
+void ATRLevelSceneChunk::ApplyBiome(const ETRBiomeType InBiome, const TArray<FTRLevelSceneMeshDefinition>& InMeshDefinitions)
+{
+	if (Biome == InBiome)
+	{
+		return;
+	}
+
+	Biome = InBiome;
+	MeshDefinitions = InMeshDefinitions;
+	RebuildInstanceComponents();
+}
+
 // 청크 정보 리셋 함수, 시드에 기반해 업데이트
 void ATRLevelSceneChunk::GenerateChunk(const int32 InChunkSeed, const int32 InSegmentIndex)
 {
@@ -62,6 +75,21 @@ void ATRLevelSceneChunk::GenerateChunk(const int32 InChunkSeed, const int32 InSe
 			}
 		}
 	}
+}
+
+//지금 박혀 있는 소품 개수
+int32 ATRLevelSceneChunk::GetTotalInstanceCount() const
+{
+	int32 Total = 0;
+	for (const UInstancedStaticMeshComponent* InstanceComponent : SceneInstanceComponents)
+	{
+		if (IsValid(InstanceComponent))
+		{
+			Total += InstanceComponent->GetInstanceCount();
+		}
+	}
+
+	return Total;
 }
 
 // ISM 초기화 함수
