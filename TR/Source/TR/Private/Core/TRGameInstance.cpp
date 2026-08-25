@@ -3,7 +3,6 @@
 #include "Session/TRNetLog.h"
 #include "Session/TROssPolicy.h"
 #include "Session/TRSessionFlow.h"
-#include "UI/Session/TRSessionMenuController.h"
 
 #include "Engine/Engine.h"
 #include "Engine/NetDriver.h"
@@ -678,14 +677,6 @@ void UTRGameInstance::HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver,
 //
 //		UE_LOG(LogTRNet, Log, TEXT("난입 허용 = %d"), bAllow);
 //	}
-
-void UTRGameInstance::TR_SessionUI()
-{
-	if (UTRSessionMenuController* Controller = GetSubsystem<UTRSessionMenuController>())
-	{
-		Controller->Toggle();
-	}
-}
 
 void UTRGameInstance::TR_JoinCode(const FString& RoomCode)
 {

@@ -61,10 +61,6 @@ public:
 	//	UFUNCTION(BlueprintCallable, Category = "TR|Session")
 	//	void SetAllowJoinInProgress(bool bAllow);
 
-	// 세션 메뉴를 여닫는다. 디버그 키가 막혔을 때 콘솔로 확인하는 용도.
-	UFUNCTION(Exec)
-	void TR_SessionUI();
-
 	// 방 코드로 참가한다. 메뉴에 입력칸이 없을 때 콘솔로 대신한다.
 	UFUNCTION(Exec)
 	void TR_JoinCode(const FString& RoomCode);

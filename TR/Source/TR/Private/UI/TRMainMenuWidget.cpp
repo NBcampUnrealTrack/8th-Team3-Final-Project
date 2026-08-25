@@ -8,13 +8,13 @@
 #include "Components/TextBlock.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
-#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Session/Interface_TRSession.h"
 #include "Session/TRNetLog.h"
 #include "Session/TRSessionFlow.h"
 #include "TimerManager.h"
 #include "UI/TRMenuButton.h"
+#include "UI/TRMenuLeave.h"
 #include "UI/Settings/TRSettingsWidget.h"
 
 void UTRMainMenuWidget::NativeConstruct()
@@ -317,25 +317,11 @@ void UTRMainMenuWidget::HandleInviteClicked()
 
 void UTRMainMenuWidget::HandleLeaveClicked()
 {
-	if (IInterface_TRSession* Session = GetSession())
+	// 싱글이면 맵을 다시 열지 않는다.
+	if (!TRMenuLeave::LeaveSessionAndReturnToMenu(this, /*bReloadWhenStandalone=*/false))
 	{
-		Session->LeaveSession();
+		RefreshStatusTexts();
 	}
-
-	UWorld* World = GetWorld();
-	if (World == nullptr)
-	{
-		return;
-	}
-
-	if (World->GetNetMode() != NM_Standalone)
-	{
-		// PIE 에서는 패키지 이름에 UEDPIE_N_ 이 붙으므로 벗겨야 열린다.
-		UGameplayStatics::OpenLevel(World, FName(*UWorld::RemovePIEPrefix(World->GetOutermost()->GetName())));
-		return;
-	}
-
-	RefreshStatusTexts();
 }
 
 void UTRMainMenuWidget::HandleReadyClicked()

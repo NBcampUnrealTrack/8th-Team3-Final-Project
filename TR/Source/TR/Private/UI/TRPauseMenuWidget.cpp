@@ -3,15 +3,10 @@
 #include "UI/TRPauseMenuWidget.h"
 
 #include "CommonInputModeTypes.h"
-#include "Engine/Engine.h"
-#include "Engine/GameInstance.h"
-#include "Engine/World.h"
-#include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
-#include "Session/Interface_TRSession.h"
-#include "Session/TRSessionFlow.h"
 #include "UI/Settings/TRSettingsCommonButton.h"
 #include "UI/Settings/TRSettingsWidget.h"
+#include "UI/TRMenuLeave.h"
 #include "UI/TRPlayerHUD.h"
 
 UTRPauseMenuWidget::UTRPauseMenuWidget()
@@ -138,29 +133,10 @@ void UTRPauseMenuWidget::CloseSettings()
 
 void UTRPauseMenuWidget::HandleQuitClicked()
 {
-	if (UGameInstance* GI = GetGameInstance())
-	{
-		if (IInterface_TRSession* Session = GI->GetSubsystem<UTRSessionFlow>())
-		{
-			Session->LeaveSession();
-		}
-	}
-
 	RequestClose();
 
-	UWorld* World = GetWorld();
-	if (World == nullptr)
-	{
-		return;
-	}
-
-	const FWorldContext* Context = GEngine ? GEngine->GetWorldContextFromWorld(World) : nullptr;
-	if (Context != nullptr && !Context->TravelURL.IsEmpty())
-	{
-		return;
-	}
-
-	UGameplayStatics::OpenLevel(World, FName(*UWorld::RemovePIEPrefix(World->GetOutermost()->GetName())));
+	// 인게임 이탈이므로 싱글이어도 맵을 다시 열어 메뉴 상태로 돌아간다.
+	TRMenuLeave::LeaveSessionAndReturnToMenu(this, /*bReloadWhenStandalone=*/true);
 }
 
 void UTRPauseMenuWidget::RequestClose()
