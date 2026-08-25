@@ -206,12 +206,21 @@ void UTRTurretControlComponent::ServerFire_Implementation()
 	const float EnemyRange = bActorHit ? Hit.Distance : MountedTurret->GetManualRange();
 
 	// Mass 적 판정. FireHitscan 안에서 체력 차감·사망 처리·OnEnemyKilled 까지 끝낸다.
+	const float ManualDamage = MountedTurret->GetManualDamage();
 	const FTRMassHitResult EnemyHit = Combat->FireHitscan(
-		FireOrigin, FireDirection, EnemyRange, MountedTurret->GetManualDamage());
+		FireOrigin, FireDirection, EnemyRange, ManualDamage);
 
 	// 연출은 포탑이 전원에게 알린다. 적을 맞혔으면 그 지점, 액터에 막혔으면 막힌 지점, 둘 다 아니면 사거리 끝.
 	const FVector EffectLocation = EnemyHit.bHit ? EnemyHit.Location : (bActorHit ? Hit.ImpactPoint : FireOrigin + FireDirection * EnemyRange);
 	MountedTurret->MulticastFireEffect(EffectLocation, EnemyHit.bHit);
+
+	// 적이든 지형이든 무언가에 닿았으면 그 자리에서 터진다. 땅을 맞혀도 주변 적이 맞는다.
+	// 아무것도 못 맞힌 사격은 안 터진다 - 허공에서 터지면 조준 피드백이 무의미해진다.
+	if (EnemyHit.bHit || bActorHit)
+	{
+		MountedTurret->ApplySplashDamage(EffectLocation, EnemyHit, ManualDamage,
+			MountedTurret->GetManualSplashRadius());
+	}
 
 	if (EnemyHit.bHit)
 	{
