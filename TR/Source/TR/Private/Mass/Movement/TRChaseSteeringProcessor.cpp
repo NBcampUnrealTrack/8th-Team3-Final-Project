@@ -10,6 +10,7 @@
 #include "MassSignalSubsystem.h"
 #include "MassSimulationLOD.h"
 #include "MassStateTreeTypes.h"
+#include "Environment/TRGroundMotionSubsystem.h"
 #include "Mass/Debug/TRMassDebug.h"
 #include "Mass/Core/TRMassParams.h"
 #include "Mass/Net/TRMassNetContract.h"
@@ -55,15 +56,16 @@ namespace
 	 * UMassSmoothOrientationProcessor와 동일하지만, 그 트레이트는 FMassMoveTargetFragment를
 	 * 요구해서 우리 설계와 맞지 않아 직접 구현했다.
 	 *
+	 * @param RelativeVelocity 지면 대비 속도. 월드 속도를 쓰면 몸이 다리와 다른 쪽을 본다.
 	 * @param MovingBlend 1이면 이동 중 가중치, 0이면 정지 가중치. 그 사이는 보간.
 	 */
 	void ApplySmoothOrientation(FTransform& Transform, const FTRChaseParams& ChaseParams,
-		const FVector& CurrentVelocity, const FVector& TargetDirection, float MovingBlend, float DeltaTime)
+		const FVector& RelativeVelocity, const FVector& TargetDirection, float MovingBlend, float DeltaTime)
 	{
 		const FVector CurrentForward = Transform.GetRotation().GetForwardVector();
 
 		// 속도가 거의 0이면 방향이 없다. 그대로 쓰면 Atan2(0,0)=0이라 +X로 홱 돈다.
-		const FVector VelocityDirection = CurrentVelocity.IsNearlyZero() ? CurrentForward : CurrentVelocity;
+		const FVector VelocityDirection = RelativeVelocity.IsNearlyZero() ? CurrentForward : RelativeVelocity;
 
 		const FVector::FReal VelocityHeading = UE::MassNavigation::GetYawFromDirection(VelocityDirection);
 		const FVector::FReal TargetHeading = TargetDirection.IsZero()
@@ -130,6 +132,9 @@ void UTRChaseSteeringProcessor::ConfigureQueries(const TSharedRef<FMassEntityMan
 		EMassFragmentAccess::ReadOnly, EMassFragmentPresence::Optional);
 	EntityQuery.SetChunkFilter(&FMassSimulationVariableTickChunkFragment::ShouldTickChunkThisFrame);
 
+	// 지면이 스크롤하므로 회전 기준을 월드 속도로 잡을 수 없다. 애니메이션 선택과 같은 값을 본다.
+	EntityQuery.AddSubsystemRequirement<UTRGroundMotionSubsystem>(EMassFragmentAccess::ReadOnly);
+
 	// 도달/이탈 전이를 StateTree에 알리기 위해 필요하다.
 	// Mass StateTree는 신호로만 깨어나므로, 판정을 하는 쪽이 신호를 보내야 한다.
 	//
@@ -158,6 +163,9 @@ void UTRChaseSteeringProcessor::Execute(FMassEntityManager& EntityManager, FMass
 
 		const FTRChaseParams& ChaseParams = Context.GetConstSharedFragment<FTRChaseParams>();
 		const FMassMovementParameters& MovementParams = Context.GetConstSharedFragment<FMassMovementParameters>();
+
+		const FVector GroundVelocity =
+			Context.GetSubsystemChecked<UTRGroundMotionSubsystem>().GetGroundVelocity();
 
 		const TArrayView<FTransformFragment> TransformList = Context.GetMutableFragmentView<FTransformFragment>();
 		const TArrayView<FTRTargetFragment> TargetList = Context.GetMutableFragmentView<FTRTargetFragment>();
@@ -294,8 +302,10 @@ void UTRChaseSteeringProcessor::Execute(FMassEntityManager& EntityManager, FMass
 					: 1.f;
 			}
 
-			ApplySmoothOrientation(Transform, ChaseParams, CurrentVelocity, TargetDirection,
-				MovingBlend, DeltaTime);
+			// 회전 기준은 지면 대비 속도다. 월드 속도는 흐르는 지면 위에서 진행 방향이
+			// 아니라서, 그걸로 돌리면 몸과 다리가 다른 쪽을 향한다.
+			ApplySmoothOrientation(Transform, ChaseParams, CurrentVelocity - GroundVelocity,
+				TargetDirection, MovingBlend, DeltaTime);
 		}
 	});
 
