@@ -26,6 +26,7 @@ void UTRPlayerHUDWidget::NativeConstruct()
 	SetCarriedSupply(0);
 	SetTargetInfo(nullptr);
 	SetCrosshairVisible(false);
+	SetTurretControlsVisible(false);
 }
 
 void UTRPlayerHUDWidget::SetCrosshairVisible(bool bVisible)
@@ -36,6 +37,25 @@ void UTRPlayerHUDWidget::SetCrosshairVisible(bool bVisible)
 	}
 
 	CrossHair->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+}
+
+void UTRPlayerHUDWidget::SetTurretControlsVisible(bool bMounted)
+{
+	const ESlateVisibility OnFootVisibility = bMounted ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible;
+	const ESlateVisibility MountedVisibility = bMounted ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+
+	for (UWidget* OnFootLine : { Repair.Get(), Cancel.Get(), Move.Get() })
+	{
+		if (IsValid(OnFootLine))
+		{
+			OnFootLine->SetVisibility(OnFootVisibility);
+		}
+	}
+
+	if (IsValid(Fire))
+	{
+		Fire->SetVisibility(MountedVisibility);
+	}
 }
 
 // 빈 텍스트면 줄을 접고, 아니면 표시 및 텍스트 갱신

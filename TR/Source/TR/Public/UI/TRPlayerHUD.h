@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/HUD.h"
+#include "InputCoreTypes.h"
 #include "TRPlayerHUD.generated.h"
 
 class ATRGameState;
@@ -11,6 +12,7 @@ class AGameStateBase;
 class APawn;
 class UTRPlayerHUDWidget;
 class UTRControlConsoleWidget;
+class UTRPauseMenuWidget;
 class UUserWidget;
 
 UCLASS()
@@ -32,12 +34,18 @@ public:
 	// 팝업을 닫을 때. 마지막 팝업이 닫힐 때만 게임 입력 모드로 돌아간다.
 	static void PopPopupInputMode(APlayerController* PC);
 
-	// 관제석 팝업. 떠 있는 동안은 마우스 커서가 나오고 시점·이동이 잠긴다.
+	// 관제석 팝업. 떠 있는 동안은 마우스 커서가 나오고 시점, 이동이 잠긴다.
 	void ToggleControlConsole();
 
 	void CloseControlConsole();
 
 	bool IsControlConsoleOpen() const { return ControlConsoleWidget != nullptr; }
+
+	void TogglePauseMenu();
+
+	void ClosePauseMenu();
+
+	bool IsPauseMenuOpen() const { return PauseMenuWidget != nullptr; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -82,6 +90,16 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UTRControlConsoleWidget> ControlConsoleWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTRPauseMenuWidget> PauseMenuWidget;
+
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSubclassOf<UTRPauseMenuWidget> PauseMenuWidgetClass;
+
+	// 퍼즈 메뉴를 여는 키. PIE 에서는 에디터가 Escape 를 먼저 가져가니 바꿔 두면 편하다.
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	FKey PauseKey = EKeys::Escape;
 
 	UPROPERTY(EditDefaultsOnly, Category = "UI")
 	TSubclassOf<UUserWidget> PreMatchWidgetClass;
