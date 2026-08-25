@@ -15,11 +15,18 @@
 // 설정 UI에서 공통으로 사용하는 선택지와 표시값 변환 함수
 namespace TRSettingsUI
 {
-	const TArray<FString> QualityOptions = { TEXT("Low"), TEXT("Medium"), TEXT("High"), TEXT("Epic"), TEXT("Cinematic") };
-	const TArray<FString> OverallQualityOptions = { TEXT("Custom"), TEXT("Low"), TEXT("Medium"), TEXT("High"), TEXT("Epic"), TEXT("Cinematic") };
-	const TArray<FString> ToggleOptions = { TEXT("Off"), TEXT("On") };
-	const TArray<FString> DisplayModeOptions = { TEXT("Fullscreen"), TEXT("Borderless"), TEXT("Windowed") };
-	const TArray<FString> FrameRateOptions = { TEXT("Unlimited"), TEXT("30"), TEXT("60"), TEXT("120"), TEXT("144"), TEXT("165"), TEXT("240") };
+	// 콤보 선택지는 화면에 그대로 보이면서 비교값으로도 쓰인다. 글자를 고칠 때 한쪽만
+	// 바뀌면 조용히 안 먹으므로, 비교에 쓰는 것은 상수로 묶어 둔다.
+	const FString OptionOn = TEXT("켜기");
+	const FString OptionOff = TEXT("끄기");
+	const FString OptionUnlimited = TEXT("제한 없음");
+	const FString OptionCustom = TEXT("사용자 지정");
+
+	const TArray<FString> QualityOptions = { TEXT("낮음"), TEXT("보통"), TEXT("높음"), TEXT("매우 높음"), TEXT("시네마틱") };
+	const TArray<FString> OverallQualityOptions = { OptionCustom, TEXT("낮음"), TEXT("보통"), TEXT("높음"), TEXT("매우 높음"), TEXT("시네마틱") };
+	const TArray<FString> ToggleOptions = { OptionOff, OptionOn };
+	const TArray<FString> DisplayModeOptions = { TEXT("전체 화면"), TEXT("테두리 없는 창"), TEXT("창 모드") };
+	const TArray<FString> FrameRateOptions = { OptionUnlimited, TEXT("30"), TEXT("60"), TEXT("120"), TEXT("144"), TEXT("165"), TEXT("240") };
 
 	FString QualityToString(const ETRQualityLevel Level)
 	{
@@ -28,7 +35,7 @@ namespace TRSettingsUI
 
 	FString OverallQualityToString(const int32 Level)
 	{
-		return QualityOptions.IsValidIndex(Level) ? QualityOptions[Level] : TEXT("Custom");
+		return QualityOptions.IsValidIndex(Level) ? QualityOptions[Level] : OptionCustom;
 	}
 
 	TOptional<ETRQualityLevel> StringToQuality(const FString& Value)
@@ -72,7 +79,7 @@ namespace TRSettingsUI
 
 	FString ToggleToString(const bool bEnabled)
 	{
-		return bEnabled ? TEXT("On") : TEXT("Off");
+		return bEnabled ? OptionOn : OptionOff;
 	}
 
 	FString ResolutionToString(const FIntPoint Value)
@@ -89,7 +96,7 @@ namespace TRSettingsUI
 	}
 	FString FrameRateToString(const float Value)
 	{
-		return Value <= 0.0f ? TEXT("Unlimited") : FString::FromInt(FMath::RoundToInt(Value));
+		return Value <= 0.0f ? OptionUnlimited : FString::FromInt(FMath::RoundToInt(Value));
 	}
 }
 
@@ -175,14 +182,14 @@ void UTRSettingsWidget::InitializeRows()
 		ResolutionOptions.Add(TRSettingsUI::ResolutionToString(Resolution));
 	}
 
-	DisplayModeSetting->InitializeSetting(ETRSettingId::DisplayMode, FText::FromString(TEXT("Display Mode")), TRSettingsUI::DisplayModeOptions, TEXT("Borderless"));
-	DisplayMonitorSetting->InitializeSetting(ETRSettingId::DisplayMonitor, FText::FromString(TEXT("Display Monitor")), S->GetAvailableMonitorOptions(), S->GetCurrentMonitorOption());
-	ResolutionSetting->InitializeSetting(ETRSettingId::Resolution, FText::FromString(TEXT("Display Resolution")), ResolutionOptions, TRSettingsUI::ResolutionToString(S->GetScreenResolution()));
-	OverallQualitySetting->InitializeSetting(ETRSettingId::OverallQuality, FText::FromString(TEXT("Overall Graphics")), TRSettingsUI::OverallQualityOptions, TEXT("Custom"));
-	ResolutionScaleSetting->InitializeSetting(ETRSettingId::ResolutionScale, FText::FromString(TEXT("Resolution Scale")), 25.0f, 100.0f, 1.0f, S->GetResolutionScale());
-	VSyncSetting->InitializeSetting(ETRSettingId::VSync, FText::FromString(TEXT("V-Sync")), TRSettingsUI::ToggleOptions, TEXT("Off"));
-	DynamicResolutionSetting->InitializeSetting(ETRSettingId::DynamicResolution, FText::FromString(TEXT("Dynamic Resolution")), TRSettingsUI::ToggleOptions, TEXT("Off"));
-	FrameRateSetting->InitializeSetting(ETRSettingId::FrameRate, FText::FromString(TEXT("Frame Limit")), TRSettingsUI::FrameRateOptions, TEXT("Unlimited"));
+	DisplayModeSetting->InitializeSetting(ETRSettingId::DisplayMode, FText::FromString(TEXT("화면 모드")), TRSettingsUI::DisplayModeOptions, TRSettingsUI::DisplayModeOptions[1]);
+	DisplayMonitorSetting->InitializeSetting(ETRSettingId::DisplayMonitor, FText::FromString(TEXT("모니터")), S->GetAvailableMonitorOptions(), S->GetCurrentMonitorOption());
+	ResolutionSetting->InitializeSetting(ETRSettingId::Resolution, FText::FromString(TEXT("해상도")), ResolutionOptions, TRSettingsUI::ResolutionToString(S->GetScreenResolution()));
+	OverallQualitySetting->InitializeSetting(ETRSettingId::OverallQuality, FText::FromString(TEXT("전체 품질")), TRSettingsUI::OverallQualityOptions, TRSettingsUI::OptionCustom);
+	ResolutionScaleSetting->InitializeSetting(ETRSettingId::ResolutionScale, FText::FromString(TEXT("해상도 배율")), 25.0f, 100.0f, 1.0f, S->GetResolutionScale());
+	VSyncSetting->InitializeSetting(ETRSettingId::VSync, FText::FromString(TEXT("수직 동기화")), TRSettingsUI::ToggleOptions, TRSettingsUI::OptionOff);
+	DynamicResolutionSetting->InitializeSetting(ETRSettingId::DynamicResolution, FText::FromString(TEXT("동적 해상도")), TRSettingsUI::ToggleOptions, TRSettingsUI::OptionOff);
+	FrameRateSetting->InitializeSetting(ETRSettingId::FrameRate, FText::FromString(TEXT("프레임 제한")), TRSettingsUI::FrameRateOptions, TRSettingsUI::OptionUnlimited);
 
 	struct FQualityRow
 	{
@@ -191,23 +198,23 @@ void UTRSettingsWidget::InitializeRows()
 		const TCHAR* Label;
 	};
 	const FQualityRow QualityRows[] = {
-		{ViewDistanceQualitySetting, ETRSettingId::ViewDistanceQuality, TEXT("View Distance")}, {AntiAliasingQualitySetting, ETRSettingId::AntiAliasingQuality, TEXT("Anti-Aliasing")},
-		{ShadowQualitySetting, ETRSettingId::ShadowQuality, TEXT("Shadow")}, {GlobalIlluminationQualitySetting, ETRSettingId::GlobalIlluminationQuality, TEXT("Global Illumination")},
-		{ReflectionQualitySetting, ETRSettingId::ReflectionQuality, TEXT("Reflection")}, {PostProcessQualitySetting, ETRSettingId::PostProcessQuality, TEXT("Post Process")},
-		{TextureQualitySetting, ETRSettingId::TextureQuality, TEXT("Texture")}, {EffectsQualitySetting, ETRSettingId::EffectsQuality, TEXT("Effects")},
-		{FoliageQualitySetting, ETRSettingId::FoliageQuality, TEXT("Foliage")}, {ShadingQualitySetting, ETRSettingId::ShadingQuality, TEXT("Shading")},
-		{LandscapeQualitySetting, ETRSettingId::LandscapeQuality, TEXT("Landscape")}
+		{ViewDistanceQualitySetting, ETRSettingId::ViewDistanceQuality, TEXT("시야 거리")}, {AntiAliasingQualitySetting, ETRSettingId::AntiAliasingQuality, TEXT("안티에일리어싱")},
+		{ShadowQualitySetting, ETRSettingId::ShadowQuality, TEXT("그림자")}, {GlobalIlluminationQualitySetting, ETRSettingId::GlobalIlluminationQuality, TEXT("전역 조명")},
+		{ReflectionQualitySetting, ETRSettingId::ReflectionQuality, TEXT("반사")}, {PostProcessQualitySetting, ETRSettingId::PostProcessQuality, TEXT("후처리")},
+		{TextureQualitySetting, ETRSettingId::TextureQuality, TEXT("텍스처")}, {EffectsQualitySetting, ETRSettingId::EffectsQuality, TEXT("이펙트")},
+		{FoliageQualitySetting, ETRSettingId::FoliageQuality, TEXT("식생")}, {ShadingQualitySetting, ETRSettingId::ShadingQuality, TEXT("셰이딩")},
+		{LandscapeQualitySetting, ETRSettingId::LandscapeQuality, TEXT("랜드스케이프")}
 	};
 	for (const FQualityRow& Item : QualityRows)
 	{
-		Item.Row->InitializeSetting(Item.SettingId, FText::FromString(Item.Label), TRSettingsUI::QualityOptions, TEXT("Epic"));
+		Item.Row->InitializeSetting(Item.SettingId, FText::FromString(Item.Label), TRSettingsUI::QualityOptions, TRSettingsUI::QualityOptions[3]);
 		Item.Row->OnSettingOptionChanged.AddUniqueDynamic(this, &UTRSettingsWidget::HandleOptionChanged);
 	}
 
-	MasterVolumeSetting->InitializeSetting(ETRSettingId::MasterVolume, FText::FromString(TEXT("Master Volume")), 0.0f, 1.0f, 0.01f, S->GetMasterVolume());
-	MusicVolumeSetting->InitializeSetting(ETRSettingId::MusicVolume, FText::FromString(TEXT("Background Music")), 0.0f, 1.0f, 0.01f, S->GetMusicVolume());
-	EffectsVolumeSetting->InitializeSetting(ETRSettingId::EffectsVolume, FText::FromString(TEXT("Sound Effects")), 0.0f, 1.0f, 0.01f, S->GetEffectsVolume());
-	SensitivitySetting->InitializeSetting(ETRSettingId::LookSensitivity, FText::FromString(TEXT("Look Sensitivity")), 0.1f, 5.0f, 0.05f, S->GetLookSensitivity());
+	MasterVolumeSetting->InitializeSetting(ETRSettingId::MasterVolume, FText::FromString(TEXT("전체 음량")), 0.0f, 1.0f, 0.01f, S->GetMasterVolume());
+	MusicVolumeSetting->InitializeSetting(ETRSettingId::MusicVolume, FText::FromString(TEXT("배경 음악")), 0.0f, 1.0f, 0.01f, S->GetMusicVolume());
+	EffectsVolumeSetting->InitializeSetting(ETRSettingId::EffectsVolume, FText::FromString(TEXT("효과음")), 0.0f, 1.0f, 0.01f, S->GetEffectsVolume());
+	SensitivitySetting->InitializeSetting(ETRSettingId::LookSensitivity, FText::FromString(TEXT("마우스 감도")), 0.1f, 5.0f, 0.05f, S->GetLookSensitivity());
 
 	for (UTRSettingInfoWidget* Row : {ResolutionScaleSetting.Get(), MasterVolumeSetting.Get(), MusicVolumeSetting.Get(), EffectsVolumeSetting.Get(), SensitivitySetting.Get()})
 	{
@@ -225,7 +232,7 @@ void UTRSettingsWidget::RefreshFromSettings()
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
 	if (!S)
 	{
-		SetStatus(TEXT("Settings subsystem unavailable"), false);
+		SetStatus(TEXT("설정 시스템을 찾을 수 없습니다"), false);
 		return;
 	}
 	const int32 Mode = FMath::Clamp(S->GetWindowMode(), 0, 2);
@@ -255,7 +262,7 @@ void UTRSettingsWidget::RefreshFromSettings()
 	MusicVolumeSetting->SetValue(S->GetMusicVolume());
 	EffectsVolumeSetting->SetValue(S->GetEffectsVolume());
 	SensitivitySetting->SetValue(S->GetLookSensitivity());
-	SetStatus(TEXT("Loaded from GameUserSettings.ini"), true);
+	SetStatus(TEXT("저장된 설정을 불러왔습니다"), true);
 }
 
 // 현재 GameInstance에 연결된 설정 Subsystem 반환
@@ -295,7 +302,7 @@ void UTRSettingsWidget::HandleSliderValueChanged(const ETRSettingId SettingId, c
 		ensureMsgf(false, TEXT("TRSettings: unsupported slider setting enum value"));
 		return;
 	}
-	SetStatus(TEXT("Previewing unsaved changes"), true);
+	SetStatus(TEXT("저장하지 않은 변경을 미리 보는 중입니다"), true);
 }
 
 // 선택형 UI 입력을 해당 설정의 미저장 Preview 값으로 반영
@@ -343,13 +350,13 @@ void UTRSettingsWidget::HandleOptionChanged(const ETRSettingId SettingId, const 
 		break;
 	}
 	case ETRSettingId::VSync:
-		S->SetVSyncEnabled(SelectedOption == TEXT("On"));
+		S->SetVSyncEnabled(SelectedOption == TRSettingsUI::OptionOn);
 		break;
 	case ETRSettingId::DynamicResolution:
-		S->SetDynamicResolutionEnabled(SelectedOption == TEXT("On"));
+		S->SetDynamicResolutionEnabled(SelectedOption == TRSettingsUI::OptionOn);
 		break;
 	case ETRSettingId::FrameRate:
-		S->SetFrameRateLimit(SelectedOption == TEXT("Unlimited") ? 0.0f : FCString::Atof(*SelectedOption));
+		S->SetFrameRateLimit(SelectedOption == TRSettingsUI::OptionUnlimited ? 0.0f : FCString::Atof(*SelectedOption));
 		break;
 	default:
 	{
@@ -361,11 +368,11 @@ void UTRSettingsWidget::HandleOptionChanged(const ETRSettingId SettingId, const 
 			return;
 		}
 		S->SetQualityLevel(Quality.GetValue(), Level.GetValue());
-		OverallQualitySetting->SetSelectedOption(TEXT("Custom"));
+		OverallQualitySetting->SetSelectedOption(TRSettingsUI::OptionCustom);
 		break;
 	}
 	}
-	SetStatus(TEXT("Previewing unsaved changes"), true);
+	SetStatus(TEXT("저장하지 않은 변경을 미리 보는 중입니다"), true);
 }
 
 // 등록만 해 두면 클릭, 전환, 배타 선택, 게임패드 이동은 CommonUI 가 알아서 한다.
@@ -401,9 +408,9 @@ void UTRSettingsWidget::SetUpTabs()
 	}
 
 	// 버튼은 등록 시점에 만들어지므로 글자는 그 뒤에 넣는다.
-	ApplyTabLabel(TEXT("Graphics"), NSLOCTEXT("TR", "SettingsTabGraphics", "GRAPHICS"));
-	ApplyTabLabel(TEXT("Audio"), NSLOCTEXT("TR", "SettingsTabAudio", "AUDIO"));
-	ApplyTabLabel(TEXT("Control"), NSLOCTEXT("TR", "SettingsTabControl", "CONTROL"));
+	ApplyTabLabel(TEXT("Graphics"), NSLOCTEXT("TR", "SettingsTabGraphics", "그래픽"));
+	ApplyTabLabel(TEXT("Audio"), NSLOCTEXT("TR", "SettingsTabAudio", "사운드"));
+	ApplyTabLabel(TEXT("Control"), NSLOCTEXT("TR", "SettingsTabControl", "조작"));
 
 	TabList->SelectTabByID(TEXT("Graphics"), true);
 }
@@ -421,7 +428,7 @@ void UTRSettingsWidget::HandleApplyClicked()
 {
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
 	const bool bOK = S && S->ApplySettings(true);
-	SetStatus(bOK ? TEXT("Applied and saved") : TEXT("Apply failed"), bOK);
+	SetStatus(bOK ? TEXT("적용하고 저장했습니다") : TEXT("적용에 실패했습니다"), bOK);
 }
 
 // 저장하지 않은 변경을 폐기하고 마지막 저장값 복원
@@ -430,7 +437,7 @@ void UTRSettingsWidget::HandleCancelClicked()
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
 	const bool bOK = S && S->ReloadSettings();
 	RefreshFromSettings();
-	SetStatus(bOK ? TEXT("Unsaved changes discarded") : TEXT("Reload failed"), bOK);
+	SetStatus(bOK ? TEXT("저장하지 않은 변경을 되돌렸습니다") : TEXT("되돌리기에 실패했습니다"), bOK);
 }
 
 // 기본값을 Preview 상태로 불러오며 Apply 전까지 저장하지 않음
@@ -439,17 +446,17 @@ void UTRSettingsWidget::HandleDefaultsClicked()
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
 	const bool bOK = S && S->ResetToDefaults();
 	RefreshFromSettings();
-	SetStatus(bOK ? TEXT("Defaults staged; Apply to save") : TEXT("Default reset failed"), bOK);
+	SetStatus(bOK ? TEXT("기본값을 적용했습니다. 저장하려면 적용하고 저장을 누르세요") : TEXT("기본값 복원에 실패했습니다"), bOK);
 }
 
 // 하드웨어 벤치마크 결과를 권장 그래픽 Preview 값으로 반영
 void UTRSettingsWidget::HandleAutoDetectClicked()
 {
-	SetStatus(TEXT("Detecting recommended graphics settings..."), true);
+	SetStatus(TEXT("권장 그래픽 설정을 측정하는 중입니다"), true);
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
 	const bool bOK = S && S->RunHardwareBenchmark(10);
 	RefreshFromSettings();
-	SetStatus(bOK ? TEXT("Recommended graphics staged; Apply to save") : TEXT("Hardware benchmark failed"), bOK);
+	SetStatus(bOK ? TEXT("권장 설정을 적용했습니다. 저장하려면 적용하고 저장을 누르세요") : TEXT("성능 측정에 실패했습니다"), bOK);
 }
 
 // 저장하지 않은 변경을 폐기한 뒤 CommonUI 화면 비활성화
