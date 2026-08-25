@@ -96,9 +96,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Turret|Splash")
 	bool IsSplashUnlocked() const;
 
-	UFUNCTION(BlueprintPure, Category = "Turret|Splash")
-	float GetAutoSplashRadius() const { return GetAutoRange() * SplashRadiusRatio; }
-
+	// 수동 사격 전용이라 기준은 ManualRange 뿐이다. 자동 사격은 터지지 않는다.
 	UFUNCTION(BlueprintPure, Category = "Turret|Splash")
 	float GetManualSplashRadius() const { return GetManualRange() * SplashRadiusRatio; }
 
@@ -106,9 +104,6 @@ public:
 	//
 	// Center 와 DirectHit 를 따로 받는다 - 지형에 맞거나 빗나가면 폭심은 있어도 직격
 	// 대상은 없다. DirectHit 은 그 적을 범위 피해에서 빼는 데만 쓴다.
-	//
-	// UTRMassCombatSubsystem::ApplyRadialDamage 가 들어오면 주석만 풀면 된다.
-	// TODO(적/Mass 담당) 범위 피해 진입점 필요.
 	int32 ApplySplashDamage(const FVector& Center, const FTRMassHitResult& DirectHit,
 		float DirectDamage, float SplashRadius);
 
@@ -174,15 +169,17 @@ private:
 	float SplashEffectBaseRadius = 300.f;
 
 	//--- Splash (범위공격) ---
-	// 0 이면 비활성.
+	// 수동 사격 전용이다.
+
+	// 이 레벨부터 수동 사격이 범위공격이 된다. 0 이면 비활성.
 	UPROPERTY(EditDefaultsOnly, Category = "Turret|Splash", meta = (ClampMin = "0"))
 	int32 SplashMinLevel = 3;
 
-	// 폭발 반경 = 그 사격의 사거리 × 이 값.
+	// 폭발 반경 = 수동 사거리 × 이 값.
 	UPROPERTY(EditDefaultsOnly, Category = "Turret|Splash", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float SplashRadiusRatio = 0.1f;
 
-	// 주변 적이 받는 피해 = 그 사격의 직격 피해 × 이 값.
+	// 주변 적이 받는 피해 = 수동 직격 피해 × 이 값.
 	UPROPERTY(EditDefaultsOnly, Category = "Turret|Splash", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float SplashDamageRatio = 0.5f;
 

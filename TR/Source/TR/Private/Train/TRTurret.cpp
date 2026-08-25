@@ -335,25 +335,24 @@ int32 ATRTurret::ApplySplashDamage(const FVector& Center, const FTRMassHitResult
 		return 0;
 	}
 
-	// 연출은 지금도 낸다. 반경을 눈으로 맞춰 두면 피해가 붙는 순간 바로 쓸 수 있다.
+	UWorld* World = GetWorld();
+	UTRMassCombatSubsystem* Combat = IsValid(World) ? World->GetSubsystem<UTRMassCombatSubsystem>() : nullptr;
+	if (!IsValid(Combat))
+	{
+		UE_LOG(LogTRGameplay, Warning, TEXT("Splash aborted: TRMassCombatSubsystem not found (%s)"), *GetName());
+		return 0;
+	}
+
+	// 적을 하나도 못 찾아도 낸다. 폭발이 안 보이면 "안 터졌다"로 읽힌다.
 	MulticastSplashEffect(Center, SplashRadius);
 
-	// TODO(적/Mass 담당) UTRMassCombatSubsystem::ApplyRadialDamage 가 들어오면 아래
-	// 주석을 풀면 이 함수는 완성이다. 그전까지 범위 피해는 들어가지 않는다.
-	//
-	// UWorld* World = GetWorld();
-	// UTRMassCombatSubsystem* Combat = IsValid(World) ? World->GetSubsystem<UTRMassCombatSubsystem>() : nullptr;
-	// if (!IsValid(Combat))
-	// {
-	//     UE_LOG(LogTRGameplay, Warning, TEXT("Splash aborted: TRMassCombatSubsystem not found (%s)"), *GetName());
-	//     return 0;
-	// }
-	// return Combat->ApplyRadialDamage(Center, SplashRadius, SplashDamage, DirectHit.HitEntity);
+	// 직격 대상은 제외한다. 지형에 맞았거나 빗나갔으면 HitEntity 가 unset 이라 아무것도 안 걸린다.
+	const int32 HitCount = Combat->ApplyRadialDamage(Center, SplashRadius, SplashDamage, DirectHit.HitEntity);
 
-	UE_LOG(LogTRGameplay, Verbose, TEXT("Splash: %s effect only, ApplyRadialDamage pending (%.0fcm, %.0f each)"),
-		*GetName(), SplashRadius, SplashDamage);
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Splash: %s hit %d in %.0fcm for %.0f each"),
+		*GetName(), HitCount, SplashRadius, SplashDamage);
 
-	return 0;
+	return HitCount;
 }
 
 void ATRTurret::StartAutoFire()
@@ -438,14 +437,8 @@ void ATRTurret::AutoFireTick()
 	const FVector FireDirection = (TargetLocation - Muzzle).GetSafeNormal();
 	const FTRMassHitResult Hit = Combat->FireHitscan(Muzzle, FireDirection, GetAutoRange(), Damage);
 
-	// 빗나가도 조준한 지점에서 터진다. 자동 사격은 적을 찾아 쏘므로 그 자리가 곧 착탄점이다.
-	// Hit.Location 은 빗나가면 0벡터라 그대로 쓸 수 없다.
-	const FVector ImpactLocation = Hit.bHit ? Hit.Location : TargetLocation;
-
 	// 연출은 전원이 본다. 빗나가도 총구 화염은 나야 하므로 조건 없이 알린다.
-	MulticastFireEffect(ImpactLocation, Hit.bHit);
-
-	ApplySplashDamage(ImpactLocation, Hit, Damage, GetAutoSplashRadius());
+	MulticastFireEffect(Hit.Location, Hit.bHit);
 
 	if (!Hit.bHit)
 	{
