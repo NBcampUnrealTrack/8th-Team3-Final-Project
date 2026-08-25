@@ -353,7 +353,7 @@ void UTRGameInstance::ReturnToMainMenu()
 	}
 
 	// 이미 메인메뉴다. 정상 상태이므로 조용히 빠져나간다.
-	const FString CurrentMap = World->GetOutermost()->GetName();
+	const FString CurrentMap = UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
 	if (CurrentMap == MainMenuMapPath)
 	{
 		return;

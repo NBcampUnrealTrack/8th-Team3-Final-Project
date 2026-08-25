@@ -3,7 +3,10 @@
 #include "UI/TRPauseMenuWidget.h"
 
 #include "CommonInputModeTypes.h"
+#include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "Session/Interface_TRSession.h"
 #include "Session/TRSessionFlow.h"
@@ -135,7 +138,6 @@ void UTRPauseMenuWidget::CloseSettings()
 
 void UTRPauseMenuWidget::HandleQuitClicked()
 {
-	// 세션 정리와 메뉴 맵 이동은 LeaveSession 이 함께 한다. 트래블을 더 걸면 그쪽 예약을 덮어쓴다.
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (IInterface_TRSession* Session = GI->GetSubsystem<UTRSessionFlow>())
@@ -145,6 +147,20 @@ void UTRPauseMenuWidget::HandleQuitClicked()
 	}
 
 	RequestClose();
+
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+
+	const FWorldContext* Context = GEngine ? GEngine->GetWorldContextFromWorld(World) : nullptr;
+	if (Context != nullptr && !Context->TravelURL.IsEmpty())
+	{
+		return;
+	}
+
+	UGameplayStatics::OpenLevel(World, FName(*UWorld::RemovePIEPrefix(World->GetOutermost()->GetName())));
 }
 
 void UTRPauseMenuWidget::RequestClose()
