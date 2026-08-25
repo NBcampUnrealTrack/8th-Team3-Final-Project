@@ -4,10 +4,13 @@
 
 #include "CoreMinimal.h"
 #include "Containers/Queue.h"
+#include "Mass/EntityHandle.h"
 #include "Mass/ExternalSubsystemTraits.h"
 #include "Mass/Core/TRMassTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "TRMassCombatSubsystem.generated.h"
+
+struct FMassEntityManager;
 
 /**
  * 적이 목표에 넣는 피해 한 건.
@@ -67,6 +70,12 @@ struct FTRMassHitResult
 
 	UPROPERTY(BlueprintReadOnly, Category = "TR|Combat")
 	ETREnemyType EnemyType = ETREnemyType::Melee;
+
+	/**
+	 * 맞은 개체. 범위 피해에 넘겨 직격 대상을 두 번 때리지 않게 한다.
+	 * 블루프린트 타입이 아니므로 UPROPERTY 가 아니다 — C++ 반환값 전용이다.
+	 */
+	FMassEntityHandle HitEntity;
 };
 
 /** 적을 처치했다. 자원을 받을 쪽이 여기 붙는다. */
@@ -122,6 +131,15 @@ public:
 	FTRMassHitResult FireHitscan(const FVector& Start, const FVector& Direction, float Range,
 		float Damage, float TraceRadius = 25.f);
 
+	/**
+	 * 반경 안의 적 전부에게 같은 피해를 준다. 게임 스레드에서만 부를 것.
+	 * 거리 감쇠는 없다. 피해를 받은 개체 수를 돌려준다.
+	 *
+	 * @param IgnoreEntity 직격으로 이미 맞은 개체. FTRMassHitResult::HitEntity 를 넘긴다.
+	 */
+	int32 ApplyRadialDamage(const FVector& Center, float Radius, float Damage,
+		FMassEntityHandle IgnoreEntity = FMassEntityHandle());
+
 	/** 처치 통지. 자원 누적·킬 로그·이펙트가 여기 붙는다. */
 	UPROPERTY(BlueprintAssignable, Category = "TR|Combat")
 	FTROnEnemyKilled OnEnemyKilled;
@@ -137,6 +155,13 @@ private:
 
 	/** 큐를 비우고 각 건을 목표 액터에 적용한다. */
 	void ConsumePendingImpacts();
+
+	/**
+	 * 개체 하나에 피해를 넣고 사망까지 처리한다. 직격과 범위 피해가 이 한 곳을 함께 쓴다.
+	 * 그래야 어느 경로로 죽든 자원 지급과 시체 정리가 같은 규칙을 탄다.
+	 */
+	FTRMassHitResult ApplyDamageToEntity(FMassEntityManager& EntityManager, FMassEntityHandle Entity,
+		const FVector& HitPoint, float Damage);
 
 	/**
 	 * 다중 생산자 / 단일 소비자. 프로세서 여럿이 병렬로 넣고 Tick 하나가 뺀다.

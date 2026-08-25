@@ -125,16 +125,31 @@ FTRMassHitResult UTRMassCombatSubsystem::FireHitscan(const FVector& Start, const
 		return Result;
 	}
 
-	FTREnemyCombatFragment& Combat = EntityManager.GetFragmentDataChecked<FTREnemyCombatFragment>(NearestEntity);
+	return ApplyDamageToEntity(EntityManager, NearestEntity, NearestPoint, Damage);
+}
+
+FTRMassHitResult UTRMassCombatSubsystem::ApplyDamageToEntity(FMassEntityManager& EntityManager,
+	FMassEntityHandle Entity, const FVector& HitPoint, float Damage)
+{
+	FTRMassHitResult Result;
+
+	UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return Result;
+	}
+
+	FTREnemyCombatFragment& Combat = EntityManager.GetFragmentDataChecked<FTREnemyCombatFragment>(Entity);
 	Combat.Health -= Damage;
 
 	Result.bHit = true;
-	Result.Location = NearestPoint;
+	Result.Location = HitPoint;
+	Result.HitEntity = Entity;
 	Result.RemainingHealth = FMath::Max(0.f, Combat.Health);
 	Result.bKilled = (Combat.Health <= 0.f);
 
 	if (const FTREnemyCombatParams* Params =
-		EntityManager.GetConstSharedFragmentDataPtr<FTREnemyCombatParams>(NearestEntity))
+		EntityManager.GetConstSharedFragmentDataPtr<FTREnemyCombatParams>(Entity))
 	{
 		Result.EnemyType = Params->EnemyType;
 	}
@@ -146,7 +161,7 @@ FTRMassHitResult UTRMassCombatSubsystem::FireHitscan(const FVector& Start, const
 
 	// 여기서 지우지 않는다. 사망 연출이 보이도록 시체를 남기고, 삭제는 연출 시간이 지난 뒤
 	// UTRMassDeathProcessor 가 한다. 죽는 경로가 늘어나도 삭제 시점은 그 한 곳에서 정해진다.
-	if (FTREnemyStateFragment* State = EntityManager.GetFragmentDataPtr<FTREnemyStateFragment>(NearestEntity))
+	if (FTREnemyStateFragment* State = EntityManager.GetFragmentDataPtr<FTREnemyStateFragment>(Entity))
 	{
 		// 진입 시각이 곧 사망 연출의 원점이 된다.
 		TryEnterActionState(*State, ETREnemyActionState::Death, World->GetTimeSeconds());
@@ -154,23 +169,113 @@ FTRMassHitResult UTRMassCombatSubsystem::FireHitscan(const FVector& Start, const
 
 	// 그 자리에 멈춰야 한다. 태그 부착은 명령 버퍼를 거쳐 다음 플러시에 반영되므로,
 	// 그 사이 남아 있는 속도로 미끄러지지 않도록 속도와 조종력은 여기서 직접 끊는다.
-	if (FMassVelocityFragment* Velocity = EntityManager.GetFragmentDataPtr<FMassVelocityFragment>(NearestEntity))
+	if (FMassVelocityFragment* Velocity = EntityManager.GetFragmentDataPtr<FMassVelocityFragment>(Entity))
 	{
 		Velocity->Value = FVector::ZeroVector;
 	}
-	if (FMassForceFragment* Force = EntityManager.GetFragmentDataPtr<FMassForceFragment>(NearestEntity))
+	if (FMassForceFragment* Force = EntityManager.GetFragmentDataPtr<FMassForceFragment>(Entity))
 	{
 		Force->Value = FVector::ZeroVector;
 	}
 
 	// 이 태그가 조종·분리에서 빼주고, 삭제 프로세서가 집어갈 표시가 된다.
-	EntityManager.Defer().AddTag<FTRDeadTag>(NearestEntity);
+	EntityManager.Defer().AddTag<FTRDeadTag>(Entity);
 
 	// 자원은 처치 즉시 준다. 연출이 끝날 때까지 미루면 타격감이 늦는다.
-	// 체력이 0 이하인 개체는 위에서 후보에서 걸러지므로 두 번 지급되지 않는다.
-	OnEnemyKilled.Broadcast(NearestPoint, Combat.ResourceValue);
+	// 체력이 0 이하인 개체는 부르는 쪽 후보에서 걸러지므로 두 번 지급되지 않는다.
+	OnEnemyKilled.Broadcast(HitPoint, Combat.ResourceValue);
 
 	return Result;
+}
+
+int32 UTRMassCombatSubsystem::ApplyRadialDamage(const FVector& Center, float Radius, float Damage,
+	FMassEntityHandle IgnoreEntity)
+{
+	if (!ensureMsgf(IsInGameThread(), TEXT("ApplyRadialDamage 는 게임 스레드에서만 부를 수 있습니다.")))
+	{
+		return 0;
+	}
+
+	UWorld* World = GetWorld();
+	if (World == nullptr || Radius <= 0.f || Damage <= 0.f)
+	{
+		return 0;
+	}
+
+	UMassNavigationSubsystem* Navigation = World->GetSubsystem<UMassNavigationSubsystem>();
+	if (Navigation == nullptr)
+	{
+		return 0;
+	}
+
+	FMassEntityManager& EntityManager = UE::Mass::Utils::GetEntityManagerChecked(*World);
+
+	FBox QueryBounds(ForceInit);
+	QueryBounds += Center;
+
+	const FVector Padding(Radius + MaxAgentRadiusGuess);
+	TArray<FMassNavigationObstacleItem, TInlineAllocator<64>> Candidates;
+	Navigation->GetObstacleGrid().Query(QueryBounds.ExpandBy(Padding), Candidates);
+
+	// 판정과 피해를 나눈다. OnEnemyKilled 는 블루프린트가 붙을 수 있어 무엇이든 부를 수 있고,
+	// 그 안에서 다시 이 경로로 들어오면 순회 중인 후보 목록의 전제가 깨진다.
+	TArray<TPair<FMassEntityHandle, FVector>, TInlineAllocator<32>> Targets;
+
+	for (const FMassNavigationObstacleItem& Candidate : Candidates)
+	{
+		// 직격으로 이미 맞은 개체는 건너뛴다. 지형에 맞고 터진 경우는 unset 이라 아무것도 걸리지 않는다.
+		if (Candidate.Entity == IgnoreEntity)
+		{
+			continue;
+		}
+
+		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Candidate.Entity);
+		const FTREnemyCombatFragment* Combat = EntityManager.GetFragmentDataPtr<FTREnemyCombatFragment>(Candidate.Entity);
+		if (Transform == nullptr || Combat == nullptr)
+		{
+			continue;
+		}
+
+		// 이미 죽었지만 아직 안 지워진 개체는 건너뛴다.
+		if (Combat->Health <= 0.f)
+		{
+			continue;
+		}
+
+		// 적을 발밑에서 위로 뻗은 세로 선분으로 본다. FireHitscan 과 같은 형상이라
+		// 직격에 맞는 위치면 폭발에도 맞는다.
+		const FVector Feet = Transform->GetTransform().GetLocation();
+
+		const FTREnemyCombatParams* CandidateParams =
+			EntityManager.GetConstSharedFragmentDataPtr<FTREnemyCombatParams>(Candidate.Entity);
+		const float BodyHeight = CandidateParams ? CandidateParams->HitHeight : 0.f;
+
+		const FVector ClosestOnBody =
+			FMath::ClosestPointOnSegment(Center, Feet, Feet + FVector(0.f, 0.f, BodyHeight));
+
+		const FAgentRadiusFragment* AgentRadius =
+			EntityManager.GetFragmentDataPtr<FAgentRadiusFragment>(Candidate.Entity);
+		const float HitRadius = Radius + (AgentRadius ? AgentRadius->Radius : 0.f);
+
+		if (FVector::DistSquared(Center, ClosestOnBody) > FMath::Square(HitRadius))
+		{
+			continue;
+		}
+
+		Targets.Emplace(Candidate.Entity, ClosestOnBody);
+	}
+
+	int32 HitCount = 0;
+
+	for (const TPair<FMassEntityHandle, FVector>& Target : Targets)
+	{
+		if (ApplyDamageToEntity(EntityManager, Target.Key, Target.Value, Damage).bHit)
+		{
+			++HitCount;
+		}
+	}
+
+	return HitCount;
 }
 
 TStatId UTRMassCombatSubsystem::GetStatId() const
