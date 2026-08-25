@@ -11,6 +11,8 @@
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
 #include "Core/BGGameState.h"
+#include "AI/BGAIPlayerController.h"
+#include "Lobby/BGReadyComponent.h"
 
 namespace
 {
@@ -335,6 +337,74 @@ void ABGGameMode::CollectPlayers(TArray<APlayerController*>& OutPlayers) const
 			}
 		}
 	}
+}
+
+int32 ABGGameMode::SpawnAIPlayers(int32 Count)
+{
+	if (!HasAuthority() || Count <= 0)
+	{
+		return 0;
+	}
+
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		UE_LOG(LogBGNet, Error, TEXT("[PvE] SpawnAIPlayers: World 가 없습니다."));
+		return 0;
+	}
+
+	if (!AIControllerClass)
+	{
+		UE_LOG(LogBGNet, Error, TEXT("[PvE] SpawnAIPlayers: AIControllerClass 가 비었습니다 — "
+								"BP_BGGameMode 의 BG|PvE 항목에 봇 컨트롤러 BP 를 꽂으세요."));
+		return 0;
+	}
+
+	int32 Spawned = 0;
+	for (int32 i = 0; i < Count; ++i)
+	{
+		FActorSpawnParameters Params;
+		Params.ObjectFlags |= RF_Transient;   // 판마다 새로 만든다
+
+		ABGAIPlayerController* Bot = World->SpawnActor<ABGAIPlayerController>(
+			AIControllerClass, FVector::ZeroVector, FRotator::ZeroRotator, Params);
+		if (!IsValid(Bot))
+		{
+			UE_LOG(LogBGNet, Error, TEXT("[PvE] 봇 스폰 실패 (%d/%d)."), i + 1, Count);
+			break;
+		}
+
+		//	PlayerState 없는 봇을 남기면 좌석·역할 배정이 인원수를 잘못 센다.
+		ABGPlayerState* PS = Bot->GetPlayerState<ABGPlayerState>();
+		if (!IsValid(PS))
+		{
+			UE_LOG(LogBGNet, Error, TEXT("[PvE] 봇 %s 에 PlayerState 가 없습니다 — 스폰을 되돌립니다."),*Bot->GetName());
+			Bot->Destroy();
+			break;
+		}
+
+		PS->SetPlayerName(FString::Printf(TEXT("AI %d"), Spawned + 1));
+		PS->SetIsABot(true);
+
+		//	켜지 않으면 CanStartMatch 가 "준비 대기" 로 판을 열지 않는다.
+		if (UBGReadyComponent* Ready = UBGReadyComponent::Find(PS))
+		{
+			Ready->SetReadyAuthoritative(true);
+		}
+
+		//	좌석이 먼저다 - RestartPlayer 안의 ChoosePlayerStart 가 그 좌석으로 자리를 고른다.
+		if (Seats)
+		{
+			Seats->AssignSeatOnJoin(Bot);
+		}
+
+		RestartPlayer(Bot);
+
+		++Spawned;
+		UE_LOG(LogBGNet, Log, TEXT("[PvE] 봇 스폰 — %s → 좌석 %d"), *PS->GetPlayerName(), PS->GetSeatIndex());
+	}
+
+	return Spawned;
 }
 
 void ABGGameMode::AssignRoles()

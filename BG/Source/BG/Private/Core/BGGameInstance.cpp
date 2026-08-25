@@ -580,6 +580,27 @@ void UBGGameInstance::SetAllowJoinInProgress(bool bAllow)
 }
 
 // ─────────────────────────────────────────────────────────────
+// PvE (단독 플레이)
+// ─────────────────────────────────────────────────────────────
+
+bool UBGGameInstance::StartPvE()
+{
+	UWorld* World = GetWorld();
+	if (!IsValid(World))
+	{
+		UE_LOG(LogBGNet, Error, TEXT("StartPvE: World 가 없습니다."));
+		return false;
+	}
+
+	//	세션을 만들지 않는다 - 단독 플레이라 광고할 방이 없다.
+	//	?listen 도 붙이지 않는다. 넷드라이버를 열면 난입 경로가 생긴다.
+	UE_LOG(LogBGNet, Log, TEXT("StartPvE: PvE 로 게임 맵 이동 (%s)"), *GameMapPath);
+
+	World->ServerTravel(GameMapPath + TEXT("?PlayMode=PvE"), /*bAbsolute*/ true);
+	return true;
+}
+
+// ─────────────────────────────────────────────────────────────
 // 조회
 // ─────────────────────────────────────────────────────────────
 

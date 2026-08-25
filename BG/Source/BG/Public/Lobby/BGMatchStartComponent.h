@@ -50,6 +50,14 @@ protected:
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "BG|Match")
 	int32 StartingHandCards = 0;
 
+	// PvE: 조우 하나의 총 좌석 수(사람 + 봇). 사람 수를 뺀 나머지를 봇으로 채운다.
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "BG|PvE")
+	int32 PvETargetSeats = 2;
+
+	// PvE: 시작에 필요한 사람 수. 봇은 그 뒤에 스폰되므로 여기 안 센다.
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "BG|PvE")
+	int32 PvEMinStartPlayers = 1;
+
 private:
 	ABGGameMode* GetGameMode() const;
 

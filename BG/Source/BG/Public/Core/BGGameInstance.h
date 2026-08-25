@@ -57,6 +57,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Session")
 	void SetAllowJoinInProgress(bool bAllow);
 
+	// ── PvE (단독 플레이) ──
+
+	// PvE 단독 플레이를 시작한다. 세션을 만들지 않고 게임 맵으로 이동한다.
+	// 빈 좌석은 ABGGameMode::SpawnAIPlayers 가 봇으로 채운다.
+	UFUNCTION(BlueprintCallable, Category = "BG|PvE")
+	bool StartPvE();
+
 	// ── 조회 ──
 
 	// 호스트가 광고 중인 방 코드. 호스트가 아니면 빈 문자열.

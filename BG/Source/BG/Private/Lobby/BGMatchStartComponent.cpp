@@ -18,6 +18,13 @@ UBGMatchStartComponent::UBGMatchStartComponent()
 
 int32 UBGMatchStartComponent::GetMinStartPlayers() const
 {
+	//	사람 수 기준이다. 좌석 총원(PvETargetSeats)을 쓰면 혼자서는 영영 시작할 수 없다.
+	const ABGGameMode* GM = GetGameMode();
+	if (GM && GM->IsPvE())
+	{
+		return FMath::Clamp(PvEMinStartPlayers, 1, ABGGameMode::MaxPlayers);
+	}
+
 	return FMath::Clamp(MinStartPlayers, ABGGameMode::MinPlayers, ABGGameMode::MaxPlayers);
 }
 
@@ -35,6 +42,22 @@ void UBGMatchStartComponent::NotifyPlayerJoined()
 
 	UE_LOG(LogBGNet, Log, TEXT("[MatchStart] 로비 %d/%d명 · 준비 %d명"),
 		Total, GetMinStartPlayers(), Ready);
+
+	//	PvE 는 기다릴 사람이 없다 - 조건이 차면 바로 연다.
+	//	준비 상태가 바뀔 때도 불리므로 재시도가 된다. PostLogin 에 직접 넣지 말 것.
+	if (GM->IsPvE())
+	{
+		FString Error;
+		if (CanStartMatch(Error))
+		{
+			UE_LOG(LogBGNet, Log, TEXT("[PvE] 시작 조건 충족 — 자동 시작"));
+			StartMatch();
+		}
+		else
+		{
+			UE_LOG(LogBGNet, Verbose, TEXT("[PvE] 자동 시작 보류 — %s"), *Error);
+		}
+	}
 }
 
 UBGMatchStartComponent* UBGMatchStartComponent::Find(const UWorld* World)
@@ -112,6 +135,26 @@ bool UBGMatchStartComponent::StartMatch()
 
 	TArray<APlayerController*> Players;
 	GM->CollectPlayers(Players);
+
+	//	PvE: 빈 좌석을 봇으로 채운다. 아래 RandomizeSeats·AssignRoles 가 인원수를 보고
+	//	돌기 때문에 반드시 그보다 먼저다.
+	if (GM->IsPvE())
+	{
+		const int32 Needed = FMath::Max(0, PvETargetSeats - Players.Num());
+		const int32 Added  = GM->SpawnAIPlayers(Needed);
+
+		if (Added > 0)
+		{
+			//	봇을 포함해 다시 센다. 아래 로그와 AssignRoles 가 이 목록을 쓴다.
+			GM->CollectPlayers(Players);
+			UE_LOG(LogBGNet, Log, TEXT("[PvE] 봇 %d 명 충원 (목표 좌석 %d) — 총 %d 명"),
+				Added, PvETargetSeats, Players.Num());
+		}
+		else if (Needed > 0)
+		{
+			UE_LOG(LogBGNet, Warning, TEXT("[PvE] 봇 충원 실패 — %d 명 필요했으나 0 명 스폰됨."), Needed);
+		}
+	}
 
 	UE_LOG(LogBGNet, Log, TEXT("[MatchStart] 판 시작(%d명) — 좌석·직업·역할 배정"), Players.Num());
 

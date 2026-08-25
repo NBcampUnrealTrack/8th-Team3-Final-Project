@@ -34,8 +34,11 @@ void UBGMainMenuWidget::SetMultiplayerSubmenuVisible(bool bVisible)
 
 void UBGMainMenuWidget::HandlePvE()
 {
-	// TODO: PvE 모드 미구현. 붙기 전까지는 눌러도 아무 일도 일어나지 않는다.
-	UE_LOG(LogBGNet, Warning, TEXT("[MainMenu] PvE 모드는 아직 구현되지 않았습니다."));
+	if (UBGGameInstance* GI = GetBGGameInstance())
+	{
+		UE_LOG(LogBGNet, Log, TEXT("[MainMenu] PvE 시작."));
+		GI->StartPvE();
+	}
 }
 
 void UBGMainMenuWidget::HandlePvP()

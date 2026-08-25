@@ -18,6 +18,7 @@
 #include "Card/BGGameDataTypes.h"   // FBGCardProbabilityRow
 #include "BGGameMode.generated.h"
 
+class ABGAIPlayerController;
 class ABGCampfire;
 class UBGMatchStartComponent;
 class UBGSeatComponent;
@@ -122,6 +123,10 @@ public:
 		DeprecationMessage = "미사용. 손패 분배는 BG_DealHand / DrawFromDeck + AddCardToHand 를 사용하세요."))
 	void DealCards(int32 CardsPerPlayer = 5);
 
+	// 서버: PvE 에서 빈 좌석을 봇으로 채운다. 채운 수를 돌려준다.
+	// 호출 시점은 UBGMatchStartComponent 가 정한다 - 좌석 재배정·역할 배정보다 먼저다.
+	int32 SpawnAIPlayers(int32 Count);
+
 	// ── 콘솔 테스트 트리거 (구현: BGCardExec.cpp) ──────────────
 	UFUNCTION(Exec)
 	void BG_DumpDeck();
@@ -180,6 +185,11 @@ protected:
 	// 좌석 번호에 대응하는 PlayerStart 로 스폰시킨다. 없으면 엔진 기본 동작.
 	// 로비에서는 이 자리에 그대로 서 있고, 원형 배치는 판 시작 때 한 번만 한다.
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
+
+	// 봇 컨트롤러 BP. 비어 있으면 봇이 스폰되지 않고 에러 로그만 남는다.
+	// AbilityByCardId 가 채워진 BP 를 꽂아야 한다 - 비면 봇이 낸 카드가 전부 거부된다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
+	TSubclassOf<ABGAIPlayerController> AIControllerClass;
 
 private:
 	// URL 옵션(?PlayMode=PvE) > MapPlayModes > PvP 순으로 정한다.

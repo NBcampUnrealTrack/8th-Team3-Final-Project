@@ -3,6 +3,7 @@
 #include "UI/Session/BGSessionMenuWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "BGGameplayTags.h"
+#include "Core/BGGameMode.h"     // EBGPlayMode - PvE 에서는 자동 오픈을 건너뛴다
 #include "Core/BGGameState.h"
 #include "Debug/BGNetLog.h"
 #include "Engine/GameInstance.h"
@@ -162,10 +163,13 @@ void UBGSessionMenuController::TryRestoreAfterTravel(UWorld* World)
 	}
 
 	//	로비로 돌아왔으면 준비를 다시 누를 수 있게 띄운다.
+	//	PvE 는 제외 - 방 만들기를 누르면 ?listen 트래블에 PlayMode 가 빠져 PvP 로 되돌아간다.
 	const ABGGameState* GS = World->GetGameState<ABGGameState>();
 	if (GS && GS->GetPhaseTag().IsValid())
 	{
-		if (GS->GetPhaseTag() == BG::Phase::Lobby.GetTag())
+		const bool bPvE = ABGGameMode::GetPlayMode(World) == EBGPlayMode::PvE;
+
+		if (!bPvE && GS->GetPhaseTag() == BG::Phase::Lobby.GetTag())
 		{
 			Open();
 		}
