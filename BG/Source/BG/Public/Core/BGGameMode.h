@@ -81,6 +81,14 @@ public:
 	// 인원수에 맞는 역할 태그 풀을 구성 (셔플 전). 4:S/O/O/R, 5:+D, 6:+O, 7:+D.
 	static TArray<FGameplayTag> BuildRolePool(int32 NumPlayers);
 
+	// 서버: PvE 배정 진입점. 직업을 먼저 붙이고 역할을 나눠준다.
+	// 사람은 보안관, 봇은 아래 BuildBotRolePoolPvE 의 풀에서 받는다.
+	void AssignRolesPvE();
+
+	// 봇 몫 역할 풀. 4좌석 이상은 BuildRolePool 을 재사용하고 배신자를 무법자로 치환한다.
+	// 사람은 항상 보안관이라 여기 없다.
+	TArray<FGameplayTag> BuildBotRolePoolPvE(int32 NumBots) const;
+
 	/**
 	 * 서버: 접속 인원에게 판타지 직업(Character.Job.*)을 **중복 없이** 하나씩 배정한다.
 	 * 직업 Row 가 스탯 GE/패시브/어빌리티를 부여하고, SkeletalMesh 가 있으면 외형도 바뀐다.
@@ -192,6 +200,9 @@ protected:
 	TSubclassOf<ABGAIPlayerController> AIControllerClass;
 
 private:
+	// PvE 직업 배정. 인원 목록을 받아 CollectPlayers 를 두 번 돌지 않는다.
+	void AssignJobsPvE(const TArray<APlayerController*>& Players);
+
 	// URL 옵션(?PlayMode=PvE) > MapPlayModes > PvP 순으로 정한다.
 	EBGPlayMode ResolvePlayMode(const FString& MapName, const FString& Options) const;
 
