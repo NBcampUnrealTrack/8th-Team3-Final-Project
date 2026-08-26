@@ -11,6 +11,7 @@ class USceneComponent;
 class UNiagaraSystem;
 class APawn;
 struct FTRTurretLevelRow;
+struct FTRMassHitResult;
 
 UCLASS()
 class TR_API ATRTurret : public ATRInstallablePart
@@ -85,7 +86,27 @@ public:
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastFireEffect(FVector HitLocation, bool bEnemyHit);
 	void MulticastFireEffect_Implementation(FVector HitLocation, bool bEnemyHit);
-	
+
+	// 총구 화염과 달리 세계 좌표에 뜨므로 포탑에 어태치하지 않는다.
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastSplashEffect(FVector Center, float Radius);
+	void MulticastSplashEffect_Implementation(FVector Center, float Radius);
+
+	// 레벨은 GameState 가 복제하므로 클라이언트에서도 답이 같다.
+	UFUNCTION(BlueprintPure, Category = "Turret|Splash")
+	bool IsSplashUnlocked() const;
+
+	// 수동 사격 전용이라 기준은 ManualRange 뿐이다. 자동 사격은 터지지 않는다.
+	UFUNCTION(BlueprintPure, Category = "Turret|Splash")
+	float GetManualSplashRadius() const { return GetManualRange() * SplashRadiusRatio; }
+
+	// 반환값은 실제로 맞은 적 수.
+	//
+	// Center 와 DirectHit 를 따로 받는다 - 지형에 맞거나 빗나가면 폭심은 있어도 직격
+	// 대상은 없다. DirectHit 은 그 적을 범위 피해에서 빼는 데만 쓴다.
+	int32 ApplySplashDamage(const FVector& Center, const FTRMassHitResult& DirectHit,
+		float DirectDamage, float SplashRadius);
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -139,6 +160,28 @@ private:
 
 	UPROPERTY(EditAnywhere, Category = "Turret|VFX")
 	FRotator FireEffectRotationOffset = FRotator::ZeroRotator;
+
+	UPROPERTY(EditAnywhere, Category = "Turret|VFX")
+	TObjectPtr<UNiagaraSystem> SplashEffect;
+
+	// SplashEffect 를 만들 때 기준으로 삼은 반경(cm). 실제 반경과의 비율로 스케일을 맞춘다.
+	UPROPERTY(EditAnywhere, AdvancedDisplay, Category = "Turret|VFX", meta = (ClampMin = "1.0", ForceUnits = "cm"))
+	float SplashEffectBaseRadius = 300.f;
+
+	//--- Splash (범위공격) ---
+	// 수동 사격 전용이다.
+
+	// 이 레벨부터 수동 사격이 범위공격이 된다. 0 이면 비활성.
+	UPROPERTY(EditDefaultsOnly, Category = "Turret|Splash", meta = (ClampMin = "0"))
+	int32 SplashMinLevel = 3;
+
+	// 폭발 반경 = 수동 사거리 × 이 값.
+	UPROPERTY(EditDefaultsOnly, Category = "Turret|Splash", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float SplashRadiusRatio = 0.1f;
+
+	// 주변 적이 받는 피해 = 수동 직격 피해 × 이 값.
+	UPROPERTY(EditDefaultsOnly, Category = "Turret|Splash", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float SplashDamageRatio = 0.5f;
 
 	UPROPERTY(Replicated)
 	int32 CurrentAmmo = 0;

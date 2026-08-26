@@ -274,7 +274,7 @@ bool ATRTurret::FindNearestEnemy(const FVector& Origin, float Range, FVector& Ou
 		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Candidate.Entity);
 		const FTREnemyCombatFragment* Combat = EntityManager.GetFragmentDataPtr<FTREnemyCombatFragment>(Candidate.Entity);
 
-		// 전투 프래그먼트가 없으면 적이 아니다. 이미 죽었지만 아직 안 지워진 개체도 건너뛴다.
+		// 전투 프래그먼트가 없으면 적이 아니다.
 		if (Transform == nullptr || Combat == nullptr || Combat->Health <= 0.f)
 		{
 			continue;
@@ -302,6 +302,57 @@ bool ATRTurret::FindNearestEnemy(const FVector& Origin, float Range, FVector& Ou
 	}
 
 	return bFound;
+}
+
+bool ATRTurret::IsSplashUnlocked() const
+{
+	if (SplashMinLevel <= 0 || SplashRadiusRatio <= 0.f || SplashDamageRatio <= 0.f)
+	{
+		return false;
+	}
+
+	const UWorld* World = GetWorld();
+	const ATRGameState* GS = IsValid(World) ? World->GetGameState<ATRGameState>() : nullptr;
+	if (!IsValid(GS))
+	{
+		return false;
+	}
+
+	return GS->GetTurretLevel() >= SplashMinLevel;
+}
+
+int32 ATRTurret::ApplySplashDamage(const FVector& Center, const FTRMassHitResult& DirectHit,
+	float DirectDamage, float SplashRadius)
+{
+	if (!HasAuthority() || !IsSplashUnlocked())
+	{
+		return 0;
+	}
+
+	const float SplashDamage = DirectDamage * SplashDamageRatio;
+	if (SplashDamage <= 0.f || SplashRadius <= 0.f)
+	{
+		return 0;
+	}
+
+	UWorld* World = GetWorld();
+	UTRMassCombatSubsystem* Combat = IsValid(World) ? World->GetSubsystem<UTRMassCombatSubsystem>() : nullptr;
+	if (!IsValid(Combat))
+	{
+		UE_LOG(LogTRGameplay, Warning, TEXT("Splash aborted: TRMassCombatSubsystem not found (%s)"), *GetName());
+		return 0;
+	}
+
+	// 적을 하나도 못 찾아도 낸다. 폭발이 안 보이면 "안 터졌다"로 읽힌다.
+	MulticastSplashEffect(Center, SplashRadius);
+
+	// 직격 대상은 제외한다. 지형에 맞았거나 빗나갔으면 HitEntity 가 unset 이라 아무것도 안 걸린다.
+	const int32 HitCount = Combat->ApplyRadialDamage(Center, SplashRadius, SplashDamage, DirectHit.HitEntity);
+
+	UE_LOG(LogTRGameplay, Verbose, TEXT("Splash: %s hit %d in %.0fcm for %.0f each"),
+		*GetName(), HitCount, SplashRadius, SplashDamage);
+
+	return HitCount;
 }
 
 void ATRTurret::StartAutoFire()
@@ -382,8 +433,9 @@ void ATRTurret::AutoFireTick()
 	ConsumeAmmo(1);
 
 	// 적의 트랜스폼 위치를 그대로 조준한다.
+	const float Damage = GetAutoDamagePerShot();
 	const FVector FireDirection = (TargetLocation - Muzzle).GetSafeNormal();
-	const FTRMassHitResult Hit = Combat->FireHitscan(Muzzle, FireDirection, GetAutoRange(), GetAutoDamagePerShot());
+	const FTRMassHitResult Hit = Combat->FireHitscan(Muzzle, FireDirection, GetAutoRange(), Damage);
 
 	// 연출은 전원이 본다. 빗나가도 총구 화염은 나야 하므로 조건 없이 알린다.
 	MulticastFireEffect(Hit.Location, Hit.bHit);
@@ -430,6 +482,36 @@ void ATRTurret::MulticastFireEffect_Implementation(FVector HitLocation, bool bEn
 #endif
 
 	// TODO: 피탄 이펙트 · 사운드.
+}
+
+void ATRTurret::MulticastSplashEffect_Implementation(FVector Center, float Radius)
+{
+	UWorld* World = GetWorld();
+
+	if (GetNetMode() != NM_DedicatedServer && IsValid(SplashEffect) && IsValid(World))
+	{
+		// 반경은 레벨·경로마다 달라지므로 이펙트도 그 비율로 키운다.
+		const float BaseRadius = FMath::Max(SplashEffectBaseRadius, 1.f);
+		const FVector Scale(Radius / BaseRadius);
+
+		const bool bAutoDestroy = true;
+		const bool bAutoActivate = true;
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			World,
+			SplashEffect,
+			Center,
+			FRotator::ZeroRotator,
+			Scale,
+			bAutoDestroy,
+			bAutoActivate,
+			ENCPoolMethod::AutoRelease);
+	}
+
+#if !UE_BUILD_SHIPPING
+	DrawDebugSphere(World, Center, Radius, 16, FColor::Orange, false, 0.6f, SDPG_World, 1.f);
+#endif
+
+	// TODO: 폭발 사운드 · 카메라 흔들림.
 }
 
 
