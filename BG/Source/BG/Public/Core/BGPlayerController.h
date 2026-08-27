@@ -181,6 +181,9 @@ public:
 	// Logout 보다 이 시점이 빨라서, 여기서 잡지 않으면 캐릭터가 자리에서 사라진다.
 	virtual void Destroyed() override;
 
+	// 서버: 검증 통과 후 실제 처리. 카드가 구동할 GA 를 부여+발동한다.
+	void HandlePlayCard(int32 InstanceId, int32 TargetSeat);
+	
 protected:
 	// PlayerState 의 OnHandChanged 에 구독한다. 위젯/PlayerState 중 늦게 오는 쪽에 맞춰 재시도된다.
 	void TryBindHandDelegate();
@@ -319,9 +322,6 @@ protected:
 	// 클라 → 서버. 검증 후 카드 사용을 처리한다.
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerRequestPlayCard(int32 InstanceId, int32 TargetSeat);
-
-	// 서버: 검증 통과 후 실제 처리. 카드가 구동할 GA 를 부여+발동한다.
-	void HandlePlayCard(int32 InstanceId, int32 TargetSeat);
 
 	UFUNCTION(Server, Reliable)
 	void ServerRequestEndTurn();

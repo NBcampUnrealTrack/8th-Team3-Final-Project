@@ -21,6 +21,7 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
+#include "AI/BGAIPlayerController.h"
 
 ABGGameState::ABGGameState()
 {
@@ -732,7 +733,10 @@ void ABGGameState::BeginTurn(int32 Seat)
 
 	//	밧줄은 드로우까지 끝난 뒤 붙인다 — 자동 처리에 제한 시간을 물릴 이유가 없다.
 	//	자리를 비운 사람이면 짧은 밧줄이 붙어 곧바로 다음 좌석으로 넘어간다.
-	if (Rope)
+	//	AI 턴에는 밧줄을 안 붙인다.
+	const ABGPlayerState* PS = GetPlayerStateBySeat(Seat);
+	const bool bIsAISeat = PS && Cast<ABGAIPlayerController>(PS->GetOwningController()) != nullptr;
+	if (Rope && !bIsAISeat)
 	{
 		Rope->BeginRope(CurrentSeat);
 	}

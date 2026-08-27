@@ -1,5 +1,5 @@
 // BANG! 봇 컨트롤러 - PvE 에서 빈 좌석을 채운다. 연결 없이 서버가 직접 스폰한다.
-// 카드를 고르는 판단은 여기 없다 - UBGAIBrainComponent 가 맡는다(미구현).
+// 카드를 고르는 판단은 UBGAIBrainComponent 가 맡는다.
 //
 // BP 를 BP_BGPlayerController 의 자식으로 만들지 말 것 - 그 BP 의 그래프가
 // WBP_BGHUD 를 만들어 화면 없는 봇이 HUD 를 띄운다.
@@ -10,6 +10,8 @@
 #include "Core/BGPlayerController.h"
 #include "BGAIPlayerController.generated.h"
 
+class UBGAIBrainComponent;
+
 UCLASS()
 class BG_API ABGAIPlayerController : public ABGPlayerController
 {
@@ -17,4 +19,10 @@ class BG_API ABGAIPlayerController : public ABGPlayerController
 
 public:
 	ABGAIPlayerController();
+
+private:
+	// 카드 사용 판단은 전부 이 컴포넌트가 맡는다 - PvE 전용 클래스라 여기 붙여도
+	// PvP 쪽에는 영향이 없다.
+	UPROPERTY(VisibleAnywhere, Category = "BG|AI")
+	TObjectPtr<UBGAIBrainComponent> AIBrain;
 };
