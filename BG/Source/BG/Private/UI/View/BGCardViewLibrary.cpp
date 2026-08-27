@@ -263,6 +263,11 @@ FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, 
 	View.bNeedsTarget = Row->TraitTags.HasTag(BG::Card::Trait::NeedsTargetSeat.GetTag());
 	View.FXArchetype  = DeriveFXArchetype(*Row);
 
+	//	장비/공격/마법 — TypeTag·NeedsTargetSeat 에서 유도한다(EBGCardCategory 주석 참고).
+	//	IsEquipmentRow 를 그대로 쓴다 — 장비 판별이 두 곳에서 각자 계산되면 갈릴 수 있다.
+	View.Category = IsEquipmentRow(*Row) ? EBGCardCategory::Equipment
+		: (View.bNeedsTarget ? EBGCardCategory::Attack : EBGCardCategory::Magic);
+
 	// ── 카드 그림 ────────────────────────────────────────────────────────
 	//	여기서 동기 로드한다. 뷰는 손패에 실제로 들어온 카드에 대해서만 만들어지므로
 	//	한 번에 로드되는 것은 많아야 손패 장수(상한 10장)다 — DT 를 하드 참조로 바꿔

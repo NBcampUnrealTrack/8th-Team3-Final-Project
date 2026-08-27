@@ -68,6 +68,29 @@ enum class EBGCardFXArchetype : uint8
 	Equip   UMETA(DisplayName = "장착")       // 파란 카드
 };
 
+/**
+ * 카드 대분류 — 장비 / 공격 / 마법.
+ *
+ * 새 컬럼을 만들지 않고 DT 에 이미 있는 TypeTag·TraitTags 에서 유도한다 —
+ * FXArchetype 과 같은 이유다(두 곳에 적으면 카드를 고쳤을 때 한쪽만 낡는다).
+ *
+ *   장비(Equipment) — TypeTag == Card.Type.Blue
+ *   공격(Attack)    — TypeTag == Card.Type.Brown 이고 대상 좌석 지정이 필요하다(Trait.NeedsTargetSeat)
+ *   마법(Magic)     — TypeTag == Card.Type.Brown 이고 대상을 지정하지 않는다(자신에게 사용)
+ *
+ * ⚠️ Trait.Attack(직업 패시브가 적용 범위를 가릴 때 읽는 태그, 예: 용병)과는 다른 축이다.
+ *    함정(Trap)처럼 대상은 고르지만 Trait.Attack 이 없는 카드도 여기서는 Attack 으로 분류된다 —
+ *    이 값은 "대상을 지정하는가" 로 가른 표시·분류용이지, 패시브 적용 범위가 아니다.
+ *    유도는 BGCardViewLibrary.cpp 의 MakeCardView 한 곳에서만 일어난다.
+ */
+UENUM(BlueprintType)
+enum class EBGCardCategory : uint8
+{
+	Equipment UMETA(DisplayName = "장비"),
+	Attack    UMETA(DisplayName = "공격"),
+	Magic     UMETA(DisplayName = "마법"),
+};
+
 USTRUCT(BlueprintType)
 struct FBGCardView
 {
@@ -93,6 +116,10 @@ struct FBGCardView
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
 	bool bNeedsTarget = false;
+
+	/** 카드 대분류(장비/공격/마법). 유도 규칙은 EBGCardCategory 주석 참고. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
+	EBGCardCategory Category = EBGCardCategory::Magic;
 
 	/** 클라이언트 측 표시용 힌트일 뿐이다. 실제 사용 가능 판정은 항상 서버 권위. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card")
