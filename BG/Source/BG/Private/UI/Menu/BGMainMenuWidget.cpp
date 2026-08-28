@@ -1,6 +1,7 @@
 #include "UI/Menu/BGMainMenuWidget.h"
 
 #include "Components/Button.h"
+#include "Components/WidgetSwitcher.h"
 #include "Core/BGGameInstance.h"
 #include "Debug/BGNetLog.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -16,6 +17,7 @@ void UBGMainMenuWidget::NativeConstruct()
 	if (Btn_Join)     { Btn_Join->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandleJoin); }
 	if (Btn_Settings) { Btn_Settings->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandleSettings); }
 	if (Btn_Quit)     { Btn_Quit->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandleQuit); }
+	if (Btn_Back)     { Btn_Back->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandleBack); }
 
 	SetMultiplayerSubmenuVisible(false);
 }
@@ -27,9 +29,10 @@ UBGGameInstance* UBGMainMenuWidget::GetBGGameInstance() const
 
 void UBGMainMenuWidget::SetMultiplayerSubmenuVisible(bool bVisible)
 {
-	const ESlateVisibility Vis = bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed;
-	if (Btn_Host) { Btn_Host->SetVisibility(Vis); }
-	if (Btn_Join) { Btn_Join->SetVisibility(Vis); }
+	if (Switcher_Menu)
+	{
+		Switcher_Menu->SetActiveWidgetIndex(bVisible ? 1 : 0);
+	}
 }
 
 void UBGMainMenuWidget::HandlePvE()
@@ -43,8 +46,12 @@ void UBGMainMenuWidget::HandlePvE()
 
 void UBGMainMenuWidget::HandlePvP()
 {
-	const bool bOpening = Btn_Host && Btn_Host->GetVisibility() == ESlateVisibility::Collapsed;
-	SetMultiplayerSubmenuVisible(bOpening);
+	SetMultiplayerSubmenuVisible(true);
+}
+
+void UBGMainMenuWidget::HandleBack()
+{
+	SetMultiplayerSubmenuVisible(false);
 }
 
 void UBGMainMenuWidget::HandleHost()

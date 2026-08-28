@@ -8,6 +8,7 @@
 #include "BGMainMenuWidget.generated.h"
 
 class UButton;
+class UWidgetSwitcher;
 class UBGGameInstance;
 
 UCLASS(Abstract)
@@ -37,6 +38,13 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Btn_Quit;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Btn_Back;
+
+	// 0 = 메인 페이지, 1 = 멀티플레이 페이지.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidgetSwitcher> Switcher_Menu;
+
 private:
 	UFUNCTION()
 	void HandlePvE();
@@ -55,6 +63,9 @@ private:
 
 	UFUNCTION()
 	void HandleQuit();
+
+	UFUNCTION()
+	void HandleBack();
 
 	// PvP 하위 항목(방생성/방참가) 접기·펼치기.
 	void SetMultiplayerSubmenuVisible(bool bVisible);
