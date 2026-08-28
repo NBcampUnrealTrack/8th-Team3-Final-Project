@@ -240,6 +240,44 @@ TArray<FGameplayTag> ABGGameMode::BuildRolePool(int32 NumPlayers)
 	return Pool;
 }
 
+TArray<FGameplayTag> ABGGameMode::BuildBotRolePoolPvE(int32 NumBots) const
+{
+	using namespace BG::Role;
+
+	TArray<FGameplayTag> Pool;
+	Pool.Reserve(NumBots);
+
+	//	4좌석 미만은 PvP 풀을 못 쓴다(BuildRolePool 이 4~7 전제) - 전원 무법자.
+	const int32 NumSeats = NumBots + 1;   // 사람 1명 포함
+	if (NumSeats < MinPlayers)
+	{
+		for (int32 i = 0; i < NumBots; ++i)
+		{
+			Pool.Add(Outlaw.GetTag());
+		}
+		return Pool;
+	}
+
+	//	4좌석 이상은 PvP 표를 그대로 쓴다 - 부관 비율을 두 벌 관리하지 않는다.
+	//	5좌석부터 부관이 섞여 나오는데, 그 전에 둘이 되어 있어야 한다 -
+	//	보안관의 부관 사살 벌칙을 PvE 에서 끄고, AI 가 아군을 대상에서 빼야 한다.
+	Pool = BuildRolePool(NumSeats);
+
+	//	보안관은 사람 몫이라 뺀다. 남은 개수가 정확히 봇 수가 된다.
+	Pool.RemoveSingle(Sheriff.GetTag());
+
+	//	배신자는 PvE 에서 쓰지 않는다 - 무법자로 바꾼다.
+	for (FGameplayTag& Tag : Pool)
+	{
+		if (Tag == Renegade.GetTag())
+		{
+			Tag = Outlaw.GetTag();
+		}
+	}
+
+	return Pool;
+}
+
 TArray<FGameplayTag> ABGGameMode::BuildJobPool()
 {
 	using namespace BG::Character::Job;
@@ -478,6 +516,108 @@ void ABGGameMode::AssignRoles()
 
 		UE_LOG(LogTemp, Log, TEXT("[BG] AssignRoles: %s → %s"),
 			*PC->GetName(), *RoleTag.ToString());
+	}
+}
+
+void ABGGameMode::AssignRolesPvE()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	TArray<APlayerController*> Players;
+	CollectPlayers(Players);
+
+	//	직업이 먼저다 - 스탯 GE 를 붙이는 쪽이라 역할보다 앞서야 한다.
+	AssignJobsPvE(Players);
+
+	int32 NumBots = 0;
+	for (const APlayerController* PC : Players)
+	{
+		if (PC && PC->IsA<ABGAIPlayerController>())
+		{
+			++NumBots;
+		}
+	}
+
+	TArray<FGameplayTag> BotPool = BuildBotRolePoolPvE(NumBots);
+	ShuffleTags(BotPool);
+	int32 NextBot = 0;
+
+	for (APlayerController* PC : Players)
+	{
+		ABGCharacter* Char = PC ? Cast<ABGCharacter>(PC->GetPawn()) : nullptr;
+		if (!Char)
+		{
+			UE_LOG(LogBGNet, Warning, TEXT("[PvE] 역할 배정: %s 의 캐릭터 없음 - 스킵."),
+				PC ? *PC->GetName() : TEXT("null"));
+			continue;
+		}
+
+		FGameplayTag RoleTag = BG::Role::Sheriff.GetTag();
+		if (PC->IsA<ABGAIPlayerController>())
+		{
+			if (!BotPool.IsValidIndex(NextBot))
+			{
+				UE_LOG(LogBGNet, Error, TEXT("[PvE] 봇 역할 풀 부족 - %s 배정 실패."), *PC->GetName());
+				continue;
+			}
+			RoleTag = BotPool[NextBot++];
+		}
+
+		Char->SetRoleTag(RoleTag);
+
+		if (ABGPlayerState* PS = PC->GetPlayerState<ABGPlayerState>())
+		{
+			//	접속이 끊겨 폰이 사라져도 역할은 남아야 한다 - 승패 판정이 이 값을 본다.
+			PS->SetCachedRole(RoleTag);
+
+			//	PvE 는 전원 공개다. 역할 은닉은 사람이 상대일 때만 재미가 된다.
+			PS->SetPublicRole(RoleTag);
+		}
+
+		UE_LOG(LogBGNet, Log, TEXT("[PvE] 역할 배정: %s → %s"),
+			*PC->GetName(), *RoleTag.ToString());
+	}
+}
+
+void ABGGameMode::AssignJobsPvE(const TArray<APlayerController*>& Players)
+{
+	//	풀은 PvP 와 같은 BuildJobPool 을 읽는다. AssignJobs 를 부르지 않는 이유는
+	//	그 함수가 4~7인 가드를 갖고 있어서다 - 배정 자체는 인원수 제약이 없다.
+	TArray<FGameplayTag> Pool = BuildJobPool();
+	if (Pool.Num() < Players.Num())
+	{
+		UE_LOG(LogBGNet, Error, TEXT("[PvE] 직업 %d종 < 인원 %d명 - 중복 없는 배정 불가."),
+			Pool.Num(), Players.Num());
+		return;
+	}
+
+	ShuffleTags(Pool);
+	int32 NextJob = 0;
+
+	for (APlayerController* PC : Players)
+	{
+		ABGCharacter* Char = PC ? Cast<ABGCharacter>(PC->GetPawn()) : nullptr;
+		if (!Char)
+		{
+			UE_LOG(LogBGNet, Warning, TEXT("[PvE] 직업 배정: %s 의 캐릭터 없음 - 스킵."),
+				PC ? *PC->GetName() : TEXT("null"));
+			continue;
+		}
+
+		const FGameplayTag JobTag = Pool[NextJob++];
+		Char->SetJobTag(JobTag);
+
+		//	재접속으로 폰을 새로 스폰하면 이 값으로 직업을 다시 세운다.
+		if (ABGPlayerState* PS = PC->GetPlayerState<ABGPlayerState>())
+		{
+			PS->SetCachedJob(JobTag);
+		}
+
+		UE_LOG(LogBGNet, Log, TEXT("[PvE] 직업 배정: %s → %s"),
+			*PC->GetName(), *JobTag.ToString());
 	}
 }
 

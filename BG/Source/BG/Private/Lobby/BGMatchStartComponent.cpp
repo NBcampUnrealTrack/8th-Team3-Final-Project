@@ -170,7 +170,14 @@ bool UBGMatchStartComponent::StartMatch()
 	}
 
 	// AssignRoles 가 직업(Character.Job.*) 배정까지 함께 처리한다 — 직업 먼저, 역할 나중.
-	GM->AssignRoles();
+	if (GM->IsPvE())
+	{
+		GM->AssignRolesPvE();
+	}
+	else
+	{
+		GM->AssignRoles();
+	}
 
 	// 호스트의 로비 UI 는 여기서 내린다. 클라는 각자 페이즈가 로비를 벗어난 것을 보고 닫는다.
 	if (UGameInstance* GI = GM->GetGameInstance())
