@@ -71,9 +71,13 @@ struct FBGCardDissolveFX
 	GENERATED_BODY()
 
 	/**
-	 * 타들어가는 경계를 정하는 마스크. **이것 하나가 연출의 성격을 정한다.**
-	 *   불규칙 노이즈   → 불에 타듯 얼룩덜룩하게 사라진다
-	 *   선형 그라디언트 → 한쪽부터 직선으로 잘려 나간다
+	 * 잘리는 모양을 정하는 마스크. **이것 하나가 연출의 성격을 정한다.**
+	 * 검은 곳이 먼저 사라지고 흰 곳이 마지막까지 남는다 —
+	 * 벤 자리를 0 으로 그려 두면 그 선에서부터 바깥으로 벌어지며 사라진다.
+	 *
+	 *   칼자국 거리장 → 베인 선에서 갈라진다        (T_BGDissolve_Slash)
+	 *   불규칙 노이즈 → 불에 타듯 얼룩덜룩하게        (T_BGDissolve_Ember)
+	 *   부드러운 셀   → 고르게 스러진다              (T_BGDissolve_Soft)
 	 *
 	 * 비우면 머테리얼의 기본 마스크를 그대로 쓴다.
 	 */
@@ -107,6 +111,68 @@ struct FBGCardDissolveFX
 	/** 잘리는 각도(도). SeparateAmount 가 0 이면 의미가 없다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve")
 	float CutAngleDegrees = 0.f;
+
+	/**
+	 * 잘리는 선이 얼마나 흐린가(0~1 UV). **이 값 하나가 성격을 가른다.**
+	 *   0 에 가까우면 → 칼로 자른 듯 딱 떨어진다   (공격)
+	 *   크면          → 뭉근하게 스러진다          (회복)
+	 *
+	 * EdgeWidth 와 헷갈리지 말 것. 저쪽은 "빛나는 띠의 두께", 이쪽은 "경계선의 흐림" 이다.
+	 * 둘을 같이 키우면 경계가 뭉개져서 무엇이 사라지는지 안 읽힌다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float EdgeSoftness = 0.02f;
+
+	/**
+	 * 발광이 면 전체로 퍼지는 정도.
+	 *   0 → 경계만 탄다. 남은 면은 원래 그림 그대로   (공격)
+	 *   1 → 남아 있는 면 전체가 은은히 빛난다         (회복)
+	 *
+	 * 머테리얼에서 "경계 띠" 와 "남은 면" 을 이 값으로 Lerp 한다.
+	 * ⚠️ Static Switch 로 가르지 말 것 — DMI 로는 안 바뀐다(구조체 상단 주석과 같은 이유).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float SurfaceGlow = 0.f;
+
+	/**
+	 * 사라지면서 위로 밀려 올라가는 정도(UV). 0 이면 제자리에서 스러진다.
+	 *
+	 * 회복은 "빛이 위로 흩어진다" 라 조금 필요하다. 공격은 0 이 맞다 —
+	 * 베인 카드가 떠오르면 잘린 무게감이 사라진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0"))
+	float RiseAmount = 0.f;
+
+	/**
+	 * 경계에 얹는 재 · 잔불 노이즈. 비우면 경계가 매끈한 띠로만 보인다.
+	 * 회복은 비워 둘 것 — 성스러운 빛에 그을음이 섞이면 탁해진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve")
+	TObjectPtr<UTexture2D> EmberMask = nullptr;
+
+	/** 위 노이즈의 세기. 0 이면 텍스처를 넣어도 안 보인다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0"))
+	float EmberIntensity = 0.f;
+
+	/**
+	 * 카드 외곽을 감싸는 후광의 두께(0~1 UV). 0 이면 후광 없음.
+	 *
+	 * ⚠️ Fresnel 노드로 만들지 말 것. UI 도메인에는 뷰 벡터가 없어 항상 상수가 나온다 —
+	 *    컴파일도 되고 에러도 안 나는데 화면에는 아무 변화가 없다.
+	 *    카드 UV 가장자리 비네트로 낼 것.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float HaloWidth = 0.f;
+
+	/**
+	 * 이 원형 전용 진행 곡선. 비우면 위젯의 DissolveCurve 로 떨어진다.
+	 *
+	 * 공격과 회복은 **타는 속도가 달라야** 한다 — 공격은 뒤가 가팔라 확 무너지고,
+	 * 회복은 처음부터 끝까지 고르게 스러진다. 곡선이 하나뿐이면 둘 중 하나는
+	 * 반드시 성격에 안 맞는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve")
+	TObjectPtr<UCurveFloat> Curve = nullptr;
 };
 
 /**
@@ -748,6 +814,25 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve|Param")
 	FName DissolveCutAngleParamName = TEXT("CutAngle");
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve|Param")
+	FName DissolveEdgeSoftnessParamName = TEXT("EdgeSoftness");
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve|Param")
+	FName DissolveSurfaceGlowParamName = TEXT("SurfaceGlow");
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve|Param")
+	FName DissolveRiseParamName = TEXT("RiseAmount");
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve|Param")
+	FName DissolveEmberMaskParamName = TEXT("EmberMask");
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve|Param")
+	FName DissolveEmberIntensityParamName = TEXT("EmberIntensity");
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve|Param")
+	FName DissolveHaloWidthParamName = TEXT("HaloWidth");
+
 
 	// ── 사용한 카드의 중앙 연출 ──────────────────────────────────────
 

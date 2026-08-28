@@ -399,28 +399,25 @@ const FBGCardDissolveFX& UBGCardWidget::FindDissolveFX() const
 
 bool UBGCardWidget::BeginDissolveExit()
 {
-	//	⚠️ 진단용 로그다. 디졸브가 붙고 나면 Verbose 로 낮추거나 지울 것 —
-	//	   카드가 나갈 때마다(프레임마다가 아니다) 한 줄씩 남는다.
 	if (!bUseDissolveExit)
 	{
-		UE_LOG(LogBGCard, Warning, TEXT("[Dissolve] bUseDissolveExit 이 꺼져 있다."));
 		return false;
 	}
 
 	//	버려지는 카드까지 화려하게 타면 무엇이 발동했는지 묻힌다.
 	if (bDissolveOnlyOnPlay && !bPlayExit)
 	{
-		UE_LOG(LogBGCard, Warning,
-			TEXT("[Dissolve] 사용한 카드가 아니라 건너뛴다(bDissolveOnlyOnPlay). "
-			     "내가 낸 카드인데 여기로 온다면 손패의 PlayedMarks 가 안 찍힌 것이다."));
 		return false;
 	}
 
 	if (!Retainer_Card)
 	{
-		UE_LOG(LogBGCard, Warning,
-			TEXT("[Dissolve] Retainer_Card 바인딩이 비었다 — WBP 의 RetainerBox 이름이 "
-			     "정확히 'Retainer_Card' 인지, 'Is Variable' 이 켜져 있는지 확인할 것."));
+		//	WBP 가 리테이너를 두지 않았다. 선택 사항이므로 불투명도 페이드로 떨어질 뿐이다 —
+		//	다만 이름을 틀리게 지었거나 'Is Variable' 을 안 켠 경우와 구분이 안 되므로
+		//	찾을 실마리는 남긴다. 평소에는 안 보이도록 Verbose 다.
+		UE_LOG(LogBGCard, Verbose,
+			TEXT("[Dissolve] Retainer_Card 바인딩이 비어 디졸브를 건너뛴다 — WBP 의 RetainerBox "
+			     "이름이 정확히 'Retainer_Card' 인지, 'Is Variable' 이 켜져 있는지 확인할 것."));
 		return false;
 	}
 
@@ -439,23 +436,31 @@ bool UBGCardWidget::BeginDissolveExit()
 		MID->SetTextureParameterValue(DissolveMaskParamName, ActiveDissolve.MaskTexture);
 	}
 
+	//	재 · 잔불은 공격만 쓴다. 회복은 EmberIntensity 가 0 이라 텍스처를 안 넣어도 된다.
+	if (!DissolveEmberMaskParamName.IsNone() && ActiveDissolve.EmberMask)
+	{
+		MID->SetTextureParameterValue(DissolveEmberMaskParamName, ActiveDissolve.EmberMask);
+	}
+
 	MID->SetVectorParameterValue(DissolveEdgeColorParamName, ActiveDissolve.EdgeColor);
 	MID->SetScalarParameterValue(DissolveEdgeWidthParamName, ActiveDissolve.EdgeWidth);
 	MID->SetScalarParameterValue(DissolveEdgeIntensityParamName, ActiveDissolve.EdgeIntensity);
 	MID->SetScalarParameterValue(DissolveSeparateParamName, ActiveDissolve.SeparateAmount);
 	MID->SetScalarParameterValue(DissolveCutAngleParamName, ActiveDissolve.CutAngleDegrees);
 
+	//	여기부터가 공격과 회복을 가르는 값들이다. 머테리얼은 하나뿐이고 이 숫자들만
+	//	달라진다 — 원형마다 머테리얼을 두면 DMI 와 셰이더 퍼뮤테이션이 그만큼 늘어난다.
+	MID->SetScalarParameterValue(DissolveEdgeSoftnessParamName, ActiveDissolve.EdgeSoftness);
+	MID->SetScalarParameterValue(DissolveSurfaceGlowParamName, ActiveDissolve.SurfaceGlow);
+	MID->SetScalarParameterValue(DissolveRiseParamName, ActiveDissolve.RiseAmount);
+	MID->SetScalarParameterValue(DissolveEmberIntensityParamName, ActiveDissolve.EmberIntensity);
+	MID->SetScalarParameterValue(DissolveHaloWidthParamName, ActiveDissolve.HaloWidth);
+
 	//	여기서야 렌더 타겟을 잡는다. 손패에 있는 동안 켜 두면 장수만큼 RT 가 생긴다.
 	Retainer_Card->SetRetainRendering(true);
 
 	bDissolveActive = true;
 	ApplyDissolve(0.f);   // 첫 프레임을 멀쩡한 카드로 맞춰 놓고 시작한다
-
-	UE_LOG(LogBGCard, Warning,
-		TEXT("[Dissolve] 시작 — 원형=%d, 마스크=%s, DMI=%s"),
-		static_cast<int32>(CardView.FXArchetype),
-		*GetNameSafe(ActiveDissolve.MaskTexture),
-		*GetNameSafe(MID));
 
 	return true;
 }
@@ -945,7 +950,10 @@ void UBGCardWidget::TickExiting(float DeltaTime)
 		//	⚠️ 디졸브 중에는 불투명도를 건드리지 않는다. 타면서 동시에 흐려지면
 		//	   경계의 불꽃이 묻혀서 그냥 페이드아웃처럼 보인다.
 		//	   투명도가 필요하면 머테리얼 안에서 낼 것.
-		ApplyDissolve(CurveOr(DissolveCurve, Alpha, Alpha));
+		//	원형이 자기 곡선을 들고 있으면 그것이 이긴다. 공격은 뒤가 가파르고
+		//	회복은 고르게 — 곡선 하나로는 둘 다 만족시킬 수 없다.
+		const UCurveFloat* ExitCurve = ActiveDissolve.Curve ? ActiveDissolve.Curve.Get() : DissolveCurve.Get();
+		ApplyDissolve(CurveOr(ExitCurve, Alpha, Alpha));
 	}
 	else
 	{
