@@ -1,5 +1,6 @@
 #include "Core/BGCampfire.h"
 
+#include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Core/BGCharacter.h"       // SetBodyFacing — 몸 회전은 캐릭터가 처리한다
 #include "Core/BGPlayerState.h"
@@ -11,8 +12,9 @@
 
 ABGCampfire::ABGCampfire()
 {
-	//	위치 기준 액터다. 배치는 인원이 바뀔 때만 일어나므로 매 프레임 돌 이유가 없다.
-	PrimaryActorTick.bCanEverTick = false;
+	//	배치(ArrangePlayers)는 인원이 바뀔 때만 일어난다. 매 프레임 도는 것은 불빛 흔들림뿐이고,
+	//	그래서 데디케이티드 서버에서는 BeginPlay 가 틱을 도로 끈다.
+	PrimaryActorTick.bCanEverTick = true;
 
 	Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
 	SetRootComponent(Root);
@@ -21,6 +23,107 @@ ABGCampfire::ABGCampfire()
 	FireMesh->SetupAttachment(Root);
 	//	플레이어가 불에 끼어 밀려나지 않도록. 판의 중심은 통과 가능해야 한다.
 	FireMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	FireLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("FireLight"));
+	FireLight->SetupAttachment(Root);
+	//	매 프레임 옮기므로 Movable 이어야 한다. Stationary 로 두면 위치 흔들림이 무시된다.
+	FireLight->SetMobility(EComponentMobility::Movable);
+
+	//	⚠️ 생성자에서는 SetIntensity 류의 함수를 쓰지 않는다. 그 함수들은 컴포넌트가 등록된
+	//	뒤에만 값을 반영하고(AreDynamicDataChangesAllowed) 여기서는 조용히 무시된다.
+	//	기본값은 프로퍼티에 직접 넣고, 실제 적용은 ApplyFireLightSettings 가 맡는다.
+
+	//	둘러앉은 캐릭터의 그림자가 바깥으로 뻗는 것이 이 씬의 그림이다 — 끄면 의미가 없다.
+	FireLight->CastShadows = true;
+	//	점이 아니라 불꽃 덩어리다. 반경을 주면 그림자 경계가 살짝 풀려 딱딱함이 가신다.
+	FireLight->SourceRadius = 15.f;
+	FireLight->IntensityUnits = ELightUnits::Candelas;
+}
+
+void ABGCampfire::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+
+	//	에디터에서 SeatRadius 나 색을 바꾸면 바로 보여야 한다 — 값 잡는 작업은 전부 여기서 일어난다.
+	ApplyFireLightSettings();
+}
+
+void ABGCampfire::BeginPlay()
+{
+	Super::BeginPlay();
+
+	ApplyFireLightSettings();
+
+	//	데디케이티드 서버는 아무것도 그리지 않는다. 보이지도 않을 불빛을 매 프레임 흔들 이유가 없다.
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		SetActorTickEnabled(false);
+	}
+}
+
+void ABGCampfire::ApplyFireLightSettings()
+{
+	if (!FireLight)
+	{
+		return;
+	}
+
+	FireLight->SetVisibility(bFireLightEnabled);
+	FireLight->SetLightColor(FireColor);
+	FireLight->SetIntensity(FireIntensity);
+	FireLight->SetRelativeLocation(FVector(0.f, 0.f, LightHeightOffset));
+
+	if (bAutoAttenuationRadius)
+	{
+		//	좌석 원 바깥까지는 닿아야 캐릭터 뒤쪽 지면이 어둠에 잘려 보이지 않는다.
+		FireLight->SetAttenuationRadius(FMath::Max(1.f, SeatRadius * AttenuationRadiusScale));
+	}
+}
+
+void ABGCampfire::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	UpdateFireFlicker(DeltaSeconds);
+}
+
+void ABGCampfire::UpdateFireFlicker(float DeltaSeconds)
+{
+	if (!FireLight || !bFireLightEnabled)
+	{
+		return;
+	}
+
+	if (!bFlicker)
+	{
+		//	끈 순간 흔들리던 값에 멈춰 있으면 안 된다 — 기준값으로 되돌린다.
+		FireLight->SetIntensity(FireIntensity);
+		FireLight->SetRelativeLocation(FVector(0.f, 0.f, LightHeightOffset));
+		return;
+	}
+
+	//	속도를 곱한 뒤 누적한다. 반대로 하면(누적 후 곱하기) 속도를 바꾸는 순간
+	//	노이즈를 읽는 위치가 통째로 점프해서 불이 한 번 튄다.
+	FlickerTime += DeltaSeconds * FlickerSpeed;
+
+	//	── 두 주파수를 겹치는 이유 ──
+	//	빠른 떨림 하나만 쓰면 규칙적인 맥박처럼 보여 기계 같다. 느린 일렁임을 얹어야
+	//	"장작이 사그라들었다 살아나는" 느낌이 난다.
+	//	배수만 다르게 같은 노이즈를 읽으면 주기가 맞아떨어지므로 시작 위치도 크게 벌린다.
+	const float Fast  = FMath::PerlinNoise1D(FlickerTime);
+	const float Slow  = FMath::PerlinNoise1D(FlickerTime * 0.17f + 37.f);
+	const float Noise = FMath::Clamp(Fast * 0.65f + Slow * 0.35f, -1.f, 1.f);
+
+	FireLight->SetIntensity(FMath::Max(0.f, FireIntensity * (1.f + Noise * FlickerIntensityVariance)));
+
+	//	위치 흔들림. 밝기와 다른 축·다른 속도로 읽어야 둘이 같이 뛰지 않는다.
+	const float JitterX = FMath::PerlinNoise1D(FlickerTime * 0.53f + 101.f);
+	const float JitterY = FMath::PerlinNoise1D(FlickerTime * 0.61f + 211.f);
+
+	FireLight->SetRelativeLocation(FVector(
+		JitterX * FlickerJitter,
+		JitterY * FlickerJitter,
+		LightHeightOffset));
 }
 
 ABGCampfire* ABGCampfire::Find(const UWorld* World)
