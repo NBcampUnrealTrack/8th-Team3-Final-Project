@@ -340,6 +340,21 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout", meta = (ClampMin = "0", EditCondition = "bUseFanLayout"))
 	float MaxTotalFanAngle = 60.f;
 
+	/**
+	 * 카드 한 장이 기울 수 있는 최대 각도(도). **위치는 그대로 두고 각도만** 깎는다.
+	 *
+	 * FanRadius 로도 기울기를 낮출 수 있지만, 실제 각도는 카드 폭과 장수에서 역산되기
+	 * 때문에 손패가 길어지거나 카드 WBP 가 넓어지면 조용히 다시 커진다. 여기서 상한을
+	 * 걸면 그 두 가지와 무관하게 보장된다.
+	 *
+	 * ⚠️ 위치와 각도를 떼어 놓는 것은 원래 금기다(일직선 위에 각도만 주면 바깥 카드가
+	 *    삐죽 튀어나온다). 여기서 안전한 이유는 **깎기만 하기 때문**이다 — 원호가 주는
+	 *    각도보다 더 세우기만 하므로 부채가 부러져 보이지 않는다. 다만 FanRadius 가
+	 *    작아 원호가 가파른데 이 값만 낮추면 그 금기에 걸린다. 둘을 같이 올릴 것.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Layout", meta = (ClampMin = "0", EditCondition = "bUseFanLayout"))
+	float MaxCardTiltDegrees = 2.f;
+
 	// ── 연출 튜닝 ────────────────────────────────────────────────────
 
 	/**
@@ -361,6 +376,47 @@ protected:
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion", meta = (ClampMin = "0", EditCondition = "!bSequentialDeal"))
 	float DealStaggerSeconds = 0.12f;
+
+	/**
+	 * 아직 나타나지 않은(stagger 대기 중인) 카드를 뺀 장수로 자리를 잡는다.
+	 *
+	 * ⚠️ 끄면 SetHand 시점에 5장 자리가 **한꺼번에** 열리고, 카드는 이미 벌어져 있는
+	 *    틈으로 날아와 박힌다 — 부채가 펼쳐지는 것이 아니라 카드가 튀어나오는 것으로
+	 *    보인다("그냥 점프해 온다" 의 원인이 이것이다).
+	 *
+	 * 켜면 한 장이 나타날 때마다 손패가 그만큼씩 벌어진다. 이미 놓인 카드들이
+	 * 옆으로 비켜 주면서 자리를 내주므로 손패가 살아 있는 것처럼 보인다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion")
+	bool bProgressiveFanOpen = true;
+
+	// ── 호버 시 이웃 비키기 ──────────────────────────────────────────
+	//
+	//	마우스가 올라간 카드를 키우기만 하면 양옆 카드를 덮어 버린다. 이웃이 옆으로
+	//	비켜 줘야 "집어 들 수 있는 한 장" 으로 읽힌다(슬레이 더 스파이어 방식).
+	//
+	//	⚠️ 이동은 여기서 시키지 않는다. 목표 자리만 바꾸고 실제 이동은 카드의
+	//	   MoveInterpSpeed 보간이 한다 — 그래야 배분·퇴장 이동과 감각이 같다.
+
+	/**
+	 * 바로 옆 카드가 좌우로 비키는 거리(픽셀). 0 이면 이 연출을 끈다.
+	 *
+	 * 카드 폭의 15~25% 가 무난하다. 너무 크면 손패가 통째로 출렁여서
+	 * 어느 카드에 마우스가 올라갔는지 오히려 안 읽힌다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion|Hover", meta = (ClampMin = "0"))
+	float HoverSpreadAmount = 38.f;
+
+	/**
+	 * 한 칸 멀어질 때마다 비키는 거리에 곱해지는 비율.
+	 * 1 에 가까우면 손패 전체가 평행이동하듯 밀린다 — 0.4~0.5 가 자연스럽다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion|Hover", meta = (ClampMin = "0", ClampMax = "1"))
+	float HoverSpreadFalloff = 0.45f;
+
+	/** 비켜 주는 이웃의 범위(칸). 1 이면 바로 옆 한 장씩만 비킨다. */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion|Hover", meta = (ClampMin = "0"))
+	int32 HoverSpreadRange = 2;
 
 	/** SetDeckAnchor 가 아직 안 불렸을 때 쓸 출발점. 화면 왼쪽 바깥쯤. */
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion")
@@ -408,6 +464,18 @@ private:
 
 	/** 손패 전체에 새 목표 자리를 지정한다. bSnap 이면 보간 없이 즉시 배치한다. */
 	void RelayoutCards(bool bSnap = false);
+
+	/**
+	 * Index 카드가 호버 때문에 옆으로 비켜야 할 거리(픽셀). 왼쪽이 음수다.
+	 * HoveredIndex 가 INDEX_NONE 이면 0 — 아무도 비키지 않는다.
+	 *
+	 * ComputeCardSlot 에 넣지 않고 따로 두는 이유: 저쪽은 (Index, Count) 만 보는
+	 * 순수 함수여야 한다. "지금 어디에 마우스가 있는가" 는 상태라서 섞으면 안 된다.
+	 */
+	float ComputeHoverSpread(int32 Index, int32 HoveredIndex) const;
+
+	/** 이미 나타난(stagger 대기가 끝난) 카드 장수. 부채가 펼쳐지는 속도를 정한다. */
+	int32 CountRevealedCards() const;
 
 	/** 손패에서 빠진 카드를 퇴장 목록으로 옮긴다. */
 	void BeginExitFor(UBGCardWidget* CardWidget);
@@ -511,4 +579,7 @@ private:
 
 	//	지난 프레임에 마우스가 올라가 있던 카드. 바뀔 때만 Z 순서를 다시 잡는다.
 	int32 LastHoveredInstanceId = INDEX_NONE;
+
+	//	지난 프레임에 나타나 있던 카드 장수. 한 장 늘어날 때마다 손패를 다시 벌린다.
+	int32 LastRevealedCount = 0;
 };

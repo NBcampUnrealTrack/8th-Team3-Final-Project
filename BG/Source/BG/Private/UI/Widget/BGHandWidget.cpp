@@ -524,9 +524,48 @@ FBGCardSlotLayout UBGHandWidget::ComputeCardSlot(int32 Index, int32 Count) const
 		BaselineY         + FanRadius * (1.f - FMath::Cos(AngleRadians)));
 
 	//	각도를 원호의 접선에 맞춘다. 이게 위치와 같은 θ 라서 부채가 매끄럽게 이어진다.
-	Out.AngleDegrees = AngleDegrees;
+	//	다만 접선 각도는 카드 폭과 장수에서 역산되므로 손패가 길어지면 조용히 커진다 —
+	//	상한을 걸어 **세우는 쪽으로만** 깎는다(자세한 이유는 MaxCardTiltDegrees 주석).
+	Out.AngleDegrees = FMath::Clamp(AngleDegrees, -MaxCardTiltDegrees, MaxCardTiltDegrees);
 
 	return Out;
+}
+
+int32 UBGHandWidget::CountRevealedCards() const
+{
+	int32 Revealed = 0;
+	for (const UBGCardWidget* CardWidget : CardWidgets)
+	{
+		//	Pending 은 stagger 대기 중이라 화면에 없다(BeginDeal 이 Hidden 으로 숨긴다).
+		//	없는 카드 몫까지 자리를 비워 두면 부채가 미리 다 열려 버린다.
+		if (CardWidget && CardWidget->GetMotionState() != EBGCardMotionState::Pending)
+		{
+			++Revealed;
+		}
+	}
+
+	return Revealed;
+}
+
+float UBGHandWidget::ComputeHoverSpread(int32 Index, int32 HoveredIndex) const
+{
+	if (HoveredIndex == INDEX_NONE || Index == HoveredIndex || HoverSpreadAmount <= 0.f)
+	{
+		return 0.f;
+	}
+
+	const int32 Distance = FMath::Abs(Index - HoveredIndex);
+	if (Distance > HoverSpreadRange)
+	{
+		return 0.f;
+	}
+
+	//	한 칸 멀어질 때마다 falloff 를 한 번 더 곱한다. 전부 같은 거리로 밀면
+	//	손패가 통째로 평행이동해 보여서 "한 장이 비집고 나온다" 로 안 읽힌다.
+	const float Falloff = FMath::Pow(HoverSpreadFalloff, static_cast<float>(Distance - 1));
+
+	//	왼쪽 이웃은 왼쪽으로, 오른쪽 이웃은 오른쪽으로.
+	return (Index < HoveredIndex ? -1.f : 1.f) * HoverSpreadAmount * Falloff;
 }
 
 void UBGHandWidget::RelayoutCards(bool bSnap)
@@ -537,6 +576,25 @@ void UBGHandWidget::RelayoutCards(bool bSnap)
 	}
 
 	const int32 Count = CardWidgets.Num();
+
+	//	자리를 계산할 때 세는 장수. 아직 안 나타난 카드를 빼면 손패가 한 장씩 벌어진다.
+	const int32 LayoutCount = bProgressiveFanOpen
+		? FMath::Max(CountRevealedCards(), 1)
+		: Count;
+
+	//	마우스가 올라간 카드의 **인덱스**. Z 순서에 쓰는 InstanceId 와 달리
+	//	이웃을 밀려면 손패에서 몇 번째인지가 필요하다.
+	int32 HoveredIndex = INDEX_NONE;
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		const UBGCardWidget* CardWidget = CardWidgets[Index];
+		if (CardWidget && CardWidget->IsHoverActive() && !CardWidget->IsLeavingHand())
+		{
+			HoveredIndex = Index;
+			break;
+		}
+	}
+
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		UBGCardWidget* CardWidget = CardWidgets[Index];
@@ -545,7 +603,12 @@ void UBGHandWidget::RelayoutCards(bool bSnap)
 			continue;
 		}
 
-		const FBGCardSlotLayout SlotLayout = ComputeCardSlot(Index, Count);
+		//	아직 안 나타난 카드는 제 인덱스에 해당하는 자리가 없다. 그때는 맨 끝자리를
+		//	목표로 준다 — 어차피 숨어 있고, 나타나는 순간 LayoutCount 가 늘면서
+		//	제자리로 밀려간다. 목표를 안 주면 비행 첫 프레임에 엉뚱한 곳을 향한다.
+		const int32 SlotIndex = FMath::Min(Index, LayoutCount - 1);
+		FBGCardSlotLayout SlotLayout = ComputeCardSlot(SlotIndex, LayoutCount);
+		SlotLayout.Position.X += ComputeHoverSpread(Index, HoveredIndex);
 
 		//	디테일 패널에서 정렬을 바꾸면 다음 갱신에 바로 반영되도록 매번 맞춘다.
 		ApplyCardAlignment(CardWidget);
@@ -640,12 +703,20 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 	bool bAnyDealing = false;
 	int32 HoveredInstanceId = INDEX_NONE;
+	int32 RevealedCount = 0;
 	for (UBGCardWidget* CardWidget : CardWidgets)
 	{
 		if (CardWidget)
 		{
 			CardWidget->TickMotion(InDeltaTime);
 			bAnyDealing |= CardWidget->IsDealInProgress();
+
+			//	TickMotion 안에서 stagger 대기가 풀린다. 그래서 세는 것은 그 뒤여야
+			//	이번 프레임에 나타난 카드가 바로 반영된다.
+			if (CardWidget->GetMotionState() != EBGCardMotionState::Pending)
+			{
+				++RevealedCount;
+			}
 
 			if (CardWidget->IsHoverActive())
 			{
@@ -658,16 +729,19 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	//	슬레이트가 계속 레이아웃을 무효화한다.
 	//	  배분이 끝났을 때  → 올려 뒀던 순서를 제자리로
 	//	  호버가 옮겨갔을 때 → 새로 올라온 카드를 위로
-	const bool bDealingEnded = bWasDealing && !bAnyDealing;
-	const bool bHoverChanged = HoveredInstanceId != LastHoveredInstanceId;
+	//	  한 장 더 나타났을 때 → 그만큼 손패를 더 벌린다(부채가 펼쳐진다)
+	const bool bDealingEnded  = bWasDealing && !bAnyDealing;
+	const bool bHoverChanged  = HoveredInstanceId != LastHoveredInstanceId;
+	const bool bRevealChanged = bProgressiveFanOpen && RevealedCount != LastRevealedCount;
 
-	if (bDealingEnded || bHoverChanged)
+	if (bDealingEnded || bHoverChanged || bRevealChanged)
 	{
 		RelayoutCards();
 	}
 
 	bWasDealing = bAnyDealing;
 	LastHoveredInstanceId = HoveredInstanceId;
+	LastRevealedCount = RevealedCount;
 
 	//	"내가 냈다" 표시 만료. 서버가 거절한 카드의 표시가 남아 있으면
 	//	나중에 그 카드가 다른 사유로 빠질 때 엉뚱하게 중앙 연출이 나온다.
