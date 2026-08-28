@@ -9,6 +9,7 @@
 #include "BGCardWidget.generated.h"
 
 class UTextBlock;
+class URichTextBlock;
 class UBorder;
 class UImage;
 class UTexture2D;
@@ -80,8 +81,11 @@ enum class EBGCardMotionState : uint8
  *   Text_CardName        (TextBlock, 필수)
  *   Text_CardDescription (TextBlock, 필수)
  *   Border_Root          (Border, 선택 - 드래그 중 디밍에 사용)
- *   Text_Chance          (TextBlock, 선택 - 성공+대성공 축약 확률)
- *   Text_ChanceDetail    (TextBlock, 선택 - 4단계 상세 확률)
+ *   Text_ChanceModified   (TextBlock, 선택 - 호버 중 "확률 보정중" 문구)
+ *   Text_ChanceCriticalFailure  (RichTextBlock, 선택 - 대실패)
+ *   Text_ChanceFailure          (RichTextBlock, 선택 - 실패)
+ *   Text_ChanceSuccess          (RichTextBlock, 선택 - 성공)
+ *   Text_ChanceCriticalSuccess  (RichTextBlock, 선택 - 대성공)
  *
  * 확률 텍스트는 둘 다 선택이다. WBP 에 없으면 그냥 표시되지 않는다 —
  * 기존 카드 WBP 를 고치지 않아도 컴파일과 실행이 그대로 유지되어야 하기 때문이다.
@@ -421,17 +425,28 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	FBGCardTierFX CriticalSuccessFX = { FLinearColor(1.f, 0.55f, 0.f), 4.5f, 2.f, 1.1f };
 
-	/** "성공 78%" — 표시 공간이 좁을 때의 축약형 (GDD §10). */
+	//	보정이 걸렸다는 것만 알리는 문구. 카드 맨 위층에 두고 호버 중에만 띄운다 —
+	//	손패 전체에 항상 떠 있으면 정작 확률 숫자를 읽는 데 방해가 된다.
+	//	문구와 서식은 WBP 가 정한다. 여기서는 보이고 숨기는 것만 한다.
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_Chance;
+	TObjectPtr<UTextBlock> Text_ChanceModified;
 
-	/** "대실패 5 · 실패 20 · 성공 65 · 대성공 10" — 4단계 전체 (GDD §10). */
+	// 4단계 상세 확률 (GDD §10)
+
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UTextBlock> Text_ChanceDetail;
+	TObjectPtr<URichTextBlock> Text_ChanceCriticalFailure;
 
 	/** 보정이 걸린 확률에 쓰는 색. 장비 효과가 붙었다는 것을 한눈에 보이게 한다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card")
 	FLinearColor ModifiedChanceColor = FLinearColor(0.45f, 0.85f, 1.f, 1.f);
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<URichTextBlock> Text_ChanceFailure;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<URichTextBlock> Text_ChanceSuccess;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<URichTextBlock> Text_ChanceCriticalSuccess;
 
 	UPROPERTY(EditAnywhere, Category = "BG|Card")
 	FLinearColor NormalChanceColor = FLinearColor::White;
@@ -608,8 +623,11 @@ private:
 	 */
 	void TickSecondaryMotion(float DeltaTime, const FVector2D& PositionBeforeTick);
 
-	/** 확률 텍스트 두 개를 채운다. 판정하지 않는 카드면 숨긴다. */
+	/** 등급별 확률 숫자를 채운다. 판정하지 않는 카드면 숨긴다. */
 	void RefreshChanceText();
+
+	/** "확률 보정중" 문구를 보이고 숨긴다. 보정이 걸렸고 호버 중일 때만 보인다. */
+	void RefreshChanceModifiedBanner();
 
 	/** 테두리 안쪽 그림을 채운다. 뷰에 그림이 없으면 폴백으로, 그것도 없으면 칸을 접는다. */
 	void RefreshArt();

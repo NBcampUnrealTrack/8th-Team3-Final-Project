@@ -7,6 +7,7 @@
 #include "Components/Border.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
+#include "Components/RichTextBlock.h"
 #include "Components/TextBlock.h"
 #include "Curves/CurveFloat.h"
 #include "Debug/BGCardLog.h"
@@ -82,9 +83,9 @@ void UBGCardWidget::SetDragLocked(bool bInLocked)
 
 void UBGCardWidget::RefreshChanceText()
 {
-	if (!Text_Chance && !Text_ChanceDetail)
+	if (!Text_ChanceCriticalFailure && !Text_ChanceFailure && !Text_ChanceSuccess && !Text_ChanceCriticalSuccess)
 	{
-		return;   // WBP 가 확률 칸을 두지 않았다. 선택 사항이므로 조용히 넘어간다.
+		return;   // WBP 가 확률 칸을 두지 않았다. 전부 선택 사항이다.
 	}
 
 	//	판정하지 않는 카드(장비)에 확률을 띄우면 "장비도 실패할 수 있다" 는 오해를 준다.
@@ -94,35 +95,43 @@ void UBGCardWidget::RefreshChanceText()
 
 	//	보정이 걸렸으면 보정 후 값을 보여준다. GDD §8 이 요구하는 것은 "최종 확률" 이다.
 	const FBGCardChanceView& Shown = CardView.FinalChance;
-	const FLinearColor Tint = CardView.bChanceModified ? ModifiedChanceColor : NormalChanceColor;
 
-	if (Text_Chance)
+	//	반올림 때문에 합이 100 이 안 될 수 있다. 등급별 값이 정확한 쪽을 택했다.
+	//	태그 이름은 DT_BGChanceTextStyle 의 행 이름과 정확히 같아야 한다.
+	const auto ApplyTierChance = [bHasChances = CardView.bHasChances, ChanceVisibility](URichTextBlock* Block, const FText& Format, float Value)
 	{
-		Text_Chance->SetVisibility(ChanceVisibility);
-		if (CardView.bHasChances)
+		if (!Block)
 		{
-			Text_Chance->SetText(FText::Format(
-				NSLOCTEXT("BG", "CardChanceShort", "성공 {0}%"),
-				FText::AsNumber(FMath::RoundToInt(Shown.GetSuccessOrBetter()))));
-			Text_Chance->SetColorAndOpacity(FSlateColor(Tint));
+			return;   // 이 등급 칸을 두지 않은 WBP.
 		}
+
+		Block->SetVisibility(ChanceVisibility);
+		if (bHasChances)
+		{
+			Block->SetText(FText::Format(Format, FText::AsNumber(FMath::RoundToInt(Value))));
+		}
+	};
+
+	ApplyTierChance(Text_ChanceCriticalFailure, NSLOCTEXT("BG", "CardChanceCriticalFailure", "<CriticalFailure>{0}</>"), Shown.CriticalFailure);
+	ApplyTierChance(Text_ChanceFailure, NSLOCTEXT("BG", "CardChanceFailure", "<Failure>{0}</>"), Shown.Failure);
+	ApplyTierChance(Text_ChanceSuccess, NSLOCTEXT("BG", "CardChanceSuccess", "<Success>{0}</>"), Shown.Success);
+	ApplyTierChance(Text_ChanceCriticalSuccess, NSLOCTEXT("BG", "CardChanceCriticalSuccess", "<CriticalSuccess>{0}</>"), Shown.CriticalSuccess);
+}
+
+void UBGCardWidget::RefreshChanceModifiedBanner()
+{
+	if (!Text_ChanceModified)
+	{
+		return;
 	}
 
-	if (Text_ChanceDetail)
+	//	호버 중일 때만 띄운다.
+	const bool bShow = CardView.bHasChances && CardView.bChanceModified && IsHoverActive();
+
+	Text_ChanceModified->SetVisibility(bShow ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	if (bShow)
 	{
-		Text_ChanceDetail->SetVisibility(ChanceVisibility);
-		if (CardView.bHasChances)
-		{
-			//	반올림 때문에 합이 100 이 안 될 수 있다. 각 등급을 정확히 보여주는 쪽이
-			//	"합 100 맞추기" 보다 중요하다 — 플레이어가 비교하는 것은 등급별 값이다.
-			Text_ChanceDetail->SetText(FText::Format(
-				NSLOCTEXT("BG", "CardChanceDetail", "대실패 {0} · 실패 {1} · 성공 {2} · 대성공 {3}"),
-				FText::AsNumber(FMath::RoundToInt(Shown.CriticalFailure)),
-				FText::AsNumber(FMath::RoundToInt(Shown.Failure)),
-				FText::AsNumber(FMath::RoundToInt(Shown.Success)),
-				FText::AsNumber(FMath::RoundToInt(Shown.CriticalSuccess))));
-			Text_ChanceDetail->SetColorAndOpacity(FSlateColor(Tint));
-		}
+		Text_ChanceModified->SetColorAndOpacity(FSlateColor(ModifiedChanceColor));
 	}
 }
 
@@ -138,6 +147,7 @@ void UBGCardWidget::RefreshVisual()
 	}
 
 	RefreshChanceText();
+	RefreshChanceModifiedBanner();
 	RefreshArt();
 
 	if (Border_Root)
@@ -774,6 +784,7 @@ void UBGCardWidget::TickSecondaryMotion(float DeltaTime, const FVector2D& Positi
 	if (bHoverAllowed != bWasHoverActive)
 	{
 		bWasHoverActive = bHoverAllowed;
+		RefreshChanceModifiedBanner();   // 문구는 호버가 켜지고 꺼질 때만 바뀐다
 		OnHoverChanged(bHoverAllowed);
 	}
 }
