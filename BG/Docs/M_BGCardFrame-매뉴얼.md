@@ -195,11 +195,27 @@ Vogel 나선(황금각 137.5°, 반지름 √)은 표본마다 반지름이 다 
 
 ## 7. 비용
 
-표본 21 개(= 텍스처 페치 21 회). `Border_Root` 픽셀에서만 돌고 손패는 7 장이므로 문제 되는 규모가 아니다. 렌더 타겟은 하나도 안 쓴다.
+노드 179 개 · 표본 21 개(= 텍스처 페치 21 회). `Border_Root` 픽셀에서만 돌고 손패는 7 장이므로 문제 되는 규모가 아니다. 렌더 타겟은 하나도 안 쓴다.
 
-샘플러는 **1 개**만 먹는다 — Sample 노드가 각자 샘플러를 잡으면 머테리얼당 상한 16 개를 넘겨 컴파일부터 실패하므로, 전부 공유 샘플러(`SSM_Clamp_WorldGroupSettings`)로 묶었다. 이게 UV 를 0~1 로 가두는 역할도 겸한다 — 안 그러면 표본이 텍스처 밖으로 나가 반대쪽 그림이 딸려 온다.
+표본이 21 개여도 **텍스처 오브젝트 파라미터가 하나**라 샘플러 상한(머테리얼당 16 개)에 안 걸린다 — PCD3D_SM6 에서 컴파일이 통과하는 것이 그 증거다. 표본마다 `TextureSampleParameter2D` 를 두면 그때는 파라미터가 21 벌이 되어 컴파일부터 실패한다.
 
-더 줄여야 하면 `TAP_COUNT` 를 12 로 낮춘다. 대신 위 표의 띠가 돌아온다.
+UV 는 `Clamp` 노드로 가둔다. 안 그러면 표본이 텍스처 밖으로 나가 반대쪽 그림이 딸려 온다.
+
+더 줄여야 하면 `TAP_COUNT` 를 12 로 낮춘다. 대신 5 장 표의 띠가 돌아온다.
+
+### 5.8 Python 에서 막힌 것
+
+스크립트를 고칠 때 걸리는 것들이다. 셋 다 실제로 부딪혀서 우회한 것이다.
+
+| 하려던 것 | 결과 | 우회 |
+|---|---|---|
+| `Clamp.const_min` / `const_max` 지정 | `Failed to find property 'const_min'` | `Min` · `Max` 핀에 상수 노드를 물린다 |
+| `TextureSample.sampler_source` 를 공유 샘플러로 | 프로퍼티가 노출돼 있지 않음 | 그래프에서 `Clamp` 로 UV 를 가둔다 |
+| `AssetEditorSubsystem.get_all_edited_assets()` | 메서드 없음 | 확인을 포기하고 진행(경고만 남긴다) |
+
+핀 이름도 노드마다 다르다 — `Clamp` 의 입력과 `TextureProperty` 의 텍스처 입력은 **이름이 없어서 빈 문자열**이고, `Power` 는 `Exp`(`Exponent` 아님), `TextureSample` 은 `Tex`(`Texture` 아님)다.
+
+> ⚠️ `TextureSample` 의 **이름 없는 출력은 RGB(float3)** 다. 여기서 알파를 마스크하면 `Not enough components ... for component mask 0001` 로 컴파일이 깨진다. 알파는 반드시 `A` 출력에서 꺼낼 것.
 
 ---
 

@@ -183,6 +183,7 @@ class Graph(object):
         self.x = -2600
         self.y = 0
         self.count = 0
+        self._shared = {}
 
     def node(self, cls, x=None, y=None):
         """격자에 대충 흩어 놓는다. 마지막에 layout 으로 정리한다."""
@@ -233,6 +234,15 @@ class Graph(object):
         n.set_editor_property("r", a)
         n.set_editor_property("g", b)
         return n
+
+    def shared_const(self, value):
+        """
+        여러 노드가 나눠 쓰는 상수. 출력 하나를 여러 입력에 물려도 된다.
+        표본 20 개가 각자 0 · 1 을 만들면 상수 노드만 40 개 생긴다.
+        """
+        if value not in self._shared:
+            self._shared[value] = self.const(value)
+        return self._shared[value]
 
     # ── 연결 ──
     @staticmethod
@@ -349,11 +359,20 @@ class Graph(object):
                             self.const(1.0))
 
     def clamp_uv(self, src, pin=""):
-        """UV 를 0~1 로 가둔다. 표본이 텍스처 밖으로 나가면 반대쪽이 딸려 온다."""
+        """
+        UV 를 0~1 로 가둔다. 표본이 텍스처 밖으로 나가면 반대쪽 그림이 딸려 온다.
+
+        ⚠️ const_min · const_max 는 5.8 Python 에 안 열려 있다("Failed to find property
+           'const_min'"). 핀에 상수를 물려야 한다. 입력 핀은 이름이 없다 — 'Input' 은
+           실패하고 빈 문자열이 붙는다.
+
+        ⚠️ 이 노드를 빼고 샘플러 주소 지정에 맡길 수 없다. sampler_source 역시 Python 에
+           노출돼 있지 않아 Clamp 계열 공유 샘플러로 못 바꾼다.
+        """
         n = self.node(unreal.MaterialExpressionClamp)
-        n.set_editor_property("const_min", 0.0)
-        n.set_editor_property("const_max", 1.0)
-        self.link(src, pin, n, ["Input", ""])
+        self.link(self.shared_const(0.0), "", n, ["Min"])
+        self.link(self.shared_const(1.0), "", n, ["Max"])
+        self.link(src, pin, n, ["", "Input"])
         return n
 
     def mask(self, src, r=False, g=False, b=False, a=False, pin=""):
@@ -369,19 +388,12 @@ class Graph(object):
         """
         오브젝트 파라미터를 UV 한 곳에서 찍는다.
 
-        ⚠️ sampler_source 를 공유로 두지 않으면 Sample 노드마다 샘플러 슬롯을 하나씩
-           먹는다. 머테리얼당 16 개가 상한이라 표본 21 개면 컴파일부터 실패한다.
-           Clamp 계열을 쓰면 주소 지정도 같이 해결된다.
+        표본이 21 개나 되지만 **텍스처 오브젝트가 하나**라 셰이더가 쓰는 텍스처와
+        샘플러도 하나다. 표본마다 TextureSampleParameter2D 를 두면 그때는 21 벌이 되어
+        머테리얼당 상한 16 을 넘긴다.
         """
         n = self.node(unreal.MaterialExpressionTextureSample)
         n.set_editor_property("sampler_type", unreal.MaterialSamplerType.SAMPLERTYPE_COLOR)
-        try:
-            n.set_editor_property(
-                "sampler_source",
-                unreal.SamplerSourceMode.SSM_CLAMP_WORLD_GROUP_SETTINGS)
-        except Exception as err:
-            unreal.log_warning(
-                "[Frame] 공유 샘플러를 설정하지 못했다 (%s) — 샘플러 상한(16)에 걸릴 수 있다." % err)
         self.link(tex_obj, "", n, ["Tex", "TextureObject"])
         self.link(uv, "", n, ["UVs"])
         return n
@@ -462,12 +474,15 @@ def build():
         offset = g.mul(step, g.const2(dx, dy))
         return g.sample(t_frame, g.clamp_uv(g.add(uv, offset)))
 
-    #	표본 알파의 합. 첫 표본만 알파를 꺼내 스칼라로 만들고 이후는 누산한다.
-    #	가중이 전부 1 이라 곱셈 노드가 필요 없다 — 링 배치를 버린 덕이다.
-    tap_sum = None
-    for dx, dy in spiral_taps():
-        s = tap(dx, dy)
-        tap_sum = g.mask(s, a=True) if tap_sum is None else g.add(tap_sum, s, pb="A")
+    #	표본 알파의 합. 가중이 전부 1 이라 곱셈 노드가 필요 없다 — 링 배치를 버린 덕이다.
+    #
+    #	⚠️ 첫 표본을 ComponentMask 로 스칼라화하지 말 것. TextureSample 의 **이름 없는
+    #	   출력은 RGB(float3)** 라서 알파 마스크가 안 붙는다("Not enough components in
+    #	   float3 for component mask 0001"). 처음 둘을 A 핀끼리 더해 시작한다.
+    taps = [tap(dx, dy) for dx, dy in spiral_taps()]
+    tap_sum = g.add(taps[0], taps[1], pa="A", pb="A")
+    for s in taps[2:]:
+        tap_sum = g.add(tap_sum, s, pb="A")
 
     # ── 흐린 알파 ────────────────────────────────────────────────────
     #	중심에 가중 2, 나머지 20 개는 1 씩. 합 22 로 나눈다.
@@ -525,7 +540,7 @@ def build():
     unreal.log("[Frame] 다음: MI_BGCardFrame_Default 에서 HoverAmount 를 0→1 로 끌어 "
                "외곽선을 확인하고, WBP_BGCard 의 Border_Root 브러시에 이 MI 를 물릴 것")
     unreal.log("[Frame] ⚠️ T_Card_* 에 투명 여백이 없으면 외곽선이 텍스처 경계에서 잘린다 "
-               "— GlowWidth(기본 14px) 만큼 여백을 두고 다시 뽑을 것")
+               "— 가로폭의 GlowWidth(기본 5%) 만큼 여백을 두고 다시 뽑을 것")
 
 
 build()
