@@ -65,25 +65,28 @@ W_TOTAL = W_CENTER + TAP_COUNT
 #	평균을 내면서 값이 통째로 낮아지므로 되올린다. 이 값도 위 프로파일로 맞춘 것이다.
 SHAPE_BOOST = 1.8
 
-#	바깥 띠의 깊이. 텍스처 경계에서 이만큼 안쪽까지만 글로우를 남긴다(가로폭 대비 비율).
+#	안쪽 구멍의 사각 범위(UV). 이 안에서는 글로우를 죽인다.
 #
 #	프레임은 가운데가 뚫린 고리다. 알파가 0 인 곳이 **바깥**만이 아니라 **구멍**이기도
 #	해서, 1-A 만 쓰면 테두리 안쪽에도 글로우가 낀다.
 #
-#	바깥은 텍스처 경계에 붙어 있고 구멍은 한참 안쪽에 있다 — 그 차이로 가른다.
-#	T_Card_Attack(1086×1448) 을 재 보면 이렇게 갈린다:
+#	⚠️ "경계에서 가까우면 바깥" 으로 가르려다 실패했다. 상단 장식 사이 오목한 곳이
+#	   경계 거리 0.203 까지 파고드는데 구멍은 0.164 라 **순서가 뒤집힌다** —
+#	   그 방식은 구멍을 살리고 정작 상단 장식 주변 글로우를 깎았다.
 #
-#	    바깥 여백    경계까지 0.000 ~ 0.067
-#	    프레임 띠    두께 0.054
-#	    안쪽 구멍    경계까지 0.122 이상
-#
-#	0.067 과 0.122 사이면 무엇이든 되므로 가운데인 0.10 을 잡았다.
-#
-#	⚠️ 카드 중심에서 바깥으로 광선을 쏴 불투명 픽셀을 만나는지 보는 방법을 먼저 썼다가
-#	   버렸다. 프레임 띠가 0.054 밖에 안 되는데 구멍 가장자리에서의 첫 걸음이 0.094 라
-#	   **띠를 통째로 뛰어넘어** 구멍을 바깥으로 오인했다. 걸음을 촘촘히 하면 표본이
-#	   금방 늘어난다 — 경계 거리는 표본이 아예 필요 없다.
-OUTER_BAND = 0.10
+#	대신 구멍을 **사각형으로 감싼다.** 패딩된 T_Card_*(1230×1640) 세 장을 전부
+#	플러드 필로 갈라 재 보면 구멍은 아래 상자에 딱 들어가고, 그 상자 안에 바깥
+#	픽셀은 **하나도 없다.** 카드 프레임은 창이 한가운데 뚫린 단순한 모양이라
+#	이 가정이 잘 선다.
+#	실측한 창의 범위는 u[0.169~0.837] v[0.285~0.588] 이지만, 상자를 **0.030 넓혀** 둔다.
+#	딱 맞추면 부드러운 전환 구간이 창 가장자리에 걸려 거기 글로우가 절반만 죽는다 —
+#	창 둘레에 얇은 금색 선이 남는다. 넓히면 전환이 불투명한 프레임 위로 올라가고,
+#	거기는 어차피 shape 가 0 이라 손해가 없다. 0.050 까지는 바깥 픽셀이 안 들어온다.
+HOLE_MIN = (0.139, 0.255)
+HOLE_MAX = (0.867, 0.618)
+
+#	상자 경계를 딱 자르면 계단이 보인다. 이만큼 부드럽게 넘긴다.
+HOLE_SOFT = 0.010
 
 
 def spiral_taps():
@@ -496,7 +499,11 @@ def build():
     p_wave_amt = g.scalar("WaveAmount", 0.35)
     p_wave_freq = g.scalar("WaveFreq", 3.0)
     p_wave_speed = g.scalar("WaveSpeed", 0.6)
-    p_band = g.scalar("OuterBandDepth", OUTER_BAND)
+    p_hole_min = g.vector("HoleBoxMin",
+                          unreal.LinearColor(HOLE_MIN[0], HOLE_MIN[1], 0.0, 0.0))
+    p_hole_max = g.vector("HoleBoxMax",
+                          unreal.LinearColor(HOLE_MAX[0], HOLE_MAX[1], 0.0, 0.0))
+    p_hole_soft = g.scalar("HoleBoxSoft", HOLE_SOFT)
 
     p_color = g.vector("GlowColor", unreal.LinearColor(1.0, 0.82, 0.35, 1.0))
 
@@ -550,21 +557,24 @@ def build():
     #	위까지만 하면 **테두리 안쪽에도** 글로우가 낀다. 프레임이 가운데 뚫린 고리라
     #	알파 0 인 자리가 바깥만이 아니라 구멍이기도 하기 때문이다.
     #
-    #	바깥은 텍스처 경계에 붙어 있고 구멍은 한참 안쪽에 있다. 그래서 경계까지의
-    #	거리로 가른다 — OuterBandDepth 보다 안쪽이면 구멍으로 보고 죽인다.
+    #	구멍을 사각형으로 감싸 그 안을 죽인다. 상자 안에 바깥 픽셀이 없다는 것을
+    #	세 텍스처 모두에서 플러드 필로 확인했다.
     u = g.mask(uv, r=True)
     v = g.mask(uv, g=True)
 
-    #	세로 거리는 가로폭 기준으로 환산해야 실제 거리가 같아진다. aspect 가 W/H 이므로
-    #	나누면 v 거리가 가로폭 단위가 된다 — 안 하면 위아래 띠만 좁게 잡힌다.
-    edge_dist = g.minimum(
-        g.minimum(u, g.one_minus(u)),
-        g.div(g.minimum(v, g.one_minus(v)), aspect))
+    def window(axis_min, axis_max, coord):
+        """상자 한 축의 안쪽이면 1, 밖이면 0. 경계는 HoleBoxSoft 만큼 부드럽다."""
+        lo_a = g.sub(axis_min, p_hole_soft)
+        lo_b = g.add(axis_min, p_hole_soft)
+        hi_a = g.sub(axis_max, p_hole_soft)
+        hi_b = g.add(axis_max, p_hole_soft)
+        return g.sub(g.smoothstep(lo_a, lo_b, coord),
+                     g.smoothstep(hi_a, hi_b, coord))
 
-    #	딱 자르면 계단이 보인다. 기준값 앞뒤로 부드럽게 넘긴다.
-    band = g.one_minus(g.smoothstep(
-        g.mul_c(p_band, 0.8), g.mul_c(p_band, 1.2), edge_dist))
-    shape = g.mul(shape, band)
+    inside = g.mul(
+        window(g.mask(p_hole_min, r=True), g.mask(p_hole_max, r=True), u),
+        window(g.mask(p_hole_min, g=True), g.mask(p_hole_max, g=True), v))
+    shape = g.mul(shape, g.one_minus(inside))
 
     # ── 파동 ─────────────────────────────────────────────────────────
     #	blur 는 바깥으로 갈수록 작아지므로 거리 대용으로 그대로 쓴다.
@@ -602,7 +612,7 @@ def build():
     ensure_instance(mat)
 
     #	겹친 그래프가 남아 있으면 여기서 개수가 안 맞는다. 세어 두면 다음에 바로 안다.
-    unreal.log("[Frame] 완료 — 노드 %d 개, 표본 %d 개(원본 1 · 외곽선 %d), 파라미터 11 개"
+    unreal.log("[Frame] 완료 — 노드 %d 개, 표본 %d 개(원본 1 · 외곽선 %d), 파라미터 13 개"
                % (g.count, 1 + TAP_COUNT, TAP_COUNT))
     unreal.log("[Frame] 상수 노드 %d 개 — 같은 값 요청 %d 회를 재사용해 그만큼 안 만들었다"
                % (len(g._shared), g.shared_hits))
