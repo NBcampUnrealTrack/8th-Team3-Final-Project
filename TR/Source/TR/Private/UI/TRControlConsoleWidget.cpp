@@ -2,6 +2,7 @@
 
 #include "UI/TRControlConsoleWidget.h"
 #include "UI/TRConsoleButton.h"
+#include "CommonButtonBase.h"
 #include "UI/TRPlayerHUD.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
@@ -157,6 +158,20 @@ void UTRControlConsoleWidget::RefreshTrainHull()
 	PB_TrainHull->SetPercent(Hull01);
 }
 
+// 버튼 라벨("업그레이드") 텍스트에 "비용"을 붙인다. 최대 레벨이면 비용이 INDEX_NONE
+static void ApplyUpgradeCostText(UCommonButtonBase* Button, int32 Cost)
+{
+	UTRConsoleButton* ConsoleButton = Cast<UTRConsoleButton>(Button);
+	if (!IsValid(ConsoleButton))
+	{
+		return;
+	}
+
+	ConsoleButton->SetStateText(Cost >= 0
+		? FText::FromString(FString::Printf(TEXT("비용 %d"), Cost))
+		: FText::FromString(TEXT("최대 레벨")));
+}
+
 void UTRControlConsoleWidget::RefreshResourceAndLevels()
 {
 	const ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
@@ -197,10 +212,12 @@ void UTRControlConsoleWidget::RefreshResourceAndLevels()
 	if (IsValid(Btn_UpgradeArmor))
 	{
 		Btn_UpgradeArmor->SetIsEnabled(ArmorUpgradeCost >= 0 && MonsterResource >= ArmorUpgradeCost);
+		ApplyUpgradeCostText(Btn_UpgradeArmor, ArmorUpgradeCost);
 	}
 	if (IsValid(Btn_UpgradeTurret))
 	{
 		Btn_UpgradeTurret->SetIsEnabled(TurretUpgradeCost >= 0 && MonsterResource >= TurretUpgradeCost);
+		ApplyUpgradeCostText(Btn_UpgradeTurret, TurretUpgradeCost);
 	}
 }
 
