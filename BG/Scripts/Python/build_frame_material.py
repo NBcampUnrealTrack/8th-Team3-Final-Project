@@ -65,22 +65,25 @@ W_TOTAL = W_CENTER + TAP_COUNT
 #	평균을 내면서 값이 통째로 낮아지므로 되올린다. 이 값도 위 프로파일로 맞춘 것이다.
 SHAPE_BOOST = 1.8
 
-#	안쪽 구멍을 가려내는 탐침 거리(카드 중심 기준 상대 배수).
+#	바깥 띠의 깊이. 텍스처 경계에서 이만큼 안쪽까지만 글로우를 남긴다(가로폭 대비 비율).
 #
 #	프레임은 가운데가 뚫린 고리다. 알파가 0 인 곳이 **바깥**만이 아니라 **구멍**이기도
 #	해서, 1-A 만 쓰면 테두리 안쪽에도 글로우가 낀다.
 #
-#	구멍은 프레임에 둘러싸여 있고 바깥은 안 그렇다. 그래서 카드 중심에서 **멀어지는
-#	방향**으로 몇 걸음 나가 보고 도중에 불투명한 픽셀을 만나면 그 자리를 구멍으로 본다.
-#	바깥 픽셀은 밖으로 나가도 계속 비어 있으므로 살아남는다.
+#	바깥은 텍스처 경계에 붙어 있고 구멍은 한참 안쪽에 있다 — 그 차이로 가른다.
+#	T_Card_Attack(1086×1448) 을 재 보면 이렇게 갈린다:
 #
-#	⚠️ 방향을 정규화하지 않는다. 중심에서는 0 이 되어 0 나눗셈이 나는데, 정작 중심은
-#	   프레임에서 멀어 blur 가 0 이라 어차피 글로우가 없다. 정규화를 빼면 걸음 폭이
-#	   중심에서 멀수록 넓어지는데, 판정이 필요한 구멍 가장자리에서는 그게 유리하다.
+#	    바깥 여백    경계까지 0.000 ~ 0.067
+#	    프레임 띠    두께 0.054
+#	    안쪽 구멍    경계까지 0.122 이상
 #
-#	걸음 사이가 벌어지면 얇은 프레임을 뛰어넘는다. 0.25 간격이면 중심에서 0.3 떨어진
-#	구멍 가장자리 기준 UV 0.075(256px 텍스처에서 약 19px)마다 찍는다.
-ENCLOSE_STEPS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5)
+#	0.067 과 0.122 사이면 무엇이든 되므로 가운데인 0.10 을 잡았다.
+#
+#	⚠️ 카드 중심에서 바깥으로 광선을 쏴 불투명 픽셀을 만나는지 보는 방법을 먼저 썼다가
+#	   버렸다. 프레임 띠가 0.054 밖에 안 되는데 구멍 가장자리에서의 첫 걸음이 0.094 라
+#	   **띠를 통째로 뛰어넘어** 구멍을 바깥으로 오인했다. 걸음을 촘촘히 하면 표본이
+#	   금방 늘어난다 — 경계 거리는 표본이 아예 필요 없다.
+OUTER_BAND = 0.10
 
 
 def spiral_taps():
@@ -244,7 +247,7 @@ class Graph(object):
 
     def tex_object(self, name, texture, group="Frame"):
         """
-        표본을 27 번 뜬다. TextureSampleParameter2D 를 27 개 두면 파라미터가 27 벌
+        표본을 21 번 뜬다. TextureSampleParameter2D 를 21 개 두면 파라미터가 21 벌
         생기므로, **오브젝트 파라미터 하나**를 두고 Sample 노드들이 나눠 쓴다.
         """
         n = self.node(unreal.MaterialExpressionTextureObjectParameter)
@@ -342,6 +345,13 @@ class Graph(object):
         n = self.node(unreal.MaterialExpressionPower)
         self.link(base, pb, n, ["Base"])
         self.link(exponent, pe, n, ["Exp", "Exponent"])
+        return n
+
+    def smoothstep(self, lo, hi, value, plo="", phi="", pv=""):
+        n = self.node(unreal.MaterialExpressionSmoothStep)
+        self.link(lo, plo, n, ["Min"])
+        self.link(hi, phi, n, ["Max"])
+        self.link(value, pv, n, ["Value"])
         return n
 
     def lerp(self, a, b, alpha, pa="", pb="", palpha=""):
@@ -486,6 +496,7 @@ def build():
     p_wave_amt = g.scalar("WaveAmount", 0.35)
     p_wave_freq = g.scalar("WaveFreq", 3.0)
     p_wave_speed = g.scalar("WaveSpeed", 0.6)
+    p_band = g.scalar("OuterBandDepth", OUTER_BAND)
 
     p_color = g.vector("GlowColor", unreal.LinearColor(1.0, 0.82, 0.35, 1.0))
 
@@ -539,21 +550,21 @@ def build():
     #	위까지만 하면 **테두리 안쪽에도** 글로우가 낀다. 프레임이 가운데 뚫린 고리라
     #	알파 0 인 자리가 바깥만이 아니라 구멍이기도 하기 때문이다.
     #
-    #	카드 중심에서 멀어지는 방향으로 나가 보고 불투명한 픽셀을 만나면 구멍이다.
-    #	바깥 픽셀은 밖으로 나가도 계속 비어 있다.
-    center_dir = g.sub(uv, g.const2(0.5, 0.5))
-    probes = [g.sample(t_frame, g.clamp_uv(g.add(uv, g.mul(center_dir, g.const(k)))))
-              for k in ENCLOSE_STEPS]
+    #	바깥은 텍스처 경계에 붙어 있고 구멍은 한참 안쪽에 있다. 그래서 경계까지의
+    #	거리로 가른다 — OuterBandDepth 보다 안쪽이면 구멍으로 보고 죽인다.
+    u = g.mask(uv, r=True)
+    v = g.mask(uv, g=True)
 
-    #	⚠️ Max 도 Add 와 같다 — 표본의 이름 없는 출력은 RGB 다. 알파는 A 핀에서 꺼낸다.
-    enclosed = g.maximum(probes[0], probes[1], pa="A", pb="A")
-    for p in probes[2:]:
-        enclosed = g.maximum(enclosed, p, pb="A")
+    #	세로 거리는 가로폭 기준으로 환산해야 실제 거리가 같아진다. aspect 가 W/H 이므로
+    #	나누면 v 거리가 가로폭 단위가 된다 — 안 하면 위아래 띠만 좁게 잡힌다.
+    edge_dist = g.minimum(
+        g.minimum(u, g.one_minus(u)),
+        g.div(g.minimum(v, g.one_minus(v)), aspect))
 
-    #	×4 로 밀어 올린 뒤 자른다. 경계가 앤티에일리어싱된 픽셀은 알파가 0.2 쯤인데,
-    #	그걸 그대로 쓰면 구멍 가장자리에 글로우가 옅게 살아남는다.
-    outer_only = g.one_minus(g.clamp01(g.mul_c(enclosed, 4.0)))
-    shape = g.mul(shape, outer_only)
+    #	딱 자르면 계단이 보인다. 기준값 앞뒤로 부드럽게 넘긴다.
+    band = g.one_minus(g.smoothstep(
+        g.mul_c(p_band, 0.8), g.mul_c(p_band, 1.2), edge_dist))
+    shape = g.mul(shape, band)
 
     # ── 파동 ─────────────────────────────────────────────────────────
     #	blur 는 바깥으로 갈수록 작아지므로 거리 대용으로 그대로 쓴다.
@@ -591,8 +602,8 @@ def build():
     ensure_instance(mat)
 
     #	겹친 그래프가 남아 있으면 여기서 개수가 안 맞는다. 세어 두면 다음에 바로 안다.
-    unreal.log("[Frame] 완료 — 노드 %d 개, 표본 %d 개(원본 1 · 외곽선 %d · 구멍판정 %d), 파라미터 10 개"
-               % (g.count, 1 + TAP_COUNT + len(ENCLOSE_STEPS), TAP_COUNT, len(ENCLOSE_STEPS)))
+    unreal.log("[Frame] 완료 — 노드 %d 개, 표본 %d 개(원본 1 · 외곽선 %d), 파라미터 11 개"
+               % (g.count, 1 + TAP_COUNT, TAP_COUNT))
     unreal.log("[Frame] 상수 노드 %d 개 — 같은 값 요청 %d 회를 재사용해 그만큼 안 만들었다"
                % (len(g._shared), g.shared_hits))
     unreal.log("[Frame] 다음: MI_BGCardFrame_Default 에서 HoverAmount 를 0→1 로 끌어 "
