@@ -65,6 +65,23 @@ W_TOTAL = W_CENTER + TAP_COUNT
 #	평균을 내면서 값이 통째로 낮아지므로 되올린다. 이 값도 위 프로파일로 맞춘 것이다.
 SHAPE_BOOST = 1.8
 
+#	안쪽 구멍을 가려내는 탐침 거리(카드 중심 기준 상대 배수).
+#
+#	프레임은 가운데가 뚫린 고리다. 알파가 0 인 곳이 **바깥**만이 아니라 **구멍**이기도
+#	해서, 1-A 만 쓰면 테두리 안쪽에도 글로우가 낀다.
+#
+#	구멍은 프레임에 둘러싸여 있고 바깥은 안 그렇다. 그래서 카드 중심에서 **멀어지는
+#	방향**으로 몇 걸음 나가 보고 도중에 불투명한 픽셀을 만나면 그 자리를 구멍으로 본다.
+#	바깥 픽셀은 밖으로 나가도 계속 비어 있으므로 살아남는다.
+#
+#	⚠️ 방향을 정규화하지 않는다. 중심에서는 0 이 되어 0 나눗셈이 나는데, 정작 중심은
+#	   프레임에서 멀어 blur 가 0 이라 어차피 글로우가 없다. 정규화를 빼면 걸음 폭이
+#	   중심에서 멀수록 넓어지는데, 판정이 필요한 구멍 가장자리에서는 그게 유리하다.
+#
+#	걸음 사이가 벌어지면 얇은 프레임을 뛰어넘는다. 0.25 간격이면 중심에서 0.3 떨어진
+#	구멍 가장자리 기준 UV 0.075(256px 텍스처에서 약 19px)마다 찍는다.
+ENCLOSE_STEPS = (0.25, 0.5, 0.75, 1.0, 1.25, 1.5)
+
 
 def spiral_taps():
     """(dx, dy) 방향 벡터 20 개. 길이가 1 인 것이 가장 바깥 표본이다."""
@@ -130,16 +147,22 @@ def editor_still_open(subsystem, asset):
 
 
 def list_expressions(mat):
-    """5.1 부터 Expressions 가 MaterialExpressionCollection 안으로 옮겨졌다."""
-    try:
-        collection = mat.get_editor_property("expression_collection")
-        return list(collection.get_editor_property("expressions"))
-    except Exception:
-        pass
-    try:
-        return list(mat.get_editor_property("expressions"))
-    except Exception:
-        return []
+    """
+    머테리얼이 들고 있는 노드 목록. **읽을 수 없으면 None** 을 준다(빈 목록이 아니다).
+
+    ⚠️ 5.8 에서는 둘 다 막혀 있다 — expression_collection 은 프로퍼티가 없고,
+       expressions 는 protected 라 못 읽는다. 예전에는 실패를 빈 목록으로 돌려주는
+       바람에 노드가 179 개 있는데도 "이전 0 개, 남은 0 개" 라고 찍혀서, 그래프가
+       깨끗이 비워진 줄 알았다. 모르는 것은 0 이 아니라 모른다고 해야 한다.
+    """
+    for getter in (lambda: mat.get_editor_property("expression_collection")
+                             .get_editor_property("expressions"),
+                   lambda: mat.get_editor_property("expressions")):
+        try:
+            return list(getter())
+        except Exception:
+            continue
+    return None
 
 
 def purge_expressions(mat):
@@ -149,8 +172,15 @@ def purge_expressions(mat):
     ⚠️ delete_all_material_expressions 만 믿으면 안 된다. 남는 경우가 있고, 그러면
        실행할 때마다 옛 노드가 쌓여 내가 만들지도 않은 노드의 컴파일 경고가 계속 나온다.
     """
-    before = len(list_expressions(mat))
+    before = list_expressions(mat)
     mel.delete_all_material_expressions(mat)
+
+    if before is None:
+        #	목록을 못 읽는 버전. 지워졌는지는 **실행할 때마다 찍히는 노드 수**로 판단한다 —
+        #	옛 노드가 남으면 그 수가 계속 불어난다.
+        unreal.log("[Frame] 그래프를 비웠다 (노드 수는 확인 불가 — 5.8 은 Expressions 가 "
+                   "protected 다. 아래 '완료' 줄의 노드 수가 실행마다 늘면 안 지워진 것이다)")
+        return
 
     while True:
         remaining = list_expressions(mat)
@@ -170,7 +200,7 @@ def purge_expressions(mat):
             break
 
     unreal.log("[Frame] 그래프 정리 — 이전 %d 개, 남은 %d 개"
-               % (before, len(list_expressions(mat))))
+               % (len(before), len(list_expressions(mat) or [])))
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -184,6 +214,7 @@ class Graph(object):
         self.y = 0
         self.count = 0
         self._shared = {}
+        self.shared_hits = 0   # 상수를 새로 안 만들고 재사용한 횟수
 
     def node(self, cls, x=None, y=None):
         """격자에 대충 흩어 놓는다. 마지막에 layout 으로 정리한다."""
@@ -213,7 +244,7 @@ class Graph(object):
 
     def tex_object(self, name, texture, group="Frame"):
         """
-        표본을 21 번 뜬다. TextureSampleParameter2D 를 21 개 두면 파라미터가 21 벌
+        표본을 27 번 뜬다. TextureSampleParameter2D 를 27 개 두면 파라미터가 27 벌
         생기므로, **오브젝트 파라미터 하나**를 두고 Sample 노드들이 나눠 쓴다.
         """
         n = self.node(unreal.MaterialExpressionTextureObjectParameter)
@@ -224,25 +255,29 @@ class Graph(object):
         n.set_editor_property("group", group)
         return n
 
+    #	상수는 **같은 값이면 노드 하나를 나눠 쓴다.** 출력 하나를 여러 입력에 물려도
+    #	되기 때문이다. 안 그러면 0 · 1 · 0.5 같은 값이 표본마다 새로 생겨 그래프가
+    #	똑같은 노드로 뒤덮인다 — Clamp 20 개만 해도 상수가 40 개 붙는다.
     def const(self, value):
-        n = self.node(unreal.MaterialExpressionConstant)
-        n.set_editor_property("r", value)
-        return n
+        key = ("c1", value)
+        if key in self._shared:
+            self.shared_hits += 1
+        else:
+            n = self.node(unreal.MaterialExpressionConstant)
+            n.set_editor_property("r", value)
+            self._shared[key] = n
+        return self._shared[key]
 
     def const2(self, a, b):
-        n = self.node(unreal.MaterialExpressionConstant2Vector)
-        n.set_editor_property("r", a)
-        n.set_editor_property("g", b)
-        return n
-
-    def shared_const(self, value):
-        """
-        여러 노드가 나눠 쓰는 상수. 출력 하나를 여러 입력에 물려도 된다.
-        표본 20 개가 각자 0 · 1 을 만들면 상수 노드만 40 개 생긴다.
-        """
-        if value not in self._shared:
-            self._shared[value] = self.const(value)
-        return self._shared[value]
+        key = ("c2", a, b)
+        if key in self._shared:
+            self.shared_hits += 1
+        else:
+            n = self.node(unreal.MaterialExpressionConstant2Vector)
+            n.set_editor_property("r", a)
+            n.set_editor_property("g", b)
+            self._shared[key] = n
+        return self._shared[key]
 
     # ── 연결 ──
     @staticmethod
@@ -370,8 +405,8 @@ class Graph(object):
            노출돼 있지 않아 Clamp 계열 공유 샘플러로 못 바꾼다.
         """
         n = self.node(unreal.MaterialExpressionClamp)
-        self.link(self.shared_const(0.0), "", n, ["Min"])
-        self.link(self.shared_const(1.0), "", n, ["Max"])
+        self.link(self.const(0.0), "", n, ["Min"])
+        self.link(self.const(1.0), "", n, ["Max"])
         self.link(src, pin, n, ["", "Input"])
         return n
 
@@ -500,6 +535,26 @@ def build():
     #	GlowFalloff 가 클수록 실루엣에 바짝 붙고, 1 에 가까울수록 멀리까지 옅게 퍼진다.
     shape = g.power(shape_raw, p_falloff)
 
+    # ── 안쪽 구멍 죽이기 ─────────────────────────────────────────────
+    #	위까지만 하면 **테두리 안쪽에도** 글로우가 낀다. 프레임이 가운데 뚫린 고리라
+    #	알파 0 인 자리가 바깥만이 아니라 구멍이기도 하기 때문이다.
+    #
+    #	카드 중심에서 멀어지는 방향으로 나가 보고 불투명한 픽셀을 만나면 구멍이다.
+    #	바깥 픽셀은 밖으로 나가도 계속 비어 있다.
+    center_dir = g.sub(uv, g.const2(0.5, 0.5))
+    probes = [g.sample(t_frame, g.clamp_uv(g.add(uv, g.mul(center_dir, g.const(k)))))
+              for k in ENCLOSE_STEPS]
+
+    #	⚠️ Max 도 Add 와 같다 — 표본의 이름 없는 출력은 RGB 다. 알파는 A 핀에서 꺼낸다.
+    enclosed = g.maximum(probes[0], probes[1], pa="A", pb="A")
+    for p in probes[2:]:
+        enclosed = g.maximum(enclosed, p, pb="A")
+
+    #	×4 로 밀어 올린 뒤 자른다. 경계가 앤티에일리어싱된 픽셀은 알파가 0.2 쯤인데,
+    #	그걸 그대로 쓰면 구멍 가장자리에 글로우가 옅게 살아남는다.
+    outer_only = g.one_minus(g.clamp01(g.mul_c(enclosed, 4.0)))
+    shape = g.mul(shape, outer_only)
+
     # ── 파동 ─────────────────────────────────────────────────────────
     #	blur 는 바깥으로 갈수록 작아지므로 거리 대용으로 그대로 쓴다.
     #	위상 = blur*WaveFreq + Time*WaveSpeed 이면 시간이 갈수록 마루가 낮은 blur
@@ -536,7 +591,10 @@ def build():
     ensure_instance(mat)
 
     #	겹친 그래프가 남아 있으면 여기서 개수가 안 맞는다. 세어 두면 다음에 바로 안다.
-    unreal.log("[Frame] 완료 — 노드 %d 개, 표본 21 개, 파라미터 10 개" % g.count)
+    unreal.log("[Frame] 완료 — 노드 %d 개, 표본 %d 개(원본 1 · 외곽선 %d · 구멍판정 %d), 파라미터 10 개"
+               % (g.count, 1 + TAP_COUNT + len(ENCLOSE_STEPS), TAP_COUNT, len(ENCLOSE_STEPS)))
+    unreal.log("[Frame] 상수 노드 %d 개 — 같은 값 요청 %d 회를 재사용해 그만큼 안 만들었다"
+               % (len(g._shared), g.shared_hits))
     unreal.log("[Frame] 다음: MI_BGCardFrame_Default 에서 HoverAmount 를 0→1 로 끌어 "
                "외곽선을 확인하고, WBP_BGCard 의 Border_Root 브러시에 이 MI 를 물릴 것")
     unreal.log("[Frame] ⚠️ T_Card_* 에 투명 여백이 없으면 외곽선이 텍스처 경계에서 잘린다 "
