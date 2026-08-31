@@ -158,6 +158,26 @@ private:
 	/** 더 이상 스냅샷에 없는 로컬 엔티티를 지운다. */
 	void DestroyMissingEntities(const TSet<int32>& LiveNetIds);
 
+	/**
+	 * 클라이언트 — 표현 파이프라인이 이 월드에서 실제로 도는지 확인한다.
+	 *
+	 * 표현/LOD 프로세서는 엔진에서 자동 등록이 꺼져 있고 기본 넷 모드도
+	 * Server|Standalone 이라, 프로젝트가 DefaultMass.ini 로 켜주지 않으면
+	 * **엔티티는 있는데 아무것도 그려지지 않는다.** 에러도 경고도 없다.
+	 * 한 대에서 PIE 로 띄우면 두 창이 같은 설정을 쓰므로 절대 재현되지 않고,
+	 * 설정이 다른 다른 컴퓨터가 붙는 순간에만 갈린다 — 그래서 여기서 확인한다.
+	 */
+	void VerifyClientRepresentationPipeline() const;
+
+	/**
+	 * 클라이언트 — 복제가 어디까지 왔는지 주기적으로 남긴다.
+	 *
+	 * 스냅샷 0 / 팔레트 0 / 엔티티 0 중 어디서 끊겼는지가 원인을 가른다.
+	 * 이 로그가 없으면 "클라에서만 적이 안 보인다"는 증상 하나로
+	 * 복제·애셋·표현 중 무엇이 문제인지 구분할 수가 없다.
+	 */
+	void LogClientDiagnostics();
+
 	UFUNCTION()
 	void OnRep_Agents();
 
@@ -181,4 +201,10 @@ private:
 		float Alpha = 1.f;
 	};
 	TMap<int32, FInterpState> InterpStates;
+
+	/** 다음 진단 로그 시각(클라이언트 월드 시간). */
+	float NextDiagnosticsTime = 0.f;
+
+	/** 이미 경고한 팔레트 색인. 같은 경고가 매 틱 쏟아지지 않게 한다. */
+	TSet<uint8> WarnedConfigIndices;
 };

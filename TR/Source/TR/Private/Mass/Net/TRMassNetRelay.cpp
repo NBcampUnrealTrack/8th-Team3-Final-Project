@@ -9,8 +9,11 @@
 #include "MassEntityManager.h"
 #include "MassEntityTemplate.h"
 #include "MassEntityUtils.h"
+#include "MassLODCollectorProcessor.h"
 #include "MassMovementFragments.h"
+#include "MassRepresentationProcessor.h"
 #include "MassSpawnerSubsystem.h"
+#include "MassVisualizationLODProcessor.h"
 #include "Net/UnrealNetwork.h"
 #include "Mass/Core/TRMassFragments.h"
 #include "Mass/Debug/TRMassDebug.h"
@@ -117,7 +120,60 @@ void ATRMassNetRelay::BeginPlay()
 	Super::BeginPlay();
 
 	// 서버는 스냅샷을 만들기만 하고 반영은 하지 않는다. 자기 엔티티가 이미 진짜다.
-	SetActorTickEnabled(GetNetMode() == NM_Client);
+	const bool bIsClient = (GetNetMode() == NM_Client);
+	SetActorTickEnabled(bIsClient);
+
+	if (bIsClient)
+	{
+		VerifyClientRepresentationPipeline();
+	}
+}
+
+void ATRMassNetRelay::VerifyClientRepresentationPipeline() const
+{
+	const UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+
+	const EProcessorExecutionFlags WorldFlags = UE::Mass::Utils::GetProcessorExecutionFlagsForWorld(*World);
+
+	// 이 셋이 순서대로 "거리 수집 → LOD 결정 → 표현 적용"이다. 하나라도 빠지면
+	// 엔티티는 정상인데 화면에는 아무것도 안 나온다.
+	UClass* RequiredProcessors[] =
+	{
+		UMassLODCollectorProcessor::StaticClass(),
+		UMassVisualizationLODProcessor::StaticClass(),
+		UMassVisualizationProcessor::StaticClass(),
+	};
+
+	for (UClass* ProcessorClass : RequiredProcessors)
+	{
+		const UMassProcessor* Processor = GetDefault<UMassProcessor>(ProcessorClass);
+		if (Processor == nullptr)
+		{
+			continue;
+		}
+
+		const bool bRegistered = Processor->ShouldAutoAddToGlobalList();
+		const bool bRunsHere = Processor->ShouldExecute(WorldFlags);
+
+		if (bRegistered && bRunsHere)
+		{
+			continue;
+		}
+
+		UE_LOG(LogTRMass, Error,
+			TEXT("[네트 릴레이] '%s' 가 이 클라이언트에서 돌지 않습니다(자동등록 %s, 넷모드 매칭 %s). ")
+			TEXT("적 엔티티는 만들어지지만 화면에는 아무것도 그려지지 않습니다. ")
+			TEXT("이 컴퓨터의 TR/Config/DefaultMass.ini 에 [%s] 섹션의 ")
+			TEXT("bAutoRegisterWithProcessingPhases=True / ExecutionFlags=7 이 있는지 확인하세요."),
+			*ProcessorClass->GetName(),
+			bRegistered ? TEXT("O") : TEXT("X"),
+			bRunsHere ? TEXT("O") : TEXT("X"),
+			*ProcessorClass->GetPathName());
+	}
 }
 
 void ATRMassNetRelay::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -208,6 +264,10 @@ void ATRMassNetRelay::Tick(float DeltaSeconds)
 		return;
 	}
 
+	// 진단을 먼저 남긴다. 아래에서 엔티티 매니저를 못 찾아 빠져나가는 경우까지
+	// 로그에 남아야 "릴레이는 왔는데 그 다음이 없다"를 구분할 수 있다.
+	LogClientDiagnostics();
+
 	ApplySnapshotToEntities(DeltaSeconds);
 }
 
@@ -246,12 +306,28 @@ void ATRMassNetRelay::ApplySnapshotToEntities(float DeltaSeconds)
 				? ConfigPalette[Agent.ConfigIndex].Get() : nullptr;
 			if (Config == nullptr)
 			{
+				// 팔레트가 아직 안 왔거나(복제 순서), 애셋 참조가 이 컴퓨터에서 풀리지
+				// 않은 경우다. 후자는 다른 컴퓨터끼리 붙을 때만 나오고 조용히 실패한다.
+				if (!WarnedConfigIndices.Contains(Agent.ConfigIndex))
+				{
+					WarnedConfigIndices.Add(Agent.ConfigIndex);
+
+					UE_LOG(LogTRMass, Warning,
+						TEXT("[네트 릴레이] 스냅샷의 Config 색인 %d 를 풀 수 없습니다(팔레트 %d개). ")
+						TEXT("이 색인의 적은 클라이언트 화면에 나오지 않습니다. ")
+						TEXT("팔레트가 계속 0개면 ConfigPalette 복제가 도착하지 않은 것이고, ")
+						TEXT("개수는 맞는데 항목이 비어 있으면 그 애셋을 이 컴퓨터가 못 찾은 것입니다."),
+						static_cast<int32>(Agent.ConfigIndex), ConfigPalette.Num());
+				}
+
 				continue;
 			}
 
 			const FMassEntityTemplate& Template = Config->GetOrCreateEntityTemplate(*World);
 			if (!Template.IsValid())
 			{
+				UE_LOG(LogTRMass, Warning, TEXT("[네트 릴레이] '%s' 의 엔티티 템플릿이 유효하지 않습니다."),
+					*GetNameSafe(Config));
 				continue;
 			}
 
@@ -259,6 +335,8 @@ void ATRMassNetRelay::ApplySnapshotToEntities(float DeltaSeconds)
 			Spawner->SpawnEntities(Template, 1, Spawned);
 			if (Spawned.Num() == 0)
 			{
+				UE_LOG(LogTRMass, Warning, TEXT("[네트 릴레이] '%s' 로컬 표현 엔티티 스폰에 실패했습니다."),
+					*GetNameSafe(Config));
 				continue;
 			}
 
@@ -307,6 +385,30 @@ void ATRMassNetRelay::ApplySnapshotToEntities(float DeltaSeconds)
 	}
 
 	DestroyMissingEntities(LiveNetIds);
+}
+
+void ATRMassNetRelay::LogClientDiagnostics()
+{
+	const UWorld* World = GetWorld();
+	if (World == nullptr)
+	{
+		return;
+	}
+
+	// 5초마다 한 줄. 매 틱 찍으면 로그가 이걸로 도배되고, 더 뜸하면 접속 직후의
+	// 몇 초를 놓친다 — 정작 원인은 대부분 그 구간에서 드러난다.
+	constexpr float DiagnosticsInterval = 5.f;
+
+	const float WorldTime = World->GetTimeSeconds();
+	if (WorldTime < NextDiagnosticsTime)
+	{
+		return;
+	}
+	NextDiagnosticsTime = WorldTime + DiagnosticsInterval;
+
+	UE_LOG(LogTRMass, Log,
+		TEXT("[네트 릴레이] 클라이언트 상태 — 스냅샷 %d, Config 팔레트 %d, 로컬 엔티티 %d"),
+		Agents.Num(), ConfigPalette.Num(), LocalEntities.Num());
 }
 
 void ATRMassNetRelay::DestroyMissingEntities(const TSet<int32>& LiveNetIds)
