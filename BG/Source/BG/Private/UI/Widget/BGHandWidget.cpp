@@ -677,9 +677,34 @@ FVector2D UBGHandWidget::GetPlayZoneAnchor() const
 //  옛 목표로 한 프레임 움직인다. 틱 지점을 하나로 모으면 그 문제가 사라진다.
 // ══════════════════════════════════════════════════════════════════════════════════════
 
+//	한 프레임에 흘려보낼 시간의 상한(초).
+//
+//	포커스를 잃으면 슬레이트가 틱을 줄이거나 아예 멈춘다. 돌아오는 순간 그동안 쌓인
+//	시간이 **한 프레임에 몰려서** 들어오는데, 그대로 흘리면 DealElapsed 가 통째로 뛰어
+//	카드가 호 중간을 건너뛰고, InterpTo 계열은 큰 델타에서 목표로 스냅해 궤적이 무너진다.
+//
+//	⚠️ 자르는 것은 **여기 한 곳뿐**이다. 카드 이동 · "내가 냈다" 표시 만료 · 중앙 대기
+//	   타임아웃이 전부 이 델타를 쓰므로, 내려보내기 전에 잘라야 시간 기준이 하나로 맞는다.
+//	   카드 쪽에서 각자 자르면 손패의 타이머만 실시간으로 흘러 서로 어긋난다.
+//
+//	0.1 = 10 FPS. 그보다 느리면 시간이 느리게 흐른다 — 이미 정상 상태가 아닌 구간이고,
+//	연출이 튀는 것보다 느려지는 편이 낫다.
+static float GBGCardMaxMotionDelta = 0.1f;
+static FAutoConsoleVariableRef CVarBGCardMaxMotionDelta(
+	TEXT("BG.Card.MaxMotionDelta"),
+	GBGCardMaxMotionDelta,
+	TEXT("손패 연출이 한 프레임에 흘려보낼 시간의 상한(초). 0 이면 자르지 않는다. 기본 0.1."),
+	ECVF_Default);
+
 void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	//	아래는 전부 이 값을 쓴다. InDeltaTime 을 직접 쓰는 곳이 하나라도 남으면
+	//	그것만 실시간으로 흘러 다른 것들과 어긋난다.
+	const float DeltaTime = GBGCardMaxMotionDelta > 0.f
+		? FMath::Min(InDeltaTime, GBGCardMaxMotionDelta)
+		: InDeltaTime;
 
 	UCanvasPanel* Canvas = GetCardCanvas();
 	if (!Canvas)
@@ -708,7 +733,7 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	{
 		if (CardWidget)
 		{
-			CardWidget->TickMotion(InDeltaTime);
+			CardWidget->TickMotion(DeltaTime);
 			bAnyDealing |= CardWidget->IsDealInProgress();
 
 			//	TickMotion 안에서 stagger 대기가 풀린다. 그래서 세는 것은 그 뒤여야
@@ -747,7 +772,7 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	//	나중에 그 카드가 다른 사유로 빠질 때 엉뚱하게 중앙 연출이 나온다.
 	for (auto MarkIt = PlayedMarks.CreateIterator(); MarkIt; ++MarkIt)
 	{
-		MarkIt.Value() -= InDeltaTime;
+		MarkIt.Value() -= DeltaTime;
 		if (MarkIt.Value() <= 0.f)
 		{
 			MarkIt.RemoveCurrent();
@@ -765,7 +790,7 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			continue;
 		}
 
-		CardWidget->TickMotion(InDeltaTime);
+		CardWidget->TickMotion(DeltaTime);
 
 		if (CardWidget->IsExitFinished())
 		{
@@ -781,7 +806,7 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		if (CardWidget->IsHoldingAtCenter())
 		{
 			FHeldCardRecord& Record = HeldCards.FindOrAdd(CardWidget->GetInstanceId());
-			Record.Elapsed += InDeltaTime;
+			Record.Elapsed += DeltaTime;
 			if (Record.Elapsed >= HoldTimeoutSeconds)
 			{
 				TimedOutIds.Add(CardWidget->GetInstanceId());
