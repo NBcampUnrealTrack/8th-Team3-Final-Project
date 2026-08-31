@@ -968,8 +968,9 @@ private:
 	/**
 	 * 대분류(장비/공격/마법)에 맞는 테두리를 고른다. 그림이 없는 타입은 건드리지 않는다.
 	 *
-	 * 브러시에 머테리얼이 물려 있으면 FrameTexParamName 파라미터만 갈아 끼운다 —
-	 * SetBrushFromTexture 로 덮으면 머테리얼이 통째로 날아가 글로우가 사라진다.
+	 * 브러시의 FrameTexParamName 파라미터만 갈아 끼운다. **브러시 자체는 건드리지 않는다** —
+	 * SetBrushFromTexture 로 덮으면 물려 둔 MI 가 날아가고, 이 함수는 디자인 타임에도
+	 * 불리므로 그 상태로 WBP 가 저장되면 애셋에 텍스처가 박힌다.
 	 */
 	void RefreshFrame();
 
@@ -1053,6 +1054,10 @@ private:
 	//	직전 프레임의 호버 상태. 바뀌는 순간에만 BP 훅을 쏘기 위한 것이다 —
 	//	매 프레임 쏘면 BP 에서 애니메이션이 계속 처음부터 다시 재생된다.
 	bool bWasHoverActive = false;
+
+	//	Border_Root 브러시에 머테리얼이 없다고 이미 알렸는가. RefreshVisual 은 카드가
+	//	바뀔 때마다 불리므로 한 번만 남긴다.
+	bool bWarnedFrameBrushNotMaterial = false;
 
 	// ── 연출 내부 상태 ──
 	EBGCardMotionState MotionState = EBGCardMotionState::Idle;

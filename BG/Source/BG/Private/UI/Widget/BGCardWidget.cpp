@@ -253,27 +253,44 @@ void UBGCardWidget::RefreshFrame()
 		return;   // null 로 덮으면 카드가 통째로 투명해진다(RefreshArt 와 같은 이유).
 	}
 
-	//	브러시에 M_BGCardFrame 이 물려 있으면 **파라미터만** 갈아 끼운다.
-	//
-	//	⚠️ SetBrushFromTexture 로 덮으면 브러시가 통째로 텍스처가 되어 머테리얼이
-	//	   날아간다 — 카드가 갱신되는 순간 외곽선 글로우가 사라진다.
-	//
+	//	⚠️ **브러시를 갈아 끼우지 않는다.** 여기서 SetBrushFromTexture 를 부르면 브러시가
+	//	   통째로 텍스처가 되어 물려 둔 MI 가 날아간다. 그리고 이 함수는 RefreshVisual 을
+	//	   거쳐 NativePreConstruct 에서도 불리므로 **에디터 디자인 타임에** 그 일이
+	//	   벌어지고, 그 상태로 WBP 를 저장하면 애셋에 텍스처가 박힌다.
+	//	   실제로 그렇게 한 번 날려 먹었다 — 되돌리지 말 것.
+	if (IsDesignTime())
+	{
+		//	디자인 타임에는 아무것도 안 한다. GetDynamicMaterial 조차 브러시의
+		//	ResourceObject 를 DMI 로 바꿔 놓기 때문에, 미리보기를 위해 애셋을 더럽히는
+		//	꼴이 된다. 에디터에서는 MI 에 잡아 둔 FrameTex 기본값이 그대로 보인다.
+		return;
+	}
+
 	//	⚠️ 자기가 따로 만든 DMI 를 캐시해 두지 않는다. UMG 애니메이션도 이 브러시의
 	//	   DMI 를 잡아 HoverAmount 를 모는데, 코드가 다른 DMI 를 들고 있으면 두 쪽이
 	//	   갈라져 한쪽 값이 안 먹는다. GetDynamicMaterial 은 이미 DMI 면 그대로
 	//	   돌려주므로 매번 불러도 새로 만들지 않는다.
-	if (UMaterialInstanceDynamic* FrameMID = Border_Root->GetDynamicMaterial())
+	UMaterialInstanceDynamic* FrameMID = Border_Root->GetDynamicMaterial();
+	if (!FrameMID)
 	{
-		if (!FrameTexParamName.IsNone())
+		//	브러시에 머테리얼이 없다. 텍스처로 덮어 버리면 나중에 MI 를 물려도 첫 갱신에
+		//	또 날아가므로, 고칠 곳을 알려 주고 그냥 둔다. 한 번만 남긴다 — RefreshVisual
+		//	은 카드가 바뀔 때마다 불려서 매번 찍으면 로그가 묻힌다.
+		if (!bWarnedFrameBrushNotMaterial)
 		{
-			FrameMID->SetTextureParameterValue(FrameTexParamName, Frame);
+			bWarnedFrameBrushNotMaterial = true;
+			UE_LOG(LogBGCard, Warning,
+				TEXT("[Card] Border_Root 브러시에 머테리얼이 없어 대분류별 테두리를 못 바꾼다. "
+				     "WBP 의 Border_Root ▸ Appearance ▸ Brush ▸ Image 에 "
+				     "MI_BGCardFrame_Default 를 물릴 것."));
 		}
 		return;
 	}
 
-	//	브러시에 머테리얼이 없다(아직 MI 를 안 물린 WBP). 예전처럼 텍스처를 갈아 끼운다 —
-	//	글로우는 없지만 대분류별 테두리는 그대로 동작한다.
-	Border_Root->SetBrushFromTexture(Frame);
+	if (!FrameTexParamName.IsNone())
+	{
+		FrameMID->SetTextureParameterValue(FrameTexParamName, Frame);
+	}
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
