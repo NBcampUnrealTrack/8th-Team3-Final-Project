@@ -499,6 +499,15 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Frame")
 	TObjectPtr<UTexture2D> MagicFrameTexture;
 
+	/**
+	 * Border_Root 브러시에 물린 머테리얼(M_BGCardFrame)에서 테두리 그림을 받는 파라미터.
+	 *
+	 * 브러시에 머테리얼이 아니라 텍스처가 물려 있으면 이 이름은 쓰이지 않는다 —
+	 * 그때는 예전처럼 브러시 텍스처를 통째로 갈아 끼운다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Frame")
+	FName FrameTexParamName = TEXT("FrameTex");
+
 	// ── 등급 연출 (글로우 머테리얼) ──────────────────────────────────
 	//
 	//	리테이너의 Effect Material 로 만든 **이 카드 전용 DMI**(GetCardFXMID)를 쓴다.
@@ -535,30 +544,21 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	FName WidgetSizeParamName = TEXT("WidgetSize");
 
-	// ── 호버 외곽선 글로우 ───────────────────────────────────────────
+	// ── 호버 외곽선 글로우 — 코드가 손대지 않는다 ────────────────────
 	//
-	//	카드마다 프레임 그림이 다르다(공격 · 장비 · 마법). 글로우를 수학으로 그린 라운드
-	//	사각형으로 두면 어떤 카드에서는 프레임 밖으로 삐져나가고 어떤 카드에서는 안쪽에
-	//	파묻힌다.
+	//	외곽선 글로우는 Border_Root 브러시의 M_BGCardFrame 이 그리고, 세기(HoverAmount)는
+	//	**WBP 의 UMG 애니메이션**이 몬다. 그래서 여기에 파라미터도 함수도 없다.
 	//
-	//	그래서 리테이너 머테리얼에서 처리한다. 리테이너는 자식을 렌더 타겟에 한 번 그린 뒤
-	//	그 RT 를 Effect Material 로 찍는데, **그 RT 의 알파가 이미 합성된 카드의 실루엣**이다.
-	//	알파를 바깥으로 부풀린 것에서 원래 알파를 빼면 프레임 모양 그대로의 외곽선이 나온다.
-	//	프레임 텍스처를 코드가 알 필요도, 넘겨줄 필요도 없다.
+	//	⚠️ C++ 에서 HoverAmount 를 도로 밀지 말 것. 애니메이션과 코드가 같은 이름을
+	//	   매 프레임 쓰면 마지막에 쓴 쪽이 이겨서, 애니메이션이 재생돼도 값이 안 먹거나
+	//	   반대로 코드 값이 무시되는 것처럼 보인다. 원인을 찾기 매우 어렵다.
 	//
-	//	⚠️ 글로우를 별도 이미지 위젯으로 되돌리지 말 것. 그러면 프레임이 무엇인지 코드가
-	//	   알아야 하고, 카드 종류가 늘 때마다 그 경로를 고쳐야 한다.
+	//	⚠️ 리테이너로 되돌리지 말 것. 리테이너는 인스턴스마다 렌더 타겟을 하나씩 잡아
+	//	   평상시에는 꺼 두는데(SetRetainRendering(false)), 꺼져 있으면 Effect Material
+	//	   자체가 적용되지 않아 상시 연출인 호버 글로우는 **애초에 보이지 않는다.**
+	//	   리테이너는 퇴장 디졸브처럼 카드 전체를 한 장으로 만들어야 하는 연출 전용이다.
 	//
-	//	⚠️ 리테이너 바깥으로는 번지지 않는다. 외곽선이 잘리면 머테리얼이 아니라 **여백**
-	//	   문제다 — Overlay 안에 투명한 여백이 프레임 바깥으로 남아 있어야 한다.
-
-	/** 호버 시 카드 외곽선을 빛나게 할지. 파라미터가 없는 머테리얼이면 그냥 무시된다. */
-	UPROPERTY(EditAnywhere, Category = "BG|Card|HoverGlow")
-	bool bUseHoverOutlineGlow = true;
-
-	/** 호버 세기(0~1). HoverBlend 를 그대로 흘려보낸다 — 켜지고 꺼지는 보간은 이미 거기서 한다. */
-	UPROPERTY(EditAnywhere, Category = "BG|Card|HoverGlow")
-	FName HoverParamName = TEXT("HoverAmount");
+	//	자세한 것은 BG/Docs/M_BGCardFrame-매뉴얼.md 를 볼 것.
 
 	/**
 	 * 잦아드는 곡선(가로 0~1 → 세로 1~0). 비우면 선형으로 잦아든다.
@@ -965,7 +965,12 @@ private:
 	/** 테두리 안쪽 그림을 채운다. 뷰에 그림이 없으면 폴백으로, 그것도 없으면 칸을 접는다. */
 	void RefreshArt();
 
-	/** 대분류(장비/공격/마법)에 맞는 테두리를 고른다. 그림이 없는 타입은 건드리지 않는다. */
+	/**
+	 * 대분류(장비/공격/마법)에 맞는 테두리를 고른다. 그림이 없는 타입은 건드리지 않는다.
+	 *
+	 * 브러시에 머테리얼이 물려 있으면 FrameTexParamName 파라미터만 갈아 끼운다 —
+	 * SetBrushFromTexture 로 덮으면 머테리얼이 통째로 날아가 글로우가 사라진다.
+	 */
 	void RefreshFrame();
 
 	// ── 등급 연출 ────────────────────────────────────────────────────
@@ -986,13 +991,7 @@ private:
 	/** 감쇠를 굴린다. TickMotion 이 매 프레임 부른다. */
 	void TickTierFX(float DeltaTime);
 
-	/**
-	 * 호버 외곽선 글로우의 파라미터를 먹인다. TickMotion 의 호버 구간이 부른다.
-	 *
-	 * 파라미터만 바꾸는 것은 리테이너의 렌더 타겟을 다시 그리지 않는다. RT 는 자식이
-	 * 바뀔 때만 갱신되고 파라미터는 합성 단계에서 쓰이므로, 매 프레임 먹여도 싸다.
-	 */
-	void TickHoverGlow();
+	//	호버 외곽선 글로우에 대응하는 함수는 없다. 위의 "코드가 손대지 않는다" 참고.
 
 	// ── 퇴장 디졸브 ──────────────────────────────────────────────────
 

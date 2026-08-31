@@ -253,6 +253,26 @@ void UBGCardWidget::RefreshFrame()
 		return;   // null 로 덮으면 카드가 통째로 투명해진다(RefreshArt 와 같은 이유).
 	}
 
+	//	브러시에 M_BGCardFrame 이 물려 있으면 **파라미터만** 갈아 끼운다.
+	//
+	//	⚠️ SetBrushFromTexture 로 덮으면 브러시가 통째로 텍스처가 되어 머테리얼이
+	//	   날아간다 — 카드가 갱신되는 순간 외곽선 글로우가 사라진다.
+	//
+	//	⚠️ 자기가 따로 만든 DMI 를 캐시해 두지 않는다. UMG 애니메이션도 이 브러시의
+	//	   DMI 를 잡아 HoverAmount 를 모는데, 코드가 다른 DMI 를 들고 있으면 두 쪽이
+	//	   갈라져 한쪽 값이 안 먹는다. GetDynamicMaterial 은 이미 DMI 면 그대로
+	//	   돌려주므로 매번 불러도 새로 만들지 않는다.
+	if (UMaterialInstanceDynamic* FrameMID = Border_Root->GetDynamicMaterial())
+	{
+		if (!FrameTexParamName.IsNone())
+		{
+			FrameMID->SetTextureParameterValue(FrameTexParamName, Frame);
+		}
+		return;
+	}
+
+	//	브러시에 머테리얼이 없다(아직 MI 를 안 물린 WBP). 예전처럼 텍스처를 갈아 끼운다 —
+	//	글로우는 없지만 대분류별 테두리는 그대로 동작한다.
 	Border_Root->SetBrushFromTexture(Frame);
 }
 
@@ -287,32 +307,15 @@ void UBGCardWidget::PushWidgetSize(UMaterialInstanceDynamic* MID)
 		FLinearColor(static_cast<float>(Size.X), static_cast<float>(Size.Y), 0.f, 0.f));
 }
 
-void UBGCardWidget::TickHoverGlow()
-{
-	if (!bUseHoverOutlineGlow)
-	{
-		return;
-	}
-
-	UMaterialInstanceDynamic* MID = GetCardFXMID();
-	if (!MID)
-	{
-		return;   // 리테이너가 없거나 Effect Material 이 비었다. 조용히 꺼진다.
-	}
-
-	PushWidgetSize(MID);
-
-	//	켜지고 꺼지는 보간은 HoverBlend 가 이미 하고 있다. 여기서 또 굴리면
-	//	두 개의 감쇠가 겹쳐 반응이 느려진다.
-	//
-	//	⚠️ 파라미터만 바꾸는 것은 리테이너의 렌더 타겟을 다시 그리지 않는다.
-	//	   RT 는 자식이 바뀔 때만 갱신되고, 파라미터는 그 RT 를 화면에 합성할 때
-	//	   쓰인다. 그래서 매 프레임 먹여도 비싸지 않다.
-	if (!HoverParamName.IsNone())
-	{
-		MID->SetScalarParameterValue(HoverParamName, HoverBlend);
-	}
-}
+//	호버 외곽선 글로우를 먹이던 TickHoverGlow 는 없앴다.
+//
+//	세기(HoverAmount)는 이제 Border_Root 브러시의 M_BGCardFrame 위에서 **WBP 의 UMG
+//	애니메이션**이 몬다. 코드가 같은 이름을 매 프레임 같이 밀면 마지막에 쓴 쪽이 이겨
+//	애니메이션이 안 먹는 것처럼 보인다.
+//
+//	원래 이 함수는 리테이너의 Effect Material 에 값을 밀고 있었는데, 리테이너는 평상시
+//	SetRetainRendering(false) 로 꺼 두므로 Effect Material 자체가 적용되지 않는다 —
+//	그래서 이 글로우는 애초에 화면에 나온 적이 없다.
 
 const FBGCardTierFX* UBGCardWidget::FindTierFX(EBGResolutionTier Tier) const
 {
@@ -1067,9 +1070,9 @@ void UBGCardWidget::TickSecondaryMotion(float DeltaTime, const FVector2D& Positi
 		OnHoverChanged(bHoverAllowed);
 	}
 
-	//	보간이 끝난 HoverBlend 를 머테리얼로 흘려보낸다. 상태가 바뀌는 순간이 아니라
-	//	매 프레임인 이유는, 잦아드는 동안에도 글로우가 같이 옅어져야 하기 때문이다.
-	TickHoverGlow();
+	//	HoverBlend 를 머테리얼로 흘려보내지 않는다 — 외곽선 글로우의 HoverAmount 는
+	//	WBP 의 UMG 애니메이션이 몬다. HoverBlend 는 여기서 위치 · 기울기 · 크기(아래
+	//	ApplyMotionTransform)에만 쓰인다.
 }
 
 void UBGCardWidget::ApplyMotionTransform()

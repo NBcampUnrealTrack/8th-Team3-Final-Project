@@ -69,26 +69,22 @@
 
 원본은 git 에 남아 있다 — 되돌리려면 이 커밋의 `T_Card_*.uasset` 을 되돌리면 된다.
 
-### ⚠️ `RefreshFrame()` 을 고쳐야 한다
+### `RefreshFrame()` — 파라미터만 민다 (반영 완료)
 
-`BGCardWidget.cpp` 의 `Border_Root->SetBrushFromTexture(Frame)` 는 브러시를 **통째로 텍스처로 덮어쓴다.** 그대로 두면 카드가 갱신되는 순간 머테리얼이 날아간다. 둘 중 하나를 고른다.
-
-| | 경로 A — MI 하나 | 경로 B — 타입별 MI 3 개 |
-|---|---|---|
-| C++ 이 하는 일 | `FrameTex` 파라미터만 민다 | `SetBrushResourceObject(MI)` 로 갈아 끼운다 |
-| 애셋 | `MI_BGCardFrame_Default` 1 개 | `MI_BGCardFrame_Attack/Equipment/Magic` |
-| 장점 | 애셋이 하나 | 코드가 텍스처를 아예 모른다 |
-| 단점 | 코드가 텍스처를 안다 | 타입이 늘 때마다 MI 를 만든다 |
-
-경로 A 라면 DMI 를 **브러시에서** 얻어야 한다. 자기가 따로 만든 MID 에 값을 밀면 UMG 애니메이션이 잡은 DMI 와 갈라져서 한쪽 값이 안 먹는다.
+예전에는 `Border_Root->SetBrushFromTexture(Frame)` 로 브러시를 통째로 텍스처로 덮어써서, 카드가 갱신되는 순간 머테리얼이 날아갔다. 지금은 이렇게 한다.
 
 ```cpp
-// SetBrushFromTexture 대신 — 브러시는 머테리얼 그대로 두고 파라미터만 갈아끼운다
 if (UMaterialInstanceDynamic* FrameMID = Border_Root->GetDynamicMaterial())
 {
-    FrameMID->SetTextureParameterValue(TEXT("FrameTex"), Frame);
+    FrameMID->SetTextureParameterValue(FrameTexParamName, Frame);   // 기본 "FrameTex"
+    return;
 }
+Border_Root->SetBrushFromTexture(Frame);   // 머테리얼이 없는 WBP 용 폴백
 ```
+
+브러시에 머테리얼을 아직 안 물린 WBP 에서는 예전처럼 텍스처를 갈아 끼운다 — 글로우는 없지만 대분류별 테두리는 그대로 동작한다.
+
+> ⚠️ **DMI 를 캐시하지 않는다.** UMG 애니메이션도 이 브러시의 DMI 를 잡아 `HoverAmount` 를 모는데, 코드가 따로 만든 DMI 를 들고 있으면 두 쪽이 갈라져 한쪽 값이 안 먹는다. `GetDynamicMaterial()` 은 이미 DMI 면 그대로 돌려주므로 매번 불러도 새로 만들지 않는다.
 
 ---
 
@@ -98,7 +94,7 @@ if (UMaterialInstanceDynamic* FrameMID = Border_Root->GetDynamicMaterial())
 
 | 이름 | 형 | 기본 | 뜻 | 누가 조절 |
 |---|---|---|---|---|
-| `FrameTex` | Texture | `T_Card_Attack` | 테두리 그림. 알파가 곧 실루엣 | 코드 (`RefreshFrame`) |
+| `FrameTex` | Texture | `T_Card_Attack` | 테두리 그림. 알파가 곧 실루엣 | 코드 (`RefreshFrame`) — 이름은 `FrameTexParamName` |
 | `HoverAmount` | Scalar | `0` | 호버 세기 0~1 | **UMG 애니메이션** |
 | `GlowRingStrength` | Scalar | `0` | 등급 연출 세기 0~1 | **UMG 애니메이션** |
 | `GlowColor` | Vector | `(1, 0.82, 0.35)` 금빛 | 글로우 색 | UMG 애니메이션 |
@@ -139,9 +135,11 @@ if (UMaterialInstanceDynamic* FrameMID = Border_Root->GetDynamicMaterial())
 
 호버 해제는 같은 애니메이션을 역재생하면 된다.
 
-> ⚠️ **C++ 의 `TickHoverGlow()` 와 겹치지 않게 할 것.** 지금 코드는 `HoverBlend` 를 매 프레임 리테이너 MID 에 밀고 있다. 애니메이션이 `HoverAmount` 를 맡으면 그 호출은 지워야 한다 — 두 곳에서 같은 이름을 밀면 마지막에 쓴 쪽이 이긴다.
+> **`TickHoverGlow()` 는 없앴다(반영 완료).** `bUseHoverOutlineGlow` · `HoverParamName` 프로퍼티도 같이 지웠다. 이제 `HoverAmount` 를 미는 코드는 없으므로 애니메이션이 온전히 가져간다.
 >
-> 겸사겸사 확인할 것: 호버 글로우가 리테이너에 붙어 있는 한, `SetRetainRendering` 이 꺼진 평상시에는 Effect Material 자체가 적용되지 않아 **애초에 보이지 않는다.** 이 머테리얼로 옮기는 이유가 그것이다.
+> ⚠️ **C++ 에서 `HoverAmount` 를 도로 밀지 말 것.** 애니메이션과 코드가 같은 이름을 매 프레임 쓰면 마지막에 쓴 쪽이 이겨서, 애니메이션이 재생돼도 값이 안 먹는 것처럼 보인다. 원인을 찾기 매우 어렵다.
+>
+> 참고로 그 함수는 리테이너의 Effect Material 에 값을 밀고 있었는데, 리테이너는 평상시 `SetRetainRendering(false)` 로 꺼 두므로 Effect Material 자체가 적용되지 않는다 — **이 글로우는 애초에 화면에 나온 적이 없다.**
 
 ---
 
@@ -220,7 +218,7 @@ Vogel 나선(황금각 137.5°, 반지름 √)은 표본마다 반지름이 다 
 |---|---|---|
 | 아무 변화 없음 | 브러시에 MI 가 안 물렸다 | `Border_Root` ▸ Brush ▸ Image |
 | 값을 바꿔도 무반응 | 파라미터 이름 오타 | MI 의 이름과 `BGCardWidget.h` 의 `*ParamName` 대조 |
-| 카드 갱신되면 사라짐 | `SetBrushFromTexture` 가 브러시를 덮어씀 | 2 장의 경로 A / B |
+| 카드 갱신되면 사라짐 | `FrameTexParamName` 이 머테리얼 파라미터 이름과 다르다 | 둘을 맞춘다(기본 `FrameTex`) |
 | 외곽선이 네모나게 잘림 | 텍스처에 투명 여백이 없다 | `T_Card_*` 다시 뽑기 |
 | 외곽선이 위젯에서 잘림 | `Border_Root` 가 칸을 꽉 채움 | WBP 여백 |
 | 띠가 보인다 | `GlowWidth` 가 너무 크다 | 0.05 부근으로 |
