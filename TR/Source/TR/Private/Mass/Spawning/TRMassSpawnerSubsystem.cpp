@@ -212,10 +212,14 @@ int32 UTRMassSpawnerSubsystem::SpawnChasersWithHandles(const FTRChaserSpawnParam
 	UE::TR::MassSpawn::ComputeScatterLocations(World, Params.Area, Count, RandomStream, Locations);
 
 	// 이 배치가 어떤 메시로 표현되는지 클라이언트에 알리기 위한 색인.
-	// 릴레이가 없으면(스탠드얼론) 0으로 두고 NetId도 붙지 않는다 — 볼 상대가 없다.
+	//
+	// **스탠드얼론에서도 등록한다.** 이 게임은 맵 이동 없이 방을 열기 때문에
+	// (UTRGameInstance::StartListenInPlace) 지금 스탠드얼론인 월드가 곧 서버가 될 수 있다.
+	// 리슨 전에 스폰된 개체를 팔레트에 안 넣으면 그 개체들의 ConfigIndex 가 0으로 남아,
+	// 나중에 접속한 클라이언트가 **엉뚱한 메시로 그리거나 아예 못 그린다**.
+	// 릴레이는 틱이 꺼진 AInfo 하나라 미리 만들어 두는 비용이 사실상 없다.
 	uint8 ConfigIndex = 0;
-	if (ATRMassNetRelay* Relay = ATRMassNetRelay::Get(World, /*bCreateIfMissing=*/World->GetNetMode() == NM_ListenServer
-		|| World->GetNetMode() == NM_DedicatedServer))
+	if (ATRMassNetRelay* Relay = ATRMassNetRelay::Get(World, /*bCreateIfMissing=*/World->GetNetMode() != NM_Client))
 	{
 		ConfigIndex = Relay->RegisterConfig(Config);
 	}

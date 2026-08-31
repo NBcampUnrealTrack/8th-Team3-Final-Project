@@ -18,8 +18,24 @@ UTRMassNetSnapshotProcessor::UTRMassNetSnapshotProcessor()
 {
 	bAutoRegisterWithProcessingPhases = true;
 
-	// 보낼 것이 있는 쪽은 서버뿐이다. 스탠드얼론은 받을 상대가 없다.
-	ExecutionFlags = (int32)EProcessorExecutionFlags::Server;
+	// **Standalone 을 반드시 포함한다.**
+	//
+	// 보낼 것이 있는 쪽은 서버뿐이지만, 이 플래그는 "지금 서버인가"가 아니라
+	// **월드가 만들어질 때 무엇이었나**로 걸러진다. 엔진은 파이프라인을 월드 시작 시
+	// 한 번만 만들고(FMassProcessingPhaseManager::Initialize → DetermineProcessorExecutionFlags),
+	// 그 뒤로는 다시 만들지 않는다.
+	//
+	// 이 게임은 메인 메뉴에서 맵 이동 없이 방을 연다(UTRGameInstance::StartListenInPlace 가
+	// World->Listen() 만 부른다). 그래서 호스트의 월드는 **스탠드얼론으로 시작해서
+	// 나중에 리슨 서버가 된다**. Server 만 적어두면 이 프로세서만 파이프라인에서 빠지고,
+	// 스냅샷이 영원히 비어서 **클라이언트 화면에만 적이 통째로 안 나온다.**
+	// 에러도 경고도 없다 — 프로세서가 아예 안 도는 것이라 로그를 남길 주체가 없다.
+	//
+	// PIE 리슨 서버로는 절대 재현되지 않는다. 그쪽은 월드가 처음부터 리슨 서버다.
+	//
+	// 실제로 보낼지 말지는 Execute 에서 매 틱 넷 모드를 보고 정한다. 그래야 방이
+	// 열리는 순간 저절로 살아난다.
+	ExecutionFlags = (int32)EProcessorExecutionFlags::Server | (int32)EProcessorExecutionFlags::Standalone;
 
 	// 시뮬레이션 결과를 월드 밖으로 내보내는 단계.
 	ExecutionOrder.ExecuteInGroup = UE::Mass::ProcessorGroupNames::UpdateWorldFromMass;
@@ -46,6 +62,14 @@ void UTRMassNetSnapshotProcessor::Execute(FMassEntityManager& EntityManager, FMa
 
 	UWorld* World = EntityManager.GetWorld();
 	if (World == nullptr)
+	{
+		return;
+	}
+
+	// 아직 방을 안 열었으면 보낼 상대가 없다. 넷 모드는 매 틱 다시 보므로
+	// World->Listen() 이 성공하는 순간 다음 틱부터 저절로 스냅샷이 나가기 시작한다
+	// (파이프라인은 그때 다시 만들어지지 않는다 — 생성자 주석 참고).
+	if (World->GetNetMode() == NM_Standalone)
 	{
 		return;
 	}
