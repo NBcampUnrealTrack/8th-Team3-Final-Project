@@ -1,7 +1,8 @@
 # M_BGCardFrame — 카드 테두리 외곽선 글로우 매뉴얼
 
 **대상 애셋**: `/Game/UI/Material/M_BGCardFrame` · `/Game/UI/Material/MI_BGCardFrame_Default`
-**생성 스크립트**: `BG/Scripts/Python/build_frame_material.py`
+**생성 스크립트**: `BG/Scripts/Python/build_frame_material.py` (그래프를 만든다)
+**맞춤 스크립트**: `BG/Scripts/Python/fit_frame_material.py` (아트에 맞춘다)
 **붙는 곳**: `WBP_BGCard` 의 `Border_Root` 브러시
 
 ---
@@ -104,8 +105,8 @@ Border_Root->SetBrushFromTexture(Frame);   // 머테리얼이 없는 WBP 용 폴
 | `WaveAmount` | Scalar | `0.35` | 파동 세기. 0 이면 매끈한 그라데이션만 | 룩 고정값 |
 | `WaveFreq` | Scalar | `3.0` | 글로우 폭 안에 마루가 몇 개 | 룩 고정값 |
 | `WaveSpeed` | Scalar | `0.6` | 파동이 바깥으로 흐르는 속도 | 룩 고정값 |
-| `HoleBoxMin` | Vector | `(0.139, 0.255)` | 아트 창을 감싸는 상자의 좌상단 UV | 텍스처마다 조정 |
-| `HoleBoxMax` | Vector | `(0.867, 0.618)` | 같은 상자의 우하단 UV | 텍스처마다 조정 |
+| `HoleBoxMin` | Vector | `(0.139, 0.255)` | 아트 창을 감싸는 상자의 좌상단 UV | **`fit_frame_material.py` 가 기록** |
+| `HoleBoxMax` | Vector | `(0.867, 0.618)` | 같은 상자의 우하단 UV | **`fit_frame_material.py` 가 기록** |
 | `HoleBoxSoft` | Scalar | `0.010` | 상자 경계를 넘기는 부드러움 | 룩 고정값 |
 
 **구동값은 `max(HoverAmount, GlowRingStrength)` 다.** 더하지 않는다 — 호버 중에 대성공이 나면 두 배로 타 버린다.
@@ -140,6 +141,46 @@ Border_Root->SetBrushFromTexture(Frame);   // 머테리얼이 없는 WBP 용 폴
 > ⚠️ **C++ 에서 `HoverAmount` 를 도로 밀지 말 것.** 애니메이션과 코드가 같은 이름을 매 프레임 쓰면 마지막에 쓴 쪽이 이겨서, 애니메이션이 재생돼도 값이 안 먹는 것처럼 보인다. 원인을 찾기 매우 어렵다.
 >
 > 참고로 그 함수는 리테이너의 Effect Material 에 값을 밀고 있었는데, 리테이너는 평상시 `SetRetainRendering(false)` 로 꺼 두므로 Effect Material 자체가 적용되지 않는다 — **이 글로우는 애초에 화면에 나온 적이 없다.**
+
+---
+
+## 4.5 아트를 바꿨을 때 — `fit_frame_material.py`
+
+프레임 그림을 새로 넣거나 고쳤으면 **이것만 돌리면 된다.** `build_frame_material.py` 는 그래프를 만드는 스크립트라 아트가 바뀌어도 다시 돌릴 필요가 없다.
+
+에디터에서 **Tools ▸ Execute Python Script** 로 `BG/Scripts/Python/fit_frame_material.py` 를 지정한다. 하는 일은 셋이다.
+
+1. **여백 확인.** 각 변의 투명 여백이 `GlowWidth` 만큼 되는지 본다. 모자라면 **그림 픽셀은 그대로 두고 캔버스만** 키워 다시 임포트한다. 세로 여백은 가로에 비례해 넣어 종횡비를 지킨다 — 같은 픽셀 수를 넣으면 프레임이 늘어난다. 압축·sRGB·밉 설정도 원래대로 되돌려 놓는다.
+2. **창 측정.** 플러드 필로 "테두리와 이어지지 않은 투명 영역" = 아트 창을 찾아 상자를 잰다. 상자를 넓힐 수 있는 여지도 같이 재서 그 60%(최대 0.030)만큼 넓힌다.
+3. **기록.** `HoleBoxMin` · `HoleBoxMax` 를 `MI_BGCardFrame_Default` 에 써 넣고 저장한다.
+
+### 무엇이 자동이고 무엇이 아닌가
+
+| | 자동인가 |
+|---|---|
+| 글로우 모양 | ✅ 알파에서 매 픽셀 뽑는다. 실루엣이 바뀌면 글로우도 바뀐다 |
+| 해상도 | ✅ `GlowWidth` 가 가로폭 비율이라 몇 픽셀이든 두께가 같다 |
+| 종횡비 | ✅ `TextureProperty` 로 텍스처 크기를 읽어 세로 표본을 보정한다 |
+| 투명 여백 | ⚠️ 스크립트가 **자동으로 넣어 준다.** 대신 `Border_Root` 를 키워야 한다(아래) |
+| 아트 창 위치 | ⚠️ 스크립트가 **재서 MI 에 써 준다.** 스크립트를 안 돌리면 옛 값이 남는다 |
+
+셰이더가 창 위치를 스스로 못 아는 이유는 5 장의 "왜 상자로 자르는가" 를 볼 것 — 글로우 모양은 이웃 픽셀만 보면 되지만, 위상은 그림 전체의 연결 관계라 픽셀 셰이더가 알 수 없다.
+
+### 스크립트가 경고하는 것
+
+- **캔버스를 키웠다** → 프레임이 텍스처에서 차지하는 비율이 줄었으므로 `Border_Root` 를 그만큼 키워야 화면에서 같은 크기가 된다. 배율을 로그에 찍어 준다.
+- **카드 타입마다 창 위치가 다르다**(0.01 초과) → 상자 하나로 덮으면 가장 큰 창에 맞춰져 작은 창 쪽 프레임 글로우가 깎인다. 타입별 MI 를 따로 두고 `RefreshFrame` 이 머테리얼을 갈아 끼우는 편이 낫다.
+- **상자를 넓힐 여지가 거의 없다** → 창이 프레임에 너무 바짝 붙어 있다. `HoleBoxSoft` 를 줄인다.
+
+구멍이 아예 없는 통짜 카드면 상자를 눌러(`Min == Max`) 아무것도 죽이지 않는다.
+
+### 합성 프레임으로 확인한 것
+
+| 경우 | 결과 |
+|---|---|
+| 창 위치가 다른 프레임(800×1000, 여백 90) | 창을 `u[0.175~0.825] v[0.120~0.432]` 로 정확히 따라감 |
+| 여백이 0 인 프레임 | 부족 30px 를 잡아내 패딩 대상으로 표시 |
+| 구멍이 없는 통짜 카드 | 상자 없음(`None`)으로 처리 |
 
 ---
 
