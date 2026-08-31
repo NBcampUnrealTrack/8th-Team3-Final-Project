@@ -236,37 +236,52 @@ void UBGCardWidget::RefreshArt()
 //     세 함수로 갈라 두었다.
 // ══════════════════════════════════════════════════════════════════════════════════════
 
-UMaterialInstanceDynamic* UBGCardWidget::GetGlowMID()
+void UBGCardWidget::PushWidgetSize(UMaterialInstanceDynamic* MID)
 {
-	if (GlowMID)
+	//	팽창 반경을 UV 로 바꾸려면 픽셀 크기가 필요하다. 안 먹이면 카드가 세로로 긴
+	//	비율이라 외곽선이 가로로 눌린 타원으로 번진다.
+	//
+	//	매번 재는 이유는 손패 재배치 · 호버 스케일로 크기가 계속 변하기 때문이다.
+	if (!MID || WidgetSizeParamName.IsNone() || !Retainer_Card)
 	{
-		return GlowMID;
+		return;
 	}
 
-	if (!Img_Glow)
+	const FVector2D Size = Retainer_Card->GetCachedGeometry().GetLocalSize();
+	if (Size.IsNearlyZero())
 	{
-		return nullptr;   // WBP 가 글로우 칸을 두지 않았다. 선택 사항이다.
+		return;   // 레이아웃이 아직 안 잡혔다. 다음 프레임에 다시 잰다.
 	}
 
-	//	브러시의 머테리얼을 이 위젯 전용 DMI 로 바꿔 준다.
-	//	브러시가 그냥 텍스처면 null 이 돌아온다 — 그때는 등급 연출만 조용히 꺼진다.
-	GlowMID = Img_Glow->GetDynamicMaterial();
-	if (!GlowMID)
+	MID->SetVectorParameterValue(WidgetSizeParamName,
+		FLinearColor(static_cast<float>(Size.X), static_cast<float>(Size.Y), 0.f, 0.f));
+}
+
+void UBGCardWidget::TickHoverGlow()
+{
+	if (!bUseHoverOutlineGlow)
 	{
-		return nullptr;
+		return;
 	}
 
-	//	평상시 값을 붙잡아 둔다. 연출이 끝나면 0 이 아니라 여기로 돌아가야
-	//	아티스트가 잡아 둔 기본 글로우가 살아남는다.
-	if (!bRestCaptured)
+	UMaterialInstanceDynamic* MID = GetCardFXMID();
+	if (!MID)
 	{
-		GlowMID->GetVectorParameterValue(FMaterialParameterInfo(ColorParamName), RestColor);
-		GlowMID->GetScalarParameterValue(FMaterialParameterInfo(IntensityParamName), RestIntensity);
-		GlowMID->GetScalarParameterValue(FMaterialParameterInfo(RingParamName), RestRing);
-		bRestCaptured = true;
+		return;   // 리테이너가 없거나 Effect Material 이 비었다. 조용히 꺼진다.
 	}
 
-	return GlowMID;
+	PushWidgetSize(MID);
+
+	//	켜지고 꺼지는 보간은 HoverBlend 가 이미 하고 있다. 여기서 또 굴리면
+	//	두 개의 감쇠가 겹쳐 반응이 느려진다.
+	//
+	//	⚠️ 파라미터만 바꾸는 것은 리테이너의 렌더 타겟을 다시 그리지 않는다.
+	//	   RT 는 자식이 바뀔 때만 갱신되고, 파라미터는 그 RT 를 화면에 합성할 때
+	//	   쓰인다. 그래서 매 프레임 먹여도 비싸지 않다.
+	if (!HoverParamName.IsNone())
+	{
+		MID->SetScalarParameterValue(HoverParamName, HoverBlend);
+	}
 }
 
 const FBGCardTierFX* UBGCardWidget::FindTierFX(EBGResolutionTier Tier) const
@@ -292,7 +307,7 @@ void UBGCardWidget::PlayTierFX(EBGResolutionTier Tier)
 	}
 
 	const FBGCardTierFX* Params = FindTierFX(Tier);
-	if (!Params || !GetGlowMID())
+	if (!Params || !GetCardFXMID())
 	{
 		return;
 	}
@@ -306,23 +321,13 @@ void UBGCardWidget::PlayTierFX(EBGResolutionTier Tier)
 
 void UBGCardWidget::ApplyTierFX(float Shape)
 {
-	UMaterialInstanceDynamic* MID = GetGlowMID();
+	UMaterialInstanceDynamic* MID = GetCardFXMID();
 	if (!MID)
 	{
 		return;
 	}
 
-	//	SDF 글로우는 위젯 크기를 알아야 테두리 두께가 균일하다. 매번 먹이는 이유는
-	//	손패 재배치·호버 스케일로 크기가 계속 변하기 때문이다. 없는 파라미터면 무시된다.
-	if (!WidgetSizeParamName.IsNone() && Img_Glow)
-	{
-		const FVector2D Size = Img_Glow->GetCachedGeometry().GetLocalSize();
-		if (!Size.IsNearlyZero())
-		{
-			MID->SetVectorParameterValue(WidgetSizeParamName,
-				FLinearColor(static_cast<float>(Size.X), static_cast<float>(Size.Y), 0.f, 0.f));
-		}
-	}
+	PushWidgetSize(MID);
 
 	const float Clamped = FMath::Clamp(Shape, 0.f, 1.f);
 
@@ -369,11 +374,11 @@ void UBGCardWidget::TickTierFX(float DeltaTime)
 //  카드가 다 사라졌는데 아직 타고 있거나 그 반대가 된다.
 // ══════════════════════════════════════════════════════════════════════════════════════
 
-UMaterialInstanceDynamic* UBGCardWidget::GetDissolveMID()
+UMaterialInstanceDynamic* UBGCardWidget::GetCardFXMID()
 {
-	if (DissolveMID)
+	if (CardFXMID)
 	{
-		return DissolveMID;
+		return CardFXMID;
 	}
 
 	if (!Retainer_Card)
@@ -382,18 +387,33 @@ UMaterialInstanceDynamic* UBGCardWidget::GetDissolveMID()
 	}
 
 	//	리테이너의 Effect Material 로 만들어진 이 위젯 전용 DMI.
-	//	머테리얼을 안 물렸으면 null 이 돌아온다 — 그때는 디졸브만 조용히 꺼진다.
-	DissolveMID = Retainer_Card->GetEffectMaterial();
-	if (!DissolveMID)
+	//	카드 전체를 대상으로 하는 연출(디졸브 · 외곽선 글로우 · 등급 글로우)이 이것 하나를
+	//	나눠 쓴다. 머테리얼을 안 물렸으면 null 이 돌아온다 — 그때는 전부 조용히 꺼진다.
+	//
+	//	⚠️ DMI 없이 MI 를 그대로 쓰면 손패 전원이 같은 인스턴스를 공유한다 —
+	//	   한 장이 대성공 나면 손패가 통째로 번쩍인다.
+	CardFXMID = Retainer_Card->GetEffectMaterial();
+	if (!CardFXMID)
 	{
 		//	리테이너는 뒀는데 머테리얼이 없다. 이건 설정을 하다 만 것이므로 원인을 남긴다 —
 		//	리테이너가 아예 없는 경우(선택 사항)와 달리 의도한 상태가 아니다.
 		UE_LOG(LogBGCard, Warning,
-			TEXT("[Card] Retainer_Card 는 있는데 Effect Material 이 비었다 — 디졸브 퇴장이 꺼진다. "
-			     "WBP 의 리테이너 Effect 항목에 디졸브 머테리얼을 물릴 것."));
+			TEXT("[Card] Retainer_Card 는 있는데 Effect Material 이 비었다 — 디졸브 · 글로우가 꺼진다. "
+			     "WBP 의 리테이너 Effect 항목에 카드 FX 머테리얼을 물릴 것."));
+		return nullptr;
 	}
 
-	return DissolveMID;
+	//	평상시 값을 붙잡아 둔다. 연출이 끝나면 0 이 아니라 여기로 돌아가야
+	//	아티스트가 잡아 둔 기본 글로우가 살아남는다.
+	if (!bRestCaptured)
+	{
+		CardFXMID->GetVectorParameterValue(FMaterialParameterInfo(ColorParamName), RestColor);
+		CardFXMID->GetScalarParameterValue(FMaterialParameterInfo(IntensityParamName), RestIntensity);
+		CardFXMID->GetScalarParameterValue(FMaterialParameterInfo(RingParamName), RestRing);
+		bRestCaptured = true;
+	}
+
+	return CardFXMID;
 }
 
 const FBGCardDissolveFX& UBGCardWidget::FindDissolveFX() const
@@ -431,10 +451,10 @@ bool UBGCardWidget::BeginDissolveExit()
 		return false;
 	}
 
-	UMaterialInstanceDynamic* MID = GetDissolveMID();
+	UMaterialInstanceDynamic* MID = GetCardFXMID();
 	if (!MID)
 	{
-		return false;   // 원인은 GetDissolveMID 가 남긴다. 불투명도 페이드로 떨어진다.
+		return false;   // 원인은 GetCardFXMID 가 남긴다. 불투명도 페이드로 떨어진다.
 	}
 
 	ActiveDissolve = FindDissolveFX();
@@ -477,12 +497,12 @@ bool UBGCardWidget::BeginDissolveExit()
 
 void UBGCardWidget::ApplyDissolve(float Amount)
 {
-	if (!DissolveMID)
+	if (!CardFXMID)
 	{
 		return;
 	}
 
-	DissolveMID->SetScalarParameterValue(
+	CardFXMID->SetScalarParameterValue(
 		DissolveAmountParamName, FMath::Clamp(Amount, 0.f, 1.f));
 }
 
@@ -1016,6 +1036,10 @@ void UBGCardWidget::TickSecondaryMotion(float DeltaTime, const FVector2D& Positi
 		RefreshChanceModifiedBanner();   // 문구는 호버가 켜지고 꺼질 때만 바뀐다
 		OnHoverChanged(bHoverAllowed);
 	}
+
+	//	보간이 끝난 HoverBlend 를 머테리얼로 흘려보낸다. 상태가 바뀌는 순간이 아니라
+	//	매 프레임인 이유는, 잦아드는 동안에도 글로우가 같이 옅어져야 하기 때문이다.
+	TickHoverGlow();
 }
 
 void UBGCardWidget::ApplyMotionTransform()

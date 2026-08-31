@@ -491,10 +491,9 @@ protected:
 
 	// ── 등급 연출 (글로우 머테리얼) ──────────────────────────────────
 	//
-	//	브러시에 머테리얼이 물린 이미지를 잡아 **이 카드 전용 DMI** 로 바꿔 쓴다.
-	//
-	//	⚠️ DMI 없이 MI 를 그대로 쓰면 손패 전원이 같은 인스턴스를 공유한다 —
-	//	   한 장이 대성공 나면 손패가 통째로 번쩍인다.
+	//	리테이너의 Effect Material 로 만든 **이 카드 전용 DMI**(GetCardFXMID)를 쓴다.
+	//	디졸브 · 호버 외곽선 글로우와 같은 DMI 다 — 셋 다 합성된 카드 한 장을 대상으로
+	//	하는 화면 효과이므로 마스터 하나에 모으고 값만 다르게 준다.
 
 	/**
 	 * C++ 글로우로 등급을 표현할지. **기본은 꺼짐** — 등급 연출은 WBP 의 UMG 애니메이션이 맡는다.
@@ -506,12 +505,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	bool bUseTierGlow = false;
 
-	/** 글로우 머테리얼이 물려 있는 이미지. 없으면 등급 연출만 조용히 꺼진다. */
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Glow;
-
 	//	파라미터 이름을 값으로 두는 이유: 이 위젯에 어떤 머테리얼이 물릴지 코드가 모른다.
-	//	M_BGCardGlow 면 아래 기본값이 맞고, M_BGCardFX 면 RimColor / RimIntensity 로 바꾸면 된다.
 	//	이름이 틀리면 UMaterialInstanceDynamic 이 조용히 무시하므로 BP 에서 확인할 것.
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	FName ColorParamName = TEXT("GlowColor");
@@ -523,11 +517,38 @@ protected:
 	FName RingParamName = TEXT("GlowRingStrength");
 
 	/**
-	 * 위젯 크기를 받는 파라미터. SDF 글로우가 테두리 두께를 균일하게 그리려면 필요하다.
-	 * 안 먹이면 카드 비율이 바뀔 때 글로우가 찌그러진다. 없는 머테리얼이면 그냥 무시된다.
+	 * 리테이너의 픽셀 크기를 받는 파라미터.
+	 *
+	 * 팽창 반경을 UV 로 바꾸려면 필요하다. 안 먹이면 카드가 세로로 긴 비율이라
+	 * 외곽선이 가로로 눌린 타원으로 번진다. 없는 머테리얼이면 그냥 무시된다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	FName WidgetSizeParamName = TEXT("WidgetSize");
+
+	// ── 호버 외곽선 글로우 ───────────────────────────────────────────
+	//
+	//	카드마다 프레임 그림이 다르다(공격 · 장비 · 마법). 글로우를 수학으로 그린 라운드
+	//	사각형으로 두면 어떤 카드에서는 프레임 밖으로 삐져나가고 어떤 카드에서는 안쪽에
+	//	파묻힌다.
+	//
+	//	그래서 리테이너 머테리얼에서 처리한다. 리테이너는 자식을 렌더 타겟에 한 번 그린 뒤
+	//	그 RT 를 Effect Material 로 찍는데, **그 RT 의 알파가 이미 합성된 카드의 실루엣**이다.
+	//	알파를 바깥으로 부풀린 것에서 원래 알파를 빼면 프레임 모양 그대로의 외곽선이 나온다.
+	//	프레임 텍스처를 코드가 알 필요도, 넘겨줄 필요도 없다.
+	//
+	//	⚠️ 글로우를 별도 이미지 위젯으로 되돌리지 말 것. 그러면 프레임이 무엇인지 코드가
+	//	   알아야 하고, 카드 종류가 늘 때마다 그 경로를 고쳐야 한다.
+	//
+	//	⚠️ 리테이너 바깥으로는 번지지 않는다. 외곽선이 잘리면 머테리얼이 아니라 **여백**
+	//	   문제다 — Overlay 안에 투명한 여백이 프레임 바깥으로 남아 있어야 한다.
+
+	/** 호버 시 카드 외곽선을 빛나게 할지. 파라미터가 없는 머테리얼이면 그냥 무시된다. */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|HoverGlow")
+	bool bUseHoverOutlineGlow = true;
+
+	/** 호버 세기(0~1). HoverBlend 를 그대로 흘려보낸다 — 켜지고 꺼지는 보간은 이미 거기서 한다. */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|HoverGlow")
+	FName HoverParamName = TEXT("HoverAmount");
 
 	/**
 	 * 잦아드는 곡선(가로 0~1 → 세로 1~0). 비우면 선형으로 잦아든다.
@@ -936,11 +957,8 @@ private:
 
 	// ── 등급 연출 ────────────────────────────────────────────────────
 
-	/**
-	 * 이 카드 전용 DMI 를 얻는다(처음 부를 때 만든다).
-	 * 브러시에 머테리얼이 없으면(그냥 텍스처면) nullptr — 등급 연출은 조용히 꺼진다.
-	 */
-	UMaterialInstanceDynamic* GetGlowMID();
+	/** 리테이너 크기를 머테리얼에 먹인다. 크기를 쓰는 연출이 모두 이걸 부른다. */
+	void PushWidgetSize(UMaterialInstanceDynamic* MID);
 
 	/** 등급별 연출값을 고른다. 등급이 없으면(장비 등) nullptr. */
 	const FBGCardTierFX* FindTierFX(EBGResolutionTier Tier) const;
@@ -955,13 +973,21 @@ private:
 	/** 감쇠를 굴린다. TickMotion 이 매 프레임 부른다. */
 	void TickTierFX(float DeltaTime);
 
+	/**
+	 * 호버 외곽선 글로우의 파라미터를 먹인다. TickMotion 의 호버 구간이 부른다.
+	 *
+	 * 파라미터만 바꾸는 것은 리테이너의 렌더 타겟을 다시 그리지 않는다. RT 는 자식이
+	 * 바뀔 때만 갱신되고 파라미터는 합성 단계에서 쓰이므로, 매 프레임 먹여도 싸다.
+	 */
+	void TickHoverGlow();
+
 	// ── 퇴장 디졸브 ──────────────────────────────────────────────────
 
 	/**
 	 * 리테이너의 DMI 를 얻는다(처음 부를 때 만든다).
 	 * 리테이너가 없거나 Effect Material 이 안 물려 있으면 nullptr — 디졸브는 조용히 꺼진다.
 	 */
-	UMaterialInstanceDynamic* GetDissolveMID();
+	UMaterialInstanceDynamic* GetCardFXMID();
 
 	/** 이 카드의 원형에 맞는 사라지는 방식. 맵에 없으면 DefaultDissolve. */
 	const FBGCardDissolveFX& FindDissolveFX() const;
@@ -978,7 +1004,7 @@ private:
 	// ── 퇴장 디졸브 런타임 상태 ──────────────────────────────────────
 
 	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> DissolveMID;
+	TObjectPtr<UMaterialInstanceDynamic> CardFXMID;
 
 	FBGCardDissolveFX ActiveDissolve;
 
@@ -991,9 +1017,9 @@ private:
 	bool bPlayExit = false;
 
 	// ── 등급 연출 런타임 상태 ────────────────────────────────────────
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> GlowMID;
+	//
+	//	글로우도 리테이너의 CardFXMID 를 함께 쓴다. DMI 를 따로 두지 않는다 —
+	//	디졸브와 글로우가 같은 합성 이미지를 대상으로 하는 같은 성격의 연출이다.
 
 	//	DMI 를 만든 시점의 값 — 연출이 끝나면 여기로 돌아간다.
 	//	0 으로 되돌리면 아티스트가 잡아 둔 평상시 글로우까지 죽는다.
