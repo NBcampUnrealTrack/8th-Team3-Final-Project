@@ -1,4 +1,4 @@
-// TRPlayerHUDWidget.h
+﻿// TRPlayerHUDWidget.h
 
 #pragma once
 
@@ -11,6 +11,7 @@ class UWidget;
 class UTextBlock;
 class UImage;
 class UPanelWidget;
+class ATRTurret;
 
 UCLASS(Abstract)
 class TR_API UTRPlayerHUDWidget : public UCommonUserWidget
@@ -35,6 +36,8 @@ public:
 
 protected:
 	virtual void NativeConstruct() override;
+
+	const ATRTurret* GetMountedTurret() const;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UWidget> PlayerInteraction_VerticalBox;

@@ -11,6 +11,8 @@
 #include "Train/TRArmor.h"
 #include "Train/TRTrain.h"
 #include "Train/TRTurret.h"
+#include "Player/TRPlayerCharacter.h"
+#include "Interaction/TRTurretControlComponent.h"
 
 void UTRPlayerHUDWidget::NativeConstruct()
 {
@@ -129,6 +131,16 @@ void UTRPlayerHUDWidget::SetActionProgress(ETRActionType ActionType, float Progr
 	}
 }
 
+// 탑승 중인 포탑. 안 타고 있으면 nullptr.
+const ATRTurret* UTRPlayerHUDWidget::GetMountedTurret() const
+{
+	const ATRPlayerCharacter* OwnerCharacter = Cast<ATRPlayerCharacter>(GetOwningPlayerPawn());
+	const UTRTurretControlComponent* TurretControlComp =
+		IsValid(OwnerCharacter) ? OwnerCharacter->GetTurretControlComponent() : nullptr;
+
+	return IsValid(TurretControlComp) ? TurretControlComp->GetMountedTurret() : nullptr;
+}
+
 static FText MakeLevelText(int32 Level)
 {
 	return Level > 0 ? FText::FromString(FString::Printf(TEXT("LV. %d"), Level)) : FText::GetEmpty();
@@ -144,6 +156,11 @@ void UTRPlayerHUDWidget::SetTargetInfo(const AActor* Target)
 	if (!IsValid(PlayerInfoPanel))
 	{
 		return;
+	}
+
+	if (const ATRTurret* Mounted = GetMountedTurret())
+	{
+		Target = Mounted;
 	}
 
 	// 레벨은 각 파츠별 전체 공유
