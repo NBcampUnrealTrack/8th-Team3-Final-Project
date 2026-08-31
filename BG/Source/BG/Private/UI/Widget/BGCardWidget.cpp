@@ -192,6 +192,7 @@ void UBGCardWidget::RefreshVisual()
 	RefreshChanceText();
 	RefreshChanceModifiedBanner();
 	RefreshArt();
+	RefreshFrame();
 
 	if (Border_Root)
 	{
@@ -224,6 +225,35 @@ void UBGCardWidget::RefreshArt()
 
 	Img_Art->SetVisibility(ESlateVisibility::HitTestInvisible);
 	Img_Art->SetBrushFromTexture(Art, /*bMatchSize=*/false);
+}
+
+void UBGCardWidget::RefreshFrame()
+{
+	if (!Border_Root)
+	{
+		return;
+	}
+
+	UTexture2D* Frame = nullptr;
+	switch (CardView.Category)
+	{
+		case EBGCardCategory::Equipment:
+			Frame = EquipmentFrameTexture; 
+			break;
+		case EBGCardCategory::Attack:
+			Frame = AttackFrameTexture;    
+			break;
+		case EBGCardCategory::Magic:
+			Frame = MagicFrameTexture;     
+			break;
+	}
+
+	if (!Frame)
+	{
+		return;   // null 로 덮으면 카드가 통째로 투명해진다(RefreshArt 와 같은 이유).
+	}
+
+	Border_Root->SetBrushFromTexture(Frame);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════

@@ -489,6 +489,16 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card")
 	TObjectPtr<UTexture2D> FallbackArtTexture;
 
+	/** 대분류별 테두리. 비워 두면 그 타입은 WBP 에 넣어 둔 테두리를 그대로 쓴다. */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Frame")
+	TObjectPtr<UTexture2D> EquipmentFrameTexture;
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Frame")
+	TObjectPtr<UTexture2D> AttackFrameTexture;
+
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Frame")
+	TObjectPtr<UTexture2D> MagicFrameTexture;
+
 	// ── 등급 연출 (글로우 머테리얼) ──────────────────────────────────
 	//
 	//	리테이너의 Effect Material 로 만든 **이 카드 전용 DMI**(GetCardFXMID)를 쓴다.
@@ -954,6 +964,9 @@ private:
 
 	/** 테두리 안쪽 그림을 채운다. 뷰에 그림이 없으면 폴백으로, 그것도 없으면 칸을 접는다. */
 	void RefreshArt();
+
+	/** 대분류(장비/공격/마법)에 맞는 테두리를 고른다. 그림이 없는 타입은 건드리지 않는다. */
+	void RefreshFrame();
 
 	// ── 등급 연출 ────────────────────────────────────────────────────
 
