@@ -10,18 +10,20 @@
 하는 일
   1. T_Card_* 를 읽어 글로우가 번질 **투명 여백**이 있는지 본다.
      모자라면 그림 픽셀은 그대로 두고 캔버스만 키워 다시 임포트한다(종횡비 유지).
-  2. 플러드 필로 **아트 창**(바깥과 안 이어진 투명 영역)을 찾아 상자를 잰다.
-  3. 그 값을 MI_BGCardFrame_Default 에 써 넣는다.
+  2. 플러드 필로 **아트 창**을 찾아 그 중심을 GlowCenter 에 써 넣는다.
 
-왜 코드가 재야 하는가
-  글로우 모양은 픽셀 하나의 이웃만 보면 되므로 셰이더가 스스로 알아낸다. 그런데
-  "이 투명한 자리가 카드 바깥인가 창 안인가" 는 **그림 전체의 연결 관계**라
-  셰이더가 알 수 없다. 그래서 여기서 한 번 재어 파라미터로 넘긴다.
+GlowCenter 가 뭔가
+  머테리얼은 바깥과 창을 **런타임에** 가른다 — 불투명한 덩어리가 기준점 쪽에 쏠려
+  있으면 바깥, 반대쪽에 쏠려 있으면 창이다. 그 기준점이 GlowCenter 이고,
+  **창 안에 있기만 하면** 된다.
 
-  ⚠️ 셰이더 안에서 풀려다 두 번 실패했다. 카드 중심에서 광선을 쏘는 방법은 프레임
-     띠(0.054)보다 첫 걸음(0.094)이 커서 띠를 뛰어넘었고, "경계에 가까우면 바깥"
-     으로 가르는 방법은 상단 장식 사이 오목한 곳이 창보다 깊이 파고들어 순서가
-     뒤집혔다. 위상은 재서 넘기는 것이 맞다.
+  카드 그림은 창이 가운데 있어 기본값 (0.5, 0.5) 로 이미 맞는다(실측 여유 0.119).
+  창이 한쪽으로 치우친 그림에서만 이 스크립트가 재 준 값이 필요하다 — 기본값으로
+  두면 그런 그림에서는 창 판정이 70% 언저리로 떨어진다.
+
+  ⚠️ 창의 **모양**은 이제 안 잰다. 예전에는 사각 상자(HoleBoxMin/Max)로 잘랐는데,
+     그러면 텍스처를 바꿀 때마다 이 스크립트를 돌려야 글로우가 맞았다. 지금은
+     머테리얼이 알파만 보고 판정하므로 그림이 바뀌어도 바로 따라간다.
 """
 
 import os
@@ -43,9 +45,9 @@ CLASSIFY_STEP = 4
 #	바깥과 창을 이어 버려 플러드 필이 창까지 새어 들어간다.
 CLEAR_ALPHA = 8
 
-#	잰 상자를 이만큼 넓힌다. 딱 맞추면 HoleBoxSoft 전환 구간이 창 가장자리에 걸려
-#	글로우가 절반만 죽고 창 둘레에 얇은 선이 남는다.
-BOX_EXPAND_MAX = 0.030
+#	잰 창 중심이 기본값에서 이보다 적게 떨어져 있으면 굳이 오버라이드하지 않는다.
+#	기본값으로 두는 편이 애셋 차이가 적고, 이 정도 어긋남은 판정 여유 안에 든다.
+CENTER_EPS = 0.02
 
 mel = unreal.MaterialEditingLibrary
 eal = unreal.EditorAssetLibrary
@@ -217,33 +219,17 @@ def classify(w, h, px):
     return gw, gh, clear, outer
 
 
-def hole_box(gw, gh, clear, outer):
-    """
-    구멍 전체를 감싸는 상자(UV)와, 바깥을 건드리지 않고 넓힐 수 있는 최대 폭.
-    구멍이 없으면 None.
-    """
+def hole_center(gw, gh, clear, outer):
+    """구멍(아트 창) 전체의 중심(UV). 구멍이 없으면 None."""
     holes = [(x, y) for y in range(gh) for x in range(gw)
              if clear[y * gw + x] and not outer[y * gw + x]]
     if not holes:
         return None
-
     u0 = min(x for x, _ in holes) / gw
     u1 = (max(x for x, _ in holes) + 1) / gw
     v0 = min(y for _, y in holes) / gh
     v1 = (max(y for _, y in holes) + 1) / gh
-
-    #	상자를 넓히다가 바깥 픽셀이 들어오는 순간 멈춘다.
-    room = 0.0
-    while room < 0.20:
-        e = room + 0.005
-        hit = any(outer[y * gw + x]
-                  and (u0 - e) <= (x + 0.5) / gw <= (u1 + e)
-                  and (v0 - e) <= (y + 0.5) / gh <= (v1 + e)
-                  for y in range(gh) for x in range(gw))
-        if hit:
-            break
-        room = e
-    return u0, u1, v0, v1, room
+    return (u0 + u1) * 0.5, (v0 + v1) * 0.5, (u0, u1, v0, v1)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -312,18 +298,18 @@ def fit():
                        % (short, nw, nh, pad_x, pad_y))
             w, h, px = nw, nh, bytes(buf)
 
-        # ── 2. 아트 창 ───────────────────────────────────────────────
+        # ── 2. 아트 창 중심 ─────────────────────────────────────────
         gw, gh, clear, outer = classify(w, h, px)
-        box = hole_box(gw, gh, clear, outer)
-        if box is None:
-            unreal.log("[Fit]   구멍 없음 — 이 그림은 상자가 필요 없다")
+        found = hole_center(gw, gh, clear, outer)
+        if found is None:
+            unreal.log("[Fit]   구멍 없음 — 통짜 카드다. 기준점이 필요 없다")
             continue
-        u0, u1, v0, v1, room = box
-        unreal.log("[Fit]   창 u[%.3f~%.3f] v[%.3f~%.3f]  넓힐 여지 %.3f"
-                   % (u0, u1, v0, v1, room))
-        boxes[name] = (u0, u1, v0, v1, room)
+        cu, cv, box = found
+        unreal.log("[Fit]   창 u[%.3f~%.3f] v[%.3f~%.3f]  중심 (%.3f, %.3f)"
+                   % (box[0], box[1], box[2], box[3], cu, cv))
+        boxes[name] = (cu, cv)
 
-    # ── 3. 세 장을 하나의 상자로 ─────────────────────────────────────
+    # ── 3. 기준점 기록 ──────────────────────────────────────────────
     mi = unreal.load_asset(INSTANCE_PATH)
     if not mi:
         unreal.log_error("[Fit] %s 가 없다 — build_frame_material.py 를 먼저 돌릴 것"
@@ -331,42 +317,25 @@ def fit():
         return
 
     if not boxes:
-        #	구멍이 하나도 없다. 상자를 눌러 두면 window() 가 0 이 되어 아무것도 안 죽인다.
-        mel.set_material_instance_vector_parameter_value(
-            mi, "HoleBoxMin", unreal.LinearColor(0.5, 0.5, 0.0, 0.0))
-        mel.set_material_instance_vector_parameter_value(
-            mi, "HoleBoxMax", unreal.LinearColor(0.5, 0.5, 0.0, 0.0))
-        eal.save_asset(INSTANCE_PATH)
-        unreal.log("[Fit] 구멍이 없어 상자를 껐다")
-        return
+        unreal.log("[Fit] 구멍이 있는 그림이 없어 기준점은 그대로 둔다")
+    else:
+        cu = sum(c[0] for c in boxes.values()) / len(boxes)
+        cv = sum(c[1] for c in boxes.values()) / len(boxes)
+        spread = max(max(abs(c[0] - cu), abs(c[1] - cv)) for c in boxes.values())
+        if spread > 0.05:
+            unreal.log_warning(
+                "[Fit] ⚠️ 카드 타입마다 창 중심이 %.3f 만큼 다르다. 기준점은 하나뿐이라 "
+                "평균을 쓴다 — 각 창 안에만 들어가면 판정은 맞지만, 여유가 줄어든다. "
+                "많이 어긋나면 타입별 MI 를 따로 둘 것." % spread)
 
-    #	모든 창을 덮어야 하므로 합집합. 넓힐 여지는 가장 빡빡한 것을 따른다.
-    u0 = min(b[0] for b in boxes.values()); u1 = max(b[1] for b in boxes.values())
-    v0 = min(b[2] for b in boxes.values()); v1 = max(b[3] for b in boxes.values())
-    room = min(b[4] for b in boxes.values())
-
-    spread = max(max(abs(b[0] - u0), abs(b[1] - u1),
-                     abs(b[2] - v0), abs(b[3] - v1)) for b in boxes.values())
-    if spread > 0.01:
-        unreal.log_warning(
-            "[Fit] ⚠️ 카드 타입마다 창 위치가 %.3f 만큼 다르다. 상자 하나로 덮으면 "
-            "가장 큰 창에 맞춰지므로 작은 창 쪽 프레임 글로우가 깎인다 — 타입별 MI 를 "
-            "따로 두고 RefreshFrame 이 머테리얼을 갈아 끼우는 편이 낫다." % spread)
-
-    expand = min(room * 0.6, BOX_EXPAND_MAX)
-    if expand < 0.005:
-        unreal.log_warning(
-            "[Fit] ⚠️ 상자를 넓힐 여지가 %.3f 뿐이다 — 창 둘레에 얇은 선이 남을 수 있다. "
-            "HoleBoxSoft 를 줄여 볼 것." % room)
-
-    lo = unreal.LinearColor(u0 - expand, v0 - expand, 0.0, 0.0)
-    hi = unreal.LinearColor(u1 + expand, v1 + expand, 0.0, 0.0)
-    mel.set_material_instance_vector_parameter_value(mi, "HoleBoxMin", lo)
-    mel.set_material_instance_vector_parameter_value(mi, "HoleBoxMax", hi)
-    eal.save_asset(INSTANCE_PATH)
-
-    unreal.log("[Fit] MI 에 기록 — HoleBoxMin (%.3f, %.3f)  HoleBoxMax (%.3f, %.3f)  "
-               "(실측을 %.3f 넓힌 값)" % (lo.r, lo.g, hi.r, hi.g, expand))
+        if abs(cu - 0.5) < CENTER_EPS and abs(cv - 0.5) < CENTER_EPS:
+            unreal.log("[Fit] 창 중심 (%.3f, %.3f) 이 기본값과 가깝다 — 오버라이드하지 않는다"
+                       % (cu, cv))
+        else:
+            mel.set_material_instance_vector_parameter_value(
+                mi, "GlowCenter", unreal.LinearColor(cu, cv, 0.0, 0.0))
+            eal.save_asset(INSTANCE_PATH)
+            unreal.log("[Fit] MI 에 기록 — GlowCenter (%.3f, %.3f)" % (cu, cv))
 
     if padded_any:
         unreal.log_warning("[Fit] ⚠️ 여백을 넣느라 캔버스를 키웠다. 프레임이 텍스처에서 "
@@ -375,5 +344,6 @@ def fit():
         for name, ow, oh, nw, nh, ratio in padded_any:
             unreal.log_warning("[Fit]     %s  %dx%d → %dx%d   Border_Root ×%.3f"
                                % (name, ow, oh, nw, nh, 1.0 / ratio))
+
 
 fit()

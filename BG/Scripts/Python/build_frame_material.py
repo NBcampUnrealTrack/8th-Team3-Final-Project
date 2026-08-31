@@ -65,37 +65,37 @@ W_TOTAL = W_CENTER + TAP_COUNT
 #	평균을 내면서 값이 통째로 낮아지므로 되올린다. 이 값도 위 프로파일로 맞춘 것이다.
 SHAPE_BOOST = 1.8
 
-#	안쪽 구멍의 사각 범위(UV). 이 안에서는 글로우를 죽인다.
+#	안쪽 구멍을 가려내는 기준점(UV). 여기서 멀어지는 쪽을 '바깥' 으로 본다.
 #
-#	프레임은 가운데가 뚫린 고리다. 알파가 0 인 곳이 **바깥**만이 아니라 **구멍**이기도
-#	해서, 1-A 만 쓰면 테두리 안쪽에도 글로우가 낀다.
+#	프레임은 가운데가 뚫린 고리다. 알파가 0 인 곳이 **바깥**만이 아니라 **아트 창**
+#	이기도 해서, 1-A 만 쓰면 창 둘레에도 글로우가 낀다.
 #
-#	⚠️ "경계에서 가까우면 바깥" 으로 가르려다 실패했다. 상단 장식 사이 오목한 곳이
-#	   경계 거리 0.203 까지 파고드는데 구멍은 0.164 라 **순서가 뒤집힌다** —
-#	   그 방식은 구멍을 살리고 정작 상단 장식 주변 글로우를 깎았다.
+#	가르는 방법: 불투명한 덩어리가 **어느 쪽에 쏠려 있는가**를 본다.
+#	  · 바깥 픽셀 — 프레임이 기준점 **쪽**에 있다        → 쏠림이 음수
+#	  · 창 안 픽셀 — 프레임이 기준점 **반대쪽**에 있다   → 쏠림이 양수
+#	외곽선용으로 이미 뜬 표본 20 개를 그대로 쓰므로 텍스처를 더 읽지 않는다.
 #
-#	대신 구멍을 **사각형으로 감싼다.** 패딩된 T_Card_*(1230×1640) 세 장을 전부
-#	플러드 필로 갈라 재 보면 구멍은 아래 상자에 딱 들어가고, 그 상자 안에 바깥
-#	픽셀은 **하나도 없다.** 카드 프레임은 창이 한가운데 뚫린 단순한 모양이라
-#	이 가정이 잘 선다.
-#	실측한 창의 범위는 u[0.169~0.837] v[0.285~0.588] 이지만, 상자를 **0.030 넓혀** 둔다.
-#	딱 맞추면 부드러운 전환 구간이 창 가장자리에 걸려 거기 글로우가 절반만 죽는다 —
-#	창 둘레에 얇은 금색 선이 남는다. 넓히면 전환이 불투명한 프레임 위로 올라가고,
-#	거기는 어차피 shape 가 0 이라 손해가 없다. 0.050 까지는 바깥 픽셀이 안 들어온다.
-HOLE_MIN = (0.139, 0.255)
-HOLE_MAX = (0.867, 0.618)
+#	기준점은 **창 안에 있기만 하면** 된다. 카드 그림은 창이 가운데 있으므로 0.5, 0.5 로
+#	충분하다(실측 여유 0.119). 창이 한쪽으로 치우친 그림이면 fit_frame_material.py 가
+#	창 중심을 재서 여기에 써 넣는다.
+GLOW_CENTER = (0.5, 0.5)
 
-#	상자 경계를 딱 자르면 계단이 보인다. 이만큼 부드럽게 넘긴다.
-HOLE_SOFT = 0.010
+#	쏠림이 0 을 넘는 지점을 부드럽게 넘긴다. 실측 여유가 바깥 0.195 · 창 0.119 이므로
+#	그보다 한참 작게 잡아야 양쪽 다 안 깎인다.
+HOLE_CUT_SOFT = 0.050
 
 
 def spiral_taps():
-    """(dx, dy) 방향 벡터 20 개. 길이가 1 인 것이 가장 바깥 표본이다."""
+    """
+    표본 20 개. (dx, dy, ux, uy) — 앞의 둘은 UV 를 밀 오프셋, 뒤의 둘은 같은 방향의
+    **단위 벡터**다. 쏠림을 재려면 거리가 아니라 방향만 필요해서 따로 둔다.
+    """
     taps = []
     for i in range(TAP_COUNT):
         radius = math.sqrt((i + 0.5) / TAP_COUNT)
         angle = i * GOLDEN_ANGLE
-        taps.append((radius * math.cos(angle), radius * math.sin(angle)))
+        dx, dy = radius * math.cos(angle), radius * math.sin(angle)
+        taps.append((dx, dy, math.cos(angle), math.sin(angle)))
     return taps
 
 
@@ -326,6 +326,9 @@ class Graph(object):
     def maximum(self, a, b, pa="", pb=""):
         return self._bin(unreal.MaterialExpressionMax, a, b, pa, pb)
 
+    def dot(self, a, b, pa="", pb=""):
+        return self._bin(unreal.MaterialExpressionDotProduct, a, b, pa, pb)
+
     def mul_c(self, a, value, pa=""):
         """상수를 곱한다. Constant 노드를 따로 만드는 줄을 줄이려고 둔다."""
         return self.mul(a, self.const(value), pa)
@@ -499,11 +502,9 @@ def build():
     p_wave_amt = g.scalar("WaveAmount", 0.35)
     p_wave_freq = g.scalar("WaveFreq", 3.0)
     p_wave_speed = g.scalar("WaveSpeed", 0.6)
-    p_hole_min = g.vector("HoleBoxMin",
-                          unreal.LinearColor(HOLE_MIN[0], HOLE_MIN[1], 0.0, 0.0))
-    p_hole_max = g.vector("HoleBoxMax",
-                          unreal.LinearColor(HOLE_MAX[0], HOLE_MAX[1], 0.0, 0.0))
-    p_hole_soft = g.scalar("HoleBoxSoft", HOLE_SOFT)
+    p_center = g.vector("GlowCenter",
+                        unreal.LinearColor(GLOW_CENTER[0], GLOW_CENTER[1], 0.0, 0.0))
+    p_cut_soft = g.scalar("HoleCutSoft", HOLE_CUT_SOFT)
 
     p_color = g.vector("GlowColor", unreal.LinearColor(1.0, 0.82, 0.35, 1.0))
 
@@ -532,10 +533,18 @@ def build():
     #	⚠️ 첫 표본을 ComponentMask 로 스칼라화하지 말 것. TextureSample 의 **이름 없는
     #	   출력은 RGB(float3)** 라서 알파 마스크가 안 붙는다("Not enough components in
     #	   float3 for component mask 0001"). 처음 둘을 A 핀끼리 더해 시작한다.
-    taps = [tap(dx, dy) for dx, dy in spiral_taps()]
+    spiral = spiral_taps()
+    taps = [tap(dx, dy) for dx, dy, _, _ in spiral]
     tap_sum = g.add(taps[0], taps[1], pa="A", pb="A")
     for s in taps[2:]:
         tap_sum = g.add(tap_sum, s, pb="A")
+
+    #	불투명한 덩어리가 어느 쪽에 쏠려 있는지 — 방향 벡터를 알파로 가중해 더한 것.
+    #	Σ A_i·(u_i·n) = (Σ A_i·u_i)·n 이므로 표본마다 내적하지 않고 float2 하나로 모은다.
+    mass = None
+    for s, (_, _, ux, uy) in zip(taps, spiral):
+        term = g.mul(g.const2(ux, uy), s, pb="A")
+        mass = term if mass is None else g.add(mass, term)
 
     # ── 흐린 알파 ────────────────────────────────────────────────────
     #	중심에 가중 2, 나머지 20 개는 1 씩. 합 22 로 나눈다.
@@ -554,27 +563,28 @@ def build():
     shape = g.power(shape_raw, p_falloff)
 
     # ── 안쪽 구멍 죽이기 ─────────────────────────────────────────────
-    #	위까지만 하면 **테두리 안쪽에도** 글로우가 낀다. 프레임이 가운데 뚫린 고리라
-    #	알파 0 인 자리가 바깥만이 아니라 구멍이기도 하기 때문이다.
+    #	위까지만 하면 **아트 창 둘레에도** 글로우가 낀다. 프레임이 가운데 뚫린 고리라
+    #	알파 0 인 자리가 바깥만이 아니라 창이기도 하기 때문이다.
     #
-    #	구멍을 사각형으로 감싸 그 안을 죽인다. 상자 안에 바깥 픽셀이 없다는 것을
-    #	세 텍스처 모두에서 플러드 필로 확인했다.
-    u = g.mask(uv, r=True)
-    v = g.mask(uv, g=True)
+    #	바깥 픽셀은 프레임이 기준점 쪽에 있고, 창 안 픽셀은 프레임이 기준점 반대쪽에
+    #	있다. 그래서 쏠림(mass)을 기준점에서 멀어지는 방향에 투영한 부호로 가른다.
+    #
+    #	⚠️ 여기서 텍스처를 더 읽지 않는다. 외곽선용 표본을 그대로 재활용한다.
+    to_out = g.sub(uv, g.mask(p_center, r=True, g=True))
 
-    def window(axis_min, axis_max, coord):
-        """상자 한 축의 안쪽이면 1, 밖이면 0. 경계는 HoleBoxSoft 만큼 부드럽다."""
-        lo_a = g.sub(axis_min, p_hole_soft)
-        lo_b = g.add(axis_min, p_hole_soft)
-        hi_a = g.sub(axis_max, p_hole_soft)
-        hi_b = g.add(axis_max, p_hole_soft)
-        return g.sub(g.smoothstep(lo_a, lo_b, coord),
-                     g.smoothstep(hi_a, hi_b, coord))
+    #	길이로 나눠 방향만 남긴다. Normalize 노드는 기준점에서 0/0 이 되므로 직접
+    #	나눈다 — 기준점은 창 한복판이라 blur 가 0 이고 어차피 글로우가 없지만,
+    #	NaN 이 한 픽셀이라도 나면 그 픽셀이 새까맣게 뚫린다.
+    to_out_len = g.node(unreal.MaterialExpressionSquareRoot)
+    g.link(g.dot(to_out, to_out), "", to_out_len, ["", "Input"])
+    dir_out = g.div(to_out, g.add(to_out_len, g.const(0.0001)))
 
-    inside = g.mul(
-        window(g.mask(p_hole_min, r=True), g.mask(p_hole_max, r=True), u),
-        window(g.mask(p_hole_min, g=True), g.mask(p_hole_max, g=True), v))
-    shape = g.mul(shape, g.one_minus(inside))
+    #	-1 ~ 1 로 맞춘다. 그래야 HoleCutSoft 가 그림 밝기와 무관해진다.
+    lean = g.div(g.dot(mass, dir_out), g.add(tap_sum, g.const(0.0001)))
+
+    #	음수(프레임이 기준점 쪽) = 바깥이라 살린다. 양수 = 창이라 죽인다.
+    shape = g.mul(shape, g.one_minus(
+        g.smoothstep(g.const(0.0), p_cut_soft, lean)))
 
     # ── 파동 ─────────────────────────────────────────────────────────
     #	blur 는 바깥으로 갈수록 작아지므로 거리 대용으로 그대로 쓴다.
@@ -612,7 +622,7 @@ def build():
     ensure_instance(mat)
 
     #	겹친 그래프가 남아 있으면 여기서 개수가 안 맞는다. 세어 두면 다음에 바로 안다.
-    unreal.log("[Frame] 완료 — 노드 %d 개, 표본 %d 개(원본 1 · 외곽선 %d), 파라미터 13 개"
+    unreal.log("[Frame] 완료 — 노드 %d 개, 표본 %d 개(원본 1 · 외곽선 %d), 파라미터 12 개"
                % (g.count, 1 + TAP_COUNT, TAP_COUNT))
     unreal.log("[Frame] 상수 노드 %d 개 — 같은 값 요청 %d 회를 재사용해 그만큼 안 만들었다"
                % (len(g._shared), g.shared_hits))
