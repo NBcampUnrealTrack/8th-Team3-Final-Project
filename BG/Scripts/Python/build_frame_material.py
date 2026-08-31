@@ -20,7 +20,10 @@ M_BGCardFrame 의 그래프를 통째로 만든다.
   그대로 쓴다.
 
   ⚠️ 이 방식은 텍스처 UV 밖으로는 못 번진다. T_Card_* 에 **투명 여백**이 없으면
-     외곽선이 텍스처 경계에서 잘린다. GlowWidth(px) 만큼은 여백을 두고 뽑을 것.
+     외곽선이 텍스처 경계에서 잘린다. 가로폭의 GlowWidth(기본 5%) 만큼은 여백을
+     두고 뽑을 것.
+
+자세한 사용법은 BG/Docs/M_BGCardFrame-매뉴얼.md 를 볼 것.
 
 파라미터 이름은 BGCardWidget.h 의 것과 **한 글자도 달라선 안 된다** —
 틀리면 DMI 가 조용히 무시해서 값을 바꿔도 아무 반응이 없다.
@@ -303,6 +306,40 @@ class Graph(object):
         self.link(alpha, palpha, n, ["Alpha"])
         return n
 
+    def vec2(self, x_expr, y_expr):
+        """
+        스칼라 둘로 float2 를 만든다.
+
+        ⚠️ AppendVector 를 쓰지 않는다. connect_material_expressions 가 B 핀에 True 를
+           돌려주고도 실제로는 붙지 않아, 컴파일 때 "Missing AppendVector input B" 만
+           남고 원인을 찾기가 매우 어려웠다(build_dissolve_material.py 에서 겪은 것).
+           축 벡터에 스칼라를 곱해 더하면 Add · Multiply 만으로 같은 float2 가 나온다.
+        """
+        return self.add(
+            self.mul(self.const2(1.0, 0.0), x_expr),
+            self.mul(self.const2(0.0, 1.0), y_expr),
+        )
+
+    def texture_size(self, tex_obj):
+        """
+        텍스처의 픽셀 크기(float2). 표본 간격을 가로세로 같은 길이로 맞추는 데만 쓴다.
+
+        ⚠️ 노드가 없거나 Python 에 안 열려 있는 버전이 있다. 그때는 조용히 넘어가지 말고
+           **파라미터로 대체**한다 — 비율이 틀리면 외곽선이 눌린 타원이 되는데, 원인을
+           모르면 머테리얼을 한참 뒤진다.
+        """
+        try:
+            n = self.node(unreal.MaterialExpressionTextureProperty)
+            n.set_editor_property(
+                "property", unreal.MaterialExposedTextureProperty.TMTM_TEXTURE_SIZE)
+            self.link(tex_obj, "", n, ["Texture", "TextureObject", ""])
+            return n
+        except Exception as err:
+            unreal.log_warning(
+                "[Frame] TextureProperty 를 못 만들었다 (%s) — FrameTexSize 파라미터로 "
+                "대체한다. 카드 텍스처 해상도에 맞춰 직접 넣을 것." % err)
+            return self.vector("FrameTexSize", unreal.LinearColor(512.0, 768.0, 0.0, 0.0))
+
     def clamp01(self, src, pin=""):
         """
         Saturate 노드는 엔진 버전마다 Python 노출이 들쭉날쭉하다. Min/Max 로 만든다 —
@@ -382,38 +419,43 @@ def build():
         unreal.log_warning("[Frame] 미리보기 텍스처가 없다: %s — 비워 둔 채로 만든다." % PREVIEW_TEX)
 
     # ── 파라미터 ──────────────────────────────────────────────────────
-    #	이름은 BGCardWidget.h 의 것과 반드시 같아야 한다.
+    #	이름은 BGCardWidget.h 의 것과 반드시 같아야 한다 — 코드가 미는 경로를 열어 둔다.
     #	  FrameTex          RefreshFrame 이 대분류별 테두리로 갈아 끼운다
     #	  HoverAmount       HoverParamName      — 호버 보간값 0~1
     #	  GlowColor         ColorParamName
     #	  GlowIntensity     IntensityParamName
     #	  GlowRingStrength  RingParamName       — 등급 연출이 쓰는 별도 구동값
-    #	  WidgetSize        WidgetSizeParamName — 픽셀 크기(PushWidgetSize)
+    #
+    #	⚠️ WidgetSize 는 두지 않는다. 위젯 픽셀 크기를 매 프레임 먹여야 하는 파라미터라
+    #	   C++ 없이는 못 쓰는데, 여기서 필요한 것은 **가로세로 비율**뿐이고 그건
+    #	   텍스처에서 바로 읽을 수 있다. UMG 애니메이션만으로 굴리려면 이 결합을 끊어야 한다.
     t_frame = g.tex_object("FrameTex", preview_tex)
 
     p_hover = g.scalar("HoverAmount", 0.0)
     p_ring = g.scalar("GlowRingStrength", 0.0)
     p_intensity = g.scalar("GlowIntensity", 2.5)
-    p_width = g.scalar("GlowWidth", 14.0)
+    p_width = g.scalar("GlowWidth", 0.05)
     p_falloff = g.scalar("GlowFalloff", 1.6)
     p_wave_amt = g.scalar("WaveAmount", 0.35)
     p_wave_freq = g.scalar("WaveFreq", 3.0)
     p_wave_speed = g.scalar("WaveSpeed", 0.6)
 
     p_color = g.vector("GlowColor", unreal.LinearColor(1.0, 0.82, 0.35, 1.0))
-    p_size = g.vector("WidgetSize", unreal.LinearColor(256.0, 384.0, 0.0, 0.0))
 
     # ── 원본 ─────────────────────────────────────────────────────────
     uv = g.node(unreal.MaterialExpressionTextureCoordinate)
     base = g.sample(t_frame, uv)
 
     # ── 표본 간격 ────────────────────────────────────────────────────
-    #	GlowWidth 는 픽셀이다. UV 로 바꾸려면 위젯의 픽셀 크기로 나눈다.
+    #	GlowWidth 는 **카드 가로폭 대비 비율**이다(0.05 = 5%). 해상도를 안 타므로
+    #	512 짜리 텍스처를 1024 로 다시 뽑아도 두께가 그대로다.
     #
-    #	⚠️ WidgetSize 가 아직 안 들어왔거나 레이아웃 전이면 0 이다. 그대로 나누면
-    #	   전체가 NaN 이 되어 카드가 새까맣게 보인다. 최소 1 로 막는다.
-    size_xy = g.maximum(g.mask(p_size, r=True, g=True), g.const2(1.0, 1.0))
-    step = g.div(p_width, size_xy)
+    #	세로는 같은 비율로 두면 안 된다 — 카드가 세로로 길어서 위아래가 더 두껍게
+    #	번진다. 가로세로 픽셀 수의 비를 곱해 **텍셀 기준으로 같은 거리**가 되게 맞춘다.
+    #	  du = GlowWidth,  dv = GlowWidth × (W / H)
+    tex_size = g.texture_size(t_frame)
+    aspect = g.div(g.mask(tex_size, r=True), g.mask(tex_size, g=True))
+    step = g.vec2(p_width, g.mul(p_width, aspect))
 
     def tap(dx, dy):
         """(dx, dy) 방향으로 step 만큼 밀어 찍은 표본."""
