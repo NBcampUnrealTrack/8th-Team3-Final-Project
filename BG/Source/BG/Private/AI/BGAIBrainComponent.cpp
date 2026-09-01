@@ -96,17 +96,17 @@ void UBGAIBrainComponent::TryPlayNextCard()
 	int32 InstanceId, TargetSeat;
 	if (!SelectCardToPlay(InstanceId, TargetSeat))
 	{
+		//	턴이 이미 끝남. 재시도 타이머까지 걸면 다음 턴 드로우 전에 낡은 손패로 판단하게 된다.
 		GS->RequestEndTurn(MySeat); // 규칙 4: 낼 카드 없음
+		return;
 	}
-	else
-	{
-		AIPC->HandlePlayCard(InstanceId, TargetSeat);
 
-		if (PS->GetCardsUsedThisTurn() == Before)
-		{
-			// 게이트에 걸려 거부됨 — 같은 카드를 이번 턴에 다시 시도하지 않는다.
-			RejectedThisTurn.Add(InstanceId);
-		}
+	AIPC->HandlePlayCard(InstanceId, TargetSeat);
+
+	if (PS->GetCardsUsedThisTurn() == Before)
+	{
+		// 게이트에 걸려 거부됨 — 같은 카드를 이번 턴에 다시 시도하지 않는다.
+		RejectedThisTurn.Add(InstanceId);
 	}
 
 	GetWorld()->GetTimerManager().SetTimer(

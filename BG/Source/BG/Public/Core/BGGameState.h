@@ -101,6 +101,17 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCardResolved, const FBGCardResolution& 
 /** 연출 카메라 샷이 바뀌었다. 서버·클라 양쪽에서 불린다. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCameraShotChanged, const FBGCameraShot& /*Shot*/);
 
+/**
+ * 덱을 어느 진영 것으로 다룰지 (PvE 전용).
+ * PvP 는 덱이 하나뿐이라 항상 Player 다.
+ */
+UENUM()
+enum class EBGDeckSide : uint8
+{
+	Player,
+	Enemy
+};
+
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase
 {
@@ -131,7 +142,9 @@ public:
 	//	Seed == 0 이면 새 시드를 뽑아 쓰고, 사용한 값을 로그에 남긴다 — 재현에 필수.
 	void InitializeDeck(int32 Seed = 0);
 
-	bool DrawFromDeck(FBGCardInstance& OutCard);   // 소진 시 Discard 리셔플
+	// Side 생략 시 Player 덱. 소진 시 그 진영의 Discard 를 리셔플한다.
+	bool DrawFromDeck(FBGCardInstance& OutCard, EBGDeckSide Side = EBGDeckSide::Player);
+
 	void PushToDiscard(const FBGCardInstance& Card);
 
 	/**
@@ -160,6 +173,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "BG|Deck")
 	int32 GetDiscardCount() const { return DiscardCount; }
+
+	// PvE 전용. 적 진영 덱의 공개 카운트, PvP 에선 항상 0(적 덱을 안 씀).
+	UFUNCTION(BlueprintPure, Category = "BG|Deck")
+	int32 GetEnemyDeckCount() const { return EnemyDeckCount; }
+
+	UFUNCTION(BlueprintPure, Category = "BG|Deck")
+	int32 GetEnemyDiscardCount() const { return EnemyDiscardCount; }
 
 	// ══════════════════════════════════════════════════════════════════
 	//  턴 진행 (서버 권위)
@@ -498,27 +518,44 @@ protected:
 	//	서버 시작 시 덱을 준비한다.
 	virtual void BeginPlay() override;
 
-	void ShuffleDeck();
-	void ReshuffleDeck();
+	void ShuffleDeck(EBGDeckSide Side = EBGDeckSide::Player);
+	void ReshuffleDeck(EBGDeckSide Side = EBGDeckSide::Player);
 
-	//	Deck / Discard / DiscardTop 을 건드린 뒤 공개 카운트를 다시 맞춘다.
+	// 이 좌석이 어느 진영 덱을 쓰는가. PvE 봇 좌석이면 Enemy, 그 외엔 항상 Player.
+	// (PvP 는 ABGAIPlayerController 가 존재하지 않아 항상 Player 로 떨어진다.)
+	EBGDeckSide GetDeckSideForSeat(int32 Seat) const;
+
+	//	Deck / Discard / DiscardTop 을 건드린 뒤 공개 카운트를 다시 맞춘다(양쪽 진영 모두).
 	void RefreshPublicCounts();
-	
-	// 서버 전용
+
+	// 서버 전용. Player 진영 덱, PvP 에선 이것이 유일한 덱이다.
 	UPROPERTY()
 	TArray<FBGCardInstance> Deck;
 	UPROPERTY()
 	TArray<FBGCardInstance> Discard;
 
-	// 공개 정보 
-	UPROPERTY(Replicated) 
+	// 서버 전용. Enemy 진영 덱, PvE 전용이라 PvP 에선 항상 비어 있다.
+	UPROPERTY()
+	TArray<FBGCardInstance> EnemyDeck;
+	UPROPERTY()
+	TArray<FBGCardInstance> EnemyDiscard;
+
+	// 공개 정보
+	UPROPERTY(Replicated)
 	int32 DeckCount = 0;
-	UPROPERTY(Replicated) 
+	UPROPERTY(Replicated)
 	int32 DiscardCount = 0;
-	
+
 	//	버린 패 사용하는 효과 제거 예정
-	UPROPERTY(Replicated) 
+	UPROPERTY(Replicated)
 	FBGCardInstance DiscardTop;   // 버린 패 맨 위 1장은 공개 정보
+
+	UPROPERTY(Replicated)
+	int32 EnemyDeckCount = 0;
+	UPROPERTY(Replicated)
+	int32 EnemyDiscardCount = 0;
+	UPROPERTY(Replicated)
+	FBGCardInstance EnemyDiscardTop;
 	
 	//	현재 진행상황 태그
 	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
@@ -727,9 +764,14 @@ protected:
 	bool bMatchRunning = false;
 	
 	//	주의: 덱 셔플 전용 스트림이다. 주사위 판정은 UBGDiceComponent 가 별도 스트림을 쓴다
-	// (한 스트림을 공유하면 판정 횟수가 셔플 결과를 밀어 재현이 깨진다).
+	// (한 스트림을 공유하면 판정 횟수가 셔플 결과를 밀어 재현이 깨진다). Player 진영 덱을 섞는다.
 	UPROPERTY()
 	FRandomStream RandomStream;
+
+	//	PvE 전용. Enemy 진영 덱 셔플 스트림, Player 것과 분리한다(하나를 공유하면 적이 뽑는
+	//	횟수가 플레이어 셔플 결과를 밀어 재현이 깨진다).
+	UPROPERTY()
+	FRandomStream EnemyRandomStream;
 	//	시드 보존을 위해 한번 초기화 하면 다시는 초기화 하지 않는다.
 	//	게임 초기화시에만 false로 되돌릴 것.
 	UPROPERTY()

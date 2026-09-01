@@ -40,6 +40,9 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, DeckCount);
 	DOREPLIFETIME(ABGGameState, DiscardCount);
 	DOREPLIFETIME(ABGGameState, DiscardTop);
+	DOREPLIFETIME(ABGGameState, EnemyDeckCount);
+	DOREPLIFETIME(ABGGameState, EnemyDiscardCount);
+	DOREPLIFETIME(ABGGameState, EnemyDiscardTop);
 	DOREPLIFETIME(ABGGameState, PhaseTag);
 	DOREPLIFETIME(ABGGameState, CurrentSeat);
 	DOREPLIFETIME(ABGGameState, WinningRoleTag);
@@ -351,7 +354,9 @@ void ABGGameState::SetCurrentSeat(int32 Seat)
 	}
 
 	CurrentSeat = Seat;
-	BroadcastTurnState();
+
+	//	브로드캐스트는 다음 줄 SetPhaseTag 가 한다. 여기서 하면 PhaseTag 가 아직 이전 좌석
+	//	값이라 봇이 드로우 전 낡은 손패로 판단해버린다.
 }
 
 void ABGGameState::SetMatchRunning(bool bRunning)
@@ -426,29 +431,31 @@ void ABGGameState::InitializeDeck(int32 Seed)
 	UE_LOG(LogBGCard, Warning, TEXT("[InitializeDeck] 덱 생성 완료. %d 장, 사용 시드 : %d"), Deck.Num(), ActualSeed);
 }
 
-bool ABGGameState::DrawFromDeck(FBGCardInstance& OutCard)
+bool ABGGameState::DrawFromDeck(FBGCardInstance& OutCard, EBGDeckSide Side)
 {
 	if (!HasAuthority())
 	{
 		return false;
 	}
-	
-	if (Deck.IsEmpty())
+
+	TArray<FBGCardInstance>& TargetDeck = (Side == EBGDeckSide::Enemy) ? EnemyDeck : Deck;
+
+	if (TargetDeck.IsEmpty())
 	{
 		//	덱 소진 → 버린 패를 섞어 되돌린다. DiscardTop 은 공개 상태로 남으므로 섞이지 않는다.
-		ReshuffleDeck();
+		ReshuffleDeck(Side);
 
-		if (Deck.IsEmpty())
+		if (TargetDeck.IsEmpty())
 		{
 			//	되돌릴 카드도 없다. 정상적인 판에서는 나오지 않는다.
-			UE_LOG(LogBGCard, Warning, TEXT("[DrawFromDeck] 덱과 버린 패가 모두 비었습니다."));
+			UE_LOG(LogBGCard, Warning, TEXT("[DrawFromDeck] 덱과 버린 패가 모두 비었습니다 (Side=%d)."), (int32)Side);
 			return false;
 		}
 	}
 
 	//	RemoveAtSwap 을 쓰면 마지막 카드가 0 번으로 끌려와 셔플한 순서와 뽑는 순서가 달라진다.
-	OutCard = Deck[0];
-	Deck.RemoveAt(0);
+	OutCard = TargetDeck[0];
+	TargetDeck.RemoveAt(0);
 	RefreshPublicCounts();
 	return true;
 }
@@ -459,7 +466,7 @@ void ABGGameState::PushToDiscard(const FBGCardInstance& Card)
 	{
 		return;
 	}
-	
+
 	if (DiscardTop.IsValid())
 	{
 		Discard.Add(DiscardTop);
@@ -470,11 +477,24 @@ void ABGGameState::PushToDiscard(const FBGCardInstance& Card)
 	RefreshPublicCounts();
 }
 
+EBGDeckSide ABGGameState::GetDeckSideForSeat(int32 Seat) const
+{
+	const ABGPlayerState* PS = GetPlayerStateBySeat(Seat);
+	if (PS && Cast<ABGAIPlayerController>(PS->GetOwningController()))
+	{
+		return EBGDeckSide::Enemy;
+	}
+	return EBGDeckSide::Player;
+}
+
 void ABGGameState::RefreshPublicCounts()
 {
 	DeckCount = Deck.Num();
 	//	DiscardTop 은 Discard 배열 바깥에 따로 있으므로 더해 준다.
 	DiscardCount = Discard.Num() + (DiscardTop.IsValid() ? 1 : 0);
+
+	EnemyDeckCount = EnemyDeck.Num();
+	EnemyDiscardCount = EnemyDiscard.Num() + (EnemyDiscardTop.IsValid() ? 1 : 0);
 }
 
 bool ABGGameState::PerformDrawCheck(int32 Seat, float SuccessChance)
@@ -738,7 +758,9 @@ void ABGGameState::BeginTurn(int32 Seat)
 	const bool bIsAISeat = PS && Cast<ABGAIPlayerController>(PS->GetOwningController()) != nullptr;
 	if (Rope && !bIsAISeat)
 	{
-		Rope->BeginRope(CurrentSeat);
+		//	CurrentSeat 대신 Seat 사용. 재귀 중첩 시 CurrentSeat 은 이미 안쪽 호출이 바꾼
+		//	값이라 엉뚱한 좌석에 로프가 걸린다.
+		Rope->BeginRope(Seat);
 	}
 }
 
@@ -1513,6 +1535,7 @@ void ABGGameState::AdvanceToNextSeat()
 	}
 
 	const TArray<int32> Alive = GetAliveSeatsInTableOrder();
+
 	if (Alive.IsEmpty())
 	{
 		//	전멸 — 승패 판정이 붙기 전까지는 여기서 멈춘다.
@@ -1549,32 +1572,40 @@ void ABGGameState::GetDeck(TArray<FBGCardInstance>& OutDeck) const
 	OutDeck = Deck;   //	대입이 기존 내용을 버린다 — 앞에 Empty() 를 부를 필요가 없다.
 }
 
-void ABGGameState::ShuffleDeck()
+void ABGGameState::ShuffleDeck(EBGDeckSide Side)
 {
-	for (int i = Deck.Num() - 1; i > 0; --i)
+	TArray<FBGCardInstance>& TargetDeck = (Side == EBGDeckSide::Enemy) ? EnemyDeck : Deck;
+	FRandomStream& Stream = (Side == EBGDeckSide::Enemy) ? EnemyRandomStream : RandomStream;
+
+	for (int i = TargetDeck.Num() - 1; i > 0; --i)
 	{
-		int j = RandomStream.RandRange(0, i);
-		Deck.Swap(i, j);
+		int j = Stream.RandRange(0, i);
+		TargetDeck.Swap(i, j);
 	}
 }
 
-void ABGGameState::ReshuffleDeck()
+void ABGGameState::ReshuffleDeck(EBGDeckSide Side)
 {	//	버림덱의 맨 위 카드(DiscardTop)를 제외하고 셔플하여 기존 덱에 추가
-	if (Discard.IsEmpty())
+	TArray<FBGCardInstance>& TargetDeck    = (Side == EBGDeckSide::Enemy) ? EnemyDeck    : Deck;
+	TArray<FBGCardInstance>& TargetDiscard = (Side == EBGDeckSide::Enemy) ? EnemyDiscard : Discard;
+	FRandomStream& Stream = (Side == EBGDeckSide::Enemy) ? EnemyRandomStream : RandomStream;
+
+	if (TargetDiscard.IsEmpty())
 	{
 		return;
 	}
 
-	for (int i = Discard.Num() - 1; i > 0; --i)
+	for (int i = TargetDiscard.Num() - 1; i > 0; --i)
 	{
-		int j = RandomStream.RandRange(0, i);
-		Discard.Swap(i, j);
+		int j = Stream.RandRange(0, i);
+		TargetDiscard.Swap(i, j);
 	}
 
-	UE_LOG(LogBGCard, Log, TEXT("[ReshuffleDeck] 버린 패 %d 장을 덱으로 되돌립니다."), Discard.Num());
+	UE_LOG(LogBGCard, Log, TEXT("[ReshuffleDeck] 버린 패 %d 장을 덱으로 되돌립니다 (Side=%d)."),
+		TargetDiscard.Num(), (int32)Side);
 
-	Deck.Append(Discard);
-	Discard.Empty();
+	TargetDeck.Append(TargetDiscard);
+	TargetDiscard.Empty();
 	RefreshPublicCounts();
 }
 
