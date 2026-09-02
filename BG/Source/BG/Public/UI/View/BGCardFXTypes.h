@@ -144,4 +144,14 @@ struct FBGCardPlayContext
 	/** 판정 없이 확정된 경우(장비 장착 등) true. Tier 를 믿을 수 없다는 뜻이다. */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Card|FX")
 	bool bResolvedWithoutRoll = false;
+
+	/**
+	 * 이 판정에 실제로 쓰인 확률(%). 보정까지 반영된 최종값이다.
+	 * 눈금 경계는 UBGCardViewLibrary::GetRollBands 로 뽑는다.
+	 *
+	 * ⚠️ 클라에서 다시 계산하지 말 것. 보정은 시전자의 어트리뷰트에 달려 있고
+	 *    남의 어트리뷰트는 복제되지 않는다 — 남의 판정만 확률이 틀리게 나온다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Card|FX")
+	FBGCardChanceView Chance;
 };

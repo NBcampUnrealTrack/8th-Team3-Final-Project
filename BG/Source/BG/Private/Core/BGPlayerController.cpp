@@ -328,6 +328,12 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 	PlayContext.bForced   = Resolution.bForced;
 	PlayContext.SeatIndex = Resolution.SeatIndex;
 
+	//	서버가 실제로 쓴 비율을 그대로 %로 바꾼다. 카드 연출과 판정 위젯이 같은 값을 쓴다.
+	//	⚠️ 여기서 보정을 다시 계산하면 안 된다 — 남의 어트리뷰트는 복제되지 않는다.
+	UBGDiceComponent::GetOutcomeChances(Resolution.Weights,
+		PlayContext.Chance.CriticalFailure, PlayContext.Chance.Failure,
+		PlayContext.Chance.Success, PlayContext.Chance.CriticalSuccess);
+
 	//	실제로 발동한 효과들을 연출 스텝으로. 이것이 연출의 정식 입력이다 —
 	//	대표값 하나로 줄이면 "피해 + 뽑기" 같은 복합 카드가 뭉개진다.
 	//
@@ -374,11 +380,8 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 		}
 	}
 
-	//	서버가 실제로 쓴 비율을 그대로 %로 바꾼다. 여기서 다시 보정을 계산하면
-	//	남의 어트리뷰트를 읽어야 하는데 그건 복제되지 않아 남의 판정만 확률이 틀리게 나온다.
-	UBGDiceComponent::GetOutcomeChances(Resolution.Weights,
-		View.Chance.CriticalFailure, View.Chance.Failure,
-		View.Chance.Success, View.Chance.CriticalSuccess);
+	//	위에서 뽑아 둔 값을 그대로 쓴다. 두 번 계산하면 한쪽만 고쳐질 자리가 생긴다.
+	View.Chance = PlayContext.Chance;
 
 	ResolutionWidget->ShowResolution(View);
 }
@@ -942,6 +945,13 @@ void ABGPlayerController::HandleSeatSelected(int32 SeatIndex, int32 ContextId)
 
 	UpdateHandInteractionLock();
 
+	//	⚠️ "내가 냈다" 표시를 여기서 다시 찍는다. 드롭 시점의 표시는 좌석을 고르는 사이에
+	//	   만료되고(PlayedMarkLifetime), 표시가 없으면 중앙 연출 없이 버려지듯 사라진다.
+	if (HandWidget)
+	{
+		HandWidget->MarkCardPlayed(ContextId);
+	}
+
 	//	기본 동작: ContextId 를 카드 InstanceId 로 보고 서버에 사용 요청을 보낸다.
 	//	다른 용도로 쓰려면 이 델리게이트를 구독해 분기하면 된다.
 	RequestPlayCard(ContextId, SeatIndex);
@@ -958,6 +968,10 @@ void ABGPlayerController::HandleTargetSelectionCancelled(int32 ContextId)
 	if (HandWidget)
 	{
 		HandWidget->ReturnHeldCardToHand(ContextId);
+
+		//	드롭 시점에 찍힌 "내가 냈다" 표시도 거둔다. 남겨 두면 만료되기 전에 이 카드가
+		//	다른 사유로 빠질 때(도둑맞기 등) 내지도 않은 카드가 중앙 연출을 탄다.
+		HandWidget->ClearPlayedMark(ContextId);
 	}
 
 	//	다시 집을 수 있게 푼다.

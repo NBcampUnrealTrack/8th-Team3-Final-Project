@@ -174,6 +174,15 @@ public:
 	void MarkCardPlayed(int32 InstanceId);
 
 	/**
+	 * "내가 냈다" 표시를 거둔다. 사용이 무산돼 카드가 손패에 남을 때 부른다(대상 선택 취소 등).
+	 *
+	 * 안 거두면 PlayedMarkLifetime 동안 표시가 남아, 그 사이 같은 카드가 다른 사유로
+	 * 빠지면(도둑맞기 등) 내지도 않은 카드가 중앙 연출을 탄다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Hand|Motion")
+	void ClearPlayedMark(int32 InstanceId);
+
+	/**
 	 * 중앙에 잡혀 있던 카드를 손패로 되돌린다. 대상 선택을 취소했을 때 부른다.
 	 * 이미 사라지기 시작했으면 false.
 	 */
@@ -553,6 +562,17 @@ private:
 
 	/** InstanceId → 표시가 만료되기까지 남은 시간. 틱에서 줄어든다. */
 	TMap<int32, float> PlayedMarks;
+
+	/**
+	 * 아직 중앙에 올라오지 않은 카드의 판정 통지를 잠깐 들고 있는 자리.
+	 *
+	 * 대상 지정 카드는 서버가 확정한 뒤에야 중앙 연출을 시작하므로 판정 통지가 손패 복제를
+	 * 앞지를 수 있다. 그냥 버리면 카드가 중앙에서 풀리지 못하고 타임아웃까지 박힌다 —
+	 * BeginExitFor 가 중앙 연출을 태우는 즉시 풀어 준다.
+	 */
+	FBGCardPlayContext PendingResolution;
+	int32 PendingResolutionId = INDEX_NONE;
+	float PendingResolutionRemaining = 0.f;
 
 	/**
 	 * 중앙에 잡혀 있는 카드의 부기(簿記).

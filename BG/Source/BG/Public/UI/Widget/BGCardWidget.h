@@ -454,6 +454,15 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card")
 	FLinearColor DraggedTint = FLinearColor(1.f, 1.f, 1.f, 0.25f);
 
+	/**
+	 * 드래그 중 손패에 남는 원본(실루엣)의 불투명도. 0 이면 자리에 구멍이 난다.
+	 *
+	 * ⚠️ DraggedTint 로는 부족하다 — 그 틴트는 Border_Root 에만 걸려 텍스트와 아트가
+	 *    흐려지지 않는다. 위젯 전체에 걸리는 이 값이 있어야 복제본과 구분된다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DragGhostOpacity = 0.28f;
+
 	/** 사용할 수 없는 카드(bPlayable == false)의 색조. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card")
 	FLinearColor UnplayableTint = FLinearColor(0.4f, 0.4f, 0.4f, 1.f);
@@ -927,6 +936,15 @@ private:
 	/** 지금 위치에서 사라지기 시작한다. 곧장 퇴장과 중앙 대기 후 퇴장이 여기서 만난다. */
 	void EnterExitPhase(const FVector2D& ToPosition);
 
+	/** 판정 연출을 터뜨린다. 중앙에 서 있는 상태에서만 불린다(ReleaseHold / 도착 시점). */
+	void PlayResolvedFX(const FBGCardPlayContext& Context);
+
+	/** 중앙 도착을 기다리던 신호를 버린다. 연출이 새로 시작되거나 끝날 때. */
+	void ClearPendingPlaySignals();
+
+	/** 중앙에 도착한 순간, 날아오는 사이에 밀린 신호를 순서대로 소비한다. */
+	void ConsumePendingPlaySignals();
+
 	/**
 	 * 손패를 떠나기 시작할 때의 공통 처리 — 가시성 갈무리와 입력 차단.
 	 * 이미 떠나는 중이면 false. 부르는 쪽은 그때 아무것도 하지 말아야 한다.
@@ -1121,8 +1139,31 @@ private:
 	//	true 면 DwellRemaining 이 줄지 않는다 — ReleaseHold 가 올 때까지 무한 대기.
 	bool bHoldingAtCenter = false;
 
+	/**
+	 * 중앙에 도착하면 터뜨릴 판정 연출. 날아가는 중에 ReleaseHold 가 오면 여기 담긴다.
+	 * 대상 지정 카드는 판정이 이미 끝난 채로 중앙 연출을 시작하므로 늘 이 길로 온다.
+	 *
+	 * ⚠️ 도착 전에 쏘면 BP 연출이 날아가는 동안 재생되고, 그 Finished → FinishDwell 이
+	 *    Presenting 에서 도착해 버려진다 — 카드가 DwellDuration 상한까지 멀뚱히 서 있게 된다.
+	 */
+	bool bPendingResolvedFX = false;
+	FBGCardPlayContext PendingResolvedContext;
+
+	/**
+	 * 중앙에 닿기 전에 도착한 FinishDwell. 도착하는 순간 소비한다.
+	 * 상태로 거르지 않고 기억하는 이유: BP 애니메이션 길이에 따라 "연출이 끝나면 디졸브" 가
+	 * 조용히 깨지는 대신, 늦게라도 지켜지는 쪽이 추적 가능하다.
+	 */
+	bool bDwellFinishRequested = false;
+
 	//	떠나기 전의 가시성. 손패로 되돌릴 때 복원한다.
 	ESlateVisibility PreLeaveVisibility = ESlateVisibility::Visible;
+
+	//	드래그로 실루엣이 되기 전의 가시성 · 불투명도. 드래그가 끝나면 여기로 되돌린다.
+	//	⚠️ Visible / 1.0 으로 하드코딩하면 WBP 가 정한 히트테스트 설정을 덮어쓴다
+	//	   (PreDealVisibility 와 같은 이유).
+	ESlateVisibility PreDragVisibility = ESlateVisibility::Visible;
+	float PreDragOpacity = 1.f;
 
 	// ── 부수 효과 내부 상태 ──
 	//	속도는 위치 차분으로 구한다. 별도로 들고 다니면 스냅·순간이동 때 어긋난다.

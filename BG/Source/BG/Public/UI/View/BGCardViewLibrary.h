@@ -42,6 +42,21 @@ public:
 	static float GetSuccessOrBetter(const FBGCardChanceView& Chance) { return Chance.GetSuccessOrBetter(); }
 
 	/**
+	 * 확률(%)에서 0~99 굴림 값의 등급 경계를 뽑는다. 주사위 눈금·게이지를 그릴 때 쓴다.
+	 *
+	 * ⚠️ **낮을수록 좋다** — RollOutcome 이 대성공부터 누적 비교한다.
+	 *   Roll <= OutCriticalSuccessMax → 대성공 / <= OutSuccessMax → 성공
+	 *   / <= OutFailureMax → 실패 / 그 위 → 대실패
+	 * 확률이 0 인 등급은 앞 경계와 같아진다(구간 없음).
+	 *
+	 * ⚠️ 표시용 근사값이다. 서버는 정규화 전 가중치로 판정하므로 경계에 딱 걸린 눈이
+	 *    한 칸 어긋날 수 있다. 등급의 진실은 언제나 Context.Tier 다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "BG|Card")
+	static void GetRollBands(const FBGCardChanceView& Chance,
+		int32& OutCriticalSuccessMax, int32& OutSuccessMax, int32& OutFailureMax);
+
+	/**
 	 * 손패 전체를 변환한다.
 	 * ⚠️ Hand 는 COND_OwnerOnly 라, 클라에서 다른 플레이어의 PlayerState 를 넘기면 빈 배열이 나온다.
 	 *    이는 버그가 아니라 은닉 정보가 정상 동작한다는 뜻이다.

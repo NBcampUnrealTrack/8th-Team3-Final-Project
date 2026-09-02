@@ -306,6 +306,7 @@ void UBGHandWidget::ClearHand()
 	OutgoingWidgets.Reset();
 	PlayedMarks.Reset();
 	HeldCards.Reset();
+	PendingResolutionRemaining = 0.f;
 }
 
 bool UBGHandWidget::RemoveCardByInstanceId(int32 InstanceId)
@@ -336,6 +337,11 @@ void UBGHandWidget::MarkCardPlayed(int32 InstanceId)
 	}
 }
 
+void UBGHandWidget::ClearPlayedMark(int32 InstanceId)
+{
+	PlayedMarks.Remove(InstanceId);
+}
+
 void UBGHandWidget::BeginExitFor(UBGCardWidget* CardWidget)
 {
 	if (!CardWidget)
@@ -363,6 +369,18 @@ void UBGHandWidget::BeginExitFor(UBGCardWidget* CardWidget)
 	if (PlayedMarks.Remove(InstanceId) > 0)
 	{
 		CardWidget->BeginPlayExit(GetPlayZoneAnchor(), GetDiscardAnchor());
+
+		//	판정이 먼저 도착해 있었다면 여기서 바로 푼다 — 중앙에 잡아 둘 이유가 없다.
+		//	대상 카드는 좌석을 고르는 사이에 판정이 끝나 있는 것이 보통이라 이 길로 온다.
+		//	⚠️ 통지에 InstanceId 가 없을 때만(INDEX_NONE) 아무 카드에나 붙인다.
+		//	   지정돼 있는데 다른 카드에 붙이면 남의 판정으로 연출된다.
+		if (PendingResolutionRemaining > 0.f
+			&& (PendingResolutionId == INDEX_NONE || PendingResolutionId == InstanceId))
+		{
+			const FBGCardPlayContext Context = PendingResolution;
+			PendingResolutionRemaining = 0.f;
+			ReleaseHeldCard(CardWidget, Context);
+		}
 	}
 	else
 	{
@@ -779,6 +797,10 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		}
 	}
 
+	//	주인을 못 찾은 판정 통지도 같은 이유로 만료시킨다 — 남겨 두면 한참 뒤에
+	//	낸 카드가 남의 판정 결과로 연출된다.
+	PendingResolutionRemaining = FMath::Max(PendingResolutionRemaining - DeltaTime, 0.f);
+
 	//	퇴장 완료된 카드를 걷어낸다. 뒤에서부터 지워야 인덱스가 밀리지 않는다.
 	TArray<int32> TimedOutIds;
 	for (int32 Index = OutgoingWidgets.Num() - 1; Index >= 0; --Index)
@@ -868,18 +890,22 @@ void UBGHandWidget::NotifyCardDroppedOnPlayZone(
 
 	UCanvasPanel* Canvas = GetCardCanvas();
 
-	//	대상이 필요하든 아니든 일단 중앙으로 보낸다. 대상을 고르는 동안에는
-	//	중앙에 잡혀 서 있다가(ReleaseHold 대기), 서버가 확정하면 그때 사라진다.
+	//	플레이 존의 중앙이 곧 카드가 머물 자리다. 매번 갱신하므로 존이 움직여도 따라간다.
+	//	대상 카드는 연출을 미루지만 앵커는 지금 잡아 둔다 — 확정된 뒤에 쓸 자리가 같아야 한다.
 	if (Canvas)
 	{
-		const FGeometry& CanvasGeometry = Canvas->GetCachedGeometry();
-
-		//	플레이 존의 중앙이 곧 카드가 머물 자리다. 매번 갱신하므로 존이 움직여도 따라간다.
 		const FVector2D ZoneCenterAbsolute = ZoneGeometry.LocalToAbsolute(ZoneGeometry.GetLocalSize() * 0.5f);
-		SetPlayZoneAnchor(CanvasGeometry.AbsoluteToLocal(ZoneCenterAbsolute));
+		SetPlayZoneAnchor(Canvas->GetCachedGeometry().AbsoluteToLocal(ZoneCenterAbsolute));
+	}
 
+	//	⚠️ 대상 지정 카드는 중앙 연출을 지금 시작하지 않는다. 좌석을 고르는 동안 중앙에
+	//	   박혀 서 있으면 아직 낸 것도 아닌데 화면 한복판을 차지한다 — 손패에 그대로 두고,
+	//	   서버가 확정해 손패에서 빠질 때 BeginExitFor 가 중앙 연출과 디졸브를 태운다.
+	if (Canvas && !Card.bNeedsTarget)
+	{
 		//	커서를 놓은 지점에서 이어받는다. 드래그 비주얼이 있던 자리와 같아야 끊겨 보이지 않는다.
-		BeginPlayPresentationAt(Card.InstanceId, CanvasGeometry.AbsoluteToLocal(DropScreenPosition));
+		BeginPlayPresentationAt(Card.InstanceId,
+			Canvas->GetCachedGeometry().AbsoluteToLocal(DropScreenPosition));
 	}
 
 	NotifyCardPlayRequested(Card);
@@ -1003,7 +1029,17 @@ void UBGHandWidget::ReleaseHeldCard(UBGCardWidget* CardWidget, const FBGCardPlay
 
 void UBGHandWidget::NotifyCardResolved(const FBGCardPlayContext& Context, int32 InstanceId)
 {
-	ReleaseHeldCard(FindHeldCard(InstanceId), Context);
+	if (UBGCardWidget* HeldCard = FindHeldCard(InstanceId))
+	{
+		ReleaseHeldCard(HeldCard, Context);
+		return;
+	}
+
+	//	아직 중앙에 올라오지 않았다 — 대상 카드는 서버가 확정한 뒤에야 손패에서 빠지므로
+	//	판정 통지가 손패 복제를 앞지를 수 있다. 잠깐 들고 있다가 연출이 시작될 때 푼다.
+	PendingResolution          = Context;
+	PendingResolutionId        = InstanceId;
+	PendingResolutionRemaining = PlayedMarkLifetime;
 }
 
 bool UBGHandWidget::IsOutgoing(int32 InstanceId) const
