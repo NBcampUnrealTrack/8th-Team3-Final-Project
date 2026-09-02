@@ -352,6 +352,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.0"))
 	float Weight = 1.f;
 };
+/**
+ * 덱을 어느 진영 것으로 다룰지 (PvE 전용).
+ * PvP 는 덱이 하나뿐이라 항상 Player 다.
+ */
+UENUM()
+enum class EBGDeckSide : uint8
+{
+	Player,
+	Enemy
+};
+
 USTRUCT(BlueprintType)
 struct FBGCardRow : public FTableRowBase
 {
@@ -401,10 +412,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	int32 Magnitude = 0;
 	
-	//	덱에 들어갈 카드 매수
+	//	덱에 들어갈 카드 매수 (PvP 전용. PvE 는 아래 두 필드를 따로 쓴다)
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))
 	int32 QuantityOfCard = 0;
-	
+
+	//	PvE 전용. 플레이어/적 덱에 들어갈 매수, 0 이면 그 진영 덱엔 안 들어간다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))
+	int32 PlayerDeckQuantity = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))
+	int32 EnemyDeckQuantity = 0;
+
 	//	[비활성] 확률을 사용하는 카드의 성공 판정 기준값.
 	//	  OutcomeWeights 로 대체됐다 (GDD §4.2 — 4단계 비율 방식). 참조하지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0"))

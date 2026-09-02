@@ -66,6 +66,53 @@ void UBGDataSubsystem::BuildDeck(TArray<FBGCardInstance>& OutDeck) const
 	UE_LOG(LogBGCard, Log, TEXT("BuildDeck:%d 종류 →%d 장"), NumKinds, OutDeck.Num());
 }
 
+void UBGDataSubsystem::BuildPvEDeck(TArray<FBGCardInstance>& OutDeck, EBGDeckSide Side, int32 EncounterIndex) const
+{
+	//	TODO: EncounterIndex 로 조우별 매수 스케일링을 넣는다. 지금은 안 쓴다.
+
+	OutDeck.Reset();
+
+	if (!CardTable)
+	{
+		UE_LOG(LogBGCard, Error,
+			TEXT("BuildPvEDeck: CardTable 이 없습니다. Project Settings > Game > BG Data > CardTable 을 확인하세요."));
+		return;
+	}
+
+	TArray<FName> RowNames = CardTable->GetRowNames();
+	RowNames.Sort([](const FName& A, const FName& B) { return A.Compare(B) < 0; });
+
+	int32 NextInstanceId = 1;
+	int32 NumKinds = 0;
+
+	for (const FName& RowName : RowNames)
+	{
+		const FBGCardRow* Row = CardTable->FindRow<FBGCardRow>(RowName, TEXT("BuildPvEDeck"));
+		const int32 Quantity = Row ? ((Side == EBGDeckSide::Enemy) ? Row->EnemyDeckQuantity : Row->PlayerDeckQuantity) : 0;
+		if (!Row || Quantity <= 0)
+		{
+			continue;
+		}
+
+		//	BuildDeck 과 같은 이유로 일회용 카드는 제외한다.
+		if (Row->TraitTags.HasTag(BG::Card::Trait::Ephemeral.GetTag()))
+		{
+			continue;
+		}
+
+		for (int32 i = 0; i < Quantity; ++i)
+		{
+			FBGCardInstance Card;
+			Card.InstanceId = NextInstanceId++;
+			Card.CardId = RowName;
+			OutDeck.Add(Card);
+		}
+		++NumKinds;
+	}
+
+	UE_LOG(LogBGCard, Log, TEXT("BuildPvEDeck(Side=%d):%d 종류 →%d 장"), (int32)Side, NumKinds, OutDeck.Num());
+}
+
 void UBGDataSubsystem::GetAllCardRowNames(TArray<FName>& OutNames) const
 {
 	OutNames.Reset();

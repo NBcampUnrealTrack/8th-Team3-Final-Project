@@ -101,17 +101,6 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCardResolved, const FBGCardResolution& 
 /** 연출 카메라 샷이 바뀌었다. 서버·클라 양쪽에서 불린다. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCameraShotChanged, const FBGCameraShot& /*Shot*/);
 
-/**
- * 덱을 어느 진영 것으로 다룰지 (PvE 전용).
- * PvP 는 덱이 하나뿐이라 항상 Player 다.
- */
-UENUM()
-enum class EBGDeckSide : uint8
-{
-	Player,
-	Enemy
-};
-
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase
 {
@@ -140,7 +129,9 @@ public:
 
 	//	서버에서 덱을 구성·셔플한다. 이미 초기화됐으면 아무것도 하지 않는다(시드 보존).
 	//	Seed == 0 이면 새 시드를 뽑아 쓰고, 사용한 값을 로그에 남긴다 — 재현에 필수.
-	void InitializeDeck(int32 Seed = 0);
+	//	EncounterIndex 는 PvE 전용이고 지금은 쓰지 않는다.
+	//	TODO: 조우별 난이도 스케일링을 여기에 넣는다.
+	void InitializeDeck(int32 Seed = 0, int32 EncounterIndex = 0);
 
 	// Side 생략 시 Player 덱. 소진 시 그 진영의 Discard 를 리셔플한다.
 	bool DrawFromDeck(FBGCardInstance& OutCard, EBGDeckSide Side = EBGDeckSide::Player);

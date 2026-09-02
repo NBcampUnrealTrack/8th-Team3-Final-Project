@@ -22,6 +22,7 @@
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
 #include "AI/BGAIPlayerController.h"
+#include "Core/BGGameMode.h"
 
 ABGGameState::ABGGameState()
 {
@@ -380,7 +381,7 @@ void ABGGameState::BroadcastTurnState()
 	OnTurnStateChanged.Broadcast();
 }
 
-void ABGGameState::InitializeDeck(int32 Seed)
+void ABGGameState::InitializeDeck(int32 Seed, int32 EncounterIndex)
 {
 	if (!HasAuthority())
 	{
@@ -420,7 +421,25 @@ void ABGGameState::InitializeDeck(int32 Seed)
 		Dice->InitializeStream(ActualSeed);
 	}
 
-	Subsystem->BuildDeck(Deck);
+	//	PvP 는 기존 경로 그대로. 아래 진영별 분리는 PvE 전용이다.
+	const bool bIsPvE = ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE;
+	if (bIsPvE)
+	{
+		//	Dice 스트림과 같은 이유로 매치 시드에서 파생시킨다. 재현 가능하되 Player 셔플과는
+		//	다른 수열을 쓴다. 상수는 Dice 것과 겹치지 않는 별개의 홀수 소수를 쓴다.
+		const int32 EnemySeed = ActualSeed * 2246822519u + 3266489917u;
+		EnemyRandomStream.Initialize(EnemySeed);
+
+		Subsystem->BuildPvEDeck(Deck, EBGDeckSide::Player, EncounterIndex);
+		Subsystem->BuildPvEDeck(EnemyDeck, EBGDeckSide::Enemy, EncounterIndex);
+		EnemyDiscard.Reset();
+		EnemyDiscardTop = FBGCardInstance();
+		ShuffleDeck(EBGDeckSide::Enemy);
+	}
+	else
+	{
+		Subsystem->BuildDeck(Deck);
+	}
 	Discard.Reset();
 	DiscardTop = FBGCardInstance();
 	ShuffleDeck();

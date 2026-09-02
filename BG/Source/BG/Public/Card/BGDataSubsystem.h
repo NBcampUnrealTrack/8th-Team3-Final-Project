@@ -37,6 +37,15 @@ public:
 	void BuildDeck(TArray<FBGCardInstance>& OutDeck) const;
 
 	/**
+	 * PvE 전용. DT_BGCard 의 PlayerDeckQuantity/EnemyDeckQuantity 를 Side 에 따라 읽어
+	 * 종류별 매수만큼 카드를 전개한다. BuildDeck 과 달리 진영별 매수가 따로 있다.
+	 *
+	 * EncounterIndex 는 지금은 쓰지 않는다. 항상 DT 의 기준치 그대로 나간다.
+	 * TODO: 조우가 진행될수록 매수를 조정하는 난이도 축 스케일링을 넣는다.
+	 */
+	void BuildPvEDeck(TArray<FBGCardInstance>& OutDeck, EBGDeckSide Side, int32 EncounterIndex = 0) const;
+
+	/**
 	 * DT_BGCard 의 모든 Row 이름. 이름순으로 정렬해서 준다.
 	 *
 	 * **덱에 없는 카드를 찾기 위한 것이다.** BuildDeck 결과만 보면 일회용 카드
