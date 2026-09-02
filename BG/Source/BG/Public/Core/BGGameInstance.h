@@ -64,6 +64,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|PvE")
 	bool StartPvE();
 
+	// PvE 런 진행도(이긴 조우 수). GameInstance 는 판이 끝나고 ServerTravel 로 맵을
+	// 새로 불러와도 살아있는 유일한 곳이라 여기 둔다.
+	UFUNCTION(BlueprintPure, Category = "BG|PvE")
+	int32 GetPvEEncounterIndex() const { return PvEEncounterIndex; }
+
+	// ABGGameState 가 이겼을 때만 호출한다. 진행도를 1 올린다.
+	void AdvancePvEEncounter();
+
+	// ABGGameState 가 졌을 때(런 종료) 호출한다. 진행도를 0 으로 되돌린다.
+	void ResetPvERun();
+
 	// ── 조회 ──
 
 	// 호스트가 광고 중인 방 코드. 호스트가 아니면 빈 문자열.
@@ -117,6 +128,9 @@ public:
 	//	덱 관련 exec 는 ABGGameMode 로
 
 private:
+	// PvE 런에서 이긴 조우 수. AdvancePvEEncounter 로만 바꾼다.
+	int32 PvEEncounterIndex = 0;
+
 	// 세션 인터페이스 핸들(없으면 유효하지 않은 포인터).
 	IOnlineSessionPtr GetSessionInterface() const;
 

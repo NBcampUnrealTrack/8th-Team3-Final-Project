@@ -600,6 +600,18 @@ bool UBGGameInstance::StartPvE()
 	return true;
 }
 
+void UBGGameInstance::AdvancePvEEncounter()
+{
+	++PvEEncounterIndex;
+	UE_LOG(LogBGNet, Log, TEXT("[PvE] 조우 승리. 진행도 %d"), PvEEncounterIndex);
+}
+
+void UBGGameInstance::ResetPvERun()
+{
+	PvEEncounterIndex = 0;
+	UE_LOG(LogBGNet, Log, TEXT("[PvE] 런 종료. 진행도 초기화"));
+}
+
 // ─────────────────────────────────────────────────────────────
 // 조회
 // ─────────────────────────────────────────────────────────────

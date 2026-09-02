@@ -328,7 +328,18 @@ void ABGGameState::BeginPlay()
 	//	덱은 서버만 만든다. 클라의 Deck 배열은 영원히 비어 있는 것이 정상
 	if (HasAuthority())
 	{
-		InitializeDeck();
+		//	PvE 런 진행도는 GameInstance 에 있다. ServerTravel 로 이 GameState 는 새로
+		//	만들어져도 GameInstance 는 살아있기 때문이다.
+		int32 EncounterIndex = 0;
+		if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
+		{
+			if (const UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+			{
+				EncounterIndex = GI->GetPvEEncounterIndex();
+			}
+		}
+
+		InitializeDeck(0, EncounterIndex);
 		SetPhaseTag(BG::Phase::Lobby.GetTag());
 	}
 }
@@ -432,6 +443,25 @@ void ABGGameState::InitializeDeck(int32 Seed, int32 EncounterIndex)
 
 		Subsystem->BuildPvEDeck(Deck, EBGDeckSide::Player, EncounterIndex);
 		Subsystem->BuildPvEDeck(EnemyDeck, EBGDeckSide::Enemy, EncounterIndex);
+
+		//	조우 승리 보상. 직전 조우를 이겼으면(EncounterIndex 가 1 이상) 장비 카드 하나를
+		//	플레이어 덱에 얹는다. 지면 AdvancePvEEncounter 가 0 으로 되돌리므로 여기 안 온다.
+		if (EncounterIndex >= 1)
+		{
+			FName RewardCardId;
+			if (Subsystem->GetRandomEquipCardId(RandomStream, RewardCardId))
+			{
+				FBGCardInstance Reward;
+				Reward.InstanceId = Deck.Num() + 1;
+				Reward.CardId = RewardCardId;
+				Reward.Side = EBGDeckSide::Player;
+				Deck.Add(Reward);
+
+				UE_LOG(LogBGCard, Log, TEXT("[PvE] 조우 %d 승리 보상. %s 장착 카드 지급"),
+					EncounterIndex, *RewardCardId.ToString());
+			}
+		}
+
 		EnemyDiscard.Reset();
 		EnemyDiscardTop = FBGCardInstance();
 		ShuffleDeck(EBGDeckSide::Enemy);
@@ -1394,6 +1424,24 @@ bool ABGGameState::CheckWinCondition()
 	}
 
 	WinningRoleTag = Winner;
+
+	//	PvE 는 사람이 항상 Sheriff다. Sheriff 승리만 "이겼다"로 본다. 다음 조우로 넘어갈
+	//	때(InitializeDeck) 이 진행도를 보고 보상(장비 카드)을 얹을지 정한다.
+	if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
+	{
+		if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+		{
+			if (Winner == BG::Role::Sheriff.GetTag())
+			{
+				GI->AdvancePvEEncounter();
+			}
+			else
+			{
+				GI->ResetPvERun();
+			}
+		}
+	}
+
 	SetCurrentSeat(INDEX_NONE);
 	SetMatchRunning(false);
 	SetPhaseTag(BG::Phase::GameOver.GetTag());
