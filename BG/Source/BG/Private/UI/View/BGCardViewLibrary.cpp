@@ -329,6 +329,25 @@ FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, 
 	return View;
 }
 
+void UBGCardViewLibrary::GetRollBands(const FBGCardChanceView& Chance,
+	int32& OutCriticalSuccessMax, int32& OutSuccessMax, int32& OutFailureMax)
+{
+	//	누적 확률이 곧 경계다. Roll 은 0~99 라 % 가 그대로 눈금이 된다.
+	//	-1 을 빼는 이유: 확률이 0 인 등급은 구간이 없어야 한다(0 이면 Roll 0 이 걸린다).
+	const auto Band = [](float CumulativePercent)
+	{
+		return FMath::Clamp(FMath::RoundToInt(CumulativePercent) - 1, -1, 99);
+	};
+
+	const float ToCriticalSuccess = Chance.CriticalSuccess;
+	const float ToSuccess         = ToCriticalSuccess + Chance.Success;
+	const float ToFailure         = ToSuccess + Chance.Failure;
+
+	OutCriticalSuccessMax = Band(ToCriticalSuccess);
+	OutSuccessMax         = Band(ToSuccess);
+	OutFailureMax         = Band(ToFailure);
+}
+
 TArray<FBGCardView> UBGCardViewLibrary::MakeHandViews(const ABGPlayerState* PlayerState)
 {
 	TArray<FBGCardView> Views;

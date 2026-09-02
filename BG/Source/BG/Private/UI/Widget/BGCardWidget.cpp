@@ -111,6 +111,34 @@ void UBGCardWidget::SetBeingDragged(bool bInBeingDragged)
 		return;
 	}
 	bBeingDragged = bInBeingDragged;
+
+	if (bBeingDragged)
+	{
+		//	커서를 따라다니는 복제본이 진짜 카드다. 원본은 자리만 알려 주는 실루엣으로 남긴다.
+		//	실루엣이 입력을 받으면 드래그 중 자기 자신이 드롭 대상이 된다.
+		PreDragVisibility = GetVisibility();
+		PreDragOpacity    = GetRenderOpacity();
+
+		SetVisibility(ESlateVisibility::HitTestInvisible);
+		SetRenderOpacity(DragGhostOpacity);
+	}
+	else
+	{
+		//	퇴장에 들어갔더라도 불투명도는 되돌린다. 퇴장 페이드는 TickExiting 이 다시 정한다.
+		SetRenderOpacity(PreDragOpacity);
+
+		if (IsLeavingHand())
+		{
+			//	⚠️ 가시성은 퇴장 로직의 것이라 건드리지 않는다. 다만 BeginLeaveHand 가 갈무리한 값은
+			//	   '드래그 중의 HitTestInvisible' 이라, 그대로 두면 손패 복귀 시 입력을 못 받는다.
+			PreLeaveVisibility = PreDragVisibility;
+		}
+		else
+		{
+			SetVisibility(PreDragVisibility);
+		}
+	}
+
 	RefreshVisual();
 }
 
@@ -701,6 +729,9 @@ void UBGCardWidget::BeginPlayExit(const FVector2D& CenterPosition, const FVector
 	bHoldingAtCenter = true;
 	bPlayExit        = true;   // 사용한 카드다. 대기가 끝난 뒤 디졸브로 사라진다
 
+	//	새 연출의 시작이다. 앞 사용에서 남은 신호가 있으면 여기서 끊는다.
+	ClearPendingPlaySignals();
+
 	PresentStartPosition  = CurrentPosition;
 	PresentStartScale     = CurrentScale;
 	PresentStartAngle     = CurrentAngle;
@@ -716,9 +747,24 @@ void UBGCardWidget::BeginPlayExit(const FVector2D& CenterPosition, const FVector
 
 void UBGCardWidget::FinishDwell()
 {
-	//	대기 중이 아니면 조용히 넘어간다 — 애니메이션 Finished 는 중복으로 올 수 있고,
-	//	이미 퇴장에 들어간 카드를 다시 퇴장시키면 궤적이 처음부터 다시 그려진다.
-	if (MotionState != EBGCardMotionState::Dwelling || bHoldingAtCenter)
+	//	아직 잡혀 있다(사용 확정 전) — 판정 연출의 신호가 아니므로 버린다.
+	//	기억해 두면 나중에 판정이 올 때 연출을 건너뛰고 곧장 사라진다.
+	if (bHoldingAtCenter)
+	{
+		return;
+	}
+
+	//	중앙에 닿기 전에 온 신호는 버리지 않고 도착하는 순간 소비한다 —
+	//	버리면 "연출이 끝나면 디졸브" 가 애니메이션 길이에 따라 조용히 깨진다.
+	if (MotionState == EBGCardMotionState::Presenting)
+	{
+		bDwellFinishRequested = true;
+		return;
+	}
+
+	//	그 밖의 상태(퇴장 중, 손패 복귀 등)에서는 조용히 넘어간다. Finished 는 중복으로 오고,
+	//	퇴장에 들어간 카드를 다시 퇴장시키면 궤적이 처음부터 다시 그려진다.
+	if (MotionState != EBGCardMotionState::Dwelling)
 	{
 		return;
 	}
@@ -748,14 +794,18 @@ FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 	//	대상을 오래 고른 사람은 효과를 볼 시간이 없다.
 	DwellRemaining = DwellDuration;
 
-	//	아직 중앙으로 가는 중이면 도착 후 자연스럽게 대기로 넘어간다.
-	if (MotionState == EBGCardMotionState::Dwelling || MotionState == EBGCardMotionState::Presenting)
+	//	아직 중앙으로 가는 중이면 연출은 도착한 뒤에 터뜨린다 —
+	//	날아가는 동안 재생하면 애니메이션이 중앙에 서기도 전에 끝나 버린다.
+	if (MotionState == EBGCardMotionState::Presenting)
 	{
-		//	등급 연출을 BP 훅보다 먼저 터뜨린다. BP 가 이 위에 무엇을 얹든
-		//	글로우는 이미 올라와 있어야 "판정이 확정된 순간" 으로 읽힌다.
-		PlayTierFX(Filled.Tier);
+		bPendingResolvedFX     = true;
+		PendingResolvedContext = Filled;
+		return Filled;
+	}
 
-		OnPlayResolved(Filled);
+	if (MotionState == EBGCardMotionState::Dwelling)
+	{
+		PlayResolvedFX(Filled);
 	}
 
 	return Filled;
@@ -774,6 +824,9 @@ bool UBGCardWidget::ReturnToHand()
 	bPlayExit        = false;   // 더 이상 사용 중인 카드가 아니다
 	DwellRemaining   = 0.f;
 
+	//	손패로 돌아간 카드에 판정 연출이 뒤늦게 터지면 안 된다.
+	ClearPendingPlaySignals();
+
 	SetRenderOpacity(1.f);
 	SetVisibility(PreLeaveVisibility);
 
@@ -786,6 +839,9 @@ bool UBGCardWidget::ReturnToHand()
 
 void UBGCardWidget::EnterExitPhase(const FVector2D& ToPosition)
 {
+	//	밀린 신호는 전부 버린다 — 타기 시작한 카드 위의 연출은 디졸브에 묻힌다.
+	ClearPendingPlaySignals();
+
 	ExitStartPosition = CurrentPosition;
 	ExitStartScale    = CurrentScale;
 	ExitElapsed       = 0.f;
@@ -982,7 +1038,46 @@ void UBGCardWidget::TickPresenting(float DeltaTime)
 	{
 		MotionState = EBGCardMotionState::Dwelling;
 		OnPlayPresented();
+
+		//	날아오는 사이에 도착해 있던 신호를 여기서 소비한다. 대기 시계가 도는 상태라
+		//	연출 애니메이션의 Finished → FinishDwell 이 제대로 받아진다.
+		ConsumePendingPlaySignals();
 	}
+}
+
+void UBGCardWidget::ClearPendingPlaySignals()
+{
+	bPendingResolvedFX    = false;
+	bDwellFinishRequested = false;
+}
+
+void UBGCardWidget::ConsumePendingPlaySignals()
+{
+	//	⚠️ 판정 연출이 먼저다 — 새 연출이 시작되면 밀려 있던 FinishDwell 은 무효가 된다
+	//	   (PlayResolvedFX 가 지운다). 순서가 뒤집히면 연출이 첫 프레임에 잘린다.
+	if (bPendingResolvedFX)
+	{
+		bPendingResolvedFX = false;
+		PlayResolvedFX(PendingResolvedContext);
+	}
+
+	if (bDwellFinishRequested)
+	{
+		bDwellFinishRequested = false;
+		FinishDwell();
+	}
+}
+
+void UBGCardWidget::PlayResolvedFX(const FBGCardPlayContext& Context)
+{
+	//	새 연출이 시작된다 — 밀려 있던 종료 신호는 이 연출의 것이 아니므로 버린다.
+	bDwellFinishRequested = false;
+
+	//	등급 연출을 BP 훅보다 먼저 터뜨린다. BP 가 이 위에 무엇을 얹든
+	//	글로우는 이미 올라와 있어야 "판정이 확정된 순간" 으로 읽힌다.
+	PlayTierFX(Context.Tier);
+
+	OnPlayResolved(Context);
 }
 
 void UBGCardWidget::TickDwelling(float DeltaTime)
