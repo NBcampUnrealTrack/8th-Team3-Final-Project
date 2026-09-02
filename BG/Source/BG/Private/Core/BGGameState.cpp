@@ -486,13 +486,18 @@ void ABGGameState::PushToDiscard(const FBGCardInstance& Card)
 		return;
 	}
 
-	if (DiscardTop.IsValid())
+	//	Card.Side 는 BuildPvEDeck 이 만들 때 이미 찍어뒀다. Seat 을 다시 조회할 필요가 없다.
+	//	PvP 카드는 항상 Player 라 아래는 예전과 동일하게 동작한다.
+	FBGCardInstance& TargetTop = (Card.Side == EBGDeckSide::Enemy) ? EnemyDiscardTop : DiscardTop;
+	TArray<FBGCardInstance>& TargetDiscard = (Card.Side == EBGDeckSide::Enemy) ? EnemyDiscard : Discard;
+
+	if (TargetTop.IsValid())
 	{
-		Discard.Add(DiscardTop);
+		TargetDiscard.Add(TargetTop);
 	}
 
 	//	맨 위의 버림카드를 새로 들어온 카드로 변경
-	DiscardTop = Card;
+	TargetTop = Card;
 	RefreshPublicCounts();
 }
 
@@ -637,6 +642,7 @@ int32 ABGGameState::DrawCardsToHand(ABGPlayerState* PS, int32 Count)
 	}
 
 	const int32 Limit = GetHandLimitForSeat(PS->GetSeatIndex());
+	const EBGDeckSide Side = GetDeckSideForSeat(PS->GetSeatIndex());
 
 	int32 Drawn = 0;
 	for (int32 i = 0; i < Count; ++i)
@@ -652,7 +658,7 @@ int32 ABGGameState::DrawCardsToHand(ABGPlayerState* PS, int32 Count)
 		}
 
 		FBGCardInstance Card;
-		if (!DrawFromDeck(Card))
+		if (!DrawFromDeck(Card, Side))
 		{
 			break;   // 덱과 버린 패가 모두 비었다
 		}
@@ -930,8 +936,12 @@ void ABGGameState::EnterDrawPhase()
 	//	손패 상한에 걸리면 덜 뽑힌다. 턴 진행은 그대로다 — 못 뽑았다고 턴이 멈추지 않는다.
 	const int32 Drawn = DrawCardsToHand(PS, DrawNum);
 
-	UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 뽑기 %d/%d 장 (손패 %d, 덱 %d)"),
-		CurrentSeat, Drawn, DrawNum, PS->GetHandCount(), DeckCount);
+	//	DeckCount 는 Player 것뿐이다. 봇(Enemy) 턴에 그대로 찍으면 안 바뀐 값이라 오해를 산다.
+	const EBGDeckSide Side = GetDeckSideForSeat(CurrentSeat);
+	const int32 RemainingDeck = (Side == EBGDeckSide::Enemy) ? EnemyDeckCount : DeckCount;
+
+	UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 뽑기 %d/%d 장 (손패 %d, 덱 %d, Side=%d)"),
+		CurrentSeat, Drawn, DrawNum, PS->GetHandCount(), RemainingDeck, (int32)Side);
 
 	EnterPlayPhase();
 }

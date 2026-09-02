@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
 #include "GameplayTagContainer.h"
+#include "Card/BGGameDataTypes.h"   // EBGDeckSide
 #include "BGCardType.generated.h"
 
 /** 덱에 실재하는 카드 1장. DT Row 가 아니라 런타임 인스턴스. */
@@ -33,6 +34,12 @@ struct FBGCardInstance
 	 */
 	UPROPERTY(BlueprintReadOnly)
 	bool bEphemeral = false;
+
+	// 어느 진영 덱에서 나왔는가 (PvE 전용). BuildPvEDeck 이 만드는 순간 찍어준다.
+	// PvP 나 규칙이 직접 만들어 준 카드는 기본값 Player 로 남는다.
+	// PushToDiscard 가 이 값을 보고 버릴 곳을 정한다.
+	UPROPERTY(BlueprintReadOnly)
+	EBGDeckSide Side = EBGDeckSide::Player;
 
 	bool IsValid() const { return InstanceId != INDEX_NONE; }
 };

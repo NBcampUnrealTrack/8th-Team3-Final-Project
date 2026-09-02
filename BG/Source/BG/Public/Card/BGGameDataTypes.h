@@ -356,7 +356,7 @@ public:
  * 덱을 어느 진영 것으로 다룰지 (PvE 전용).
  * PvP 는 덱이 하나뿐이라 항상 Player 다.
  */
-UENUM()
+UENUM(BlueprintType)
 enum class EBGDeckSide : uint8
 {
 	Player,

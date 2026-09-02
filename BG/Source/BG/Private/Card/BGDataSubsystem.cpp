@@ -105,6 +105,7 @@ void UBGDataSubsystem::BuildPvEDeck(TArray<FBGCardInstance>& OutDeck, EBGDeckSid
 			FBGCardInstance Card;
 			Card.InstanceId = NextInstanceId++;
 			Card.CardId = RowName;
+			Card.Side = Side;
 			OutDeck.Add(Card);
 		}
 		++NumKinds;
