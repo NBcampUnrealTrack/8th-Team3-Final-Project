@@ -100,7 +100,6 @@ protected:
 	TObjectPtr<UDataTable> CardFXTable;
 
 	/** 카드·상태 FX가 공유하는 유일한 기본 높이. Row LocationOffset은 개별 보정만 담당한다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FX|Transform",
-		meta = (AllowPrivateAccess = "true", Units = "cm"))
-	float GlobalFXSpawnZOffset = 50.f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FX|Transform", meta = (AllowPrivateAccess = "true", Units = "cm"))
+	float GlobalFXSpawnZOffset = -30.f;
 };
