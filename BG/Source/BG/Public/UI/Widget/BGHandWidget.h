@@ -62,7 +62,7 @@ struct FBGCardSlotLayout
  *     연출을 쓰려면 WBP 에서 Box_Cards 를 CanvasPanel 로 바꿔야 한다(로그로 안내한다).
  *
  *  덱/버린 패의 화면 위치는 손패가 알 수 없다(손패 바깥이다). 기본값으로 두고,
- *  나중에 UBGCardFXComponent 가 SetDeckAnchor / SetDiscardAnchor 로 채워 준다.
+	*  나중에 HUD 조정자가 SetDeckAnchor / SetDiscardAnchor 로 채워 준다.
  */
 UCLASS(Abstract, Blueprintable)
 class BG_API UBGHandWidget : public UUserWidget
@@ -144,7 +144,7 @@ public:
 	//
 	//	손패는 덱이 화면 어디에 있는지 알 수 없다 — 알게 되면 HUD 구조에 묶여
 	//	재사용도 테스트도 못 하게 된다. 그래서 좌표만 주입받는다.
-	//	나중에 UBGCardFXComponent 가 덱/버린패 위젯의 지오메트리를 손패 로컬 좌표로
+	//	나중에 HUD 조정자가 덱/버린패 위젯의 지오메트리를 손패 로컬 좌표로
 	//	변환해 여기에 넣어 준다. 안 넣으면 아래 Fallback 값이 쓰인다.
 
 	/** 카드가 등장할 출발점(손패 패널 로컬 좌표). */

@@ -17,6 +17,18 @@
 namespace BG
 {
 	// ---------------------------------------------------------------------------------
+	//  GameplayCue.* — ASC AddGameplayCue / RemoveGameplayCue 로 유지되는 카드 연출.
+	// ---------------------------------------------------------------------------------
+	namespace GameplayCue
+	{
+		namespace Card
+		{
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Primary)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Secondary)
+		}
+	}
+
+	// ---------------------------------------------------------------------------------
 	//  Card.* — 카드 정의용 태그. DT_BGCard 의 각 Row(FBGCardRow)가 들고 있다.
 	// ---------------------------------------------------------------------------------
 	namespace Card

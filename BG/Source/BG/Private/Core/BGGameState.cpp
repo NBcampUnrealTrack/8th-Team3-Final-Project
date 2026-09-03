@@ -18,6 +18,7 @@
 #include "Lobby/BGRopeComponent.h"
 #include "Lobby/BGSeatComponent.h"
 #include "GAS/Effect/GE_BGDamage.h"
+#include "FX/BGCardNiagaraTypes.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
@@ -114,6 +115,8 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 		return;
 	}
 
+	// Add/Remove 쌍 보장. 이전 단계의 Cue를 먼저 제거해야 OnRemove가 종료 bool을 전달한다.
+	RemoveActiveCardGameplayCue();
 	CinematicStage = NewStage;
 
 	// ── 통지 전에 상태를 완성해 둔다 ──
@@ -160,6 +163,10 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 		}
 	}
 
+	// 서버 ASC에 추가하면 ActiveGameplayCues가 모든 클라이언트로 복제된다.
+	// ExecuteGameplayCue를 쓰지 않아 늦게 들어온 클라이언트도 WhileActive를 복원한다.
+	AddCardGameplayCueForStage(NewStage);
+
 	//	서버는 자기 OnRep 을 받지 못한다 — 여기서 직접 부르지 않으면 리슨서버 호스트만 연출이 안 뜬다.
 	HandleCinematicStage();
 
@@ -193,6 +200,77 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 	case EBGCinematicStage::None:
 		break;
 	}
+}
+
+void ABGGameState::AddCardGameplayCueForStage(EBGCinematicStage Stage)
+{
+	if (!HasAuthority() || (Stage != EBGCinematicStage::Primary && Stage != EBGCinematicStage::Secondary))
+	{
+		return;
+	}
+
+	const UGameInstance* GI = GetGameInstance();
+	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	const FBGCardFXRow* FXRow = Data ? Data->GetCardFXRow(CinematicResolution.CardId) : nullptr;
+	if (!FXRow)
+	{
+		return;
+	}
+
+	const EBGCardFXAnchor Anchor = Stage == EBGCinematicStage::Primary
+		? FXRow->PrimaryAnchor
+		: FXRow->SecondaryAnchor;
+	ABGCharacter* CueTarget = Anchor == EBGCardFXAnchor::Target && CinematicTarget
+		? CinematicTarget.Get()
+		: CinematicInstigator.Get();
+	if (!CueTarget)
+	{
+		return;
+	}
+
+	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(CueTarget);
+	if (!ASC)
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[CardCue] 대상 ASC 없음 — %s"), *CueTarget->GetName());
+		return;
+	}
+
+	const FGameplayTag CueTag = Stage == EBGCinematicStage::Primary
+		? BG::GameplayCue::Card::Primary.GetTag()
+		: BG::GameplayCue::Card::Secondary.GetTag();
+
+	FGameplayCueParameters Parameters;
+	Parameters.Instigator = CinematicInstigator;
+	Parameters.EffectCauser = CinematicInstigator;
+	Parameters.SourceObject = this;
+	// 일반 카드 FX는 Actor의 +X 전방을 그대로 사용한다. Skeletal Mesh는 에셋 임포트
+	// 보정 회전(-90도 등)을 가질 수 있으므로 기본 부착 기준으로 사용하지 않는다.
+	Parameters.TargetAttachComponent = CueTarget->GetRootComponent();
+	Parameters.AggregatedSourceTags.AddTag(CinematicResolution.CardId);
+	if (CinematicResolution.Roll != INDEX_NONE)
+	{
+		Parameters.AggregatedSourceTags.AddTag(UBGDiceComponent::OutcomeToTag(CinematicResolution.Outcome));
+	}
+
+	ASC->AddGameplayCue(CueTag, Parameters);
+	ActiveCardCueASC = ASC;
+	ActiveCardCueTag = CueTag;
+}
+
+// 게임플레이 큐 태그 제거 함수, VFX 이펙트 종료 호출
+void ABGGameState::RemoveActiveCardGameplayCue()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	if (UAbilitySystemComponent* ASC = ActiveCardCueASC.Get(); ASC && ActiveCardCueTag.IsValid())
+	{
+		ASC->RemoveGameplayCue(ActiveCardCueTag);
+	}
+	ActiveCardCueASC.Reset();
+	ActiveCardCueTag = FGameplayTag();
 }
 
 void ABGGameState::ScheduleCinematicStep(float DelaySeconds, TFunction<void()>&& Step)
@@ -326,6 +404,12 @@ void ABGGameState::BeginPlay()
 		InitializeDeck();
 		SetPhaseTag(BG::Phase::Lobby.GetTag());
 	}
+}
+
+void ABGGameState::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	RemoveActiveCardGameplayCue();
+	Super::EndPlay(EndPlayReason);
 }
 
 void ABGGameState::SetPhaseTag(FGameplayTag InPhase)

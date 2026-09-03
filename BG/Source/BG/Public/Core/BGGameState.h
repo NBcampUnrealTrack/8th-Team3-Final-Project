@@ -15,6 +15,7 @@
  *
  */
 class UBGDiceComponent;
+class UAbilitySystemComponent;
 
 /**
  * 판이 끝난 뒤의 연출 단계.
@@ -497,6 +498,7 @@ protected:
 
 	//	서버 시작 시 덱을 준비한다.
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	void ShuffleDeck();
 	void ReshuffleDeck();
@@ -591,9 +593,17 @@ protected:
 	FBGPendingDeath ActiveDeath;
 
 	// ── 카드 연출 내부 ──
-	//
 	//	서버 전용. 단계 전환의 유일한 입구다 (SetPhaseTag / SetMatchEndStage 와 같은 원칙).
 	void SetCinematicStage(EBGCinematicStage NewStage);
+
+	/** 현재 단계의 지속형 GameplayCue를 대상 캐릭터 ASC에 추가한다. 서버 전용. */
+	void AddCardGameplayCueForStage(EBGCinematicStage Stage);
+
+	/** 이전 단계 GameplayCue를 제거해 OnRemove 종료 연출을 시작한다. 서버 전용. */
+	void RemoveActiveCardGameplayCue();
+
+	TWeakObjectPtr<UAbilitySystemComponent> ActiveCardCueASC;
+	FGameplayTag ActiveCardCueTag;
 
 	//	서버·클라 공통. 현재 단계에 맞춰 델리게이트를 쏘고 카메라를 맞춘다.
 	void HandleCinematicStage();

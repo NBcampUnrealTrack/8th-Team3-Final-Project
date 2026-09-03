@@ -5,6 +5,7 @@
 #include "Card/BGDataSettings.h"
 #include "Card/BGCardType.h"
 #include "FX/BGStatusFXTypes.h"
+#include "FX/BGCardNiagaraTypes.h"
 #include "UObject/ConstructorHelpers.h"
 
 const FString UBGDataSubsystem::CharacterTablePath = TEXT("/Game/Data/DT_BGCharacterRow");
@@ -139,6 +140,7 @@ void UBGDataSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	//	이펙트 표는 없어도 된다 — 화면에만 쓰이므로 없으면 이펙트가 안 뜰 뿐이다.
 	//	카드 표와 달리 check() 로 막지 않는 이유가 이것이다.
 	StatusFXTable = Settings->StatusFXTable.LoadSynchronous();
+	CardFXTable = Settings->CardFXTable.LoadSynchronous();
 
 	CardTable = Settings->CardTable.LoadSynchronous();
 	check(CardTable != nullptr);	//	BuildDeck: CardTable 이 없습니다 (프로젝트 설정 확인).
@@ -164,6 +166,18 @@ const FBGStatusFXRow* UBGDataSubsystem::GetStatusFXRow(FName Key) const
 	//	bWarnIfRowMissing=false — 이펙트를 만들지 않은 장비·상태가 훨씬 많다.
 	//	여기서 경고하면 판마다 로그가 도배되고 진짜 경고가 묻힌다.
 	return StatusFXTable->FindRow<FBGStatusFXRow>(Key, TEXT("BGStatusFX"), /*bWarnIfRowMissing=*/false);
+}
+
+// 카드 이펙트 데이터 테이블에서 참조
+const FBGCardFXRow* UBGDataSubsystem::GetCardFXRow(FGameplayTag CardId) const
+{
+	if (!CardFXTable || !CardId.IsValid())
+	{
+		return nullptr;
+	}
+
+	return CardFXTable->FindRow<FBGCardFXRow>(
+		CardId.GetTagName(), TEXT("BGCardFX"), /*bWarnIfRowMissing=*/false);
 }
 
 const FBGCardRow* UBGDataSubsystem::GetCardRow(FName CardID) const
