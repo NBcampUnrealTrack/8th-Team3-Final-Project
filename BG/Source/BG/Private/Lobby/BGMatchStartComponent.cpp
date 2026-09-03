@@ -1,5 +1,6 @@
 ﻿#include "Lobby/BGMatchStartComponent.h"
 
+#include "Core/BGGameInstance.h"
 #include "Core/BGGameMode.h"
 #include "Lobby/BGReadyComponent.h"
 #include "Lobby/BGSeatComponent.h"
@@ -72,6 +73,33 @@ ABGGameMode* UBGMatchStartComponent::GetGameMode() const
 	return Cast<ABGGameMode>(GetOwner());
 }
 
+int32 UBGMatchStartComponent::ComputeTargetSeatsForEncounter(int32 EncounterIndex) const
+{
+	switch (EncounterIndex)
+	{
+	case 0:
+		{
+			return 2;   // 조우1: 1대1
+		}
+	case 1:
+		{
+			return 3;   // 조우2: 1대2
+		}
+	case 2:
+		{
+			return 5;   // 조우3: 2대3 (부관 등장)
+		}
+	case 3:
+		{
+			return 6;   // 조우4: 2대4
+		}
+	default:
+		{
+			return 7;   // 조우5+: 3대4
+		}
+	}
+}
+
 bool UBGMatchStartComponent::CanAcceptPlayer(FString& OutError) const
 {
 	if (bMatchStarted)
@@ -140,7 +168,13 @@ bool UBGMatchStartComponent::StartMatch()
 	//	돌기 때문에 반드시 그보다 먼저다.
 	if (GM->IsPvE())
 	{
-		const int32 Needed = FMath::Max(0, PvETargetSeats - Players.Num());
+		int32 TargetSeats = PvETargetSeats;   // 설정을 못 읽으면 기존 기본값으로 폴백
+		if (const UBGGameInstance* GI = Cast<UBGGameInstance>(GetWorld()->GetGameInstance()))
+		{
+			TargetSeats = ComputeTargetSeatsForEncounter(GI->GetPvEEncounterIndex());
+		}
+
+		const int32 Needed = FMath::Max(0, TargetSeats - Players.Num());
 		const int32 Added  = GM->SpawnAIPlayers(Needed);
 
 		if (Added > 0)
@@ -148,7 +182,7 @@ bool UBGMatchStartComponent::StartMatch()
 			//	봇을 포함해 다시 센다. 아래 로그와 AssignRoles 가 이 목록을 쓴다.
 			GM->CollectPlayers(Players);
 			UE_LOG(LogBGNet, Log, TEXT("[PvE] 봇 %d 명 충원 (목표 좌석 %d) — 총 %d 명"),
-				Added, PvETargetSeats, Players.Num());
+				Added, TargetSeats, Players.Num());
 		}
 		else if (Needed > 0)
 		{

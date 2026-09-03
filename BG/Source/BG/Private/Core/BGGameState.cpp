@@ -445,19 +445,17 @@ void ABGGameState::InitializeDeck(int32 Seed, int32 EncounterIndex)
 		Subsystem->BuildPvEDeck(EnemyDeck, EBGDeckSide::Enemy, EncounterIndex);
 
 		//	조우 승리 보상. 직전 조우를 이겼으면(EncounterIndex 가 1 이상) 장비 카드 하나를
-		//	플레이어 덱에 얹는다. 지면 AdvancePvEEncounter 가 0 으로 되돌리므로 여기 안 온다.
+		//	기억해 둔다. 지면 AdvancePvEEncounter 가 0 으로 되돌리므로 여기 안 온다.
 		if (EncounterIndex >= 1)
 		{
 			FName RewardCardId;
 			if (Subsystem->GetRandomEquipCardId(RandomStream, RewardCardId))
 			{
-				FBGCardInstance Reward;
-				Reward.InstanceId = Deck.Num() + 1;
-				Reward.CardId = RewardCardId;
-				Reward.Side = EBGDeckSide::Player;
-				Deck.Add(Reward);
+				PendingPvEReward.InstanceId = Deck.Num() + 1;
+				PendingPvEReward.CardId = RewardCardId;
+				PendingPvEReward.Side = EBGDeckSide::Player;
 
-				UE_LOG(LogBGCard, Log, TEXT("[PvE] 조우 %d 승리 보상. %s 장착 카드 지급"),
+				UE_LOG(LogBGCard, Log, TEXT("[PvE] 조우 %d 승리 보상. %s 장착 카드 초기 손패에 지급 예정"),
 					EncounterIndex, *RewardCardId.ToString());
 			}
 		}
@@ -759,6 +757,14 @@ void ABGGameState::StartMatch()
 
 		const int32 Count = (InitialHandSize > 0) ? InitialHandSize : FMath::Max(1, GetSeatHealth(Seat));
 		DrawCardsToHand(PS, Count);
+
+		//	PvE 조우 보상은 보안관(사람)한테만 간다 - 부관도 무법자도 이 분기를 안 탄다.
+		if (PendingPvEReward.InstanceId != INDEX_NONE && GetSeatRole(Seat) == BG::Role::Sheriff.GetTag())
+		{
+			PS->AddCardToHand(PendingPvEReward);
+			UE_LOG(LogBGCard, Log, TEXT("[PvE] 좌석 %d(보안관) 초기 손패에 조우 보상 %s 지급"),
+				Seat, *PendingPvEReward.CardId.ToString());
+		}
 
 		UE_LOG(LogBGCard, Log, TEXT("[Turn] 초기 손패 — 좌석 %d : %d 장"), Seat, PS->GetHandCount());
 	}
