@@ -531,6 +531,10 @@ protected:
 	UPROPERTY()
 	TArray<FBGCardInstance> EnemyDiscard;
 
+	// 서버 전용. PvE 조우 승리 보상 카드 — 보안관(사람)에게만 지급한다. InstanceId == INDEX_NONE 이면 없음.
+	UPROPERTY()
+	FBGCardInstance PendingPvEReward;
+
 	// 공개 정보
 	UPROPERTY(Replicated)
 	int32 DeckCount = 0;

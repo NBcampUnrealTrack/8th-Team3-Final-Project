@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
 #include "BGAIBrainComponent.generated.h"
 
 
@@ -41,6 +42,9 @@ private:
 
 	// 공격 카드 대상 선정 (지금은 무작위)
 	int32 PickRandomTargetSeat() const;
+
+	// RoleTag 가 보안관 편(보안관·부관)인지 판정한다. PvE 팀 구분에 쓴다(배신자는 PvE에 없음).
+	bool IsSheriffSideRole(FGameplayTag RoleTag) const;
 
 	ABGAIPlayerController* GetOwnerAIController() const;
 	ABGGameState* GetBGGameState() const;
