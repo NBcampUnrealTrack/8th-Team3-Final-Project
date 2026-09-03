@@ -9,7 +9,10 @@
 #include "UI/View/BGTurnView.h"
 #include "BGTurnPanelWidget.generated.h"
 
+class UBGInfoTooltipWidget;
+class UBorder;
 class UButton;
+class UDataTable;
 class UImage;
 class UTextBlock;
 
@@ -30,6 +33,9 @@ class UTextBlock;
  *   Text_Role      (TextBlock, 선택 — 내 역할. 본인 것이라 숨기지 않는다)
  *   Text_Equipment (TextBlock, 선택 — 장비 목록)
  *   손패 장수는 Text_HandLimit 이 이미 보여주므로 따로 두지 않는다.
+ *
+ * 커서를 올리면 설명이 뜨는 줄(선택). Visibility 가 Visible 이어야 커서를 받는다:
+ *   Border_Job / Border_Equipment / Border_HandLimit / Border_Role
  *
  * ── 게임 로직과의 연결 지점 ──
  *   들어오는 방향: SetTurnView()      — PlayerController 가 주기적으로 밀어넣는다
@@ -63,6 +69,7 @@ public:
 	bool ShouldShowLocalStats() const { return LocalSeatView.bMatchRunning && LocalSeatView.MaxHealth > 0; }
 
 protected:
+	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
 	virtual void NativePreConstruct() override;
 
@@ -144,6 +151,52 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Equipment;
 
+	//	── 설명 툴팁 ── 위치는 슬레이트가 잡는다. 여기서는 내용만 만든다.
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Job;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Equipment;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_HandLimit;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_Role;
+
+	/** 툴팁을 그릴 위젯. 비워 두면 툴팁이 아예 뜨지 않는다. */
+	UPROPERTY(EditAnywhere, Category = "BG|Turn|Info")
+	TSubclassOf<UBGInfoTooltipWidget> InfoTooltipClass;
+
+	/**
+	 * 툴팁 문구 표. 비워 두면 살아 있는 값만 뜨고 설명은 빠진다.
+	 *   Info.Job / Info.Equipment / Info.HandLimit / Info.Role — 각 줄의 "값이 없을 때" 문구
+	 *   Role.Sheriff / Role.Deputy / ...                       — 역할별 설명(Row 이름 = 태그 문자열)
+	 *
+	 * 제목 = 살아 있는 이름·값(직업명 / 역할명 / "손패 3 / 5"), 본문 = 그에 대한 설명.
+	 * 본문은 살아 있는 값이 있으면 표의 문구를 대체한다:
+	 *   직업 배정 전 → Info.Job.Body,       배정 후 → DT_BGCharacterRow 의 직업 설명
+	 *   장비 없음    → Info.Equipment.Body, 있음    → DT_BGCard 설명을 붙인 장비 목록
+	 * 손패는 값이 없는 상태가 없어 숫자가 제목으로 가고 본문은 표의 설명이 그대로 남는다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Turn|Info", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGInfoTooltipRow"))
+	TObjectPtr<UDataTable> InfoTable;
+
+	//	슬레이트가 툴팁을 띄우기 직전에 부른다. 어느 줄인지 알려주지 않아 줄마다 하나씩 둔다.
+
+	UFUNCTION()
+	UWidget* MakeJobTooltip();
+
+	UFUNCTION()
+	UWidget* MakeEquipmentTooltip();
+
+	UFUNCTION()
+	UWidget* MakeHandLimitTooltip();
+
+	UFUNCTION()
+	UWidget* MakeRoleTooltip();
+
 	UPROPERTY()
 	FBGSeatView LocalSeatView;
 
@@ -160,6 +213,14 @@ protected:
 
 private:
 	void RefreshVisual();
+
+	UWidget* MakeInfoTooltip(const FText& InTitle, const FText& InBody);
+
+	//	표가 없거나 Row 가 없으면 nullptr.
+	const struct FBGInfoTooltipRow* FindInfoRow(FName RowName) const;
+
+	//	장비 목록을 "이름 — 설명" 여러 줄로 만든다.
+	FText MakeEquipmentLines() const;
 
 	//	LocalSeatView 의 체력을 하트 줄에 반영한다.
 	void RefreshHealthHearts();

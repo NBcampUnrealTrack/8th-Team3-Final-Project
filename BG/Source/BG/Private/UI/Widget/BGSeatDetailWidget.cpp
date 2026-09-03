@@ -53,10 +53,10 @@ FText UBGSeatDetailWidget::GetRoleText() const
 
 FText UBGSeatDetailWidget::GetEquipmentLine() const
 {
-	if (View.EquipmentNames.IsEmpty())
+	if (View.Equipment.IsEmpty())
 	{
 		return NSLOCTEXT("BG", "SeatDetailNoEquipment", "장비 없음");
 	}
 
-	return FText::Join(NSLOCTEXT("BG", "SeatDetailEquipSeparator", ", "), View.EquipmentNames);
+	return FText::Join(NSLOCTEXT("BG", "SeatDetailEquipSeparator", ", "), View.GetEquipmentNames());
 }
