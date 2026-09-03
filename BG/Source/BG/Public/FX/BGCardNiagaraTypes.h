@@ -91,4 +91,8 @@ struct FBGCardFXRow : public FTableRowBase
 	/** 종료 bool 전달 뒤 시스템을 비활성화할 때까지 기다리는 시간. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lifetime", meta = (ClampMin = "0.0"))
 	float EndDelaySeconds = 1.f;
+
+	/** 비시네마틱 카드가 Cue를 활성 상태로 유지하는 시간. 이 뒤 Remove가 종료 bool을 전달한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lifetime", meta = (ClampMin = "0.01", Units = "s"))
+	float NonCinematicCueSeconds = 1.f;
 };

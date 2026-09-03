@@ -370,6 +370,16 @@ public:
 	void BeginCardCinematic(class ABGCharacter* Caster, class ABGCharacter* Victim,
 		const FBGCardResolution& Resolution);
 
+	/**
+	 * 서버 전용. 카드 규칙 처리 성공 뒤의 공통 연출 입구.
+	 *
+	 * DT_BGCardFX가 없으면 아무 것도 하지 않는다. Card.Trait.Cinematic 카드는
+	 * BeginCardCinematic으로 넘기고, 나머지는 카메라 전환 없이 Primary Cue를 짧게
+	 * Add/Remove한다. PlayerController는 이 함수 호출만 담당한다.
+	 */
+	void PlayResolvedCardPresentation(class ABGCharacter* Caster, class ABGCharacter* Target,
+		const FBGCardResolution& Resolution);
+
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
 
@@ -634,8 +644,16 @@ protected:
 	/** 이전 단계 GameplayCue를 제거해 OnRemove 종료 연출을 시작한다. 서버 전용. */
 	void RemoveActiveCardGameplayCue();
 
+	/** 비시네마틱 카드의 단발 Cue를 시작/종료한다. 서버 전용. */
+	void AddNonCinematicCardGameplayCue(class ABGCharacter* Caster, class ABGCharacter* Target,
+		const FBGCardResolution& Resolution, float ActiveSeconds);
+	void RemoveActiveNonCinematicCardGameplayCue();
+
 	TWeakObjectPtr<UAbilitySystemComponent> ActiveCardCueASC;
 	FGameplayTag ActiveCardCueTag;
+	TWeakObjectPtr<UAbilitySystemComponent> ActiveNonCinematicCardCueASC;
+	FGameplayTag ActiveNonCinematicCardCueTag;
+	FTimerHandle NonCinematicCardCueTimer;
 
 	//	서버·클라 공통. 현재 단계에 맞춰 델리게이트를 쏘고 카메라를 맞춘다.
 	void HandleCinematicStage();

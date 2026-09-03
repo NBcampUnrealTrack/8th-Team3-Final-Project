@@ -113,6 +113,37 @@ void ABGGameState::BeginCardCinematic(ABGCharacter* Caster, ABGCharacter* Victim
 	SetCinematicStage(EBGCinematicStage::Primary);
 }
 
+// 시네마틱과 재생할지 시네마틱 없이 재생할지 확인하는 분기 함수
+void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharacter* Target,
+	const FBGCardResolution& Resolution)
+{
+	if (!HasAuthority() || !Caster || !Resolution.CardId.IsValid())
+	{
+		return;
+	}
+
+	const UGameInstance* GI = GetGameInstance();
+	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	const FBGCardFXRow* FXRow = Data ? Data->GetCardFXRow(Resolution.CardId) : nullptr;
+	const FBGCardRow* CardRow = Data ? Data->GetCardRow(Resolution.CardId) : nullptr;
+	if (!FXRow || !CardRow)
+	{
+		return; // 연출 Row가 없는 카드는 규칙만 처리한다.
+	}
+
+	// 같은 Cue 태그는 ASC에서 중첩 파라미터를 보존하지 않는다. 다음 카드가 오면 이전 단발
+	// Cue를 종료해 두 카드의 CardId/판정 정보가 섞이지 않게 한다.
+	RemoveActiveNonCinematicCardGameplayCue();
+
+	if (CardRow->TraitTags.HasTag(BG::Card::Trait::Cinematic.GetTag()))
+	{
+		BeginCardCinematic(Caster, Target, Resolution);
+		return;
+	}
+
+	AddNonCinematicCardGameplayCue(Caster, Target, Resolution, FXRow->NonCinematicCueSeconds);
+}
+
 void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 {
 	if (!HasAuthority() || CinematicStage == NewStage)
@@ -276,6 +307,72 @@ void ABGGameState::RemoveActiveCardGameplayCue()
 	}
 	ActiveCardCueASC.Reset();
 	ActiveCardCueTag = FGameplayTag();
+}
+
+//시네마틱 사용하지 않는 카드의 게임플레이 큐 태그 추가, 타이머로 정해진 시간 뒤 제거 호출
+void ABGGameState::AddNonCinematicCardGameplayCue(ABGCharacter* Caster, ABGCharacter* Target,
+	const FBGCardResolution& Resolution, float ActiveSeconds)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	const UGameInstance* GI = GetGameInstance();
+	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	const FBGCardFXRow* FXRow = Data ? Data->GetCardFXRow(Resolution.CardId) : nullptr;
+	if (!FXRow)
+	{
+		return;
+	}
+
+	ABGCharacter* CueTarget = FXRow->PrimaryAnchor == EBGCardFXAnchor::Target && Target
+		? Target
+		: Caster;
+	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(CueTarget);
+	if (!ASC)
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[CardCue] 단발 대상 ASC 없음 — %s"), *CueTarget->GetName());
+		return;
+	}
+
+	FGameplayCueParameters Parameters;
+	Parameters.Instigator = Caster;
+	Parameters.EffectCauser = Caster;
+	Parameters.SourceObject = this;
+	Parameters.TargetAttachComponent = CueTarget->GetRootComponent();
+	Parameters.AggregatedSourceTags.AddTag(Resolution.CardId);
+	if (Resolution.Roll != INDEX_NONE)
+	{
+		Parameters.AggregatedSourceTags.AddTag(UBGDiceComponent::OutcomeToTag(Resolution.Outcome));
+	}
+
+	const FGameplayTag CueTag = BG::GameplayCue::Card::Primary.GetTag();
+	ASC->AddGameplayCue(CueTag, Parameters);
+	ActiveNonCinematicCardCueASC = ASC;
+	ActiveNonCinematicCardCueTag = CueTag;
+
+	GetWorldTimerManager().SetTimer(NonCinematicCardCueTimer, this,
+		&ABGGameState::RemoveActiveNonCinematicCardGameplayCue,
+		FMath::Max(0.01f, ActiveSeconds), /*bLoop=*/false);
+}
+
+//시네마틱 사용하지 않는 카드의 게임플레이 큐 태그 제거
+void ABGGameState::RemoveActiveNonCinematicCardGameplayCue()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(NonCinematicCardCueTimer);
+	if (UAbilitySystemComponent* ASC = ActiveNonCinematicCardCueASC.Get();
+		ASC && ActiveNonCinematicCardCueTag.IsValid())
+	{
+		ASC->RemoveGameplayCue(ActiveNonCinematicCardCueTag);
+	}
+	ActiveNonCinematicCardCueASC.Reset();
+	ActiveNonCinematicCardCueTag = FGameplayTag();
 }
 
 void ABGGameState::ScheduleCinematicStep(float DelaySeconds, TFunction<void()>&& Step)
