@@ -1,6 +1,7 @@
-﻿#include "UI/Widget/BGTurnPanelWidget.h"
+#include "UI/Widget/BGTurnPanelWidget.h"
 
 #include "Components/Button.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Lobby/BGRopeComponent.h"
 #include "Engine/World.h"
@@ -23,6 +24,8 @@ void UBGTurnPanelWidget::NativeConstruct()
 	}
 
 	RefreshVisual();
+
+	RefreshHealthHearts();
 }
 
 bool UBGTurnPanelWidget::TryBindRope()
@@ -125,15 +128,15 @@ void UBGTurnPanelWidget::RefreshVisual()
 
 	if (Text_HandLimit)
 	{
-		//	한도가 없으면(설정 문제로 Health 를 못 읽은 경우) 숫자 대신 '-' 로 표시한다.
+		//	무슨 숫자인지는 옆의 아이콘이 말해 준다. 한도가 없으면(설정 문제로 Health 를 못 읽은 경우) '-' 로 둔다.
 		Text_HandLimit->SetText(TurnView.HandLimit == INDEX_NONE
-			? FText::FromString(FString::Printf(TEXT("손패 %d"), TurnView.HandCount))
-			: FText::FromString(FString::Printf(TEXT("손패 %d / 한도 %d"), TurnView.HandCount, TurnView.HandLimit)));
+			? FText::FromString(FString::Printf(TEXT("%d / -"), TurnView.HandCount))
+			: FText::FromString(FString::Printf(TEXT("%d / %d"), TurnView.HandCount, TurnView.HandLimit)));
 	}
 
 	if (Text_Deck)
 	{
-		Text_Deck->SetText(FText::FromString(FString::Printf(TEXT("덱 %d"), TurnView.DeckCount)));
+		Text_Deck->SetText(FText::FromString(FString::Printf(TEXT("%d"), TurnView.DeckCount)));
 	}
 
 	if (Text_CardUse)
@@ -202,5 +205,36 @@ void UBGTurnPanelWidget::SetLocalSeatInfo(const FBGSeatView& InView)
 		}
 	}
 
+	RefreshHealthHearts();
+
 	OnLocalSeatInfoChanged(LocalSeatView);
+}
+
+void UBGTurnPanelWidget::RefreshHealthHearts()
+{
+	UImage* const Hearts[] = { Img_Heart_1, Img_Heart_2, Img_Heart_3, Img_Heart_4, Img_Heart_5, Img_Heart_6 };
+	const int32 NumHearts = UE_ARRAY_COUNT(Hearts);
+
+	//	판 전에는 최대 체력이 0 이다 — 줄째로 접힌다.
+	const int32 MaxHealth = ShouldShowLocalStats() ? FMath::Min(LocalSeatView.MaxHealth, NumHearts) : 0;
+	const int32 Health = FMath::Clamp(LocalSeatView.Health, 0, MaxHealth);
+
+	for (int32 Index = 0; Index < NumHearts; ++Index)
+	{
+		UImage* Heart = Hearts[Index];
+		if (!Heart)
+		{
+			continue;
+		}
+
+		//	최대 체력을 넘는 칸은 자리까지 접는다. 숨기기만 하면 줄이 가운데로 모이지 않는다.
+		if (Index >= MaxHealth)
+		{
+			Heart->SetVisibility(ESlateVisibility::Collapsed);
+			continue;
+		}
+
+		Heart->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Heart->SetColorAndOpacity(Index < Health ? HeartFullTint : HeartEmptyTint);
+	}
 }

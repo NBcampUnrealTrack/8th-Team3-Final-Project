@@ -10,13 +10,14 @@
 #include "BGTurnPanelWidget.generated.h"
 
 class UButton;
+class UImage;
 class UTextBlock;
 
 /**
  * WBP 서브클래스에 아래 이름의 위젯이 있어야 한다:
  *   Button_EndTurn (Button,    필수)
  *   Text_Status    (TextBlock, 선택 — "내 차례" 등 안내문)
- *   Text_HandLimit (TextBlock, 선택 — "손패 5 / 한도 4")
+ *   Text_HandLimit (TextBlock, 선택 — "5 / 4". 손패 장수 / 한도)
  *   Text_Deck      (TextBlock, 선택 — 남은 덱 장수)
  *   Text_CardUse   (TextBlock, 선택 — "카드 1 / 2")
  *   Text_Rope      (TextBlock, 선택 — "밧줄 37초" 턴 제한 시간)
@@ -25,6 +26,7 @@ class UTextBlock;
  *   Text_Name      (TextBlock, 선택 — 내 이름)
  *   Text_Job       (TextBlock, 선택 — 캐릭터 이름)
  *   Text_Health    (TextBlock, 선택 — "체력 5 / 5")
+ *   Img_Heart_1..6 (Image,     선택 — 체력을 하트로. Text_Health 대신 쓰는 표시다)
  *   Text_Role      (TextBlock, 선택 — 내 역할. 본인 것이라 숨기지 않는다)
  *   Text_Equipment (TextBlock, 선택 — 장비 목록)
  *   손패 장수는 Text_HandLimit 이 이미 보여주므로 따로 두지 않는다.
@@ -106,6 +108,36 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Health;
 
+	/**
+	 * 최대 체력 여섯 칸을 미리 두고 남는 것은 접는다.
+	 * 하나도 없으면 Text_Health 만으로 표시된다.
+	 */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_Heart_1;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_Heart_2;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_Heart_3;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_Heart_4;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_Heart_5;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_Heart_6;
+
+	/** 남아 있는 체력 하트의 색. */
+	UPROPERTY(EditAnywhere, Category = "BG|Turn")
+	FLinearColor HeartFullTint = FLinearColor::White;
+
+	/** 잃은 체력 하트의 색 — 자리는 남기고 어둡게만 만든다. */
+	UPROPERTY(EditAnywhere, Category = "BG|Turn")
+	FLinearColor HeartEmptyTint = FLinearColor(0.06f, 0.06f, 0.06f, 0.55f);
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Role;
 
@@ -128,6 +160,9 @@ protected:
 
 private:
 	void RefreshVisual();
+
+	//	LocalSeatView 의 체력을 하트 줄에 반영한다.
+	void RefreshHealthHearts();
 
 	// 밧줄 컴포넌트를 찾아 구독한다. 아직 없으면 false — 다음 틱에 다시 시도한다.
 	bool TryBindRope();
