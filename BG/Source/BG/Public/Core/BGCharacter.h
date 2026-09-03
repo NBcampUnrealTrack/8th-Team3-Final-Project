@@ -26,6 +26,7 @@ class UBGAttributeSet;
 class UCameraComponent;
 class UGameplayAbility;
 class UGameplayEffect;
+class UBGStatusFXComponent;
 
 /**
  * ABP 가 읽는 이 캐릭터의 연출 상태 (아트 기획서 "전투 연출").
@@ -104,6 +105,9 @@ public:
 	// 이 캐릭터의 직업 태그 (Character.Job.*). 공개 정보라 전원에게 복제된다.
 	UFUNCTION(BlueprintPure, Category = "BG")
 	FGameplayTag GetJobTag() const { return JobTag; }
+
+	UFUNCTION(BlueprintPure, Category = "BG|FX")
+	UBGStatusFXComponent* GetStatusFX() const { return StatusFX; }
 
 	/**
 	 * 서버에서 직업을 배정할 때 호출. DT Row 를 읽어 스탯 GE/패시브/어빌리티를 부여하고,
@@ -293,6 +297,9 @@ protected:
 	bool bCinematicSubject = false;
 
 	/** 평상시 시점. 스폰 시 이쪽이 활성이다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|FX")
+	TObjectPtr<UBGStatusFXComponent> StatusFX;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Camera")
 	TObjectPtr<UCameraComponent> PrimaryCamera;
 
