@@ -72,10 +72,10 @@ void UBGSeatWidget::RefreshVisual()
 	if (Text_Equipment)
 	{
 		TArray<FString> Names;
-		Names.Reserve(SeatView.EquipmentNames.Num());
-		for (const FText& Name : SeatView.EquipmentNames)
+		Names.Reserve(SeatView.Equipment.Num());
+		for (const FBGEquipmentView& Item : SeatView.Equipment)
 		{
-			Names.Add(Name.ToString());
+			Names.Add(Item.Name.ToString());
 		}
 		Text_Equipment->SetText(FText::FromString(FString::Join(Names, TEXT(", "))));
 	}

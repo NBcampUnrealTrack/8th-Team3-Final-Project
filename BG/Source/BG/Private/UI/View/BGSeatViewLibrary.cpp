@@ -206,14 +206,23 @@ TArray<FBGSeatView> UBGSeatViewLibrary::MakeSeatViews(const APlayerController* V
 		//	직업은 역할과 달리 조건 없이 전원에게 복제된다(GDD §7) — 숨김 처리가 필요 없다.
 		if (const ABGCharacter* Character = Cast<ABGCharacter>(GetSeatPawn(PS)))
 		{
-			View.JobName = JobDisplayName(Character->GetJobTag(), Data);
+			const FGameplayTag JobTag = Character->GetJobTag();
+			View.JobName = JobDisplayName(JobTag, Data);
+
+			//	설명은 폴백을 만들지 않는다 — 비면 툴팁이 표의 기본 문구를 쓴다.
+			if (const FBGCharacterRow* JobRow = Data ? Data->GetCharacterRow(JobTag) : nullptr)
+			{
+				View.JobDescription = JobRow->Description;
+			}
 		}
 
 		//	파란 카드(장비)는 공개 정보다.
 		for (const FBGCardInstance& Equip : PS->GetEquipment())
 		{
 			const FBGCardRow* Row = Data ? Data->GetCardRow(Equip.CardId) : nullptr;
-			View.EquipmentNames.Add(Row ? Row->DisplayName : FText::FromName(Equip.CardId));
+			FBGEquipmentView& Item = View.Equipment.AddDefaulted_GetRef();
+			Item.Name        = Row ? Row->DisplayName : FText::FromName(Equip.CardId);
+			Item.Description = Row ? Row->Description : FText::GetEmpty();
 		}
 
 		//	주의: 반드시 PublicRoleTag 를 본다. GetSeatRole() 은 서버 권위 진짜 역할이라
@@ -230,6 +239,8 @@ TArray<FBGSeatView> UBGSeatViewLibrary::MakeSeatViews(const APlayerController* V
 		View.RoleName = VisibleRole.IsValid()
 			? FText::FromString(RoleDisplayName(VisibleRole))
 			: FText::GetEmpty();
+
+		View.RoleTag = VisibleRole;   //	RoleName 과 같은 조건 — 공개된 것만 온다.
 
 		View.Distance = GetRingDistance(Viewer, ViewerSeat, View.SeatIndex);
 

@@ -1,10 +1,37 @@
 #include "UI/Widget/BGTurnPanelWidget.h"
 
+#include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Lobby/BGRopeComponent.h"
+#include "UI/View/BGInfoTooltipRow.h"
+#include "UI/Widget/BGInfoTooltipWidget.h"
+#include "Engine/DataTable.h"
 #include "Engine/World.h"
+
+void UBGTurnPanelWidget::NativeOnInitialized()
+{
+	Super::NativeOnInitialized();
+
+	//	툴팁 델리게이트는 슬레이트 위젯을 만들 때 한 번만 읽힌다.
+	//	NativeConstruct 는 그 뒤라 거기서 붙이면 늦는다.
+	struct FInfoRow { UBorder* Border; const TCHAR* FuncName; };
+	const FInfoRow InfoRows[] = {
+		{ Border_Job,       TEXT("MakeJobTooltip")       },
+		{ Border_Equipment, TEXT("MakeEquipmentTooltip") },
+		{ Border_HandLimit, TEXT("MakeHandLimitTooltip") },
+		{ Border_Role,      TEXT("MakeRoleTooltip")      },
+	};
+
+	for (const FInfoRow& Row : InfoRows)
+	{
+		if (Row.Border)
+		{
+			Row.Border->ToolTipWidgetDelegate.BindUFunction(this, Row.FuncName);
+		}
+	}
+}
 
 void UBGTurnPanelWidget::NativePreConstruct()
 {
@@ -26,6 +53,114 @@ void UBGTurnPanelWidget::NativeConstruct()
 	RefreshVisual();
 
 	RefreshHealthHearts();
+}
+
+namespace
+{
+	//	표 Row 가 없을 수 있다 — 그때는 빈 텍스트로 접힌다.
+	FText InfoTitle(const FBGInfoTooltipRow* Row) { return Row ? Row->Title : FText::GetEmpty(); }
+	FText InfoBody (const FBGInfoTooltipRow* Row) { return Row ? Row->Body  : FText::GetEmpty(); }
+
+	//	살아 있는 값이 있으면 그쪽을, 없으면 표의 문구를 쓴다.
+	FText PreferLive(const FText& Live, const FText& Fallback) { return Live.IsEmpty() ? Fallback : Live; }
+
+	//	값 아래에 설명을 빈 줄 하나 띄워 붙인다. 한쪽이 비면 나머지만 남는다.
+	FText JoinWithBlankLine(const FText& Top, const FText& Bottom)
+	{
+		if (Top.IsEmpty())    { return Bottom; }
+		if (Bottom.IsEmpty()) { return Top; }
+
+		return FText::Format(NSLOCTEXT("BG", "InfoStack", "{0}\n\n{1}"), Top, Bottom);
+	}
+}
+
+UWidget* UBGTurnPanelWidget::MakeInfoTooltip(const FText& InTitle, const FText& InBody)
+{
+	if (!InfoTooltipClass)
+	{
+		return nullptr;   //	그릴 위젯이 없다.
+	}
+
+	//	줄마다 새로 만든다. 슬레이트 위젯은 부모가 하나뿐이라, 하나를 네 Border 가
+	//	돌려 쓰면 툴팁이 겹치는 순간 먼저 뜬 쪽이 빈 채로 남는다.
+	UBGInfoTooltipWidget* Tooltip = CreateWidget<UBGInfoTooltipWidget>(this, InfoTooltipClass);
+	if (Tooltip)
+	{
+		Tooltip->SetInfo(InTitle, InBody);
+	}
+
+	return Tooltip;
+}
+
+const FBGInfoTooltipRow* UBGTurnPanelWidget::FindInfoRow(FName RowName) const
+{
+	if (!InfoTable)
+	{
+		return nullptr;
+	}
+
+	//	없는 Row 는 정상이다(역할 미배정 등) — 경고를 끄고 호출부가 폴백을 고른다.
+	return InfoTable->FindRow<FBGInfoTooltipRow>(RowName, TEXT("BGTurnPanel Info"), /*bWarnIfMissing=*/ false);
+}
+
+FText UBGTurnPanelWidget::MakeEquipmentLines() const
+{
+	//	장비 한 장이 "이름 / 빈 줄 / 설명" 한 덩이가 되고, 덩이 사이도 빈 줄로 띄운다.
+	//	장비가 없으면 빈 텍스트다 — 호출부가 표의 문구로 넘어간다.
+	TArray<FText> Blocks;
+	Blocks.Reserve(LocalSeatView.Equipment.Num());
+	for (const FBGEquipmentView& Item : LocalSeatView.Equipment)
+	{
+		Blocks.Add(JoinWithBlankLine(Item.Name, Item.Description));
+	}
+
+	return FText::Join(FText::FromString(TEXT("\n\n")), Blocks);
+}
+
+UWidget* UBGTurnPanelWidget::MakeJobTooltip()
+{
+	//	직업 설명은 DT_BGCharacterRow 에서 온다 — 직업마다 다르므로 툴팁 표에 둘 수 없다.
+	const FBGInfoTooltipRow* Row = FindInfoRow(TEXT("Info.Job"));
+
+	return MakeInfoTooltip(PreferLive(LocalSeatView.JobName, InfoTitle(Row)),
+		PreferLive(LocalSeatView.JobDescription, InfoBody(Row)));
+}
+
+UWidget* UBGTurnPanelWidget::MakeEquipmentTooltip()
+{
+	const FBGInfoTooltipRow* Row = FindInfoRow(TEXT("Info.Equipment"));
+
+	return MakeInfoTooltip(InfoTitle(Row), PreferLive(MakeEquipmentLines(), InfoBody(Row)));
+}
+
+UWidget* UBGTurnPanelWidget::MakeHandLimitTooltip()
+{
+	//	손패는 "값이 없는 상태"가 없다 — 숫자를 제목으로 올려야 표의 설명이 본문에 남는다.
+	const FBGInfoTooltipRow* Row = FindInfoRow(TEXT("Info.HandLimit"));
+
+	const FText Counts = TurnView.HandLimit == INDEX_NONE
+		? FText::Format(NSLOCTEXT("BG", "InfoHandNoLimit", "{0} / -"), TurnView.HandCount)
+		: FText::Format(NSLOCTEXT("BG", "InfoHandLive", "{0} / {1}"), TurnView.HandCount, TurnView.HandLimit);
+
+	//	"손패 3 / 5" — 라벨은 표에서, 숫자만 여기서 붙인다.
+	const FText Label = InfoTitle(Row);
+	const FText Title = Label.IsEmpty()
+		? Counts
+		: FText::Format(NSLOCTEXT("BG", "InfoHandTitle", "{0} {1}"), Label, Counts);
+
+	return MakeInfoTooltip(Title, InfoBody(Row));
+}
+
+UWidget* UBGTurnPanelWidget::MakeRoleTooltip()
+{
+	//	역할별 Row 이름은 태그 문자열 그대로다(Role.Sheriff). 배정 전에는 Info.Role 이 뜬다.
+	const FBGInfoTooltipRow* Fallback = FindInfoRow(TEXT("Info.Role"));
+	const FBGInfoTooltipRow* Row = LocalSeatView.RoleTag.IsValid()
+		? FindInfoRow(FName(*LocalSeatView.RoleTag.ToString()))
+		: nullptr;
+
+	return MakeInfoTooltip(PreferLive(LocalSeatView.RoleName, InfoTitle(Fallback)),
+		PreferLive(InfoBody(Row), InfoBody(Fallback)));
 }
 
 bool UBGTurnPanelWidget::TryBindRope()
@@ -187,9 +322,9 @@ void UBGTurnPanelWidget::SetLocalSeatInfo(const FBGSeatView& InView)
 		Text_Equipment->SetVisibility(bShowStats ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 		if (bShowStats)
 		{
-			Text_Equipment->SetText(LocalSeatView.EquipmentNames.IsEmpty()
+			Text_Equipment->SetText(LocalSeatView.Equipment.IsEmpty()
 				? NSLOCTEXT("BG", "LocalNoEquipment", "장비 없음")
-				: FText::Join(NSLOCTEXT("BG", "LocalEquipSeparator", ", "), LocalSeatView.EquipmentNames));
+				: FText::Join(NSLOCTEXT("BG", "LocalEquipSeparator", ", "), LocalSeatView.GetEquipmentNames()));
 		}
 	}
 

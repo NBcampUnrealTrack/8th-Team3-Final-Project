@@ -303,6 +303,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FText DisplayName;
 
+	// 이 직업이 무엇을 하는지 한 줄 설명(턴 패널 툴팁이 읽는다).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FText Description;
+
 	// 기본 스탯 세팅 GE (Instant). Health/MaxHealth/WeaponRange/BangLimit ... 를 초기화.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TSubclassOf<UGameplayEffect> DefaultAttributeGE;

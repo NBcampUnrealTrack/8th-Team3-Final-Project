@@ -6,7 +6,22 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "BGSeatView.generated.h"
+
+/** 장착 중인 파란 카드 한 장. 이름도 설명도 공개 정보다. */
+USTRUCT(BlueprintType)
+struct FBGEquipmentView
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
+	FText Name;
+
+	/** DT_BGCard 의 Description. 비어 있을 수 있다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
+	FText Description;
+};
 
 /**
  * 좌석 1개(플레이어 1명)의 공개 정보.
@@ -35,17 +50,25 @@ struct FBGSeatView
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
 	int32 HandCount = 0;
 
-	/** 장착 중인 파란 카드 이름들. 파란 카드는 공개 정보다. */
+	/** 장착 중인 파란 카드. 파란 카드는 공개 정보다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
-	TArray<FText> EquipmentNames;
+	TArray<FBGEquipmentView> Equipment;
 
 	/** 공개된 역할만 채운다(보안관, 또는 사망자). 비공개면 빈 텍스트. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
 	FText RoleName;
 
+	/** RoleName 과 같은 조건으로 채운다. 툴팁이 설명을 찾는 키다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
+	FGameplayTag RoleTag;
+
 	/** 직업 이름(Character.Job.*). 역할과 달리 공개 정보라 항상 채운다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
 	FText JobName;
+
+	/** DT_BGCharacterRow 의 Description. 직업이 무엇을 하는지 한 줄 설명이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
+	FText JobDescription;
 
 	/**
 	 * 보는 사람 기준 거리. 자기 자신이거나 계산 불가면 INDEX_NONE (화면에는 "-").
@@ -74,6 +97,18 @@ struct FBGSeatView
 	bool bIsDisconnected = false;
 
 	bool IsValid() const { return SeatIndex != INDEX_NONE; }
+
+	/** 이름만 뽑는다. 목록을 한 줄로 잇는 곳이 여럿이라 여기 둔다. */
+	TArray<FText> GetEquipmentNames() const
+	{
+		TArray<FText> Names;
+		Names.Reserve(Equipment.Num());
+		for (const FBGEquipmentView& Item : Equipment)
+		{
+			Names.Add(Item.Name);
+		}
+		return Names;
+	}
 };
 
 /**
