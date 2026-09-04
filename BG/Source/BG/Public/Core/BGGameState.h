@@ -98,6 +98,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGTurnStateChanged);
 /** 판정 결과가 도착했다. 서버·클라 양쪽에서 불린다 (GDD §4.1 — 전원이 같은 결과를 본다). */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCardResolved, const FBGCardResolution& /*Resolution*/);
 
+/** 장비 착용 통지. 판정이 없어 FBGCardResolution 을 쓸 수 없다 — 좌석과 카드 종류만 오간다. */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGCardEquipped,
+	int32 /*SeatIndex*/, FGameplayTag /*CardId*/);
+
 /** 연출 카메라 샷이 바뀌었다. 서버·클라 양쪽에서 불린다. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCameraShotChanged, const FBGCameraShot& /*Shot*/);
 
@@ -120,6 +124,19 @@ public:
 
 	/** 위 멀티캐스트가 도착하면 발사된다. UI(PlayerController)가 구독한다. */
 	FOnBGCardResolved OnCardResolved;
+
+	/**
+	 * 장비를 착용했다고 전원에게 알린다 (서버에서만 호출).
+	 *
+	 * ⚠️ Multicast_CardResolved 를 재사용하지 않는 이유: 장비는 판정을 굴리지 않는다.
+	 *    등급도 눈도 없는 결과를 그 경로로 흘리면 판정 위젯이 주사위와 등급을 지어내 띄운다.
+	 *    여기로 오는 것은 "누가 무엇을 착용했다" 뿐이고, 화면에 세울 카드 연출이 그 용도다.
+	 */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_CardEquipped(int32 SeatIndex, FGameplayTag CardId);
+
+	/** 위 멀티캐스트가 도착하면 발사된다. */
+	FOnBGCardEquipped OnCardEquipped;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

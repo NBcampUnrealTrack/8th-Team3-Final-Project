@@ -281,9 +281,11 @@ void ABGPlayerController::TryBindResolutionDelegate()
 	if (ABGGameState* Previous = BoundGameState.Get())
 	{
 		Previous->OnCardResolved.RemoveAll(this);
+		Previous->OnCardEquipped.RemoveAll(this);
 	}
 
 	GS->OnCardResolved.AddUObject(this, &ABGPlayerController::HandleCardResolved);
+	GS->OnCardEquipped.AddUObject(this, &ABGPlayerController::HandleCardEquipped);
 	BoundGameState = GS;
 
 	UE_LOG(LogBGCard, Verbose, TEXT("[PC] 판정 결과 통지 구독"));
@@ -301,6 +303,36 @@ EBGResolutionTier ABGPlayerController::ToResolutionTier(EBGDiceOutcome Outcome)
 
 	//	등급이 늘어났는데 여기를 안 고치면 화면이 UnknownTierColor(자홍색)로 뜬다 — 바로 눈에 띈다.
 	return EBGResolutionTier::None;
+}
+
+void ABGPlayerController::HandleCardEquipped(int32 SeatIndex, FGameplayTag CardId)
+{
+	//	내 장비는 손패에 실물 위젯이 있고, 손패에서 빠질 때 그쪽이 중앙 연출을 태운다
+	//	(ReleaseHeldCardsMissingFrom 폴백). 여기서 또 세우면 같은 카드가 둘 보인다.
+	if (!HandWidget || SeatIndex == GetMySeatIndex())
+	{
+		return;
+	}
+
+	const UBGDataSubsystem* Data = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UBGDataSubsystem>()
+		: nullptr;
+
+	FBGCardInstance Spectator;
+	Spectator.CardId = Data ? Data->GetCardRowName(CardId) : NAME_None;
+	if (Spectator.CardId.IsNone())
+	{
+		return;   // DT 에 없는 카드다. 연출만 빠지고 규칙은 이미 서버에서 끝났다.
+	}
+
+	//	⚠️ Tier 를 채우지 않는다. 장비는 판정을 굴리지 않으므로 등급이 없다 —
+	//	   지어내면 BP 연출이 "성공" 글로우를 띄워 판정 카드와 구분되지 않는다.
+	FBGCardPlayContext Context;
+	Context.SeatIndex            = SeatIndex;
+	Context.bResolvedWithoutRoll = true;
+
+	HandWidget->ShowSpectatorCard(
+		UBGCardViewLibrary::MakeCardView(this, Spectator), Context);
 }
 
 void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution)
@@ -349,6 +381,22 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 		//	판정 결과에는 InstanceId 가 없다(카드 "종류" 만 온다). 중앙에 잡힌 카드는
 		//	한 번에 하나뿐이므로 손패가 알아서 찾는다.
 		HandWidget->NotifyCardResolved(PlayContext, INDEX_NONE);
+	}
+	else if (HandWidget && Row)
+	{
+		//	남이 낸 카드다 — 내 손패에는 그 카드의 위젯이 없으므로 관전용으로 하나 만들어
+		//	같은 중앙 연출을 태운다. 판정 통지는 Multicast 라 전원이 여기까지 온다.
+		//
+		//	⚠️ 내 카드와 달리 이 위젯은 손패에 속하지 않는다. 손패에 넣으면 남이 낸 카드가
+		//	   내 부채꼴에 끼어든다(ShowSpectatorCard 주석 참고).
+		FBGCardInstance Spectator;
+		Spectator.CardId = Data ? Data->GetCardRowName(Resolution.CardId) : NAME_None;
+
+		if (!Spectator.CardId.IsNone())
+		{
+			HandWidget->ShowSpectatorCard(
+				UBGCardViewLibrary::MakeCardView(this, Spectator), PlayContext);
+		}
 	}
 
 	//	⚠️ 위 좌석 분기 **밖**이다. 안에 넣으면 내가 낸 카드에만 화면이 흔들려서,
@@ -1034,6 +1082,53 @@ static FAutoConsoleVariableRef CVarBGIgnoreTurnOrder(
 	TEXT("1 이면 턴/페이즈 검증을 건너뛴다(GA 단독 테스트용). 기본 0."),
 	ECVF_Default);
 
+FText ABGPlayerController::GetPlayRejectText(EBGCardPlayRejectReason Reason)
+{
+	switch (Reason)
+	{
+	case EBGCardPlayRejectReason::NotYourTurn:     return NSLOCTEXT("BG", "Reject_NotYourTurn",     "지금은 당신의 차례가 아닙니다.");
+	case EBGCardPlayRejectReason::NoCardUsesLeft:  return NSLOCTEXT("BG", "Reject_NoUsesLeft",      "이번 턴에 쓸 수 있는 카드를 다 썼습니다.");
+	case EBGCardPlayRejectReason::TargetDead:      return NSLOCTEXT("BG", "Reject_TargetDead",      "그 대상은 이미 쓰러졌습니다.");
+	case EBGCardPlayRejectReason::CardNotInHand:   return NSLOCTEXT("BG", "Reject_NotInHand",       "그 카드는 손패에 없습니다.");
+	case EBGCardPlayRejectReason::AlreadyEquipped: return NSLOCTEXT("BG", "Reject_AlreadyEquipped", "이미 장착하고 있습니다.");
+	case EBGCardPlayRejectReason::StatusAlreadyOn: return NSLOCTEXT("BG", "Reject_StatusOn",        "이미 같은 상태라 중첩할 수 없습니다.");
+	default:                                       return NSLOCTEXT("BG", "Reject_Internal",        "카드를 사용할 수 없습니다.");
+	}
+}
+
+void ABGPlayerController::RejectPlayCard(int32 InstanceId, EBGCardPlayRejectReason Reason)
+{
+	//	거부 사유별 상세 로그는 부르는 쪽이 이미 남긴다. 여기서는 통지가 나갔다는 것만 남긴다 —
+	//	통지 없이 빠져나간 경로를 찾을 때 이 줄의 유무가 단서가 된다.
+	UE_LOG(LogBGCard, Log, TEXT("[BG] 카드 #%d 거부 통지 — %s"),
+		InstanceId, *GetPlayRejectText(Reason).ToString());
+
+	ClientPlayCardRejected(InstanceId, Reason);
+}
+
+void ABGPlayerController::ClientPlayCardRejected_Implementation(int32 InstanceId,
+	EBGCardPlayRejectReason Reason)
+{
+	if (HandWidget)
+	{
+		//	중앙에 올라가 있으면 손패로 내린다. 아직 손패에 있으면(대상 카드) 아무 일도 없다.
+		HandWidget->ReturnHeldCardToHand(InstanceId);
+
+		//	"내가 냈다" 표시도 거둔다 — 남겨 두면 만료되기 전에 이 카드가 다른 사유로
+		//	빠질 때 내지도 않은 카드가 중앙 연출을 탄다.
+		HandWidget->ClearPlayedMark(InstanceId);
+	}
+
+	//	거부됐으니 다시 집을 수 있어야 한다.
+	UpdateHandInteractionLock();
+
+	//	전용 UI 가 아직 없다 — 그때까지는 화면에 직접 띄운다.
+	//	위젯이 생기면 이 줄을 지우고 OnCardPlayRejected 구독으로 옮길 것.
+	BGDebug::Screen(GetPlayRejectText(Reason).ToString(), FColor::Orange, /*Time=*/3.f);
+
+	OnCardPlayRejected.Broadcast(InstanceId, Reason);
+}
+
 void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 {
 	UE_LOG(LogTemp, Log, TEXT("[BG] ServerRequestPlayCard 수신 — PC=%s Instance=%d TargetSeat=%d"),
@@ -1077,7 +1172,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			UE_LOG(LogBGCard, Warning, TEXT("[BG] 카드 #%d 거부 — 좌석 %d 의 차례가 아니다 (현재 %d / %s)"),
 				InstanceId, MySeat, GS ? GS->GetCurrentSeat() : INDEX_NONE,
 				GS ? *GS->GetPhaseTag().ToString() : TEXT("-"));
-			return;
+			return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::NotYourTurn);
 		}
 
 		//	턴당 카드 사용 한도 (GDD §5.2). 버리기는 이 경로를 타지 않으므로 영향받지 않는다.
@@ -1094,7 +1189,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 			UE_LOG(LogBGCard, Warning, TEXT("[BG] 카드 #%d 거부 — 좌석 %d 사용 한도 소진"),
 				InstanceId, MySeat);
-			return;
+			return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::NoCardUsesLeft);
 		}
 
 		//	죽은 좌석은 대상이 될 수 없다.
@@ -1115,7 +1210,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 			UE_LOG(LogBGCard, Warning, TEXT("[BG] 카드 #%d 거부 — 대상 좌석 %d 은 사망"),
 				InstanceId, TargetSeat);
-			return;
+			return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::TargetDead);
 		}
 	}
 
@@ -1126,7 +1221,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[BG] HandlePlayCard: 시전자 ASC 없음 (Pawn=%s)."),
 			GetPawn() ? *GetPawn()->GetName() : TEXT("null"));
-		return;
+		return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::InternalError);
 	}
 
 	// ── InstanceId → 손패에서 카드 조회 → 카드 종류 태그 + 메커니즘 태그 ──
@@ -1166,7 +1261,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			FColor::Red, 8.f);
 
 		UE_LOG(LogBGCard, Warning, TEXT("[BG] 카드 #%d 거부 — 손패에 없거나 CardIdTag 가 비었다"), InstanceId);
-		return;
+		return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::CardNotInHand);
 	}
 
 	// ── CardId 태그 → GA 클래스 (맵을 "카드 종류"로 직접 조회) ──
@@ -1194,7 +1289,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 		UE_LOG(LogBGCard, Warning, TEXT("[BG] 카드 #%d 거부 — %s 의 GA 매핑 없음 (맵 %d개)"),
 			InstanceId, *CardId.ToString(), AbilityByCardId.Num());
-		return;
+		return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::InternalError);
 	}
 	TSubclassOf<UGameplayAbility> AbilityClass = *Found;
 
@@ -1232,7 +1327,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 							Effect.bToTarget ? TEXT("대상") : TEXT("본인"),
 							*Effect.StatusTag.GetTagName().ToString()),
 						FColor::Orange, /*Time=*/5.f);
-					return;
+					return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::StatusAlreadyOn);
 				}
 			}
 		}
@@ -1261,7 +1356,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		ABGPlayerState* EquipPS = GetPlayerState<ABGPlayerState>();
 		if (!EquipPS)
 		{
-			return;
+			return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::InternalError);
 		}
 
 		if (EquipPS->HasEquippedCard(CardCardId))
@@ -1270,20 +1365,20 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 				FString::Printf(TEXT("[서버] %s 는 이미 장착 중입니다 — 중복 장착 불가."),
 					*CardRow->DisplayName.ToString()),
 				FColor::Orange, /*Time=*/5.f);
-			return;
+			return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::AlreadyEquipped);
 		}
 
 		FBGCardInstance Moved;
 		if (!EquipPS->RemoveCardFromHand(InstanceId, Moved))
 		{
-			return;
+			return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::CardNotInHand);
 		}
 
 		if (!EquipPS->EquipCard(Moved, CardRow->EquipEffect))
 		{
 			//	장착 실패 — 카드를 손패로 되돌린다(카드만 사라지면 안 된다).
 			EquipPS->AddCardToHand(Moved);
-			return;
+			return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::InternalError);
 		}
 
 		//	장비 설치도 카드 사용 횟수를 소비한다.
@@ -1296,6 +1391,13 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 				*CardRow->DisplayName.ToString(),
 				GetPawn() ? *GetPawn()->GetName() : TEXT("?")),
 			FColor(120, 200, 255), /*Time=*/5.f);
+
+		//	전원에게 알린다 — 이게 없으면 남의 화면에서는 장비가 아무 연출 없이
+		//	장비창에만 슬쩍 나타난다(판정 카드와 달리 통지 경로가 없었다).
+		if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+		{
+			MutableGS->Multicast_CardEquipped(EquipPS->GetSeatIndex(), CardId);
+		}
 		return;
 	}
 

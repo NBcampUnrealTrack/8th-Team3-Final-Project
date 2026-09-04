@@ -30,6 +30,14 @@ public:
 	const FBGCardRow* GetCardRow(FName CardID) const;
 	const FBGCardRow* GetCardRow(FGameplayTag CardTag) const;
 
+	/**
+	 * 카드 태그(Card.Id.*) → DT Row 이름. 못 찾으면 NAME_None.
+	 *
+	 * 카드 "종류" 만 아는 자리에서 뷰를 만들 때 쓴다 — 판정 통지(FBGCardResolution)에는
+	 * 태그만 실려 오는데 FBGCardInstance 는 Row 이름을 키로 쓰기 때문이다.
+	 */
+	FName GetCardRowName(FGameplayTag CardTag) const;
+
 	// 모든 카드 확률(가중치) Row 를 모아 반환 (확률 기반 분배용).
 	void GetAllCardProbabilities(TArray<FBGCardProbabilityRow>& OutRows) const;
 	

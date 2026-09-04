@@ -251,14 +251,20 @@ const FBGCardRow* UBGDataSubsystem::GetCardRow(FName CardID) const
 
 const FBGCardRow* UBGDataSubsystem::GetCardRow(FGameplayTag CardTag) const
 {
+	const FName RowName = GetCardRowName(CardTag);
+	return RowName.IsNone() ? nullptr : CardTable->FindRow<FBGCardRow>(RowName, TEXT("GetCardRow"));
+}
+
+FName UBGDataSubsystem::GetCardRowName(FGameplayTag CardTag) const
+{
 	TArray<FName> RowNames = CardTable->GetRowNames();
 	for (const FName& RowName : RowNames)
 	{
-		const FBGCardRow* Row = CardTable->FindRow<FBGCardRow>(RowName, TEXT("GetCardRow"));
+		const FBGCardRow* Row = CardTable->FindRow<FBGCardRow>(RowName, TEXT("GetCardRowName"));
 		if (Row && Row->CardIdTag == CardTag)
 		{
-			return Row;
+			return RowName;
 		}
 	}
-	return nullptr;
+	return NAME_None;
 }

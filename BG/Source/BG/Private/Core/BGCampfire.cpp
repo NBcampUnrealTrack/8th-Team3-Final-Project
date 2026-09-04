@@ -71,7 +71,10 @@ void ABGCampfire::ApplyFireLightSettings()
 	FireLight->SetVisibility(bFireLightEnabled);
 	FireLight->SetLightColor(FireColor);
 	FireLight->SetIntensity(FireIntensity);
-	FireLight->SetRelativeLocation(FVector(0.f, 0.f, LightHeightOffset));
+
+	//	에디터에서 높이를 바꾼 직후다 — 임계값에 걸려 무시되면 안 되므로 무조건 밀어 넣는다.
+	bLightOffsetApplied = false;
+	MoveFireLight(FVector(0.f, 0.f, LightHeightOffset));
 
 	if (bAutoAttenuationRadius)
 	{
@@ -97,8 +100,15 @@ void ABGCampfire::UpdateFireFlicker(float DeltaSeconds)
 	if (!bFlicker)
 	{
 		//	끈 순간 흔들리던 값에 멈춰 있으면 안 된다 — 기준값으로 되돌린다.
+		//	값을 잡는 중이므로 임계값 오차를 남기지 않고 정확히 맞춘다(한 번만 돈다).
 		FireLight->SetIntensity(FireIntensity);
-		FireLight->SetRelativeLocation(FVector(0.f, 0.f, LightHeightOffset));
+
+		const FVector BaseOffset(0.f, 0.f, LightHeightOffset);
+		if (!AppliedLightOffset.Equals(BaseOffset))
+		{
+			bLightOffsetApplied = false;
+			MoveFireLight(BaseOffset);
+		}
 		return;
 	}
 
@@ -120,10 +130,37 @@ void ABGCampfire::UpdateFireFlicker(float DeltaSeconds)
 	const float JitterX = FMath::PerlinNoise1D(FlickerTime * 0.53f + 101.f);
 	const float JitterY = FMath::PerlinNoise1D(FlickerTime * 0.61f + 211.f);
 
-	FireLight->SetRelativeLocation(FVector(
+	MoveFireLight(FVector(
 		JitterX * FlickerJitter,
 		JitterY * FlickerJitter,
 		LightHeightOffset));
+}
+
+void ABGCampfire::MoveFireLight(const FVector& RelativeLocation)
+{
+	if (!FireLight)
+	{
+		return;
+	}
+
+	//	⚠️ 그림자를 드리우는 Movable 라이트는 옮긴 프레임마다 감쇠 반경 안의 동적 그림자를
+	//	   다시 그린다. 눈에 보이지도 않을 미세한 흔들림 때문에 매 프레임 그러지 않도록,
+	//	   실제로 밀어 넣은 위치에서 충분히 벗어났을 때만 옮긴다.
+	//	   비교 기준이 '목표' 가 아니라 '적용된' 위치여야 건너뛴 프레임이 쌓여도 편차가
+	//	   임계값을 넘지 않는다.
+	if (bLightOffsetApplied && FlickerJitterMinStep > 0.f)
+	{
+		const float MinStepSq = FlickerJitterMinStep * FlickerJitterMinStep;
+		if (FVector::DistSquared(RelativeLocation, AppliedLightOffset) < MinStepSq)
+		{
+			return;
+		}
+	}
+
+	FireLight->SetRelativeLocation(RelativeLocation);
+
+	AppliedLightOffset  = RelativeLocation;
+	bLightOffsetApplied = true;
 }
 
 ABGCampfire* ABGCampfire::Find(const UWorld* World)

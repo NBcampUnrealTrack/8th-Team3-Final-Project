@@ -316,6 +316,13 @@ void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution
 	OnCardResolved.Broadcast(Resolution);
 }
 
+void ABGGameState::Multicast_CardEquipped_Implementation(int32 SeatIndex, FGameplayTag CardId)
+{
+	//	밧줄은 멈추지 않는다 — 장비는 판정 표시가 뜨지 않아 읽을 시간이 따로 필요 없고,
+	//	착용만으로 남의 턴 시계가 멈추면 장비를 여러 장 든 사람이 시간을 벌게 된다.
+	OnCardEquipped.Broadcast(SeatIndex, CardId);
+}
+
 FGameplayTag ABGGameState::GameOverPhaseTag()
 {
 	return BG::Phase::GameOver.GetTag();

@@ -5,6 +5,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "UObject/SoftObjectPath.h"   // FSoftObjectPath — 맵을 애셋으로 고른다
 #include "Engine/GameInstance.h"
 #include "Interfaces/OnlineSessionInterface.h"
 #include "OnlineSessionSettings.h"
@@ -174,13 +175,33 @@ private:
 	// 맵을 다시 로드하지 않고 현재 월드를 리슨 서버로 전환한다.
 	bool StartListenInPlace();
 
-	// 세션이 열리는 게임 맵. 메인메뉴에서 호스트할 때 이 맵으로 이동한다.
-	UPROPERTY(Config)
-	FString GameMapPath = TEXT("/Game/GameSystem/TestMap");
+	/**
+	 * 세션이 열리는 게임 맵. 메인메뉴에서 호스트할 때 이 맵으로 이동한다.
+	 *
+	 * 문자열이 아니라 **맵 애셋을 고르게** 해 두었다. 경로를 손으로 적으면 오타가 나도
+	 * 컴파일도 실행도 멀쩡하고, 호스트를 눌러야 "맵을 못 찾았다" 로 드러난다 —
+	 * 드롭다운이면 그 실수가 아예 불가능하다. 맵을 옮기거나 이름을 바꿔도 참조가 따라간다.
+	 *
+	 * ⚠️ Config 를 남겨 두었다. DefaultGame.ini 에 같은 키가 있으면 **그쪽이 이긴다** —
+	 *    BP 에서 바꿨는데 안 먹으면 ini 를 먼저 볼 것.
+	 */
+	UPROPERTY(Config, EditDefaultsOnly, BlueprintReadOnly, Category = "BG|맵",
+		meta = (AllowedClasses = "/Script/Engine.World", AllowPrivateAccess = "true"))
+	FSoftObjectPath GameMap = FSoftObjectPath(TEXT("/Game/GameSystem/TestMap.TestMap"));
 
-	// 방을 나가면 돌아갈 메인메뉴 맵.
-	UPROPERTY(Config)
-	FString MainMenuMapPath = TEXT("/Game/GameSystem/L_MainMenu");
+	/** 방을 나가면 돌아갈 메인메뉴 맵. 규약은 GameMap 과 같다. */
+	UPROPERTY(Config, EditDefaultsOnly, BlueprintReadOnly, Category = "BG|맵",
+		meta = (AllowedClasses = "/Script/Engine.World", AllowPrivateAccess = "true"))
+	FSoftObjectPath MainMenuMap = FSoftObjectPath(TEXT("/Game/GameSystem/L_MainMenu.L_MainMenu"));
+
+	/**
+	 * ServerTravel · ClientTravel 이 받는 패키지 경로로 바꾼다.
+	 *
+	 * ⚠️ FSoftObjectPath 는 "/Game/GameSystem/TestMap.TestMap" 처럼 애셋 이름이 붙는다.
+	 *    그대로 넘기면 맵을 못 찾으므로 뒤를 떼야 한다. World->GetOutermost()->GetName()
+	 *    과 비교하는 자리도 같은 형식이어야 해서, 변환을 여기 한 곳에 모았다.
+	 */
+	static FString ToTravelPath(const FSoftObjectPath& Map);
 
 	// 재접속 식별용 열쇠. 처음 한 번 만들어 사용자 설정에 저장하고 계속 쓴다.
 	UPROPERTY(Config)

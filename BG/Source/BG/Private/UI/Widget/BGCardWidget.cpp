@@ -17,21 +17,14 @@
 
 namespace
 {
-	/**
-	 * 목표를 살짝 지나쳤다 되돌아오는 감속(ease-out-back).
-	 *
-	 * 등장에 "탄력" 을 주는 고전적인 곡선이다. Overshoot 이 0 이면 평범한 감속이 된다.
-	 */
+	/** 목표를 살짝 지나쳤다 되돌아오는 감속(ease-out-back). Overshoot 이 0 이면 평범한 감속. */
 	float EaseOutBack(float Alpha, float Overshoot)
 	{
 		const float A = Alpha - 1.f;
 		return 1.f + (Overshoot + 1.f) * A * A * A + Overshoot * A * A;
 	}
 
-	/**
-	 * 시작→목표 직선의 수직 방향. 궤적을 활처럼 휘게 하는 데 쓴다.
-	 * 항상 "위로 볼록" 하도록 부호를 맞춘다 — 아래로 처지면 카드가 떨어지는 것처럼 보인다.
-	 */
+	/** 시작→목표의 수직 방향(궤적을 활처럼 휘게 한다). 아래로 처지면 떨어지는 것처럼 보이므로 위로 고정. */
 	FVector2D UpwardPerpendicular(const FVector2D& Delta)
 	{
 		FVector2D Perpendicular(-Delta.Y, Delta.X);
@@ -44,36 +37,21 @@ namespace
 		return Perpendicular.Normalize() ? Perpendicular : FVector2D(0.f, -1.f);
 	}
 
-	/**
-	 * 고정 시간 연출의 진행도 0~1.
-	 *
-	 * 0 으로 나누는 것을 막는 자리가 연출 단계마다 필요하다 — 튜닝값을 0 으로 두는 것은
-	 * "그 단계를 건너뛴다" 는 뜻이라 실제로 일어난다(DealFlightDuration = 0 등).
-	 */
+	/** 고정 시간 연출의 진행도 0~1. 튜닝값 0 은 "그 단계를 건너뛴다" 라 실제로 일어난다. */
 	float Progress(float Elapsed, float Duration)
 	{
 		return FMath::Clamp(Elapsed / FMath::Max(Duration, KINDA_SMALL_NUMBER), 0.f, 1.f);
 	}
 
-	/**
-	 * 커브가 있으면 그것이 모양을 정하고, 없으면 Fallback 을 쓴다.
-	 *
-	 * 커브를 안 넣어도 동작해야 튜닝을 나중으로 미룰 수 있다 — 애셋이 없으면
-	 * 연출이 통째로 멈추는 구조면 아티스트가 붙기 전까지 확인을 못 한다.
-	 */
+	/** 커브가 있으면 그것이 모양을 정한다. 없어도 동작해야 튜닝을 나중으로 미룰 수 있다. */
 	float CurveOr(const UCurveFloat* Curve, float Alpha, float Fallback)
 	{
 		return Curve ? Curve->GetFloatValue(Alpha) : Fallback;
 	}
 
 	/**
-	 * -1~+1 입력에 응답 곡선을 먹인다. 부호(방향)는 그대로 두고 **크기만** 굽힌다.
-	 *
-	 *   1 보다 크면 : 중앙 근처가 둔해지고 가장자리에서 급해진다
-	 *   1 보다 작으면 : 조금만 벗어나도 확 기운다
-	 *
-	 * 양끝(±1)에서는 항상 ±1 이라 최대치가 곡선에 따라 변하지 않는다 —
-	 * 그래야 Max 값과 곡선을 따로 만질 수 있다.
+	 * -1~+1 입력에 응답 곡선을 먹인다. 부호는 두고 크기만 굽힌다.
+	 * 양끝(±1)에서는 항상 ±1 이라 Max 값과 곡선을 따로 만질 수 있다.
 	 */
 	float ShapeResponse(float Value, float Exponent)
 	{
@@ -114,7 +92,7 @@ void UBGCardWidget::SetBeingDragged(bool bInBeingDragged)
 
 	if (bBeingDragged)
 	{
-		//	커서를 따라다니는 복제본이 진짜 카드다. 원본은 자리만 알려 주는 실루엣으로 남긴다.
+		//	커서를 따라다니는 복제본이 진짜 카드다. 원본은 실루엣으로 남기되 입력은 끊는다 —
 		//	실루엣이 입력을 받으면 드래그 중 자기 자신이 드롭 대상이 된다.
 		PreDragVisibility = GetVisibility();
 		PreDragOpacity    = GetRenderOpacity();
@@ -124,7 +102,7 @@ void UBGCardWidget::SetBeingDragged(bool bInBeingDragged)
 	}
 	else
 	{
-		//	퇴장에 들어갔더라도 불투명도는 되돌린다. 퇴장 페이드는 TickExiting 이 다시 정한다.
+		//	퇴장 중이어도 불투명도는 되돌린다. 퇴장 페이드는 TickExiting 이 다시 정한다.
 		SetRenderOpacity(PreDragOpacity);
 
 		if (IsLeavingHand())
@@ -160,14 +138,14 @@ void UBGCardWidget::RefreshChanceText()
 	}
 
 	//	판정하지 않는 카드(장비)에 확률을 띄우면 "장비도 실패할 수 있다" 는 오해를 준다.
-	//	Collapsed 로 자리까지 회수한다 — 장비 카드에 빈 줄이 남지 않도록.
+	//	Collapsed 로 자리까지 회수해 빈 줄을 남기지 않는다.
 	const ESlateVisibility ChanceVisibility =
 		CardView.bHasChances ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
 
-	//	보정이 걸렸으면 보정 후 값을 보여준다. GDD §8 이 요구하는 것은 "최종 확률" 이다.
+	//	보정 후 값을 보여준다 — GDD §8 이 요구하는 것은 "최종 확률" 이다.
 	const FBGCardChanceView& Shown = CardView.FinalChance;
 
-	//	반올림 때문에 합이 100 이 안 될 수 있다. 등급별 값이 정확한 쪽을 택했다.
+	//	반올림 때문에 합이 100 이 안 될 수 있다(등급별 값이 정확한 쪽을 택했다).
 	//	태그 이름은 DT_BGChanceTextStyle 의 행 이름과 정확히 같아야 한다.
 	const auto ApplyTierChance = [bHasChances = CardView.bHasChances, ChanceVisibility](URichTextBlock* Block, const FText& Format, float Value)
 	{
@@ -241,8 +219,8 @@ void UBGCardWidget::RefreshArt()
 		return;   // WBP 가 그림 칸을 두지 않았다. 선택 사항이므로 조용히 넘어간다.
 	}
 
-	//	뷰의 그림이 없으면 폴백. 폴백도 없으면 브러시를 건드리지 않고 칸을 접는다 —
-	//	null 브러시를 넣으면 카드 한복판이 투명해져서 "카드가 사라졌다" 로 보인다.
+	//	뷰의 그림 → 폴백 → 칸 접기 순. null 브러시를 넣으면 카드 한복판이 투명해져
+	//	"카드가 사라졌다" 로 보이므로 브러시는 건드리지 않는다.
 	UTexture2D* Art = CardView.ArtTexture ? CardView.ArtTexture.Get() : FallbackArtTexture.Get();
 
 	if (!Art)
@@ -266,13 +244,13 @@ void UBGCardWidget::RefreshFrame()
 	switch (CardView.Category)
 	{
 		case EBGCardCategory::Equipment:
-			Frame = EquipmentFrameTexture; 
+			Frame = EquipmentFrameTexture;
 			break;
 		case EBGCardCategory::Attack:
-			Frame = AttackFrameTexture;    
+			Frame = AttackFrameTexture;
 			break;
 		case EBGCardCategory::Magic:
-			Frame = MagicFrameTexture;     
+			Frame = MagicFrameTexture;
 			break;
 	}
 
@@ -281,29 +259,24 @@ void UBGCardWidget::RefreshFrame()
 		return;   // null 로 덮으면 카드가 통째로 투명해진다(RefreshArt 와 같은 이유).
 	}
 
-	//	⚠️ **브러시를 갈아 끼우지 않는다.** 여기서 SetBrushFromTexture 를 부르면 브러시가
-	//	   통째로 텍스처가 되어 물려 둔 MI 가 날아간다. 그리고 이 함수는 RefreshVisual 을
-	//	   거쳐 NativePreConstruct 에서도 불리므로 **에디터 디자인 타임에** 그 일이
-	//	   벌어지고, 그 상태로 WBP 를 저장하면 애셋에 텍스처가 박힌다.
-	//	   실제로 그렇게 한 번 날려 먹었다 — 되돌리지 말 것.
+	//	⚠️ **브러시를 갈아 끼우지 않는다.** SetBrushFromTexture 를 부르면 물려 둔 MI 가 날아가고,
+	//	   이 함수는 NativePreConstruct 에서도 불리므로 디자인 타임에 그 일이 벌어진다 —
+	//	   그 상태로 WBP 를 저장하면 애셋에 텍스처가 박힌다. 실제로 한 번 날려 먹었다.
 	if (IsDesignTime())
 	{
-		//	디자인 타임에는 아무것도 안 한다. GetDynamicMaterial 조차 브러시의
-		//	ResourceObject 를 DMI 로 바꿔 놓기 때문에, 미리보기를 위해 애셋을 더럽히는
-		//	꼴이 된다. 에디터에서는 MI 에 잡아 둔 FrameTex 기본값이 그대로 보인다.
+		//	디자인 타임에는 GetDynamicMaterial 조차 부르지 않는다 — 브러시의 ResourceObject 를
+		//	DMI 로 바꿔 놓아 미리보기를 위해 애셋을 더럽히는 꼴이 된다.
 		return;
 	}
 
-	//	⚠️ 자기가 따로 만든 DMI 를 캐시해 두지 않는다. UMG 애니메이션도 이 브러시의
-	//	   DMI 를 잡아 HoverAmount 를 모는데, 코드가 다른 DMI 를 들고 있으면 두 쪽이
-	//	   갈라져 한쪽 값이 안 먹는다. GetDynamicMaterial 은 이미 DMI 면 그대로
-	//	   돌려주므로 매번 불러도 새로 만들지 않는다.
+	//	⚠️ 자기 DMI 를 따로 만들어 캐시하지 않는다. UMG 애니메이션도 이 브러시의 DMI 를 잡아
+	//	   HoverAmount 를 모는데, 코드가 다른 DMI 를 들면 두 쪽이 갈라져 한쪽 값이 안 먹는다.
+	//	   GetDynamicMaterial 은 이미 DMI 면 그대로 돌려주므로 매번 불러도 새로 만들지 않는다.
 	UMaterialInstanceDynamic* FrameMID = Border_Root->GetDynamicMaterial();
 	if (!FrameMID)
 	{
-		//	브러시에 머테리얼이 없다. 텍스처로 덮어 버리면 나중에 MI 를 물려도 첫 갱신에
-		//	또 날아가므로, 고칠 곳을 알려 주고 그냥 둔다. 한 번만 남긴다 — RefreshVisual
-		//	은 카드가 바뀔 때마다 불려서 매번 찍으면 로그가 묻힌다.
+		//	머테리얼이 없다. 텍스처로 덮으면 나중에 MI 를 물려도 첫 갱신에 또 날아가므로
+		//	고칠 곳만 알려 주고 그냥 둔다. RefreshVisual 은 자주 불리므로 한 번만 남긴다.
 		if (!bWarnedFrameBrushNotMaterial)
 		{
 			bWarnedFrameBrushNotMaterial = true;
@@ -324,19 +297,15 @@ void UBGCardWidget::RefreshFrame()
 // ══════════════════════════════════════════════════════════════════════════════════════
 //  등급 연출 (판정 4단계를 글로우로)
 //
-//  ⚠️ 시간축을 여기서 굴리는 것은 **카드 한 장짜리라 성립하는 단순화**다.
-//     "대성공 → 피해 → 상대 사망 → 승리 연출" 처럼 여러 연출이 연쇄될 때는 누가 누구를
-//     기다리는지 중재할 곳이 필요하다. 나중에 연출 큐를 만들면 TickTierFX 의 진행도 계산만
-//     그쪽으로 옮기면 되도록, 재생(PlayTierFX) · 진행(TickTierFX) · 적용(ApplyTierFX)을
-//     세 함수로 갈라 두었다.
+//  ⚠️ 시간축을 여기서 굴리는 것은 카드 한 장짜리라 성립하는 단순화다. 연출이 연쇄될 때는
+//     중재할 곳이 필요하므로, 나중에 연출 큐로 옮기기 쉽도록 재생(PlayTierFX) ·
+//     진행(TickTierFX) · 적용(ApplyTierFX)을 세 함수로 갈라 두었다.
 // ══════════════════════════════════════════════════════════════════════════════════════
 
 void UBGCardWidget::PushWidgetSize(UMaterialInstanceDynamic* MID)
 {
-	//	팽창 반경을 UV 로 바꾸려면 픽셀 크기가 필요하다. 안 먹이면 카드가 세로로 긴
-	//	비율이라 외곽선이 가로로 눌린 타원으로 번진다.
-	//
-	//	매번 재는 이유는 손패 재배치 · 호버 스케일로 크기가 계속 변하기 때문이다.
+	//	팽창 반경을 UV 로 바꾸려면 픽셀 크기가 필요하다 — 안 먹이면 외곽선이 눌린 타원이 된다.
+	//	매번 재는 이유는 손패 재배치·호버 스케일로 크기가 계속 변하기 때문이다.
 	if (!MID || WidgetSizeParamName.IsNone() || !Retainer_Card)
 	{
 		return;
@@ -352,15 +321,9 @@ void UBGCardWidget::PushWidgetSize(UMaterialInstanceDynamic* MID)
 		FLinearColor(static_cast<float>(Size.X), static_cast<float>(Size.Y), 0.f, 0.f));
 }
 
-//	호버 외곽선 글로우를 먹이던 TickHoverGlow 는 없앴다.
-//
-//	세기(HoverAmount)는 이제 Border_Root 브러시의 M_BGCardFrame 위에서 **WBP 의 UMG
-//	애니메이션**이 몬다. 코드가 같은 이름을 매 프레임 같이 밀면 마지막에 쓴 쪽이 이겨
-//	애니메이션이 안 먹는 것처럼 보인다.
-//
-//	원래 이 함수는 리테이너의 Effect Material 에 값을 밀고 있었는데, 리테이너는 평상시
-//	SetRetainRendering(false) 로 꺼 두므로 Effect Material 자체가 적용되지 않는다 —
-//	그래서 이 글로우는 애초에 화면에 나온 적이 없다.
+//	호버 외곽선 글로우를 먹이던 TickHoverGlow 는 없앴다 — 세기(HoverAmount)는 이제 WBP 의
+//	UMG 애니메이션이 몬다(코드가 같이 밀면 마지막에 쓴 쪽이 이긴다). 원래는 리테이너의
+//	Effect Material 에 값을 밀었는데, 리테이너는 평상시 꺼 두므로 애초에 화면에 나온 적이 없다.
 
 const FBGCardTierFX* UBGCardWidget::FindTierFX(EBGResolutionTier Tier) const
 {
@@ -371,8 +334,7 @@ const FBGCardTierFX* UBGCardWidget::FindTierFX(EBGResolutionTier Tier) const
 	case EBGResolutionTier::Success:         return &SuccessFX;
 	case EBGResolutionTier::CriticalSuccess: return &CriticalSuccessFX;
 
-	//	None = 판정하지 않은 카드(장비 등). 연출이 없는 것이 정답이다 —
-	//	기본값으로 떨어뜨리면 장비를 낼 때마다 대실패처럼 보인다.
+	//	None = 판정하지 않은 카드(장비 등). 기본값으로 떨어뜨리면 장비가 대실패처럼 보인다.
 	default: return nullptr;
 	}
 }
@@ -430,8 +392,7 @@ void UBGCardWidget::TickTierFX(float DeltaTime)
 
 	const float Alpha = Progress(TierFXElapsed, ActiveTierFX.Seconds);
 
-	//	커브가 있으면 그것이 모양을 정한다(가로 0~1 → 세로 1~0).
-	//	없으면 선형으로 잦아든다.
+	//	커브가 모양을 정한다(0~1 → 1~0). 없으면 선형으로 잦아든다.
 	ApplyTierFX(CurveOr(TierFXCurve, Alpha, 1.f - Alpha));
 
 	if (Alpha >= 1.f)
@@ -444,11 +405,9 @@ void UBGCardWidget::TickTierFX(float DeltaTime)
 // ══════════════════════════════════════════════════════════════════════════════════════
 //  퇴장 디졸브
 //
-//  카드 트리 전체(테두리 · 그림 · 글씨)를 한 장의 그림으로 만들어 태우거나 자른다.
-//  그 "한 장으로 만드는" 일을 RetainerBox 가 한다 — 자식을 렌더 타겟에 그린 뒤
-//  결과에 머테리얼을 먹인다. Img_Art 에 물리면 그림만 타고 글씨가 남는다.
-//
-//  진행도는 퇴장 보간(ExitElapsed/ExitDuration)을 그대로 쓴다. 별도 시계를 두면
+//  카드 트리 전체(테두리·그림·글씨)를 RetainerBox 로 한 장의 그림으로 만든 뒤 태우거나 자른다.
+//  Img_Art 에 물리면 그림만 타고 글씨가 남는다.
+//  진행도는 퇴장 보간(ExitElapsed/ExitDuration)을 그대로 쓴다 — 별도 시계를 두면
 //  카드가 다 사라졌는데 아직 타고 있거나 그 반대가 된다.
 // ══════════════════════════════════════════════════════════════════════════════════════
 
@@ -464,17 +423,14 @@ UMaterialInstanceDynamic* UBGCardWidget::GetCardFXMID()
 		return nullptr;   // WBP 가 리테이너를 두지 않았다. 선택 사항이다.
 	}
 
-	//	리테이너의 Effect Material 로 만들어진 이 위젯 전용 DMI.
-	//	카드 전체를 대상으로 하는 연출(디졸브 · 외곽선 글로우 · 등급 글로우)이 이것 하나를
-	//	나눠 쓴다. 머테리얼을 안 물렸으면 null 이 돌아온다 — 그때는 전부 조용히 꺼진다.
-	//
+	//	카드 전체를 대상으로 하는 연출(디졸브·글로우)이 이 DMI 하나를 나눠 쓴다.
 	//	⚠️ DMI 없이 MI 를 그대로 쓰면 손패 전원이 같은 인스턴스를 공유한다 —
 	//	   한 장이 대성공 나면 손패가 통째로 번쩍인다.
 	CardFXMID = Retainer_Card->GetEffectMaterial();
 	if (!CardFXMID)
 	{
-		//	리테이너는 뒀는데 머테리얼이 없다. 이건 설정을 하다 만 것이므로 원인을 남긴다 —
-		//	리테이너가 아예 없는 경우(선택 사항)와 달리 의도한 상태가 아니다.
+		//	리테이너는 뒀는데 머테리얼이 없다 — 설정을 하다 만 것이므로 원인을 남긴다
+		//	(리테이너가 아예 없는 경우와 달리 의도한 상태가 아니다).
 		UE_LOG(LogBGCard, Warning,
 			TEXT("[Card] Retainer_Card 는 있는데 Effect Material 이 비었다 — 디졸브 · 글로우가 꺼진다. "
 			     "WBP 의 리테이너 Effect 항목에 카드 FX 머테리얼을 물릴 것."));
@@ -520,9 +476,8 @@ bool UBGCardWidget::BeginDissolveExit()
 
 	if (!Retainer_Card)
 	{
-		//	WBP 가 리테이너를 두지 않았다. 선택 사항이므로 불투명도 페이드로 떨어질 뿐이다 —
-		//	다만 이름을 틀리게 지었거나 'Is Variable' 을 안 켠 경우와 구분이 안 되므로
-		//	찾을 실마리는 남긴다. 평소에는 안 보이도록 Verbose 다.
+		//	선택 사항이라 불투명도 페이드로 떨어질 뿐이지만, 이름을 틀렸거나 'Is Variable' 을
+		//	안 켠 경우와 구분이 안 되므로 실마리는 남긴다(평소에는 안 보이도록 Verbose).
 		UE_LOG(LogBGCard, Verbose,
 			TEXT("[Dissolve] Retainer_Card 바인딩이 비어 디졸브를 건너뛴다 — WBP 의 RetainerBox "
 			     "이름이 정확히 'Retainer_Card' 인지, 'Is Variable' 이 켜져 있는지 확인할 것."));
@@ -537,14 +492,13 @@ bool UBGCardWidget::BeginDissolveExit()
 
 	ActiveDissolve = FindDissolveFX();
 
-	//	원형마다 바뀌지 않는 값은 여기서 한 번만 먹인다. 매 프레임 바뀌는 것은
-	//	타들어간 정도뿐이다 — 나머지를 틱에서 계속 세팅하면 헛일이다.
+	//	매 프레임 바뀌는 것은 타들어간 정도뿐이다 — 나머지는 여기서 한 번만 먹인다.
 	if (!DissolveMaskParamName.IsNone() && ActiveDissolve.MaskTexture)
 	{
 		MID->SetTextureParameterValue(DissolveMaskParamName, ActiveDissolve.MaskTexture);
 	}
 
-	//	재 · 잔불은 공격만 쓴다. 회복은 EmberIntensity 가 0 이라 텍스처를 안 넣어도 된다.
+	//	재·잔불은 공격만 쓴다. 회복은 EmberIntensity 가 0 이라 텍스처를 안 넣어도 된다.
 	if (!DissolveEmberMaskParamName.IsNone() && ActiveDissolve.EmberMask)
 	{
 		MID->SetTextureParameterValue(DissolveEmberMaskParamName, ActiveDissolve.EmberMask);
@@ -556,8 +510,8 @@ bool UBGCardWidget::BeginDissolveExit()
 	MID->SetScalarParameterValue(DissolveSeparateParamName, ActiveDissolve.SeparateAmount);
 	MID->SetScalarParameterValue(DissolveCutAngleParamName, ActiveDissolve.CutAngleDegrees);
 
-	//	여기부터가 공격과 회복을 가르는 값들이다. 머테리얼은 하나뿐이고 이 숫자들만
-	//	달라진다 — 원형마다 머테리얼을 두면 DMI 와 셰이더 퍼뮤테이션이 그만큼 늘어난다.
+	//	여기부터가 공격과 회복을 가르는 값들이다. 머테리얼은 하나고 이 숫자만 달라진다 —
+	//	원형마다 머테리얼을 두면 DMI 와 셰이더 퍼뮤테이션이 그만큼 늘어난다.
 	MID->SetScalarParameterValue(DissolveEdgeSoftnessParamName, ActiveDissolve.EdgeSoftness);
 	MID->SetScalarParameterValue(DissolveSurfaceGlowParamName, ActiveDissolve.SurfaceGlow);
 	MID->SetScalarParameterValue(DissolveRiseParamName, ActiveDissolve.RiseAmount);
@@ -618,10 +572,8 @@ void UBGCardWidget::SetLayoutTarget(const FVector2D& InPosition, float InAngleDe
 
 void UBGCardWidget::SnapToLayoutTarget()
 {
-	//	⚠️ 등장/퇴장 중에는 스냅하지 않는다.
-	//	   손패는 패널 크기를 처음 알게 된 프레임에 스냅을 건다. 그런데 판 첫 손패는
-	//	   바로 그 프레임에 배분되므로, 여기서 걸러내지 않으면 "게임 첫 드로우만
-	//	   연출 없이 툭 나타나는" 상태가 된다.
+	//	⚠️ 등장/퇴장 중에는 스냅하지 않는다. 손패는 패널 크기를 처음 안 프레임에 스냅을 거는데
+	//	   판 첫 손패가 바로 그 프레임에 배분되므로, 안 거르면 "첫 드로우만 연출 없이 툭" 나온다.
 	if (bDealInProgress || IsLeavingHand())
 	{
 		return;
@@ -675,8 +627,8 @@ void UBGCardWidget::BeginDeal(const FVector2D& FromPosition, float Delay, const 
 		return;
 	}
 
-	//	⚠️ 원래 가시성을 기억해 둔다. 되돌릴 때 Visible 로 하드코딩하면
-	//	   WBP 가 정한 히트테스트 설정(SelfHitTestInvisible 등)을 덮어쓴다.
+	//	⚠️ 원래 가시성을 기억해 둔다. Visible 로 하드코딩하면 WBP 가 정한
+	//	   히트테스트 설정(SelfHitTestInvisible 등)을 덮어쓴다.
 	PreDealVisibility = GetVisibility();
 	SetVisibility(ESlateVisibility::Hidden);
 	MotionState = EBGCardMotionState::Pending;
@@ -689,7 +641,7 @@ bool UBGCardWidget::BeginLeaveHand()
 		return false;   // 이미 나가는 중이다. 다시 부르면 연출이 처음부터 되감긴다.
 	}
 
-	//	대기 중에 빠진 카드는 나타난 적이 없다. 숨은 채로 퇴장시키면
+	//	대기 중에 빠진 카드는 나타난 적이 없다 — 숨은 채로 퇴장시키면
 	//	"보이지도 않았는데 날아가는" 그림이 되므로 가시성을 되돌려 둔다.
 	if (MotionState == EBGCardMotionState::Pending)
 	{
@@ -724,8 +676,8 @@ void UBGCardWidget::BeginPlayExit(const FVector2D& CenterPosition, const FVector
 		return;
 	}
 
-	//	중앙에 도착하면 놓아 줄 때까지 기다린다. 대상을 고르는 동안 카드가
-	//	중앙에 서 있어야 무엇을 내고 있는지 보인다.
+	//	중앙에 도착하면 놓아 줄 때까지 기다린다 — 대상을 고르는 동안 카드가 서 있어야
+	//	무엇을 내고 있는지 보인다.
 	bHoldingAtCenter = true;
 	bPlayExit        = true;   // 사용한 카드다. 대기가 끝난 뒤 디졸브로 사라진다
 
@@ -762,7 +714,7 @@ void UBGCardWidget::FinishDwell()
 		return;
 	}
 
-	//	그 밖의 상태(퇴장 중, 손패 복귀 등)에서는 조용히 넘어간다. Finished 는 중복으로 오고,
+	//	그 밖의 상태에서는 조용히 넘어간다. Finished 는 중복으로 오고,
 	//	퇴장에 들어간 카드를 다시 퇴장시키면 궤적이 처음부터 다시 그려진다.
 	if (MotionState != EBGCardMotionState::Dwelling)
 	{
@@ -790,8 +742,8 @@ FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 
 	bHoldingAtCenter = false;
 
-	//	대기 시간은 "풀린 시점" 부터 센다. 중앙에 도착한 시점부터 세면
-	//	대상을 오래 고른 사람은 효과를 볼 시간이 없다.
+	//	대기 시간은 "풀린 시점" 부터 센다. 도착 시점부터 세면 대상을 오래 고른 사람은
+	//	효과를 볼 시간이 없다.
 	DwellRemaining = DwellDuration;
 
 	//	아직 중앙으로 가는 중이면 연출은 도착한 뒤에 터뜨린다 —
@@ -813,8 +765,8 @@ FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 
 bool UBGCardWidget::ReturnToHand()
 {
-	//	이미 사라지는 중이면 되돌리지 않는다. 반투명해진 카드가 손패에 다시
-	//	나타나면 더 이상해 보인다 — 그냥 사라지게 두고 손패가 새로 만든다.
+	//	이미 사라지는 중이면 되돌리지 않는다 — 반투명해진 카드가 손패에 다시 나타나면
+	//	더 이상해 보인다. 그냥 사라지게 두고 손패가 새로 만든다.
 	if (!IsLeavingHand() || MotionState == EBGCardMotionState::Exiting)
 	{
 		return false;
@@ -848,7 +800,7 @@ void UBGCardWidget::EnterExitPhase(const FVector2D& ToPosition)
 	TargetPosition    = ToPosition;
 	MotionState       = EBGCardMotionState::Exiting;
 
-	//	⚠️ BP 훅보다 먼저 건다. BP 가 여기에 무엇을 얹든 카드는 이미 타기 시작해야
+	//	⚠️ BP 훅보다 먼저 건다. BP 가 무엇을 얹든 카드는 이미 타기 시작해야
 	//	   "사라지는 중" 으로 읽힌다(PlayTierFX 를 OnPlayResolved 앞에 두는 것과 같은 이유).
 	BeginDissolveExit();
 
@@ -857,23 +809,18 @@ void UBGCardWidget::EnterExitPhase(const FVector2D& ToPosition)
 
 bool UBGCardWidget::IsExitFinished() const
 {
-	//	Presenting / Dwelling 은 아직 끝이 아니다 — 여기서 true 를 돌려주면
-	//	중앙에 올라가자마자 파괴된다.
+	//	Presenting / Dwelling 은 아직 끝이 아니다 — 여기서 true 면 중앙에 올라가자마자 파괴된다.
 	return MotionState == EBGCardMotionState::Exiting && ExitElapsed >= ExitDuration;
 }
 
 bool UBGCardWidget::IsHoverActive() const
 {
-	//	⚠️ 보간값(HoverBlend)이 아니라 실제 마우스 상태를 본다.
-	//	   연출이 풀리는 동안에도 위층에 남아 있으면, 커서를 옆 카드로 옮긴 직후
-	//	   방금 떠난 카드가 새로 고른 카드를 잠깐 가린다.
+	//	⚠️ 보간값(HoverBlend)이 아니라 실제 마우스 상태를 본다 — 연출이 풀리는 동안에도
+	//	   위층에 남아 있으면 방금 떠난 카드가 새로 고른 카드를 잠깐 가린다.
 	//
-	//	⚠️ 호버 연출이 억제되는 상태(잠금·드래그·등장/퇴장 중)에서는 false 여야 한다.
-	//	   예전에는 여기서 bHovered 만 봤는데, 그러면 손패가 잠긴 동안 카드가
-	//	   **떠오르지는 않으면서 Z 순서만** 올라갔다. 부채꼴에서 카드가 서로 겹쳐
-	//	   있으므로 앞뒤가 바뀌는 순간 커서 아래 카드가 뒤바뀌고, 그게 다시 호버를
-	//	   옮겨 Z 순서를 또 바꾼다 — 손패 전체가 깜빡이는 되먹임이 된다.
-	//	   (내 턴에는 카드가 실제로 떠올라 커서를 확실히 덮으므로 잘 드러나지 않는다.)
+	//	⚠️ 억제 상태(잠금·드래그·등장/퇴장)에서는 false 여야 한다. bHovered 만 보면 손패가
+	//	   잠긴 동안 카드가 **떠오르지 않으면서 Z 순서만** 올라가는데, 부채꼴에서 앞뒤가
+	//	   바뀌면 커서 아래 카드가 뒤바뀌고 그게 다시 Z 순서를 바꿔 손패 전체가 깜빡인다.
 	return bHovered
 		&& !bIsDragVisual
 		&& !bBeingDragged
@@ -884,7 +831,7 @@ bool UBGCardWidget::IsHoverActive() const
 
 void UBGCardWidget::TickMotion(float DeltaTime)
 {
-	//	등급 연출은 이동 상태와 무관하게 굴러야 한다 — 카드가 Idle 로 멈춰도 잦아드는 중일 수 있다.
+	//	등급 연출은 이동 상태와 무관하게 굴러야 한다 — Idle 로 멈춰도 잦아드는 중일 수 있다.
 	TickTierFX(DeltaTime);
 
 	const FVector2D PositionBeforeTick = CurrentPosition;
@@ -905,8 +852,7 @@ void UBGCardWidget::TickMotion(float DeltaTime)
 	case EBGCardMotionState::Exiting:    TickExiting(DeltaTime);    break;
 
 	default:
-		//	Idle — 주 움직임은 없지만 부수 효과는 계속 굴러야 한다.
-		//	기울기가 0 으로 풀리고 호버가 붙고 떨어지는 것이 전부 여기서 일어난다.
+		//	Idle — 주 움직임은 없지만 부수 효과(기울기 풀림·호버)는 계속 굴러야 한다.
 		break;
 	}
 
@@ -949,8 +895,8 @@ void UBGCardWidget::TickDealing(float DeltaTime)
 
 	if (!bDealAimInitialized)
 	{
-		//	첫 비행 프레임. 여기서야 목표가 유효하다(BeginDeal 은 손패가 자리를
-		//	다시 잡기 전에 불린다). 호가 휠 방향도 이때 한 번만 정하고 고정한다.
+		//	첫 비행 프레임. 여기서야 목표가 유효하다(BeginDeal 은 손패가 자리를 다시 잡기
+		//	전에 불린다). 호가 휠 방향도 이때 한 번만 정하고 고정한다.
 		DealAimPosition      = TargetPosition;
 		DealArcDirection     = UpwardPerpendicular(TargetPosition - DealStartPosition);
 		bDealAimInitialized  = true;
@@ -963,8 +909,7 @@ void UBGCardWidget::TickDealing(float DeltaTime)
 			DealAimPosition, TargetPosition, DeltaTime, DealAimInterpSpeed);
 	}
 
-	//	가속 → 감속. 출발이 부드러워야 "미끄러져 나온다" 로 읽힌다.
-	//	감속만 하면 첫 몇 프레임에 거리의 절반 가까이를 가버려서 순간이동처럼 보인다.
+	//	가속 → 감속. 감속만 하면 첫 몇 프레임에 거리의 절반 가까이를 가버려 순간이동처럼 보인다.
 	const float PositionEased = bDealEaseInOut
 		? FMath::InterpEaseInOut(0.f, 1.f, Alpha, DealEaseExponent)
 		: FMath::InterpEaseOut(0.f, 1.f, Alpha, DealEaseExponent);
@@ -988,12 +933,11 @@ void UBGCardWidget::TickDealing(float DeltaTime)
 
 	if (Alpha >= 1.f)
 	{
-		//	투명도를 확실히 되돌린다. 반올림으로 0.99 가 남으면 손패 카드 하나만
-		//	미묘하게 흐린 채로 굳는다.
+		//	투명도를 확실히 되돌린다. 0.99 가 남으면 카드 하나만 미묘하게 흐린 채로 굳는다.
 		SetRenderOpacity(1.f);
 
-		//	보간 단계로 넘긴다. 여기서 Idle 로 바로 가지 않는 이유는 비행 중에
-		//	목표가 바뀌었을 수 있어서다 — 남은 오차를 보간이 부드럽게 흡수한다.
+		//	보간 단계로 넘긴다. Idle 로 바로 가지 않는 이유는 비행 중에 목표가 바뀌었을 수
+		//	있어서다 — 남은 오차를 보간이 부드럽게 흡수한다.
 		MotionState = EBGCardMotionState::Moving;
 	}
 }
@@ -1073,8 +1017,8 @@ void UBGCardWidget::PlayResolvedFX(const FBGCardPlayContext& Context)
 	//	새 연출이 시작된다 — 밀려 있던 종료 신호는 이 연출의 것이 아니므로 버린다.
 	bDwellFinishRequested = false;
 
-	//	등급 연출을 BP 훅보다 먼저 터뜨린다. BP 가 이 위에 무엇을 얹든
-	//	글로우는 이미 올라와 있어야 "판정이 확정된 순간" 으로 읽힌다.
+	//	등급 연출을 BP 훅보다 먼저 터뜨린다. BP 가 무엇을 얹든 글로우는 이미 올라와 있어야
+	//	"판정이 확정된 순간" 으로 읽힌다.
 	PlayTierFX(Context.Tier);
 
 	OnPlayResolved(Context);
@@ -1090,9 +1034,9 @@ void UBGCardWidget::TickDwelling(float DeltaTime)
 		return;   // 부수 효과는 계속 굴러야 기울기가 0 으로 되돌아온다
 	}
 
-	//	애니메이션이 길이를 쥐는 모드에서도 시계는 계속 돈다 — 다만 그때 DwellDuration 은
-	//	연출 길이가 아니라 **안전 상한**이다. BP 가 FinishDwell 을 빠뜨려도 카드가
-	//	중앙에 영원히 박히지 않게 하는 장치다(그 상태는 에러도 안 나고 손패가 잠긴다).
+	//	애니메이션이 길이를 쥐는 모드에서도 시계는 돈다 — 그때 DwellDuration 은 연출 길이가
+	//	아니라 **안전 상한**이다. BP 가 FinishDwell 을 빠뜨리면 카드가 중앙에 영원히 박히고
+	//	손패가 잠기는데, 그 상태는 에러조차 안 난다.
 	DwellRemaining -= DeltaTime;
 
 	if (DwellRemaining <= 0.f)
@@ -1122,11 +1066,9 @@ void UBGCardWidget::TickExiting(float DeltaTime)
 
 	if (bDissolveActive)
 	{
-		//	⚠️ 디졸브 중에는 불투명도를 건드리지 않는다. 타면서 동시에 흐려지면
-		//	   경계의 불꽃이 묻혀서 그냥 페이드아웃처럼 보인다.
-		//	   투명도가 필요하면 머테리얼 안에서 낼 것.
-		//	원형이 자기 곡선을 들고 있으면 그것이 이긴다. 공격은 뒤가 가파르고
-		//	회복은 고르게 — 곡선 하나로는 둘 다 만족시킬 수 없다.
+		//	⚠️ 디졸브 중에는 불투명도를 건드리지 않는다 — 타면서 동시에 흐려지면 경계의
+		//	   불꽃이 묻혀 그냥 페이드아웃처럼 보인다. 투명도는 머테리얼 안에서 낼 것.
+		//	원형이 자기 곡선을 들고 있으면 그것이 이긴다(공격은 뒤가 가파르고 회복은 고르게).
 		const UCurveFloat* ExitCurve = ActiveDissolve.Curve ? ActiveDissolve.Curve.Get() : DissolveCurve.Get();
 		ApplyDissolve(CurveOr(ExitCurve, Alpha, Alpha));
 	}
@@ -1144,8 +1086,7 @@ void UBGCardWidget::TickSecondaryMotion(float DeltaTime, const FVector2D& Positi
 	}
 
 	// ── 관성 기울기 ──
-	//	속도는 위치 차분으로 구한다. 별도 변수로 적분하면 스냅이나 순간이동
-	//	(드롭 지점으로 옮기는 등) 때 실제 화면 움직임과 어긋난다.
+	//	속도는 위치 차분으로 구한다. 별도 변수로 적분하면 스냅·순간이동 때 화면과 어긋난다.
 	const float HorizontalSpeed = (CurrentPosition.X - PositionBeforeTick.X) / DeltaTime;
 
 	//	이동 방향으로 눕는다. 부호가 반대면 진행 방향을 거슬러 서는 것처럼 보인다.
@@ -1155,26 +1096,24 @@ void UBGCardWidget::TickSecondaryMotion(float DeltaTime, const FVector2D& Positi
 	VelocityTilt = FMath::FInterpTo(VelocityTilt, DesiredTilt, DeltaTime, VelocityTiltInterpSpeed);
 
 	// ── 호버 ──
-	//	손패에 얌전히 있는 카드만 반응한다. 날아오는 중이거나 떠나는 중인 카드가
-	//	커서에 반응하면 연출이 두 개 겹쳐 흔들린다.
-	//
-	//	⚠️ 조건은 IsHoverActive 하나만 쓴다. 예전에는 여기(연출)와 손패의 Z 순서가
-	//	   각자 판단해서, "안 떠오르는데 앞으로 나오는" 상태가 생겼다.
+	//	손패에 얌전히 있는 카드만 반응한다 — 날아오거나 떠나는 카드가 커서에 반응하면
+	//	연출이 두 개 겹쳐 흔들린다.
+	//	⚠️ 조건은 IsHoverActive 하나만 쓴다. 연출과 Z 순서가 각자 판단하면
+	//	   "안 떠오르는데 앞으로 나오는" 상태가 생긴다.
 	const bool bHoverAllowed = IsHoverActive();
 	HoverBlend = FMath::FInterpTo(HoverBlend, bHoverAllowed ? 1.f : 0.f, DeltaTime, HoverInterpSpeed);
 
-	//	커서 위치도 보간해서 쓴다. 마우스 이벤트 값을 그대로 먹이면 커서를 빠르게
-	//	움직일 때 기울기가 프레임마다 튀어 카드가 덜덜 떤다.
-	//
-	//	커서가 카드를 벗어나면(호버 해제) 마지막 위치가 그대로 남는다. 그러면 다음에
-	//	반대쪽에서 들어올 때 그 각도에서 출발해 홱 돈다 — 풀리는 동안 0 으로 되돌린다.
+	//	커서 위치도 보간해서 쓴다 — 마우스 이벤트 값을 그대로 먹이면 커서를 빠르게 움직일 때
+	//	기울기가 프레임마다 튀어 카드가 덜덜 떤다.
+	//	호버가 풀리는 동안 0 으로 되돌린다. 마지막 위치가 남으면 다음에 반대쪽에서 들어올 때
+	//	그 각도에서 출발해 홱 돈다.
 	const FVector2D DesiredHoverLocal = bHoverAllowed ? HoverLocalNormalized : FVector2D::ZeroVector;
 	HoverLocalSmoothed = (HoverFollowSpeed > 0.f)
 		? FMath::Vector2DInterpTo(HoverLocalSmoothed, DesiredHoverLocal, DeltaTime, HoverFollowSpeed)
 		: DesiredHoverLocal;
 
-	//	상태가 바뀌는 순간에만 BP 로 알린다. 매 프레임 쏘면 BP 쪽 애니메이션이
-	//	계속 0 프레임으로 되감겨 아무것도 재생되지 않는다.
+	//	상태가 바뀌는 순간에만 BP 로 알린다. 매 프레임 쏘면 BP 애니메이션이 계속 0 프레임으로
+	//	되감겨 아무것도 재생되지 않는다.
 	if (bHoverAllowed != bWasHoverActive)
 	{
 		bWasHoverActive = bHoverAllowed;
@@ -1182,18 +1121,17 @@ void UBGCardWidget::TickSecondaryMotion(float DeltaTime, const FVector2D& Positi
 		OnHoverChanged(bHoverAllowed);
 	}
 
-	//	HoverBlend 를 머테리얼로 흘려보내지 않는다 — 외곽선 글로우의 HoverAmount 는
-	//	WBP 의 UMG 애니메이션이 몬다. HoverBlend 는 여기서 위치 · 기울기 · 크기(아래
-	//	ApplyMotionTransform)에만 쓰인다.
+	//	HoverBlend 를 머테리얼로 흘려보내지 않는다 — 외곽선 글로우의 HoverAmount 는 WBP 의
+	//	UMG 애니메이션이 몬다. 여기서는 위치·기울기·크기에만 쓰인다.
 }
 
 void UBGCardWidget::ApplyMotionTransform()
 {
 	//	배치가 정한 값 위에 부수 효과를 더한다. 순서가 아니라 합이다 —
-	//	배치는 배치대로, 호버는 호버대로 독립적으로 계산돼야 서로를 지우지 않는다.
+	//	배치와 호버가 독립적으로 계산돼야 서로를 지우지 않는다.
 	const FVector2D HoverOffset(0.f, HoverLift * HoverBlend);
 
-	//	커서가 카드 중심에서 얼마나 벗어났는가(-1~+1)에 응답 곡선을 먹인 값.
+	//	커서가 카드 중심에서 벗어난 정도(-1~+1)에 응답 곡선을 먹인 값.
 	//	기울기와 비틀림이 같은 입력을 쓰므로 둘이 따로 놀지 않는다.
 	const FVector2D HoverResponse(
 		ShapeResponse(HoverLocalSmoothed.X, HoverResponseExponent),
@@ -1212,8 +1150,7 @@ void UBGCardWidget::ApplyMotionTransform()
 	SetRenderTransformAngle(CurrentAngle + VelocityTilt + HoverTilt);
 	SetRenderScale(FVector2D(FinalScale, FinalScale));
 
-	//	비틀림으로 입체감을 낸다. 커서가 위쪽이면 카드 윗변이 뒤로 눕는 것처럼 보인다.
-	//	UMG 는 2D 라 진짜 3D 회전은 없지만, shear 로 그 인상을 만들 수 있다.
+	//	UMG 는 2D 라 진짜 3D 회전은 없지만, shear 로 커서 쪽으로 눕는 인상을 만들 수 있다.
 	if (HoverShearMax != 0.f)
 	{
 		SetRenderShear(FVector2D(

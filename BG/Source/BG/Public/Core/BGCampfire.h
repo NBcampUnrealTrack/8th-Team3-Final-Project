@@ -147,9 +147,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Fire", meta = (ClampMin = "0.0"))
 	float FlickerJitter = 4.f;
 
-	/** 불 밑동에서 광원까지의 높이(cm). 불꽃 중심쯤에 두어야 그림자 각도가 자연스럽다. */
+	/**
+	 * 광원을 실제로 옮기는 최소 이동량(cm). 이보다 덜 움직인 프레임은 그냥 넘어간다.
+	 *
+	 * ⚠️ 성능 손잡이다. 그림자를 드리우는 Movable 라이트는 **움직인 프레임마다** 감쇠 반경
+	 *    안의 동적 그림자를 다시 그린다 — 7명이 둘러앉은 이 씬에서는 그게 매 프레임이 된다.
+	 *    밝기 흔들림은 이 필터와 무관하게 매 프레임 그대로 간다(그림자를 다시 그리지 않는다).
+	 *
+	 *    FlickerJitter 대비 너무 크게 잡으면 광원이 뚝뚝 끊겨 움직여 그림자가 튄다.
+	 *    1/8 ~ 1/4 쯤이 적당하다. 0 이면 필터를 끄고 매 프레임 옮긴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Fire", meta = (ClampMin = "0.0"))
+	float FlickerJitterMinStep = 0.75f;
+
+	/**
+	 * 불 밑동에서 광원까지의 높이(cm). 불꽃 위쪽에 두면 그림자가 바깥으로 길게 눕는다.
+	 * 너무 낮추면(불꽃 중심 이하) 그림자가 거의 수평으로 뻗어 좌석 뒤를 다 덮는다.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Fire")
-	float LightHeightOffset = 60.f;
+	float LightHeightOffset = 100.f;
 
 	/**
 	 * 감쇠 반경을 SeatRadius 로부터 계산할지. 끄면 컴포넌트에 직접 넣은 값을 쓴다.
@@ -175,6 +191,12 @@ protected:
 	/** 매 프레임 밝기와 위치를 흔든다. bFlicker 가 꺼져 있으면 기준값으로 되돌린다. */
 	void UpdateFireFlicker(float DeltaSeconds);
 
+	/**
+	 * 광원을 옮긴다. FlickerJitterMinStep 보다 덜 움직였으면 건너뛴다.
+	 * 높이(LightHeightOffset)를 에디터에서 바꾼 경우도 같은 비교에 걸려 반영된다.
+	 */
+	void MoveFireLight(const FVector& RelativeLocation);
+
 	/** 캠프파이어 본체. 메시는 BP 에서 지정한다 — 여기서는 위치 기준일 뿐이다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Campfire")
 	TObjectPtr<USceneComponent> Root;
@@ -189,4 +211,13 @@ protected:
 private:
 	/** 노이즈를 읽는 위치. FlickerSpeed 를 곱한 뒤 누적하므로 속도를 바꿔도 튀지 않는다. */
 	float FlickerTime = 0.f;
+
+	/**
+	 * 라이트에 마지막으로 **실제로 밀어 넣은** 상대 위치. 임계값 비교의 기준이다.
+	 * 목표 위치가 아니라 적용된 위치를 들고 있어야, 건너뛴 프레임이 쌓여도 편차가 커지지 않는다.
+	 */
+	FVector AppliedLightOffset = FVector::ZeroVector;
+
+	/** 아직 한 번도 안 밀어 넣었다. 첫 프레임은 임계값과 무관하게 적용한다. */
+	bool bLightOffsetApplied = false;
 };
