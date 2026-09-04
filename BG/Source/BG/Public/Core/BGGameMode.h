@@ -150,6 +150,10 @@ public:
 	UFUNCTION(Exec)
 	void BG_Damage(int32 Seat, int32 Amount);
 
+	// 살아있는 무법자 전원에게 피해를 준다(치트). Amount 생략 시 1.
+	UFUNCTION(Exec)
+	void BG_DamageAllOutlaws(int32 Amount);
+
 
 	/** 레벨의 캠프파이어(좌석 "위치" 의 기준점). 없는 레벨이면 nullptr. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seating")

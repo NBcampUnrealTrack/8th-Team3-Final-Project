@@ -61,5 +61,9 @@ protected:
 private:
 	ABGGameMode* GetGameMode() const;
 
+	// PvE: 조우 진행도(EncounterIndex)에 맞는 총좌석 수를 계산한다.
+	// 1대1·1대2·2대3·2대4 로 늘다가 5조우부터는 3대4로 고정된다.
+	int32 ComputeTargetSeatsForEncounter(int32 EncounterIndex) const;
+
 	bool bMatchStarted = false;
 };

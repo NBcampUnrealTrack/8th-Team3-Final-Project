@@ -18,6 +18,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Net/UnrealNetwork.h"
+#include "FX/BGStatusFXComponent.h"
 
 ABGCharacter::ABGCharacter()
 {
@@ -30,6 +31,9 @@ ABGCharacter::ABGCharacter()
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Full);
 
 	AttributeSet = CreateDefaultSubobject<UBGAttributeSet>(TEXT("AttributeSet"));
+
+	//	장비/버프의 복제 상태에서 지속 Niagara 집합을 유도한다.
+	StatusFX = CreateDefaultSubobject<UBGStatusFXComponent>(TEXT("StatusFX"));
 
 	//	── 카메라 (구 ABGPlayerBase 에서 통합) ──
 	//	ACharacter 는 CapsuleComponent 를 루트로 하드코딩한다. 별도의 씬 루트를 둘 수 없으므로

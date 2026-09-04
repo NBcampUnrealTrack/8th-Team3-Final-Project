@@ -223,11 +223,29 @@ void UBGAIBrainComponent::ClassifyCard(const UBGDataSubsystem* DataSys, const FB
 	}
 }
 
+bool UBGAIBrainComponent::IsSheriffSideRole(FGameplayTag RoleTag) const
+{
+	return RoleTag == BG::Role::Sheriff.GetTag() || RoleTag == BG::Role::Deputy.GetTag();
+}
+
 int32 UBGAIBrainComponent::PickRandomTargetSeat() const
 {
 	ABGPlayerState* PS = GetOwnerAIController()->GetPlayerState<ABGPlayerState>();
-	TArray<int32> Candidates = GetBGGameState()->GetAliveSeatsInTableOrder();
-	Candidates.RemoveSingle(PS->GetSeatIndex());
+	ABGGameState* GS = GetBGGameState();
+	if (!IsValid(PS) || !IsValid(GS))
+	{
+		return INDEX_NONE;
+	}
+
+	const bool bIAmSheriffSide = IsSheriffSideRole(PS->GetCachedRole());
+
+	TArray<int32> Candidates = GS->GetAliveSeatsInTableOrder();
+	Candidates.RemoveAll([this, GS, bIAmSheriffSide](int32 Seat)
+	{
+		const ABGPlayerState* OtherPS = GS->GetPlayerStateBySeat(Seat);
+		return IsValid(OtherPS) && IsSheriffSideRole(OtherPS->GetCachedRole()) == bIAmSheriffSide;
+	});
+
 	return Candidates.Num() > 0 ? Candidates[FMath::RandRange(0, Candidates.Num() - 1)] : INDEX_NONE;
 }
 

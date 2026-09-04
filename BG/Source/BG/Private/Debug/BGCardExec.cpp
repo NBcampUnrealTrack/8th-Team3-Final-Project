@@ -548,3 +548,49 @@ void ABGGameMode::BG_Damage(int32 Seat, int32 Amount)
 		Seat, Damage, GS->GetSeatHealth(Seat));
 #endif
 }
+
+void ABGGameMode::BG_DamageAllOutlaws(int32 Amount)
+{
+#if !UE_BUILD_SHIPPING
+	ABGGameState* GS = GetGameState<ABGGameState>();
+	if (!GS)
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[Exec] ABGGameState 없음"));
+		return;
+	}
+
+	// exec 는 생략된 인자를 0 으로 넘긴다.
+	const int32 Damage = (Amount > 0) ? Amount : 1;
+
+	int32 NumHit = 0;
+	for (const int32 Seat : GS->GetAliveSeatsInTableOrder())
+	{
+		if (GS->GetSeatRole(Seat) != BG::Role::Outlaw.GetTag())
+		{
+			continue;
+		}
+
+		const ABGPlayerState* PS = GS->GetPlayerStateBySeat(Seat);
+		UAbilitySystemComponent* ASC =
+			PS ? UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(PS->GetPawn()) : nullptr;
+		if (!ASC)
+		{
+			UE_LOG(LogBGCard, Warning, TEXT("[Exec] 좌석 %d 의 ASC 를 찾지 못했습니다."), Seat);
+			continue;
+		}
+
+		FGameplayEffectContextHandle Context = ASC->MakeEffectContext();
+		const FGameplayEffectSpecHandle Spec = ASC->MakeOutgoingSpec(UGE_BGDamage::StaticClass(), 1.f, Context);
+		if (Spec.IsValid())
+		{
+			// 피해는 음수로 넣는다(Health 가산 = 감소).
+			Spec.Data->SetSetByCallerMagnitude(BG::SetByCaller::Damage.GetTag(), -static_cast<float>(Damage));
+			ASC->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+		}
+
+		++NumHit;
+	}
+
+	UE_LOG(LogBGCard, Log, TEXT("[Exec] 무법자 %d 명에게 피해 %d 적용"), NumHit, Damage);
+#endif
+}

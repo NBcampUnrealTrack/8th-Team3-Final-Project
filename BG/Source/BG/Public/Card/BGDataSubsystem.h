@@ -77,6 +77,13 @@ public:
 	 */
 	const struct FBGStatusFXRow* GetStatusFXRow(FName Key) const;
 
+	/** 카드 연출 정책/전용 연출 Row. Row 이름은 CardId 태그 문자열과 동일하다. */
+	const struct FBGCardFXRow* GetCardFXRow(FGameplayTag CardId) const;
+
+	/** 모든 캐릭터 부착 Niagara에 공통 적용하는 메쉬 상대 Z 보정값. */
+	UFUNCTION(BlueprintPure, Category = "BG|FX")
+	float GetGlobalFXSpawnZOffset() const { return GlobalFXSpawnZOffset; }
+
 protected:
 	// DT 경로. 에디터에서 이 경로에 DT_BGCharacterRow(FBGCharacterRow) 를 만들어 둔다.
 	static const FString CharacterTablePath;
@@ -96,4 +103,11 @@ protected:
 	//	버프/디버프 이펙트 표. 없어도 된다 — 그때는 이펙트가 안 뜰 뿐이다.
 	UPROPERTY()
 	TObjectPtr<UDataTable> StatusFXTable;
+
+	UPROPERTY()
+	TObjectPtr<UDataTable> CardFXTable;
+
+	/** 카드·상태 FX가 공유하는 유일한 기본 높이. Row LocationOffset은 개별 보정만 담당한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FX|Transform", meta = (AllowPrivateAccess = "true", Units = "cm"))
+	float GlobalFXSpawnZOffset = -20.f;
 };
