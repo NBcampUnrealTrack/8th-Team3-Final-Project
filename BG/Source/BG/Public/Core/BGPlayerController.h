@@ -164,6 +164,16 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "BG|Target")
 	FOnBGTargetSelectionCancelled OnTargetSelectionCancelled;
+	
+	// ─────────────── 채팅 ───────────────────── //
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerSendChatMessage(const FString& Message);
+	
+	UPROPERTY(EditDefaultsOnly, Category = "BG|UI")
+	TSubclassOf<class UBGChatingWidget> ChatWidgetClass;
+
+	UPROPERTY()
+	class UBGChatingWidget* ChatWidgetInstance;
 
 	/**
 	 * 서버가 카드 사용을 거부했다. 카드는 이미 손패로 되돌려 놓은 뒤에 발생한다 —
@@ -445,4 +455,6 @@ private:
 	TObjectPtr<class ABGCinematicCamera> CinematicCamera;
 
 	FTimerHandle SeatRefreshTimer;
+	
+	void HandleChatKeyPressed();
 };

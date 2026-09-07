@@ -33,6 +33,9 @@
 #include "TimerManager.h"
 #include "Engine/World.h"
 
+#include "BG/Public/UI/Widget/BGChatingWidget.h"
+#include "BG/Public/Chating/BGChatingSubsystem.h"
+
 //	생성자에서는 컴포넌트만 만든다 — GA 는 AbilityByCardId(BP 디폴트에서 채움)로만 조회한다.
 //	하드코딩 폴백을 두지 않는 이유: 매핑이 비었을 때 엉뚱한 GA 로 조용히 새는 것보다
 //	"GA 매핑 없음!" 을 화면에 띄우고 멈추는 편이 낫다(HandlePlayCard 참고).
@@ -183,8 +186,29 @@ void ABGPlayerController::SetupInputComponent()
 	//	주의: PIE 에서는 ESC 를 에디터가 먼저 먹어 세션이 종료된다 — 테스트는 우클릭으로 할 것.
 	InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
+	InputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &ABGPlayerController::HandleChatKeyPressed);
 
 	//	좌클릭(대상 확정)은 조준 컴포넌트가 직접 건다.
+}
+
+void ABGPlayerController::HandleChatKeyPressed()
+{
+	if (!ChatWidgetInstance)
+	{
+		return;
+	}
+	
+	if (ChatWidgetInstance->IsInputOpen())
+	{
+		return;
+	}
+	
+	if (GFrameCounter <= ChatWidgetInstance->GetLastClosedFrame() + 1)
+	{
+		return;
+	}
+	
+	ChatWidgetInstance->OpenChatInput();
 }
 
 void ABGPlayerController::OnRep_PlayerState()
@@ -345,6 +369,31 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 	const FBGCardRow* Row = Data ? Data->GetCardRow(Resolution.CardId) : nullptr;
 
 	const EBGResolutionTier Tier = ToResolutionTier(Resolution.Outcome);
+	
+	if (UBGChatingSubsystem* Chat = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UBGChatingSubsystem>()
+		: nullptr)
+	{
+		const FString CardName = Row
+			? Row->DisplayName.ToString()
+			: Resolution.CardId.GetTagName().ToString();
+
+		FString SeatName = FString::Printf(TEXT("좌석 %d"), Resolution.SeatIndex);
+		if (const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+		{
+			if (const ABGPlayerState* SeatPS = GS->GetPlayerStateBySeat(Resolution.SeatIndex))
+			{
+				SeatName = SeatPS->GetPlayerName();
+			}
+		}
+
+		const FString TierText = UBGResolutionWidget::GetTierText(Tier).ToString();
+
+		Chat->AddSystemMessage(Resolution.bForced
+			? FString::Printf(TEXT("%s → %s (%s, 강제)"), *SeatName, *CardName, *TierText)
+			: FString::Printf(TEXT("%s → %s (%s)"),
+				*SeatName, *CardName, *TierText));
+	}
 
 	//	── 손패 연출 통지 ──
 	//	내 카드의 판정이면 중앙에 잡혀 있는 카드를 놓아 준다. 이것이 "효과가 발동했다" 의
@@ -712,7 +761,16 @@ void ABGPlayerController::SetSeatBoardWidget(UBGSeatBoardWidget* InSeatBoard)
 void ABGPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
-
+	
+	if (GetLocalPlayer() && ChatWidgetClass)
+	{
+		ChatWidgetInstance = CreateWidget<UBGChatingWidget>(this, ChatWidgetClass);
+		if (ChatWidgetInstance)
+		{
+			ChatWidgetInstance->AddToViewport(10);
+			UE_LOG(LogTemp, Warning, TEXT("[Chat] 위젯 생성 - Controller: %s"), *GetName());
+		}
+	}
 	//	UI 주기 갱신은 위젯 연결과 무관하게 돌린다.
 	//	예전에는 SetSeatBoardWidget 안에서 타이머를 걸었는데, 그러면 좌석 보드를 연결하지
 	//	않은 HUD 에서는 손패 잠금 갱신까지 함께 멈춰버린다(숨은 의존성).
@@ -1789,6 +1847,22 @@ void ABGPlayerController::ServerRequestDiscardCard_Implementation(int32 Instance
 
 	ConsumeCard(InstanceId);
 	GS->NotifyCardDiscarded(MySeat);
+}
+
+void ABGPlayerController::ServerSendChatMessage_Implementation(const FString& Message)
+{
+	ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
+	const FString SenderName = PS ? PS->GetPlayerName() : TEXT("?Who?");
+	
+	if (ABGGameState* GS = GetWorld()->GetGameState<ABGGameState>())
+	{
+		GS->Multicast_ChatMessage(SenderName, Message);
+	}
+}
+
+bool ABGPlayerController::ServerSendChatMessage_Validate(const FString& Message)
+{
+	return !Message.IsEmpty() && Message.Len() <= 256;
 }
 
 void ABGPlayerController::ConsumeCard(int32 InstanceId)

@@ -491,6 +491,11 @@ void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution
 	OnCardResolved.Broadcast(Resolution);
 }
 
+void ABGGameState::Multicast_ChatMessage_Implementation(const FString& SenderName, const FString& Message)
+{
+	OnChatMessageReceived.Broadcast(SenderName, Message);
+}
+
 void ABGGameState::Multicast_CardEquipped_Implementation(int32 SeatIndex, FGameplayTag CardId)
 {
 	//	밧줄은 멈추지 않는다 — 장비는 판정 표시가 뜨지 않아 읽을 시간이 따로 필요 없고,

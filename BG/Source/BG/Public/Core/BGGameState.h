@@ -106,6 +106,9 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGCardEquipped,
 /** 연출 카메라 샷이 바뀌었다. 서버·클라 양쪽에서 불린다. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCameraShotChanged, const FBGCameraShot& /*Shot*/);
 
+/** 채팅 메시지 '1'건 도착시 UI로 중계 */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGChatMessageReceived, const FString& /*SenderName*/, const FString& /*Message*/)
+
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase
 {
@@ -125,6 +128,12 @@ public:
 
 	/** 위 멀티캐스트가 도착하면 발사된다. UI(PlayerController)가 구독한다. */
 	FOnBGCardResolved OnCardResolved;
+	
+	/** 채팅 메시지를 전원에게 알린다 (서버에서만 호출) */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_ChatMessage(const FString& SenderName, const FString& Message);
+	
+	FOnBGChatMessageReceived OnChatMessageReceived;
 
 	/**
 	 * 장비를 착용했다고 전원에게 알린다 (서버에서만 호출).
@@ -138,6 +147,14 @@ public:
 
 	/** 위 멀티캐스트가 도착하면 발사된다. */
 	FOnBGCardEquipped OnCardEquipped;
+
+	/**
+	 * 장비를 착용했다고 전원에게 알린다 (서버에서만 호출).
+	 *
+	 * ⚠️ Multicast_CardResolved 를 재사용하지 않는 이유: 장비는 판정을 굴리지 않는다.
+	 *    등급도 눈도 없는 결과를 그 경로로 흘리면 판정 위젯이 주사위와 등급을 지어내 띄운다.
+	 *    여기로 오는 것은 "누가 무엇을 착용했다" 뿐이고, 화면에 세울 카드 연출이 그 용도다.
+	 */
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
