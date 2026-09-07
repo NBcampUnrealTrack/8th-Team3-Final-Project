@@ -155,6 +155,11 @@ void UTRVoiceSubsystem::BindVoiceInterfaceDelegates()
 
 	TalkingStateHandle = Voice->AddOnPlayerTalkingStateChangedDelegate_Handle(
 		FOnPlayerTalkingStateChangedDelegate::CreateUObject(this, &UTRVoiceSubsystem::HandleTalkingStateChanged));
+
+	// 로컬 토커의 발화 알림과 IsLocalPlayerTalking 은 등록된 토커에만 나온다.
+	// 엔진은 이 등록을 자동으로 하지 않는다(RegisterLocalTalkers 호출부가 없다).
+	const ULocalPlayer* LP = GetGameInstance() ? GetGameInstance()->GetFirstGamePlayer() : nullptr;
+	Voice->RegisterLocalTalker(LP ? (uint32)LP->GetControllerId() : 0);
 }
 
 void UTRVoiceSubsystem::UnbindVoiceInterfaceDelegates()
@@ -168,12 +173,18 @@ void UTRVoiceSubsystem::UnbindVoiceInterfaceDelegates()
 	if (const IOnlineVoicePtr Voice = OSS ? OSS->GetVoiceInterface() : nullptr)
 	{
 		Voice->ClearOnPlayerTalkingStateChangedDelegate_Handle(TalkingStateHandle);
+
+		const ULocalPlayer* LP = GetGameInstance() ? GetGameInstance()->GetFirstGamePlayer() : nullptr;
+		Voice->UnregisterLocalTalker(LP ? (uint32)LP->GetControllerId() : 0);
 	}
 	TalkingStateHandle.Reset();
 }
 
 void UTRVoiceSubsystem::HandleTalkingStateChanged(FUniqueNetIdRef PlayerId, bool bIsTalking)
 {
+	// 상대 PC 에서 이 줄이 찍히면 음성 패킷이 실제로 도착한 것이다. 귀로 듣지 않아도 판정된다.
+	UE_LOG(LogTRNet, Log, TEXT("발화 %s: %s"), bIsTalking ? TEXT("시작") : TEXT("종료"), *PlayerId->ToString());
+
 	OnTalkingChanged.Broadcast(PlayerId->ToString(), bIsTalking);
 }
 
