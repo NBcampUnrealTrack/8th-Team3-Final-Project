@@ -29,6 +29,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "UI/Target/BGSeatInfoDisplayComponent.h"
 #include "UI/Target/BGWorldTargetingComponent.h"
+#include "UI/Target/BGTargetHighlight.h"
 #include "Components/InputComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -716,8 +717,51 @@ void ABGPlayerController::HandleTurnStateChanged()
 
 	RefreshTurnPanel();
 	RefreshSeatBoard();
+	RefreshTurnHighlight();
 	UpdateHandInteractionLock();
 	RefreshHandWidget();   //	카드의 사용 가능 표시가 페이즈에 걸려 있다.
+}
+
+void ABGPlayerController::RefreshTurnHighlight()
+{
+	//	CustomDepth 는 복제되지 않는 순수 로컬 렌더 상태다. 리슨서버에서는 원격 클라이언트의
+	//	PC 프록시도 이 델리게이트를 받으므로, 가드가 없으면 호스트 화면의 캐릭터에 남의
+	//	시점 기준 하이라이트가 덧씌워진다.
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	const ABGPlayerState* ViewerState = GetPlayerState<ABGPlayerState>();
+	const int32 CurrentSeat = GS ? GS->GetCurrentSeat() : INDEX_NONE;
+	const int32 ViewerSeat  = ViewerState ? ViewerState->GetSeatIndex() : INDEX_NONE;
+
+	//	내 차례에는 찍지 않는다 — 조준 하이라이트(Selectable/Aimed)도 항상 내 차례에만 켜지므로
+	//	같은 스텐실 슬롯을 두고 겹칠 일이 이걸로 사라진다.
+	ABGCharacter* NextCharacter = nullptr;
+	if (CurrentSeat != INDEX_NONE && CurrentSeat != ViewerSeat)
+	{
+		const ABGPlayerState* ActingPS = UBGSeatViewLibrary::FindPlayerStateBySeat(this, CurrentSeat);
+		NextCharacter = ActingPS ? Cast<ABGCharacter>(ActingPS->GetPawn()) : nullptr;
+	}
+
+	ABGCharacter* PrevCharacter = HighlightedTurnCharacter.Get();
+	if (PrevCharacter == NextCharacter)
+	{
+		return;
+	}
+
+	if (PrevCharacter)
+	{
+		BGTargetHighlight::Apply(PrevCharacter, BGTargetHighlight::EState::None);
+	}
+	if (NextCharacter)
+	{
+		BGTargetHighlight::Apply(NextCharacter, BGTargetHighlight::EState::CurrentTurn);
+	}
+
+	HighlightedTurnCharacter = NextCharacter;
 }
 
 void ABGPlayerController::AbortActionIfTurnLost()

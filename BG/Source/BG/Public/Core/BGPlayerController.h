@@ -380,6 +380,12 @@ private:
 	//	턴 상태 통지를 구독한 GameState. 중복 구독을 막는다.
 	TWeakObjectPtr<class ABGGameState> BoundTurnGameState;
 
+	/** 지금 차례인 캐릭터에 CurrentTurn 스텐실을 찍는다. 내 차례면 아무도 찍지 않는다. */
+	void RefreshTurnHighlight();
+
+	//	직전에 CurrentTurn 을 찍어 둔 캐릭터. 다음 차례로 넘어갈 때 이 값부터 지운다.
+	TWeakObjectPtr<class ABGCharacter> HighlightedTurnCharacter;
+
 	//	머리 위 좌석 정보 + 커서 호버 판정. 보는 사람 화면에만 있는 것이라 복제하지 않는다.
 	UPROPERTY(VisibleAnywhere, Category = "BG|Target")
 	TObjectPtr<class UBGSeatInfoDisplayComponent> SeatInfoDisplay;
