@@ -2,6 +2,8 @@
 
 #include "UI/Widget/BGHandWidget.h"
 #include "UI/Widget/BGCardWidget.h"
+#include "UI/Widget/BGPlayZoneWidget.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -342,6 +344,42 @@ void UBGHandWidget::ClearPlayedMark(int32 InstanceId)
 	PlayedMarks.Remove(InstanceId);
 }
 
+void UBGHandWidget::ShowSpectatorCard(const FBGCardView& Card, const FBGCardPlayContext& Context)
+{
+	//	연출을 태울 자리가 없다(구형 HorizontalBox 경로). 조용히 넘어간다 —
+	//	관전 연출이 없다고 판이 멈출 이유는 없다.
+	UCanvasPanel* Canvas = GetCardCanvas();
+	if (!Canvas)
+	{
+		return;
+	}
+
+	UBGCardWidget* CardWidget = CreateCardWidget(Card);
+	if (!CardWidget)
+	{
+		return;
+	}
+
+	//	손패 위로 올라와야 한다 — 남이 낸 카드가 내 카드 뒤에 가리면 아무 의미가 없다.
+	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(CardWidget->Slot))
+	{
+		CanvasSlot->SetZOrder(LeavingCardZOrder);
+	}
+
+	const FVector2D Center = GetPlayZoneAnchor();
+	CardWidget->SetMotionPosition(Center + SpectatorCardEntryOffset);
+
+	CardWidget->BeginPlayExit(Center, GetDiscardAnchor());
+
+	//	⚠️ CardWidgets 에는 넣지 않는다. 손패 배치에 끼면 부채꼴이 한 장만큼 벌어진다.
+	//	   OutgoingWidgets 에만 넣어 두면 퇴장이 끝날 때 틱이 알아서 걷어간다.
+	OutgoingWidgets.Add(CardWidget);
+
+	//	판정은 이미 끝난 채로 온다. 지금 풀어 주면 카드가 중앙에 **도착하는 순간**
+	//	판정 연출이 터진다(날아가는 중에는 밀어 두었다가 도착 시 소비한다).
+	CardWidget->ReleaseHold(Context);
+}
+
 void UBGHandWidget::BeginExitFor(UBGCardWidget* CardWidget)
 {
 	if (!CardWidget)
@@ -667,6 +705,37 @@ void UBGHandWidget::SetPlayZoneAnchor(const FVector2D& InLocalPosition)
 	PlayZoneAnchor = InLocalPosition;
 }
 
+void UBGHandWidget::SetPlayZoneWidget(UBGPlayZoneWidget* InPlayZone)
+{
+	PlayZoneWidget = InPlayZone;
+}
+
+UBGPlayZoneWidget* UBGHandWidget::ResolvePlayZoneWidget() const
+{
+	if (UBGPlayZoneWidget* Cached = PlayZoneWidget.Get())
+	{
+		return Cached;
+	}
+
+	//	HUD 계층을 모른 채 존을 찾는 유일한 방법이다 — 손패가 HUD 구조를 알게 되면
+	//	그 HUD 밖에서는 못 쓰게 된다(앵커를 주입받는 것과 같은 이유다).
+	TArray<UUserWidget*> Found;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(
+		const_cast<UBGHandWidget*>(this), Found,
+		UBGPlayZoneWidget::StaticClass(), /*TopLevelOnly=*/false);
+
+	for (UUserWidget* Widget : Found)
+	{
+		if (UBGPlayZoneWidget* Zone = Cast<UBGPlayZoneWidget>(Widget))
+		{
+			PlayZoneWidget = Zone;
+			return Zone;
+		}
+	}
+
+	return nullptr;
+}
+
 FVector2D UBGHandWidget::GetDeckAnchor() const
 {
 	//	폴백은 패널 바닥을 기준으로 잡는다 — 손패와 같은 높이에서 출발해야
@@ -683,9 +752,34 @@ FVector2D UBGHandWidget::GetDiscardAnchor() const
 
 FVector2D UBGHandWidget::GetPlayZoneAnchor() const
 {
-	return PlayZoneAnchor.Get(FVector2D(
+	//	명시로 박아 준 자리가 있으면 그게 최우선이다(BP 가 직접 잡아 준 경우).
+	if (PlayZoneAnchor.IsSet())
+	{
+		return *PlayZoneAnchor;
+	}
+
+	//	플레이 존의 중앙을 매 호출마다 읽는다. 예전에는 드롭한 사람만 이 좌표를 알았고
+	//	남이 낸 카드는 폴백 자리에 섰다 — 같은 판인데 화면마다 카드가 다른 곳에 있었다.
+	if (const UCanvasPanel* Canvas = GetCardCanvas())
+	{
+		if (const UBGPlayZoneWidget* Zone = ResolvePlayZoneWidget())
+		{
+			const FGeometry& ZoneGeometry   = Zone->GetCachedGeometry();
+			const FGeometry& CanvasGeometry = Canvas->GetCachedGeometry();
+			const FVector2D  ZoneSize       = ZoneGeometry.GetLocalSize();
+
+			//	첫 프레임에는 지오메트리가 0 이다. 그대로 쓰면 카드가 좌상단에 선다.
+			if (!ZoneSize.IsNearlyZero() && !CanvasGeometry.GetLocalSize().IsNearlyZero())
+			{
+				return CanvasGeometry.AbsoluteToLocal(
+					ZoneGeometry.LocalToAbsolute(ZoneSize * 0.5f));
+			}
+		}
+	}
+
+	return FVector2D(
 		GetLayoutWidth() * 0.5f + PlayZoneAnchorFallback.X,
-		GetLayoutHeight() + PlayZoneAnchorFallback.Y));
+		GetLayoutHeight() + PlayZoneAnchorFallback.Y);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -881,7 +975,7 @@ void UBGHandWidget::NotifyCardPlayRequested(const FBGCardView& Card)
 }
 
 void UBGHandWidget::NotifyCardDroppedOnPlayZone(
-	const FBGCardView& Card, const FGeometry& ZoneGeometry, const FVector2D& DropScreenPosition)
+	const FBGCardView& Card, const FGeometry& /*ZoneGeometry*/, const FVector2D& DropScreenPosition)
 {
 	if (!Card.IsValid())
 	{
@@ -890,13 +984,10 @@ void UBGHandWidget::NotifyCardDroppedOnPlayZone(
 
 	UCanvasPanel* Canvas = GetCardCanvas();
 
-	//	플레이 존의 중앙이 곧 카드가 머물 자리다. 매번 갱신하므로 존이 움직여도 따라간다.
-	//	대상 카드는 연출을 미루지만 앵커는 지금 잡아 둔다 — 확정된 뒤에 쓸 자리가 같아야 한다.
-	if (Canvas)
-	{
-		const FVector2D ZoneCenterAbsolute = ZoneGeometry.LocalToAbsolute(ZoneGeometry.GetLocalSize() * 0.5f);
-		SetPlayZoneAnchor(Canvas->GetCachedGeometry().AbsoluteToLocal(ZoneCenterAbsolute));
-	}
+	//	⚠️ 여기서 앵커를 박아 두지 않는다. 드롭한 사람만 존의 지오메트리를 알던 탓에
+	//	   남이 낸 카드(ShowSpectatorCard)는 폴백 자리에 서서 화면마다 위치가 달랐다 —
+	//	   지금은 GetPlayZoneAnchor 가 존의 중앙을 직접 읽으므로 두 경로가 같은 자리다.
+	//	   (드롭 지오메트리는 그 존의 캐시 지오메트리와 같은 것이라 잃는 정보가 없다.)
 
 	//	⚠️ 대상 지정 카드는 중앙 연출을 지금 시작하지 않는다. 좌석을 고르는 동안 중앙에
 	//	   박혀 서 있으면 아직 낸 것도 아닌데 화면 한복판을 차지한다 — 손패에 그대로 두고,

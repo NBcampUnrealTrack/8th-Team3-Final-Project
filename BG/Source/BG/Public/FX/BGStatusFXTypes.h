@@ -66,4 +66,12 @@ struct FBGStatusFXRow : public FTableRowBase
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.01"))
 	float Scale = 1.f;
+
+	/** 제거 시 종료 연출로 넘길 bool. 현재 지속형 Niagara 공통 이름. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FName EndBoolParameter = TEXT("User.bIsEnding");
+
+	/** 종료 bool 전달 뒤 비활성화할 때까지의 시간. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.0"))
+	float EndDelaySeconds = 1.f;
 };

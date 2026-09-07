@@ -15,6 +15,7 @@
  *
  */
 class UBGDiceComponent;
+class UAbilitySystemComponent;
 
 /**
  * 판이 끝난 뒤의 연출 단계.
@@ -98,8 +99,15 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGTurnStateChanged);
 /** 판정 결과가 도착했다. 서버·클라 양쪽에서 불린다 (GDD §4.1 — 전원이 같은 결과를 본다). */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCardResolved, const FBGCardResolution& /*Resolution*/);
 
+/** 장비 착용 통지. 판정이 없어 FBGCardResolution 을 쓸 수 없다 — 좌석과 카드 종류만 오간다. */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGCardEquipped,
+	int32 /*SeatIndex*/, FGameplayTag /*CardId*/);
+
 /** 연출 카메라 샷이 바뀌었다. 서버·클라 양쪽에서 불린다. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCameraShotChanged, const FBGCameraShot& /*Shot*/);
+
+/** 채팅 메시지 '1'건 도착시 UI로 중계 */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGChatMessageReceived, const FString& /*SenderName*/, const FString& /*Message*/)
 
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase
@@ -120,6 +128,33 @@ public:
 
 	/** 위 멀티캐스트가 도착하면 발사된다. UI(PlayerController)가 구독한다. */
 	FOnBGCardResolved OnCardResolved;
+	
+	/** 채팅 메시지를 전원에게 알린다 (서버에서만 호출) */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_ChatMessage(const FString& SenderName, const FString& Message);
+	
+	FOnBGChatMessageReceived OnChatMessageReceived;
+
+	/**
+	 * 장비를 착용했다고 전원에게 알린다 (서버에서만 호출).
+	 *
+	 * ⚠️ Multicast_CardResolved 를 재사용하지 않는 이유: 장비는 판정을 굴리지 않는다.
+	 *    등급도 눈도 없는 결과를 그 경로로 흘리면 판정 위젯이 주사위와 등급을 지어내 띄운다.
+	 *    여기로 오는 것은 "누가 무엇을 착용했다" 뿐이고, 화면에 세울 카드 연출이 그 용도다.
+	 */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_CardEquipped(int32 SeatIndex, FGameplayTag CardId);
+
+	/** 위 멀티캐스트가 도착하면 발사된다. */
+	FOnBGCardEquipped OnCardEquipped;
+
+	/**
+	 * 장비를 착용했다고 전원에게 알린다 (서버에서만 호출).
+	 *
+	 * ⚠️ Multicast_CardResolved 를 재사용하지 않는 이유: 장비는 판정을 굴리지 않는다.
+	 *    등급도 눈도 없는 결과를 그 경로로 흘리면 판정 위젯이 주사위와 등급을 지어내 띄운다.
+	 *    여기로 오는 것은 "누가 무엇을 착용했다" 뿐이고, 화면에 세울 카드 연출이 그 용도다.
+	 */
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -369,6 +404,16 @@ public:
 	void BeginCardCinematic(class ABGCharacter* Caster, class ABGCharacter* Victim,
 		const FBGCardResolution& Resolution);
 
+	/**
+	 * 서버 전용. 카드 규칙 처리 성공 뒤의 공통 연출 입구.
+	 *
+	 * DT_BGCardFX가 없으면 아무 것도 하지 않는다. Card.Trait.Cinematic 카드는
+	 * BeginCardCinematic으로 넘기고, 나머지는 카메라 전환 없이 Primary Cue를 짧게
+	 * Add/Remove한다. PlayerController는 이 함수 호출만 담당한다.
+	 */
+	void PlayResolvedCardPresentation(class ABGCharacter* Caster, class ABGCharacter* Target,
+		const FBGCardResolution& Resolution);
+
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
 
@@ -508,6 +553,7 @@ protected:
 
 	//	서버 시작 시 덱을 준비한다.
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	void ShuffleDeck(EBGDeckSide Side = EBGDeckSide::Player);
 	void ReshuffleDeck(EBGDeckSide Side = EBGDeckSide::Player);
@@ -623,9 +669,25 @@ protected:
 	FBGPendingDeath ActiveDeath;
 
 	// ── 카드 연출 내부 ──
-	//
 	//	서버 전용. 단계 전환의 유일한 입구다 (SetPhaseTag / SetMatchEndStage 와 같은 원칙).
 	void SetCinematicStage(EBGCinematicStage NewStage);
+
+	/** 현재 단계의 지속형 GameplayCue를 대상 캐릭터 ASC에 추가한다. 서버 전용. */
+	void AddCardGameplayCueForStage(EBGCinematicStage Stage);
+
+	/** 이전 단계 GameplayCue를 제거해 OnRemove 종료 연출을 시작한다. 서버 전용. */
+	void RemoveActiveCardGameplayCue();
+
+	/** 비시네마틱 카드의 단발 Cue를 시작/종료한다. 서버 전용. */
+	void AddNonCinematicCardGameplayCue(class ABGCharacter* Caster, class ABGCharacter* Target,
+		const FBGCardResolution& Resolution, float ActiveSeconds);
+	void RemoveActiveNonCinematicCardGameplayCue();
+
+	TWeakObjectPtr<UAbilitySystemComponent> ActiveCardCueASC;
+	FGameplayTag ActiveCardCueTag;
+	TWeakObjectPtr<UAbilitySystemComponent> ActiveNonCinematicCardCueASC;
+	FGameplayTag ActiveNonCinematicCardCueTag;
+	FTimerHandle NonCinematicCardCueTimer;
 
 	//	서버·클라 공통. 현재 단계에 맞춰 델리게이트를 쏘고 카메라를 맞춘다.
 	void HandleCinematicStage();

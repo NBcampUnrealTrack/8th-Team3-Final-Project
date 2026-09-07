@@ -203,7 +203,8 @@ bool UBGMatchStartComponent::StartMatch()
 		UE_LOG(LogBGNet, Error, TEXT("[MatchStart] UBGSeatComponent 가 없어 좌석을 섞지 못했습니다."));
 	}
 
-	// AssignRoles 가 직업(Character.Job.*) 배정까지 함께 처리한다 — 직업 먼저, 역할 나중.
+	// AssignRoles 가 직업(Character.Job.*) 배정까지 함께 처리한다 — PvE 는 역할 먼저, 직업 나중
+	// (직업 화이트리스트가 역할로 진영을 가른다). PvP 는 여전히 직업 먼저, 역할 나중이다.
 	if (GM->IsPvE())
 	{
 		GM->AssignRolesPvE();

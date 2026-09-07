@@ -260,8 +260,14 @@ FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, 
 
 	View.DisplayName  = Row->DisplayName;
 	View.Description  = Row->Description;
-	View.bNeedsTarget = Row->TraitTags.HasTag(BG::Card::Trait::NeedsTargetSeat.GetTag());
 	View.FXArchetype  = DeriveFXArchetype(*Row);
+
+	//	⚠️ 장비(파란 카드)는 대상을 묻지 않는다 — DT 에 NeedsTargetSeat 이 붙어 있어도 무시한다.
+	//	   서버의 장착 분기(ABGPlayerController::HandlePlayCard)는 TargetSeat 을 아예 읽지 않고
+	//	   자기 자신에게 장착한다. 여기서 대상을 물으면 서버가 쓰지도 않을 좌석을 고르느라
+	//	   맥주 같은 즉시 사용 카드와 사용감이 갈린다.
+	View.bNeedsTarget = !IsEquipmentRow(*Row)
+		&& Row->TraitTags.HasTag(BG::Card::Trait::NeedsTargetSeat.GetTag());
 
 	//	장비/공격/마법 — TypeTag·NeedsTargetSeat 에서 유도한다(EBGCardCategory 주석 참고).
 	//	IsEquipmentRow 를 그대로 쓴다 — 장비 판별이 두 곳에서 각자 계산되면 갈릴 수 있다.

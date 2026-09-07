@@ -18,13 +18,7 @@ class UMaterialInstanceDynamic;
 class UCurveFloat;
 class URetainerBox;
 
-/**
- * 판정 등급 하나에 대한 글로우 연출값.
- *
- * ⚠️ 색만으로 등급을 가르지 말 것. 색각이상(남성 약 8%)에서 빨강·노랑·주황이 한 덩어리로
- *    뭉쳐서 대실패·성공·대성공이 구분되지 않는다. Seconds 와 Intensity 를 등급마다 다르게
- *    줘서 **밝기와 속도로도** 읽히게 한다 — 대성공은 세고 길게, 실패는 약하고 짧게.
- */
+/** 판정 등급 하나의 글로우 값. ⚠️ 색만으로 가르지 말 것(색각이상) — Intensity·Seconds 로도 구분되게. */
 USTRUCT(BlueprintType)
 struct FBGCardTierFX
 {
@@ -42,29 +36,16 @@ struct FBGCardTierFX
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|TierFX", meta = (ClampMin = "0.0"))
 	float RingStrength = 1.f;
 
-	/**
-	 * 잦아드는 데 걸리는 시간(초).
-	 *
-	 * 실패 계열을 길게 끌지 말 것 — 실패는 빨리 넘어가야 답답하지 않다.
-	 * 판이 뒤집히는 대성공·대실패만 길게 준다.
-	 */
+	/** 잦아드는 시간(초). 실패 계열은 짧게, 판이 뒤집히는 대성공·대실패만 길게. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|TierFX", meta = (ClampMin = "0.01"))
 	float Seconds = 0.6f;
 };
 
 /**
- * 카드가 사라지는 방식 하나 — 불타 없어지는가, 잘려 나가는가.
+ * 카드가 사라지는 방식 — 원형(Archetype)마다 한 벌. 퇴장 중 리테이너 머테리얼 파라미터로 흘러간다.
  *
- * 퇴장(Exiting) 동안 리테이너 머테리얼의 파라미터로 흘러간다. 원형(Archetype)마다
- * 이 값 한 벌씩을 두어 "공격 카드는 잘리고, 상태 카드는 타들어간다" 를 만든다.
- *
- * ⚠️ 원형마다 머테리얼을 따로 두지 말 것. 리테이너의 Effect Material 을 갈아끼우면
- *    DMI 가 새로 생겨 캐시가 무효화되고 셰이더 퍼뮤테이션도 원형 수만큼 늘어난다.
- *    마스터는 하나로 두고 **값만** 바꾼다(FBGCardTierFX 와 같은 규약).
- *
- * ⚠️ 머테리얼 안에서 Static Switch 로 모양을 가르면 안 된다. Static Switch 는
- *    MaterialInstanceConstant 전용이라 DMI 로는 바뀌지 않는다 — 컴파일도 되고 에러도
- *    안 나는데 런타임에는 항상 같은 그림만 나온다. 모양 차이는 MaskTexture 로 낸다.
+ * ⚠️ 마스터 머테리얼은 하나로 두고 값만 바꾼다 — 갈아끼우면 DMI 가 새로 생기고 퍼뮤테이션이 늘어난다.
+ * ⚠️ 모양은 Static Switch 가 아니라 MaskTexture 로 가른다 — Static Switch 는 DMI 로 안 바뀐다(에러도 안 남).
  */
 USTRUCT(BlueprintType)
 struct FBGCardDissolveFX
@@ -72,27 +53,17 @@ struct FBGCardDissolveFX
 	GENERATED_BODY()
 
 	/**
-	 * 잘리는 모양을 정하는 마스크. **이것 하나가 연출의 성격을 정한다.**
-	 * 검은 곳이 먼저 사라지고 흰 곳이 마지막까지 남는다 —
-	 * 벤 자리를 0 으로 그려 두면 그 선에서부터 바깥으로 벌어지며 사라진다.
-	 *
-	 *   칼자국 거리장 → 베인 선에서 갈라진다        (T_BGDissolve_Slash)
-	 *   불규칙 노이즈 → 불에 타듯 얼룩덜룩하게        (T_BGDissolve_Ember)
-	 *   부드러운 셀   → 고르게 스러진다              (T_BGDissolve_Soft)
-	 *
-	 * 비우면 머테리얼의 기본 마스크를 그대로 쓴다.
+	 * 잘리는 모양 마스크. **이것 하나가 연출의 성격을 정한다.** 검은 곳이 먼저 사라진다.
+	 * 칼자국 거리장(Slash) · 불규칙 노이즈(Ember) · 부드러운 셀(Soft). 비우면 머테리얼 기본값.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve")
 	TObjectPtr<UTexture2D> MaskTexture = nullptr;
 
-	/** 타들어가는 경계에 얹히는 색. 불이면 주황, 칼자국이면 흰색이 무난하다. */
+	/** 타들어가는 경계에 얹히는 색. 불이면 주황, 칼자국이면 흰색. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve")
 	FLinearColor EdgeColor = FLinearColor(1.f, 0.35f, 0.05f, 1.f);
 
-	/**
-	 * 경계의 두께(0~1 UV). 불은 넓게 이글거리고, 칼자국은 얇아야 날카롭다.
-	 * 0 이면 경계 없이 그냥 사라진다.
-	 */
+	/** 경계의 두께(0~1 UV). 불은 넓게, 칼자국은 얇게. 0 이면 경계 없이 사라진다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float EdgeWidth = 0.06f;
 
@@ -100,12 +71,7 @@ struct FBGCardDissolveFX
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0"))
 	float EdgeIntensity = 4.f;
 
-	/**
-	 * 잘린 두 조각이 벌어지는 정도(UV). 0 이면 제자리에서 사라진다.
-	 *
-	 * 실제로 위젯을 둘로 쪼개는 것이 아니라 컷 라인 기준으로 UV 를 좌우로 미는 것이다.
-	 * 0.35 초짜리 퇴장에서는 구분되지 않는다.
-	 */
+	/** 잘린 두 조각이 벌어지는 정도(UV). 실제로 쪼개는 것이 아니라 컷 라인 기준 UV 밀기다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0"))
 	float SeparateAmount = 0.f;
 
@@ -114,40 +80,21 @@ struct FBGCardDissolveFX
 	float CutAngleDegrees = 0.f;
 
 	/**
-	 * 잘리는 선이 얼마나 흐린가(0~1 UV). **이 값 하나가 성격을 가른다.**
-	 *   0 에 가까우면 → 칼로 자른 듯 딱 떨어진다   (공격)
-	 *   크면          → 뭉근하게 스러진다          (회복)
-	 *
-	 * EdgeWidth 와 헷갈리지 말 것. 저쪽은 "빛나는 띠의 두께", 이쪽은 "경계선의 흐림" 이다.
-	 * 둘을 같이 키우면 경계가 뭉개져서 무엇이 사라지는지 안 읽힌다.
+	 * 경계선의 흐림(0~1 UV). 0 에 가까우면 칼로 자른 듯(공격), 크면 뭉근하게(회복).
+	 * ⚠️ EdgeWidth(빛나는 띠의 두께)와 다른 축이다 — 같이 키우면 경계가 뭉개진다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float EdgeSoftness = 0.02f;
 
-	/**
-	 * 발광이 면 전체로 퍼지는 정도.
-	 *   0 → 경계만 탄다. 남은 면은 원래 그림 그대로   (공격)
-	 *   1 → 남아 있는 면 전체가 은은히 빛난다         (회복)
-	 *
-	 * 머테리얼에서 "경계 띠" 와 "남은 면" 을 이 값으로 Lerp 한다.
-	 * ⚠️ Static Switch 로 가르지 말 것 — DMI 로는 안 바뀐다(구조체 상단 주석과 같은 이유).
-	 */
+	/** 발광이 면 전체로 퍼지는 정도. 0 이면 경계만(공격), 1 이면 남은 면 전체가 빛난다(회복). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float SurfaceGlow = 0.f;
 
-	/**
-	 * 사라지면서 위로 밀려 올라가는 정도(UV). 0 이면 제자리에서 스러진다.
-	 *
-	 * 회복은 "빛이 위로 흩어진다" 라 조금 필요하다. 공격은 0 이 맞다 —
-	 * 베인 카드가 떠오르면 잘린 무게감이 사라진다.
-	 */
+	/** 사라지며 위로 밀려 올라가는 정도(UV). 회복은 조금, 공격은 0(잘린 무게감이 사라진다). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0"))
 	float RiseAmount = 0.f;
 
-	/**
-	 * 경계에 얹는 재 · 잔불 노이즈. 비우면 경계가 매끈한 띠로만 보인다.
-	 * 회복은 비워 둘 것 — 성스러운 빛에 그을음이 섞이면 탁해진다.
-	 */
+	/** 경계에 얹는 재·잔불 노이즈. 회복은 비울 것 — 성스러운 빛에 그을음이 섞이면 탁해진다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve")
 	TObjectPtr<UTexture2D> EmberMask = nullptr;
 
@@ -155,33 +102,16 @@ struct FBGCardDissolveFX
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0"))
 	float EmberIntensity = 0.f;
 
-	/**
-	 * 카드 외곽을 감싸는 후광의 두께(0~1 UV). 0 이면 후광 없음.
-	 *
-	 * ⚠️ Fresnel 노드로 만들지 말 것. UI 도메인에는 뷰 벡터가 없어 항상 상수가 나온다 —
-	 *    컴파일도 되고 에러도 안 나는데 화면에는 아무 변화가 없다.
-	 *    카드 UV 가장자리 비네트로 낼 것.
-	 */
+	/** 카드 외곽 후광의 두께(0~1 UV). ⚠️ Fresnel 금지 — UI 도메인엔 뷰 벡터가 없다. UV 비네트로 낼 것. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float HaloWidth = 0.f;
 
-	/**
-	 * 이 원형 전용 진행 곡선. 비우면 위젯의 DissolveCurve 로 떨어진다.
-	 *
-	 * 공격과 회복은 **타는 속도가 달라야** 한다 — 공격은 뒤가 가팔라 확 무너지고,
-	 * 회복은 처음부터 끝까지 고르게 스러진다. 곡선이 하나뿐이면 둘 중 하나는
-	 * 반드시 성격에 안 맞는다.
-	 */
+	/** 이 원형 전용 진행 곡선. 비우면 위젯의 DissolveCurve. 공격은 뒤가 가파르고 회복은 고르게. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Card|Dissolve")
 	TObjectPtr<UCurveFloat> Curve = nullptr;
 };
 
-/**
- * 카드 위젯의 연출 상태.
- *
- * ⚠️ 게임 상태가 아니라 화면 상태다 — 복제하지 않고 서버는 알 필요도 없다.
- *    손패에서 빠진 카드도 Exiting 동안은 화면에 남는다(게임 상태와 시간축이 다르다).
- */
+/** 카드 위젯의 연출 상태. ⚠️ 게임 상태가 아니라 화면 상태다 — 복제하지 않는다. */
 UENUM(BlueprintType)
 enum class EBGCardMotionState : uint8
 {
@@ -190,10 +120,7 @@ enum class EBGCardMotionState : uint8
 	Dealing    UMETA(DisplayName = "덱에서 비행"), // 덱 → 손패. 곡선 · 회전 · 오버슈트.
 	Moving     UMETA(DisplayName = "이동 중"),    // 손패 자리를 향해 보간 중.
 
-	// ── 사용한 카드가 손패를 떠나는 3단계 ──
-	//
-	//	낸 즉시 사라지면 "무슨 카드를 냈는지" 를 볼 시간이 없다. 중앙으로 올려
-	//	보여 준 뒤(Presenting) 효과가 적용되는 동안 머물고(Dwelling) 사라진다(Exiting).
+	//	사용한 카드가 손패를 떠나는 3단계 — 낸 즉시 사라지면 무슨 카드인지 볼 시간이 없다.
 	Presenting UMETA(DisplayName = "중앙으로"),   // 손패 → 플레이 존 중앙
 	Dwelling   UMETA(DisplayName = "중앙 대기"),  // 효과가 보이는 동안 머문다
 	Exiting    UMETA(DisplayName = "퇴장 중")     // 끝나면 손패 위젯이 파괴한다.
@@ -202,18 +129,9 @@ enum class EBGCardMotionState : uint8
 /**
  * 카드 1장 위젯. 이름 + 설명을 표시하고, 좌클릭 드래그를 시작한다.
  *
- * WBP 서브클래스에 아래 이름의 위젯이 있어야 한다:
- *   Text_CardName        (TextBlock, 필수)
- *   Text_CardDescription (TextBlock, 필수)
- *   Border_Root          (Border, 선택 - 드래그 중 디밍에 사용)
- *   Text_ChanceModified   (TextBlock, 선택 - 호버 중 "확률 보정중" 문구)
- *   Text_ChanceCriticalFailure  (RichTextBlock, 선택 - 대실패)
- *   Text_ChanceFailure          (RichTextBlock, 선택 - 실패)
- *   Text_ChanceSuccess          (RichTextBlock, 선택 - 성공)
- *   Text_ChanceCriticalSuccess  (RichTextBlock, 선택 - 대성공)
- *
- * 확률 텍스트는 둘 다 선택이다. WBP 에 없으면 그냥 표시되지 않는다 —
- * 기존 카드 WBP 를 고치지 않아도 컴파일과 실행이 그대로 유지되어야 하기 때문이다.
+ * WBP 필수: Text_CardName, Text_CardDescription.
+ * WBP 선택: Border_Root, Img_Art, Retainer_Card, Text_ChanceModified, Text_Chance*(4단계 확률).
+ * 선택 바인딩은 없으면 그냥 표시되지 않는다 — 기존 WBP 를 고치지 않아도 컴파일·실행이 유지된다.
  */
 UCLASS(Abstract, Blueprintable)
 class BG_API UBGCardWidget : public UUserWidget
@@ -225,22 +143,14 @@ public:
 	void SetCardView(const FBGCardView& InCardView);
 
 	/**
-	 * 판정 등급 연출을 터뜨린다. 판정이 확정되는 순간 자동으로 불린다.
-	 *
-	 * BlueprintCallable 인 이유는 튜닝 때문이다 — 판을 돌리지 않고 BP 에서 등급을 골라
-	 * 바로 재생해 볼 수 있어야 색·세기를 맞출 수 있다.
-	 *
-	 * 등급이 None 이면(장비처럼 판정하지 않는 카드) 아무 일도 하지 않는다.
+	 * 판정 등급 연출을 터뜨린다. 확정 순간 자동으로 불린다. 등급이 None 이면 아무 일도 없다.
+	 * BlueprintCallable 인 이유는 튜닝 — 판을 돌리지 않고 등급을 골라 재생해 볼 수 있어야 한다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Card|TierFX")
 	void PlayTierFX(EBGResolutionTier Tier);
 
 	/**
-	 * 중앙 대기를 지금 끝낸다 — 카드가 퇴장을 시작한다.
-	 *
-	 * bWaitForDwellAnimation 을 켰을 때 **BP 가 반드시 불러야 하는 신호**다.
-	 * UMG 애니메이션의 Finished 이벤트에 물려 두면 연출 길이가 애셋을 따라간다.
-	 *
+	 * 중앙 대기를 지금 끝낸다(퇴장 시작). bWaitForDwellAnimation 을 켰을 때 BP 가 반드시 부를 신호다.
 	 * 대기 중이 아니면 아무 일도 하지 않는다 — 여러 번 불러도 안전하다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Card|Motion")
@@ -252,91 +162,59 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Card")
 	int32 GetInstanceId() const { return CardView.InstanceId; }
 
-	/** 이 카드를 소유한 핸드 위젯. 핸드가 카드를 만들 때 설정한다. */
-	// 정의는 .cpp 에 있다 - TWeakObjectPtr 대입은 완전한 타입을 요구한다.
+	/** 이 카드를 소유한 핸드 위젯. 정의가 .cpp 인 이유: TWeakObjectPtr 대입은 완전한 타입을 요구한다. */
 	void SetOwningHand(UBGHandWidget* InHand);
 
 	/** 드래그 중인 원본 카드를 흐리게 표시한다. 드롭/취소 시 false 로 복구된다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Card")
 	void SetBeingDragged(bool bInBeingDragged);
 
-	/**
-	 * 드래그를 잠근다. 대상 좌석 선택을 기다리는 동안 카드를 또 던지는 것을 막는다.
-	 * 잠금은 손패 위젯이 일괄로 건다 — 개별 카드에서 직접 부르지 말 것.
-	 */
+	/** 드래그를 잠근다(대상 선택 대기 중 중복 사용 방지). 손패가 일괄로 건다 — 개별 호출 금지. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Card")
 	void SetDragLocked(bool bInLocked);
 
 	UFUNCTION(BlueprintPure, Category = "BG|Card")
 	bool IsDragLocked() const { return bDragLocked; }
 
-	/**
-	 * true 면 드래그 비주얼용 복제본이므로 입력을 받지 않는다.
-	 * 복제본이 다시 드래그를 시작하는 무한 재귀를 막는다.
-	 */
+	/** true 면 드래그 비주얼용 복제본이라 입력을 받지 않는다(드래그 무한 재귀 방지). */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Card")
 	bool bIsDragVisual = false;
 
 	// ══════════════════════════════════════════════════════════════════
 	//  연출 (Presentation)
 	//
-	//  ⚠️ 이 구간은 전부 클라 로컬이다. 게임 규칙과 무관하므로 연출을 통째로
-	//     들어내도 게임은 그대로 굴러가야 한다.
-	//
-	//  틱은 이 위젯이 스스로 돌지 않는다 — 손패 위젯이 TickMotion() 을 불러준다.
-	//  카드가 각자 틱하면 순서가 보장되지 않고, 손패가 레이아웃을 다시 잡는
-	//  프레임에 어떤 카드는 옛 목표로 한 프레임 움직인다.
+	//  ⚠️ 전부 클라 로컬이다. 통째로 들어내도 게임은 그대로 굴러가야 한다.
+	//  ⚠️ 틱은 스스로 돌지 않는다 — 손패가 TickMotion() 을 불러준다.
+	//     각자 틱하면 손패가 재배치하는 프레임에 어떤 카드는 옛 목표로 한 프레임 움직인다.
 	// ══════════════════════════════════════════════════════════════════
 public:
-	/**
-	 * 이 카드가 있어야 할 자리. 손패가 재정렬될 때마다 불린다.
-	 *
-	 * 도착 전에 목표가 바뀌어도 그 자리에서 이어진다 — 고정 시간 트윈이 아니라
-	 * 보간이라서, 카드가 추가돼 자리가 밀리는 도중에도 끊기지 않는다.
-	 */
+	/** 이 카드가 있어야 할 자리. 트윈이 아니라 보간이라 도착 전에 목표가 바뀌어도 끊기지 않는다. */
 	void SetLayoutTarget(const FVector2D& InPosition, float InAngleDegrees);
 
 	/** 보간 없이 즉시 목표로. 첫 프레임(패널 크기를 아직 모를 때)에만 쓴다. */
 	void SnapToLayoutTarget();
 
-	/**
-	 * 현재 위치를 강제로 옮긴다(목표는 건드리지 않는다).
-	 *
-	 * 드롭 순간에 쓴다 — 커서를 놓은 자리에서 연출을 이어받아야 드래그와 끊기지 않는다.
-	 * 이걸 안 하면 카드가 손패 자리로 돌아갔다가 다시 중앙으로 날아간다.
-	 */
+	/** 현재 위치만 강제로 옮긴다(목표는 그대로). 드롭 순간에 써서 드래그와 연출을 잇는다. */
 	void SetMotionPosition(const FVector2D& InPosition);
 
-	/**
-	 * 덱에서 날아오는 등장 연출을 시작한다.
-	 * Delay 동안은 숨어 있다가 나타난다 — 여러 장을 동시에 뽑을 때 겹쳐 보이지 않게 한다.
-	 */
+	/** 덱에서 날아오는 등장 시작. Delay 동안 숨어 있다 나타난다(여러 장 동시 뽑기 대비). */
 	void BeginDeal(const FVector2D& FromPosition, float Delay, const FBGCardDealContext& Context);
 
 	/**
-	 * 곧장 사라지는 퇴장. 남이 훔쳐 갔거나 버려진 카드처럼 "보여 줄 필요가 없는" 경우다.
-	 *
-	 * ⚠️ 보간이 아니라 고정 시간이다 — 퇴장은 반드시 끝나야 하는데
-	 *    InterpTo 는 목표에 정확히 도달하지 않아 영원히 안 끝난다.
+	 * 곧장 사라지는 퇴장(훔쳐감·버려짐 등 보여 줄 필요가 없는 경우).
+	 * ⚠️ 보간이 아니라 고정 시간이다 — InterpTo 는 목표에 정확히 도달하지 않아 영원히 안 끝난다.
 	 */
 	void BeginExit(const FVector2D& ToPosition);
 
 	/**
-	 * 내가 사용한 카드의 퇴장. 중앙으로 올라가 **잡혀 있다가** 풀리면 사라진다.
-	 *
-	 * 중앙에 도착하면 ReleaseHold() 가 올 때까지 가만히 기다린다 —
-	 * 대상 좌석을 고르는 동안 카드가 중앙에 서 있어야 무엇을 내고 있는지 보인다.
-	 * 서버가 손패에서 카드를 빼면 그것이 곧 "효과가 발동했다" 는 신호이고,
-	 * 그때 ReleaseHold() 가 불려 잠깐 더 보여 준 뒤 사라진다.
+	 * 내가 사용한 카드의 퇴장. 중앙으로 올라가 ReleaseHold() 가 올 때까지 잡혀 있다가 사라진다.
+	 * 서버가 손패에서 카드를 빼는 것이 곧 "효과가 발동했다" 는 신호다.
 	 */
 	void BeginPlayExit(const FVector2D& CenterPosition, const FVector2D& ToPosition);
 
 	/**
-	 * 중앙에 잡아 두던 카드를 놓아 준다. DwellDuration 만큼 더 보여 준 뒤 사라진다.
-	 * 여기서 OnPlayResolved 가 발사된다 — 그 순간이 곧 "효과가 발동했다" 이다.
-	 *
-	 * 부르는 쪽이 모르는 칸(연출 원형)은 **카드가 스스로 채운다** — 자기 데이터니까.
-	 * 채워진 맥락을 돌려주므로, 손패는 그것을 그대로 관찰자에게 흘려보내면 된다.
+	 * 중앙에 잡아 두던 카드를 놓아 준다(= 효과 발동). 여기서 OnPlayResolved 가 발사된다.
+	 * 부르는 쪽이 모르는 칸(연출 원형)은 카드가 스스로 채워 돌려준다 — 자기 데이터니까.
 	 */
 	FBGCardPlayContext ReleaseHold(const FBGCardPlayContext& Context);
 
@@ -344,10 +222,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Card|Motion")
 	bool IsHoldingAtCenter() const { return bHoldingAtCenter; }
 
-	/**
-	 * 떠나던 카드를 손패로 되돌린다(대상 선택 취소 등).
-	 * 이미 사라지기 시작했으면(Exiting) 되돌리지 않고 false 를 돌려준다.
-	 */
+	/** 떠나던 카드를 손패로 되돌린다(대상 선택 취소 등). 이미 Exiting 이면 false. */
 	bool ReturnToHand();
 
 	UFUNCTION(BlueprintPure, Category = "BG|Card|Motion")
@@ -374,10 +249,7 @@ public:
 	/** 한 장을 배분하는 데 걸리는 시간. 손패가 순차 배분 지연을 계산할 때 읽는다. */
 	float GetDealFlightDuration() const { return DealFlightDuration; }
 
-	/**
-	 * 이번 묶음의 총 장수를 뒤늦게 채운다.
-	 * BeginDeal 시점에는 몇 장이 들어올지 아직 모른다 — 손패가 다 훑은 뒤에 알려 준다.
-	 */
+	/** 이번 묶음의 총 장수를 뒤늦게 채운다 — BeginDeal 시점에는 몇 장인지 아직 모른다. */
 	void SetDealBatchTotal(int32 InTotal) { DealContext.TotalInBatch = InTotal; }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Card|Motion")
@@ -385,39 +257,27 @@ public:
 
 	// ── BP 훅 ────────────────────────────────────────────────────────
 	//
-	//	C++ 은 "언제 / 어디로" 만 정하고, "어떻게 보이는가" 는 BP 가 붙인다.
-	//	이 경계를 지키면 연출을 바꿀 때 C++ 재컴파일이 필요 없다
-	//	(BGResolutionWidget::OnResolutionShown 과 같은 규약).
+	//	C++ 은 "언제 / 어디로" 만 정하고 "어떻게 보이는가" 는 BP 가 붙인다 — 연출을 바꿔도 재컴파일이 없다.
 
 	/** stagger 대기가 끝나 카드가 실제로 나타나는 순간. 등장 애니메이션·사운드를 여기에. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
 	void OnDealt(const FBGCardDealContext& Context);
 
-	/**
-	 * 사용한 카드가 중앙에 도착한 순간. 아직 확정 전이라 여기서 대기가 시작된다.
-	 * "이 카드를 내는 중" 을 알리는 연출(테두리 강조 등)을 붙이면 된다.
-	 */
+	/** 사용한 카드가 중앙에 도착한 순간(아직 확정 전). "내는 중" 연출을 붙인다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
 	void OnPlayPresented();
 
 	/**
-	 * 서버가 카드를 확정해 효과가 발동한 순간(대기 해제).
-	 * 발동 연출(빛·파티클·화면 흔들림)은 여기에 붙이는 것이 맞다.
-	 *
-	 * Context.Tier 로 등급별 분기, Context.Archetype 으로 카드 성격별 분기를 한다.
-	 * ⚠️ 장비는 판정이 없어 Tier 가 None 이다 — 분기할 때 반드시 처리할 것.
+	 * 서버가 확정해 효과가 발동한 순간. 발동 연출(빛·파티클·화면 흔들림)은 여기에.
+	 * ⚠️ 장비는 판정이 없어 Tier 가 None 이다 — 등급으로 분기할 때 반드시 처리할 것.
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
 	void OnPlayResolved(const FBGCardPlayContext& Context);
 
 	/**
-	 * 마우스가 올라와 카드가 들리기 시작한 순간 / 내려놓인 순간.
-	 *
-	 * ⚠️ 마우스가 올라왔다고 항상 발사되지 않는다. 손패가 잠겼거나(내 턴이 아님)
-	 *    드래그·등장·퇴장 중이면 호버 연출 자체가 억제되므로 bActive 는 false 다.
-	 *    BP 에서 On Mouse Enter 를 직접 쓰면 상대 턴에도 빛나므로 이쪽을 쓸 것.
-	 *
-	 * 상태가 **바뀔 때만** 온다 — 매 프레임 오지 않는다.
+	 * 호버 연출이 붙고 풀리는 순간. 상태가 **바뀔 때만** 온다(매 프레임 아님).
+	 * ⚠️ 잠금·드래그·등장/퇴장 중이면 bActive 는 false 다. BP 의 On Mouse Enter 를
+	 *    직접 쓰면 상대 턴에도 빛나므로 이쪽을 쓸 것.
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
 	void OnHoverChanged(bool bActive);
@@ -455,10 +315,8 @@ protected:
 	FLinearColor DraggedTint = FLinearColor(1.f, 1.f, 1.f, 0.25f);
 
 	/**
-	 * 드래그 중 손패에 남는 원본(실루엣)의 불투명도. 0 이면 자리에 구멍이 난다.
-	 *
-	 * ⚠️ DraggedTint 로는 부족하다 — 그 틴트는 Border_Root 에만 걸려 텍스트와 아트가
-	 *    흐려지지 않는다. 위젯 전체에 걸리는 이 값이 있어야 복제본과 구분된다.
+	 * 드래그 중 손패에 남는 실루엣의 불투명도. 0 이면 자리에 구멍이 난다.
+	 * ⚠️ DraggedTint 로는 부족하다 — 그 틴트는 Border_Root 에만 걸려 텍스트·아트가 안 흐려진다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DragGhostOpacity = 0.28f;
@@ -480,21 +338,11 @@ protected:
 	UPROPERTY(BlueprintReadWrite,meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> Border_Root;
 
-	/**
-	 * 테두리 안쪽 그림. WBP 의 Overlay 에서 테두리 **아래** 칸에 둔다.
-	 *
-	 * Optional 인 이유: 이 클래스는 손패 카드와 드래그 비주얼이 함께 쓴다(BeginDrag 참고).
-	 * 필수로 걸면 그림 칸이 없는 WBP 가 전부 바인딩 에러로 죽는다.
-	 */
+	/** 테두리 안쪽 그림(Overlay 에서 테두리 아래 칸). Optional 인 이유: 드래그 비주얼도 이 클래스를 쓴다. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Img_Art;
 
-	/**
-	 * DT 에 그림이 없는 카드에 대신 그릴 이미지.
-	 *
-	 * 비워 두면 그림 칸을 Hidden 으로 접는다 — 브러시를 null 로 두면 카드 한복판이
-	 * 투명해져서 "카드가 안 보인다" 로 시간을 버린다. 아트 작업 중에도 카드 모양은 유지돼야 한다.
-	 */
+	/** DT 에 그림이 없는 카드의 대체 이미지. 비우면 칸을 Hidden 으로 접는다(브러시 null 은 카드가 투명해진다). */
 	UPROPERTY(EditAnywhere, Category = "BG|Card")
 	TObjectPtr<UTexture2D> FallbackArtTexture;
 
@@ -508,33 +356,24 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Frame")
 	TObjectPtr<UTexture2D> MagicFrameTexture;
 
-	/**
-	 * Border_Root 브러시에 물린 머테리얼(M_BGCardFrame)에서 테두리 그림을 받는 파라미터.
-	 *
-	 * 브러시에 머테리얼이 아니라 텍스처가 물려 있으면 이 이름은 쓰이지 않는다 —
-	 * 그때는 예전처럼 브러시 텍스처를 통째로 갈아 끼운다.
-	 */
+	/** Border_Root 의 M_BGCardFrame 에서 테두리 그림을 받는 파라미터. 텍스처가 물려 있으면 안 쓰인다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Frame")
 	FName FrameTexParamName = TEXT("FrameTex");
 
 	// ── 등급 연출 (글로우 머테리얼) ──────────────────────────────────
 	//
-	//	리테이너의 Effect Material 로 만든 **이 카드 전용 DMI**(GetCardFXMID)를 쓴다.
-	//	디졸브 · 호버 외곽선 글로우와 같은 DMI 다 — 셋 다 합성된 카드 한 장을 대상으로
-	//	하는 화면 효과이므로 마스터 하나에 모으고 값만 다르게 준다.
+	//	리테이너의 Effect Material 로 만든 이 카드 전용 DMI(GetCardFXMID)를 디졸브와 함께 쓴다 —
+	//	둘 다 합성된 카드 한 장을 대상으로 하는 화면 효과라 마스터 하나에 모으고 값만 다르게 준다.
 
 	/**
 	 * C++ 글로우로 등급을 표현할지. **기본은 꺼짐** — 등급 연출은 WBP 의 UMG 애니메이션이 맡는다.
-	 *
-	 * 코드를 지우지 않고 스위치로 둔 이유는 §13.1 비활성 정책과 같다. 애니메이션으로
-	 * 원하는 그림이 안 나오면 켜서 같이 쓰거나, 애니메이션 대신 되돌릴 수 있어야 한다.
-	 * 꺼져 있으면 PlayTierFX 가 즉시 빠져나가므로 DMI 도 만들지 않는다(비용 0).
+	 * 되돌릴 수 있도록 코드를 지우지 않고 스위치로 뒀다(§13.1 비활성 정책). 꺼져 있으면 DMI 도 안 만든다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	bool bUseTierGlow = false;
 
-	//	파라미터 이름을 값으로 두는 이유: 이 위젯에 어떤 머테리얼이 물릴지 코드가 모른다.
-	//	이름이 틀리면 UMaterialInstanceDynamic 이 조용히 무시하므로 BP 에서 확인할 것.
+	//	파라미터 이름을 값으로 두는 이유: 어떤 머테리얼이 물릴지 코드가 모른다.
+	//	이름이 틀리면 DMI 가 조용히 무시하므로 안 먹으면 여기부터 볼 것.
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	FName ColorParamName = TEXT("GlowColor");
 
@@ -544,37 +383,19 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	FName RingParamName = TEXT("GlowRingStrength");
 
-	/**
-	 * 리테이너의 픽셀 크기를 받는 파라미터.
-	 *
-	 * 팽창 반경을 UV 로 바꾸려면 필요하다. 안 먹이면 카드가 세로로 긴 비율이라
-	 * 외곽선이 가로로 눌린 타원으로 번진다. 없는 머테리얼이면 그냥 무시된다.
-	 */
+	/** 리테이너의 픽셀 크기. 팽창 반경을 UV 로 바꾸는 데 필요하다 — 안 먹이면 외곽선이 눌린 타원이 된다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	FName WidgetSizeParamName = TEXT("WidgetSize");
 
 	// ── 호버 외곽선 글로우 — 코드가 손대지 않는다 ────────────────────
 	//
-	//	외곽선 글로우는 Border_Root 브러시의 M_BGCardFrame 이 그리고, 세기(HoverAmount)는
-	//	**WBP 의 UMG 애니메이션**이 몬다. 그래서 여기에 파라미터도 함수도 없다.
-	//
-	//	⚠️ C++ 에서 HoverAmount 를 도로 밀지 말 것. 애니메이션과 코드가 같은 이름을
-	//	   매 프레임 쓰면 마지막에 쓴 쪽이 이겨서, 애니메이션이 재생돼도 값이 안 먹거나
-	//	   반대로 코드 값이 무시되는 것처럼 보인다. 원인을 찾기 매우 어렵다.
-	//
-	//	⚠️ 리테이너로 되돌리지 말 것. 리테이너는 인스턴스마다 렌더 타겟을 하나씩 잡아
-	//	   평상시에는 꺼 두는데(SetRetainRendering(false)), 꺼져 있으면 Effect Material
-	//	   자체가 적용되지 않아 상시 연출인 호버 글로우는 **애초에 보이지 않는다.**
-	//	   리테이너는 퇴장 디졸브처럼 카드 전체를 한 장으로 만들어야 하는 연출 전용이다.
-	//
+	//	Border_Root 의 M_BGCardFrame 이 그리고 세기(HoverAmount)는 WBP 의 UMG 애니메이션이 몬다.
+	//	⚠️ C++ 에서 HoverAmount 를 도로 밀지 말 것 — 같은 이름을 둘이 매 프레임 쓰면 마지막이 이긴다.
+	//	⚠️ 리테이너로 되돌리지 말 것 — 평상시엔 꺼 두는데(SetRetainRendering(false)) 꺼져 있으면
+	//	   Effect Material 자체가 적용되지 않아 상시 연출인 호버 글로우는 애초에 안 보인다.
 	//	자세한 것은 BG/Docs/M_BGCardFrame-매뉴얼.md 를 볼 것.
 
-	/**
-	 * 잦아드는 곡선(가로 0~1 → 세로 1~0). 비우면 선형으로 잦아든다.
-	 *
-	 * 커브를 애셋으로 빼 두면 아티스트가 코드 빌드 없이 감쇠를 고칠 수 있다.
-	 * 앞부분을 평평하게 만들면 "확 터졌다가 천천히" 가 된다.
-	 */
+	/** 잦아드는 곡선(0~1 → 1~0). 비우면 선형. 애셋으로 빼 둬야 아티스트가 빌드 없이 고친다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	TObjectPtr<UCurveFloat> TierFXCurve;
 
@@ -590,9 +411,8 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card|TierFX")
 	FBGCardTierFX CriticalSuccessFX = { FLinearColor(1.f, 0.55f, 0.f), 4.5f, 2.f, 1.1f };
 
-	//	보정이 걸렸다는 것만 알리는 문구. 카드 맨 위층에 두고 호버 중에만 띄운다 —
-	//	손패 전체에 항상 떠 있으면 정작 확률 숫자를 읽는 데 방해가 된다.
-	//	문구와 서식은 WBP 가 정한다. 여기서는 보이고 숨기는 것만 한다.
+	//	"확률 보정중" 문구. 호버 중에만 띄운다 — 항상 떠 있으면 확률 숫자를 읽는 데 방해된다.
+	//	문구와 서식은 WBP 가 정하고, 여기서는 보이고 숨기는 것만 한다.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_ChanceModified;
 
@@ -617,9 +437,7 @@ protected:
 	FLinearColor NormalChanceColor = FLinearColor::White;
 
 	// ── 연출 튜닝 ────────────────────────────────────────────────────
-	//
-	//	보간 속도는 "초당 남은 거리의 비율" 이다(FInterpTo 규약).
-	//	값이 클수록 빠르고 딱딱하며, 작을수록 느리고 물렁하다. 10~20 이 무난하다.
+	//	보간 속도는 "초당 남은 거리의 비율"(FInterpTo 규약). 클수록 빠르고 딱딱하다. 10~20 이 무난.
 
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion", meta = (ClampMin = "0.1"))
 	float MoveInterpSpeed = 14.f;
@@ -632,36 +450,23 @@ protected:
 
 	// ── 덱에서 뽑히는 비행 (Slay the Spire 류의 과장된 등장) ──────────
 	//
-	//	세 가지가 겹쳐야 "뽑았다" 는 느낌이 난다:
-	//	  1) 직선이 아니라 활처럼 휘는 궤적   → DealArcHeight
-	//	  2) 기울어 있다가 제자리에서 펴짐     → DealSpinDegrees
-	//	  3) 작게 출발해 살짝 지나쳤다 안착   → DealStartScale + DealScaleOvershoot
-	//
-	//	⚠️ 이 단계는 고정 시간이다. 보간(InterpTo)으로는 궤적을 그릴 수 없다 —
-	//	   진행도(0~1)를 알아야 곡선·회전·오버슈트를 계산할 수 있다.
+	//	세 가지가 겹쳐야 "뽑았다" 가 된다: 휘는 궤적(ArcHeight) + 펴지는 회전(SpinDegrees)
+	//	+ 작게 출발해 지나쳤다 안착(StartScale·ScaleOvershoot).
+	//	⚠️ 이 단계만 고정 시간이다 — 진행도(0~1)를 알아야 곡선·회전·오버슈트를 계산할 수 있다.
 
 	/** 덱에서 손패까지 날아오는 시간(초). 0 이면 비행을 건너뛰고 곧장 보간으로 간다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Deal", meta = (ClampMin = "0"))
 	float DealFlightDuration = 0.2f;
 
-	/**
-	 * 궤적이 휘는 정도(픽셀). 0 이면 직선.
-	 * 진행 방향의 수직으로, 항상 위로 볼록하게 휜다.
-	 */
+	/** 궤적이 휘는 정도(픽셀). 진행 방향의 수직으로 항상 위로 볼록하게. 0 이면 직선. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Deal", meta = (ClampMin = "0"))
 	float DealArcHeight = 170.f;
 
-	/**
-	 * 출발할 때의 기울기(도). 날아오면서 제자리 각도로 펴진다.
-	 * -360 이나 360 을 주면 한 바퀴 도는 등장이 된다.
-	 */
+	/** 출발 기울기(도). 날아오며 제자리 각도로 펴진다. ±360 이면 한 바퀴 도는 등장. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Deal")
 	float DealSpinDegrees = -160.f;
 
-	/**
-	 * 안착 직전에 제 크기를 얼마나 지나치는가. 0 이면 오버슈트 없음.
-	 * 1.7 이 고전적인 값이고, 3 을 넘기면 눈에 띄게 튀어오른다.
-	 */
+	/** 안착 직전에 제 크기를 지나치는 정도. 1.7 이 고전값, 3 을 넘기면 눈에 띄게 튀어오른다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Deal", meta = (ClampMin = "0"))
 	float DealScaleOvershoot = 3.f;
 
@@ -670,36 +475,20 @@ protected:
 	float DealEaseExponent = 2.5f;
 
 	/**
-	 * 출발도 부드럽게 할지(가속 → 감속), 아니면 감속만 할지.
-	 *
-	 *   true  → 스르륵 미끄러져 나와 스르륵 선다. **미끄러지듯 오는 느낌**   ← 기본
-	 *   false → 덱에서 튕겨 나온 듯 확 출발했다 기어들어온다
-	 *
-	 * ⚠️ false(감속만)는 지수 2.5 기준 **시간의 20% 만에 거리의 44% 를 가버린다.**
-	 *    출발 순간이 순간이동처럼 보이는 원인이 대개 이것이다 — 비행 시간을 늘려도
-	 *    앞부분만 더 급해질 뿐이라 해결되지 않는다.
+	 * true 면 가속→감속(미끄러지듯), false 면 감속만(덱에서 튕겨 나온 듯).
+	 * ⚠️ false 는 지수 2.5 기준 시간의 20% 만에 거리의 44% 를 가버린다 — 출발이 순간이동처럼
+	 *    보이는 원인이 대개 이것이고, 비행 시간을 늘려도 앞부분만 더 급해질 뿐이다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Deal")
 	bool bDealEaseInOut = true;
 
-	/**
-	 * 비행 시작에 서서히 나타나는 시간(초). 0 이면 처음부터 불투명하다.
-	 *
-	 * 덱 앵커가 화면 안이면 카드가 덱 위에서 불쑥 튀어나오는 것처럼 보인다 —
-	 * 짧게라도 넣으면 "덱에서 뽑혀 나온다" 로 읽힌다.
-	 */
+	/** 비행 시작에 서서히 나타나는 시간(초). 짧게라도 넣어야 "덱에서 뽑혀 나온다" 로 읽힌다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Deal", meta = (ClampMin = "0"))
 	float DealFadeInDuration = 0.12f;
 
 	/**
-	 * 날아가던 카드가 **바뀐 목표를 다시 겨누는** 속도. 손패가 한 장씩 벌어지는 동안
-	 * 자리가 계속 밀리는데, 그것을 얼마나 부드럽게 따라갈지를 정한다.
-	 *
-	 *   낮게(4~6)  → 넓게 휘어 돌아 앉는다. 책장이 넘어가듯 느긋하다
-	 *   높게(15~)  → 바뀐 자리를 즉시 겨눈다. 목표가 튈 때마다 궤적도 같이 꺾인다
-	 *
-	 * ⚠️ 0 이면 겨냥이 아예 안 따라가서 카드가 엉뚱한 자리에 착지한다.
-	 *    남은 오차는 착지 후 MoveInterpSpeed 가 흡수하지만, 너무 낮으면 그 흡수가 보인다.
+	 * 날아가던 카드가 바뀐 목표를 다시 겨누는 속도. 낮으면(4~6) 넓게 휘어 돌고, 높으면(15~) 즉시 꺾인다.
+	 * ⚠️ 0 이면 겨냥이 안 따라가 엉뚱한 자리에 착지한다(남은 오차는 MoveInterpSpeed 가 흡수).
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Deal", meta = (ClampMin = "0.1"))
 	float DealAimInterpSpeed = 7.f;
@@ -709,9 +498,7 @@ protected:
 	float DealStartScale = 0.35f;
 
 	// ── 관성 기울기 (secondary motion) ───────────────────────────────
-	//
-	//	주 움직임에 자동으로 따라붙는 부수 효과다. 카드가 이동하는 방향으로 살짝 눕는다 —
-	//	직접 키를 찍지 않아도 "무게가 있는 물체" 처럼 보이게 만드는 가장 싼 방법이다.
+	//	이동 방향으로 살짝 눕는다 — 키를 찍지 않고 "무게가 있는 물체" 를 만드는 가장 싼 방법.
 
 	/** 가로 속도 1px/s 당 기울어지는 각도. 0 이면 관성 기울기를 끈다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Inertia")
@@ -726,9 +513,7 @@ protected:
 	float VelocityTiltInterpSpeed = 9.f;
 
 	// ── 호버 ─────────────────────────────────────────────────────────
-	//
-	//	⚠️ 이 값들은 루트의 렌더 트랜스폼을 쓴다. WBP 에서 루트에 호버 애니메이션을
-	//	   걸면 서로 덮어쓴다 — WBP 쪽 연출은 자식 컨테이너에 걸 것.
+	//	⚠️ 루트의 렌더 트랜스폼을 쓴다. WBP 의 호버 애니메이션은 자식 컨테이너에 걸 것(서로 덮어쓴다).
 
 	/** 마우스가 올라갔을 때의 크기 배율. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Hover", meta = (ClampMin = "0.01"))
@@ -743,42 +528,50 @@ protected:
 	float HoverTiltMax = 9.f;
 
 	/**
-	 * 커서가 중심에서 멀어질수록 기울기가 붙는 **곡선**. 최대치가 아니라 반응 모양이다.
-	 *
-	 *   1.0  → 선형. 중심에서 절반 지점이면 기울기도 절반         ← 기본
-	 *   2.0  → 중앙이 평평하고 가장자리에서 급하게 기운다. 카드 한가운데를
-	 *          가리키는 동안은 반듯해서 읽기 좋다
-	 *   0.5  → 조금만 벗어나도 확 기운다. 예민하고 장난스럽다
-	 *
-	 * 양끝(±1)에서는 곡선과 무관하게 항상 HoverTiltMax 다 — 그래야 최대치와
-	 * 반응 곡선을 서로 간섭 없이 따로 맞출 수 있다.
-	 *
-	 * ⚠️ 비틀림(HoverShearMax)도 같은 곡선을 쓴다. 둘이 다른 곡선을 타면
-	 *    기울기와 입체감이 따로 놀아서 카드가 접히는 것처럼 보인다.
+	 * 기울기가 붙는 곡선(최대치가 아니라 반응 모양). 1 은 선형, 2 는 중앙이 평평, 0.5 는 예민하다.
+	 * 양끝(±1)에서는 곡선과 무관하게 항상 HoverTiltMax 다 — 최대치와 반응을 따로 맞추기 위해서.
+	 * ⚠️ 비틀림(HoverShearMax)도 같은 곡선을 쓴다. 다르면 카드가 접히는 것처럼 보인다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Hover", meta = (ClampMin = "0.05"))
 	float HoverResponseExponent = 1.f;
 
 	/**
-	 * 커서 위치를 얼마나 부드럽게 따라갈지. 0 이면 마우스 이벤트 값을 그대로 쓴다.
-	 *
-	 * ⚠️ 0 으로 두지 말 것. 커서를 빠르게 흔들면 기울기가 프레임마다 튀어 카드가
-	 *    덜덜 떤다. 12~20 이 "따라오긴 하는데 떨지는 않는" 구간이고, 낮출수록
-	 *    커서를 굼뜨게 쫓아온다(무거운 카드 느낌).
+	 * 커서 위치를 따라가는 속도. 12~20 이 "따라오되 떨지 않는" 구간이다.
+	 * ⚠️ 0 으로 두지 말 것 — 커서를 빠르게 흔들면 기울기가 프레임마다 튀어 카드가 덜덜 떤다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Hover", meta = (ClampMin = "0"))
 	float HoverFollowSpeed = 16.f;
 
-	/**
-	 * 커서 위치에 따른 비틀림(shear). 2D 위젯에 입체감을 주는 값이다 —
-	 * 카드가 커서 쪽으로 기울어 누운 것처럼 보인다. 0 이면 끈다.
-	 */
+	/** 커서 위치에 따른 비틀림(shear). 2D 위젯에 입체감을 준다. 0 이면 끈다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Hover")
 	float HoverShearMax = 5.f;
 
 	/** 호버 연출이 붙고 풀리는 속도. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Hover", meta = (ClampMin = "0.1"))
 	float HoverInterpSpeed = 15.f;
+
+	/**
+	 * 호버가 **풀리는** 기준을 커지기 전 카드 크기로 되돌린다.
+	 *
+	 * 끄면(슬레이트 기본 동작) 들어갈 때는 원래 크기, 나올 때는 HoverScale 만큼 커진
+	 * 영역이 기준이라 경계가 어긋난다. 부채꼴에서 카드가 겹쳐 있으면 커진 카드가 옆 카드를
+	 * 덮어서, 커서를 옆으로 옮겨도 호버가 넘어가지 않고 끈적하게 붙어 있는다.
+	 *
+	 * ⚠️ 슬레이트는 렌더 트랜스폼을 히트테스트에도 반영한다 — 그래서 코드가 직접 재야 한다.
+	 *    들어오는 판정은 건드리지 않는다(그쪽은 원래도 원래 크기 기준이다).
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Hover")
+	bool bUnhoverAtOriginalBounds = true;
+
+	/**
+	 * 경계에서 호버가 떠는 것을 막는 여유(0~1). 나갈 때는 경계에서, 다시 들어올 때는
+	 * 그보다 이만큼 안쪽에서 붙는다.
+	 *
+	 * ⚠️ 0 으로 두지 말 것. 커서를 경계에 걸치면 OnHoverChanged 가 프레임마다 오가고,
+	 *    거기 물린 WBP 애니메이션이 계속 처음으로 되감긴다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Hover", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float HoverExitDeadband = 0.06f;
 
 	/** 퇴장할 때 줄어드는 최종 크기. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion", meta = (ClampMin = "0.01"))
@@ -790,53 +583,30 @@ protected:
 
 	// ── 퇴장 디졸브 (불타 사라짐 · 잘려 사라짐) ──────────────────────
 	//
-	//	카드는 이미지 한 장이 아니라 테두리 + 그림 + 글씨로 이뤄진 위젯 트리다.
-	//	Img_Art 에만 머테리얼을 물리면 **그림만 타고 글씨는 멀쩡히 떠 있는다.**
-	//	그래서 트리 전체를 렌더 타겟에 한 번 그린 뒤 거기에 머테리얼을 먹이는
-	//	RetainerBox 가 필요하다 — UMG 에서 위젯을 통째로 디졸브하는 유일한 방법이다.
-	//
-	//	⚠️ 리테이너는 인스턴스마다 렌더 타겟을 하나씩 잡는다. 손패 7장이면 RT 7개다.
-	//	   그래서 평상시에는 꺼 두고(SetRetainRendering(false) — 그냥 통과한다)
-	//	   퇴장이 시작될 때만 켠다. WBP 에서 켜 둔 채로 두지 말 것.
+	//	카드는 테두리+그림+글씨의 위젯 트리다. Img_Art 에만 머테리얼을 물리면 그림만 타고 글씨는 남는다 —
+	//	트리 전체를 렌더 타겟에 그린 뒤 머테리얼을 먹이는 RetainerBox 가 UMG 의 유일한 방법이다.
+	//	⚠️ 리테이너는 인스턴스마다 RT 를 하나씩 잡는다(손패 7장이면 7개). 평상시엔 꺼 두고 퇴장에만 켠다 —
+	//	   WBP 에서 켜 둔 채로 두지 말 것.
 
-	/**
-	 * 디졸브로 퇴장할지. 꺼져 있거나 리테이너·머테리얼이 없으면 예전처럼
-	 * 불투명도만 낮추며 사라진다(연출이 조용히 없어질 뿐 동작은 멀쩡하다).
-	 */
+	/** 디졸브로 퇴장할지. 꺼져 있거나 리테이너·머테리얼이 없으면 불투명도만 낮추며 사라진다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve")
 	bool bUseDissolveExit = true;
 
-	/**
-	 * 카드 트리 전체를 감싼 리테이너. 여기 Effect Material 로 디졸브 머테리얼을 물린다.
-	 * 없으면 디졸브만 조용히 꺼진다 — WBP 에 아직 안 넣었어도 카드는 정상 동작한다.
-	 */
+	/** 카드 트리 전체를 감싼 리테이너(Effect Material 에 디졸브를 물린다). 없으면 디졸브만 조용히 꺼진다. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<URetainerBox> Retainer_Card;
 
-	/**
-	 * 사용한 카드(중앙까지 올라갔다 사라지는 것)만 디졸브할지.
-	 *
-	 * 켜 두는 것을 권한다. 버려지는 카드까지 화려하게 타면 "무엇이 발동했는가" 가
-	 * 묻힌다 — 손패 정리로 여러 장이 한꺼번에 빠질 때 특히 그렇다.
-	 */
+	/** 사용한 카드만 디졸브할지. 켜 두기를 권한다 — 버려지는 카드까지 타면 무엇이 발동했는지 묻힌다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve")
 	bool bDissolveOnlyOnPlay = true;
 
-	/**
-	 * 타들어가는 진행 곡선(가로 0~1 → 세로 0~1). 비우면 선형으로 탄다.
-	 *
-	 * 뒤쪽을 가파르게 만들면 "천천히 그을리다 확 무너진다" 가 된다.
-	 * 커브를 애셋으로 빼 두면 아티스트가 코드 빌드 없이 고칠 수 있다.
-	 */
+	/** 타들어가는 진행 곡선(0~1 → 0~1). 비우면 선형. 뒤쪽을 가파르게 하면 "확 무너진다" 가 된다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve")
 	TObjectPtr<UCurveFloat> DissolveCurve;
 
 	/**
-	 * 원형별 사라지는 방식. 카드마다 적지 않고 **효과 원형에서 유도한다** —
-	 * DT 에 연출 컬럼을 두면 효과를 바꿨을 때 연출만 옛것으로 남기 때문이다
-	 * (UBGCardViewLibrary::DeriveFXArchetype 과 같은 규약).
-	 *
-	 * 여기 없는 원형은 DefaultDissolve 로 떨어진다.
+	 * 원형별 사라지는 방식. 카드마다 적지 않고 효과 원형에서 유도한다 —
+	 * DT 에 연출 컬럼을 두면 효과를 바꿨을 때 연출만 옛것으로 남는다(DeriveFXArchetype 과 같은 규약).
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve")
 	TMap<EBGCardFXArchetype, FBGCardDissolveFX> DissolveByArchetype;
@@ -845,8 +615,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve")
 	FBGCardDissolveFX DefaultDissolve;
 
-	//	파라미터 이름을 값으로 두는 이유는 TierFX 와 같다 — 이 위젯에 어떤 머테리얼이
-	//	물릴지 코드가 모른다. 이름이 틀리면 DMI 가 조용히 무시하므로 안 먹으면 여기부터 볼 것.
+	//	파라미터 이름을 값으로 두는 이유는 TierFX 와 같다 — 틀리면 DMI 가 조용히 무시한다.
 
 	/** 타들어간 정도 0~1. **이것만 있으면 최소한 사라지기는 한다.** */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Dissolve|Param")
@@ -900,29 +669,17 @@ protected:
 	float PresentScale = 1.25f;
 
 	/**
-	 * 효과가 발동된 뒤(ReleaseHold) 중앙에서 더 머무는 시간(초).
-	 *
-	 * 판정 결과 위젯의 표시 시간과 맞추는 것이 좋다 — 카드가 먼저 사라지면
-	 * "무엇의 결과인지" 를 놓친다.
-	 *
-	 * ⚠️ 대상을 고르는 동안의 대기는 여기에 포함되지 않는다. 그쪽은 시간이 아니라
-	 *    ReleaseHold 가 올 때까지 무한히 기다린다.
-	 *
+	 * 효과 발동 뒤(ReleaseHold) 중앙에 더 머무는 시간(초). 판정 위젯의 표시 시간과 맞출 것.
+	 * ⚠️ 대상 선택 대기는 여기 포함되지 않는다(그쪽은 ReleaseHold 까지 무한 대기).
 	 * ⚠️ bWaitForDwellAnimation 을 켜면 이 값은 **안전 상한**으로만 쓰인다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Play", meta = (ClampMin = "0"))
 	float DwellDuration = 2.2f;
 
 	/**
-	 * 중앙 대기의 길이를 **UMG 애니메이션이 정하게** 한다.
-	 *
-	 * 켜면 DwellRemaining 이 저절로 줄지 않고, BP 가 FinishDwell() 을 부를 때까지 머문다.
-	 * 애니메이션 끝 이벤트에 FinishDwell 을 물리면 연출 길이를 애셋에서 잡을 수 있다 —
-	 * 길이를 바꿀 때마다 C++ 값을 따라 고칠 필요가 없어진다.
-	 *
-	 * ⚠️ 그래도 DwellDuration 이 상한으로 계속 돈다. BP 가 FinishDwell 을 빠뜨리거나
-	 *    애니메이션이 없으면 카드가 중앙에 영원히 박혀서 손패가 잠기기 때문이다 —
-	 *    상한이 없으면 그 상태에서 아무 에러도 안 난다.
+	 * 중앙 대기의 길이를 UMG 애니메이션이 정하게 한다(BP 가 FinishDwell 을 부를 때까지 대기).
+	 * ⚠️ 그래도 DwellDuration 이 상한으로 돈다 — BP 가 FinishDwell 을 빠뜨리면 카드가 중앙에
+	 *    영원히 박혀 손패가 잠기는데, 그 상태에서 아무 에러도 안 나기 때문이다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Play")
 	bool bWaitForDwellAnimation = false;
@@ -946,18 +703,13 @@ private:
 	void ConsumePendingPlaySignals();
 
 	/**
-	 * 손패를 떠나기 시작할 때의 공통 처리 — 가시성 갈무리와 입력 차단.
-	 * 이미 떠나는 중이면 false. 부르는 쪽은 그때 아무것도 하지 말아야 한다.
-	 *
-	 * 곧장 퇴장(BeginExit)과 사용 퇴장(BeginPlayExit)이 여기까지는 같다.
-	 * 갈라지는 것은 그 뒤 — 중앙에 잡아 두는가(bHoldingAtCenter)와 사라지는 방식(bPlayExit)이다.
+	 * 손패를 떠나기 시작할 때의 공통 처리(가시성 갈무리·입력 차단). 이미 떠나는 중이면 false.
+	 * BeginExit 와 BeginPlayExit 이 여기까지 같고, 갈라지는 것은 bHoldingAtCenter · bPlayExit 이다.
 	 */
 	bool BeginLeaveHand();
 
 	// ── 연출 단계별 한 프레임 ────────────────────────────────────────
-	//
-	//	TickMotion 이 상태에 맞는 것을 고른다. 한 함수에 전부 넣으면 200 줄짜리 switch 가 되어
-	//	단계를 하나 고칠 때 나머지 다섯을 다 읽어야 한다.
+	//	TickMotion 이 상태에 맞는 것을 고른다. 한 함수에 넣으면 200 줄짜리 switch 가 된다.
 
 	/** false 면 아직 stagger 대기 중이다 — 이번 프레임은 트랜스폼도 건드리지 않는다. */
 	bool TickPending(float DeltaTime);
@@ -968,11 +720,15 @@ private:
 	void TickDwelling(float DeltaTime);
 	void TickExiting(float DeltaTime);
 
-	/**
-	 * 주 움직임에 얹히는 부수 효과 — 관성 기울기와 호버.
-	 * 정지 상태에서도 굴러야 기울기가 0 으로 되돌아온다.
-	 */
+	/** 주 움직임에 얹히는 부수 효과(관성 기울기·호버). 정지 상태에서도 굴러야 기울기가 0 으로 돌아온다. */
 	void TickSecondaryMotion(float DeltaTime, const FVector2D& PositionBeforeTick);
+
+	/**
+	 * 커서가 **커지기 전** 카드 밖으로 나갔는지 보고 bHovered 를 갱신한다.
+	 * 인자는 클램프하지 않은 로컬 좌표(-1~+1 이 커진 카드 전체)다 — 밖으로 나간 것을
+	 * 알아야 하므로 클램프된 HoverLocalNormalized 로는 판정할 수 없다.
+	 */
+	void UpdateHoverBounds(const FVector2D& RawLocal);
 
 	/** 등급별 확률 숫자를 채운다. 판정하지 않는 카드면 숨긴다. */
 	void RefreshChanceText();
@@ -984,11 +740,9 @@ private:
 	void RefreshArt();
 
 	/**
-	 * 대분류(장비/공격/마법)에 맞는 테두리를 고른다. 그림이 없는 타입은 건드리지 않는다.
-	 *
-	 * 브러시의 FrameTexParamName 파라미터만 갈아 끼운다. **브러시 자체는 건드리지 않는다** —
-	 * SetBrushFromTexture 로 덮으면 물려 둔 MI 가 날아가고, 이 함수는 디자인 타임에도
-	 * 불리므로 그 상태로 WBP 가 저장되면 애셋에 텍스처가 박힌다.
+	 * 대분류에 맞는 테두리를 고른다. 브러시의 FrameTexParamName 파라미터만 갈아 끼운다 —
+	 * ⚠️ SetBrushFromTexture 로 덮으면 MI 가 날아가고, 이 함수는 디자인 타임에도 불리므로
+	 *    그 상태로 WBP 가 저장되면 애셋에 텍스처가 박힌다.
 	 */
 	void RefreshFrame();
 
@@ -1000,11 +754,7 @@ private:
 	/** 등급별 연출값을 고른다. 등급이 없으면(장비 등) nullptr. */
 	const FBGCardTierFX* FindTierFX(EBGResolutionTier Tier) const;
 
-	/**
-	 * 잦아드는 진행도(1 = 방금 터짐, 0 = 평상시)를 머테리얼에 반영한다.
-	 * 평상시 값은 DMI 를 만들 때 붙잡아 둔 것으로 되돌아간다 — 0 으로 밀어 버리면
-	 * 판정 한 번 뒤에 카드 글로우가 영영 꺼진다.
-	 */
+	/** 잦아드는 진행도(1=방금 터짐, 0=평상시)를 반영한다. 평상시 값은 DMI 생성 시 붙잡아 둔 것으로 되돌린다. */
 	void ApplyTierFX(float Shape);
 
 	/** 감쇠를 굴린다. TickMotion 이 매 프레임 부른다. */
@@ -1014,19 +764,13 @@ private:
 
 	// ── 퇴장 디졸브 ──────────────────────────────────────────────────
 
-	/**
-	 * 리테이너의 DMI 를 얻는다(처음 부를 때 만든다).
-	 * 리테이너가 없거나 Effect Material 이 안 물려 있으면 nullptr — 디졸브는 조용히 꺼진다.
-	 */
+	/** 리테이너의 DMI(처음 부를 때 생성). 리테이너나 Effect Material 이 없으면 nullptr — 조용히 꺼진다. */
 	UMaterialInstanceDynamic* GetCardFXMID();
 
 	/** 이 카드의 원형에 맞는 사라지는 방식. 맵에 없으면 DefaultDissolve. */
 	const FBGCardDissolveFX& FindDissolveFX() const;
 
-	/**
-	 * 디졸브를 시작한다. 성공하면 true — 그때는 불투명도를 건드리지 않는다.
-	 * 타들어가는 도중에 흐려지기까지 하면 경계의 불꽃이 안 보인다.
-	 */
+	/** 디졸브 시작. 성공하면 true — 그때는 불투명도를 건드리지 않는다(경계의 불꽃이 안 보인다). */
 	bool BeginDissolveExit();
 
 	/** 타들어간 정도(0 = 멀쩡, 1 = 다 사라짐)를 머테리얼에 반영한다. */
@@ -1039,21 +783,17 @@ private:
 
 	FBGCardDissolveFX ActiveDissolve;
 
-	//	디졸브가 실제로 걸렸는가. 실패했으면(리테이너 없음 등) 예전처럼 불투명도로 사라진다.
+	//	디졸브가 실제로 걸렸는가. 실패했으면(리테이너 없음 등) 불투명도로 사라진다.
 	bool bDissolveActive = false;
 
 	//	사용해서 나가는 중인가(중앙 경유). bDissolveOnlyOnPlay 판단에 쓴다 —
-	//	곧장 퇴장(BeginExit)과 중앙 대기 후 퇴장이 EnterExitPhase 에서 만나기 때문에
-	//	거기서는 더 이상 둘을 구분할 수 없다.
+	//	두 퇴장 경로가 EnterExitPhase 에서 만나므로 거기서는 더 이상 구분할 수 없다.
 	bool bPlayExit = false;
 
 	// ── 등급 연출 런타임 상태 ────────────────────────────────────────
-	//
-	//	글로우도 리테이너의 CardFXMID 를 함께 쓴다. DMI 를 따로 두지 않는다 —
-	//	디졸브와 글로우가 같은 합성 이미지를 대상으로 하는 같은 성격의 연출이다.
+	//	글로우도 리테이너의 CardFXMID 를 함께 쓴다 — 디졸브와 같은 성격의 연출이라 DMI 를 따로 두지 않는다.
 
-	//	DMI 를 만든 시점의 값 — 연출이 끝나면 여기로 돌아간다.
-	//	0 으로 되돌리면 아티스트가 잡아 둔 평상시 글로우까지 죽는다.
+	//	DMI 생성 시점의 값 — 연출이 끝나면 여기로 돌아간다. 0 으로 되돌리면 평상시 글로우까지 죽는다.
 	FLinearColor RestColor = FLinearColor::White;
 	float RestIntensity = 0.f;
 	float RestRing = 0.f;
@@ -1069,12 +809,10 @@ private:
 	bool bBeingDragged = false;
 	bool bDragLocked = false;
 
-	//	직전 프레임의 호버 상태. 바뀌는 순간에만 BP 훅을 쏘기 위한 것이다 —
-	//	매 프레임 쏘면 BP 에서 애니메이션이 계속 처음부터 다시 재생된다.
+	//	직전 프레임의 호버 상태. 바뀌는 순간에만 BP 훅을 쏜다 — 매 프레임이면 애니메이션이 계속 되감긴다.
 	bool bWasHoverActive = false;
 
-	//	Border_Root 브러시에 머테리얼이 없다고 이미 알렸는가. RefreshVisual 은 카드가
-	//	바뀔 때마다 불리므로 한 번만 남긴다.
+	//	Border_Root 브러시에 머테리얼이 없다고 이미 알렸는가. RefreshVisual 은 자주 불리므로 한 번만.
 	bool bWarnedFrameBrushNotMaterial = false;
 
 	// ── 연출 내부 상태 ──
@@ -1095,29 +833,20 @@ private:
 	//	등장 연출이 자리에 도착할 때까지 true. 스냅으로 연출이 잘리는 것을 막는다.
 	bool bDealInProgress = false;
 
-	//	비행 시작점. 목표는 날아오는 중에도 바뀔 수 있어(다른 카드가 추가되면 자리가 밀린다)
-	//	시작점만 고정이다.
+	//	비행 시작점. 목표는 날아오는 중에도 바뀌므로(카드가 추가되면 자리가 밀린다) 시작점만 고정이다.
 	FVector2D DealStartPosition = FVector2D::ZeroVector;
 	float DealElapsed = 0.f;
 
 	//	비행이 실제로 겨누는 지점. TargetPosition 을 그대로 쓰지 않고 이 값이 쫓아간다.
-	//
-	//	⚠️ 목표를 매 프레임 그대로 읽으면 안 된다. 뒤 카드가 나타날 때마다 자리가
-	//	   한 칸씩 **순간이동** 하는데, 그것을 Lerp 의 끝점으로 바로 쓰면 이미 절반쯤
-	//	   진행한 카드가 그 자리에서 툭 튄다 — 다섯 장이 들어오는 동안 네 번 튀면
-	//	   궤적이 N 자로 꺾여 보인다. 겨냥을 보간해야 곡선이 부드럽게 휜다.
+	//	⚠️ 목표를 매 프레임 그대로 읽으면 자리가 순간이동할 때마다 카드가 툭 튀어 궤적이 N 자로 꺾인다.
 	FVector2D DealAimPosition = FVector2D::ZeroVector;
 
-	//	호가 휘는 방향. 첫 비행 프레임에 한 번 정하고 끝까지 유지한다.
-	//
-	//	⚠️ 매 프레임 다시 구하면 안 된다. 진행 방향의 수직을 "위쪽" 으로 뒤집는
-	//	   보정이 들어 있어서, 목표가 움직이다 수직 성분의 부호가 넘어가는 순간
-	//	   호가 반대편으로 180도 뒤집힌다.
+	//	호가 휘는 방향. 첫 비행 프레임에 한 번 정하고 유지한다.
+	//	⚠️ 매 프레임 다시 구하면 수직 성분의 부호가 넘어가는 순간 호가 180도 뒤집힌다.
 	FVector2D DealArcDirection = FVector2D::ZeroVector;
 	bool bDealAimInitialized = false;
 
-	//	stagger 로 숨기기 전의 가시성. 되돌릴 때 Visible 로 하드코딩하면
-	//	WBP 가 정한 히트테스트 설정을 덮어쓴다.
+	//	stagger 로 숨기기 전의 가시성. Visible 로 하드코딩하면 WBP 의 히트테스트 설정을 덮어쓴다.
 	ESlateVisibility PreDealVisibility = ESlateVisibility::Visible;
 
 	//	퇴장은 고정 시간 보간이라 시작점을 기억해야 한다.
@@ -1141,27 +870,21 @@ private:
 
 	/**
 	 * 중앙에 도착하면 터뜨릴 판정 연출. 날아가는 중에 ReleaseHold 가 오면 여기 담긴다.
-	 * 대상 지정 카드는 판정이 이미 끝난 채로 중앙 연출을 시작하므로 늘 이 길로 온다.
-	 *
-	 * ⚠️ 도착 전에 쏘면 BP 연출이 날아가는 동안 재생되고, 그 Finished → FinishDwell 이
-	 *    Presenting 에서 도착해 버려진다 — 카드가 DwellDuration 상한까지 멀뚱히 서 있게 된다.
+	 * ⚠️ 도착 전에 쏘면 BP 연출이 날아가는 동안 재생되고 그 FinishDwell 이 Presenting 에서
+	 *    버려진다 — 카드가 DwellDuration 상한까지 멀뚱히 서 있게 된다.
 	 */
 	bool bPendingResolvedFX = false;
 	FBGCardPlayContext PendingResolvedContext;
 
-	/**
-	 * 중앙에 닿기 전에 도착한 FinishDwell. 도착하는 순간 소비한다.
-	 * 상태로 거르지 않고 기억하는 이유: BP 애니메이션 길이에 따라 "연출이 끝나면 디졸브" 가
-	 * 조용히 깨지는 대신, 늦게라도 지켜지는 쪽이 추적 가능하다.
-	 */
+	//	중앙에 닿기 전에 도착한 FinishDwell. 상태로 거르지 않고 기억한다 —
+	//	조용히 깨지는 것보다 늦게라도 지켜지는 쪽이 추적 가능하다.
 	bool bDwellFinishRequested = false;
 
 	//	떠나기 전의 가시성. 손패로 되돌릴 때 복원한다.
 	ESlateVisibility PreLeaveVisibility = ESlateVisibility::Visible;
 
-	//	드래그로 실루엣이 되기 전의 가시성 · 불투명도. 드래그가 끝나면 여기로 되돌린다.
-	//	⚠️ Visible / 1.0 으로 하드코딩하면 WBP 가 정한 히트테스트 설정을 덮어쓴다
-	//	   (PreDealVisibility 와 같은 이유).
+	//	드래그로 실루엣이 되기 전의 가시성·불투명도. ⚠️ Visible / 1.0 으로 하드코딩하면
+	//	WBP 가 정한 히트테스트 설정을 덮어쓴다(PreDealVisibility 와 같은 이유).
 	ESlateVisibility PreDragVisibility = ESlateVisibility::Visible;
 	float PreDragOpacity = 1.f;
 

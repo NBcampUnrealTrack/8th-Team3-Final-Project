@@ -234,16 +234,32 @@ bool UBGGameInstance::StartListen()
 		return false;
 	}
 
+	const FString TargetMap = ToTravelPath(GameMap);
+	if (TargetMap.IsEmpty())
+	{
+		//	BP 에서 맵을 안 골랐다. 조용히 넘어가면 호스트 버튼이 아무 반응도 없는 것처럼 보인다.
+		UE_LOG(LogBGNet, Warning,
+			TEXT("StartListen: GameMap 이 비어 있다 — BP_BGGameInstance 의 BG|맵 에서 게임 맵을 고를 것."));
+		return false;
+	}
+
 	// 메인메뉴에서 호스트하면 게임 맵으로 한 번 이동해야 한다. 이미 게임 맵이면 그대로 연다.
 	const FString CurrentMap = World->GetOutermost()->GetName();
-	if (CurrentMap == GameMapPath)
+	if (CurrentMap == TargetMap)
 	{
 		return StartListenInPlace();
 	}
 
-	UE_LOG(LogBGNet, Log, TEXT("StartListen: 게임 맵으로 이동 (%s → %s)"), *CurrentMap, *GameMapPath);
-	World->ServerTravel(GameMapPath + TEXT("?listen"), /*bAbsolute*/ true);
+	UE_LOG(LogBGNet, Log, TEXT("StartListen: 게임 맵으로 이동 (%s → %s)"), *CurrentMap, *TargetMap);
+	World->ServerTravel(TargetMap + TEXT("?listen"), /*bAbsolute*/ true);
 	return true;
+}
+
+FString UBGGameInstance::ToTravelPath(const FSoftObjectPath& Map)
+{
+	//	"/Game/GameSystem/TestMap.TestMap" → "/Game/GameSystem/TestMap".
+	//	비어 있으면 빈 문자열이 나온다 — 부르는 쪽이 그것으로 "안 골랐다" 를 가른다.
+	return Map.IsValid() ? Map.GetLongPackageName() : FString();
 }
 
 void UBGGameInstance::ReturnToMainMenu()
@@ -255,8 +271,16 @@ void UBGGameInstance::ReturnToMainMenu()
 		return;
 	}
 
+	const FString TargetMap = ToTravelPath(MainMenuMap);
+	if (TargetMap.IsEmpty())
+	{
+		UE_LOG(LogBGNet, Warning,
+			TEXT("ReturnToMainMenu: MainMenuMap 이 비어 있다 — BP_BGGameInstance 의 BG|맵 에서 고를 것."));
+		return;
+	}
+
 	const FString CurrentMap = World->GetOutermost()->GetName();
-	if (CurrentMap == MainMenuMapPath)
+	if (CurrentMap == TargetMap)
 	{
 		return;
 	}
@@ -269,8 +293,8 @@ void UBGGameInstance::ReturnToMainMenu()
 	}
 
 	// 호스트도 ClientTravel 로 자기 자신만 빠진다 — 남은 접속자는 넷드라이버가 끊어 준다.
-	UE_LOG(LogBGNet, Log, TEXT("ReturnToMainMenu: 메인메뉴로 이동 (%s → %s)"), *CurrentMap, *MainMenuMapPath);
-	PC->ClientTravel(MainMenuMapPath, ETravelType::TRAVEL_Absolute);
+	UE_LOG(LogBGNet, Log, TEXT("ReturnToMainMenu: 메인메뉴로 이동 (%s → %s)"), *CurrentMap, *TargetMap);
+	PC->ClientTravel(TargetMap, ETravelType::TRAVEL_Absolute);
 }
 
 const TCHAR* UBGGameInstance::PlayerKeyOption = TEXT("BGKey");
@@ -592,11 +616,19 @@ bool UBGGameInstance::StartPvE()
 		return false;
 	}
 
+	const FString TargetMap = ToTravelPath(GameMap);
+	if (TargetMap.IsEmpty())
+	{
+		UE_LOG(LogBGNet, Warning,
+			TEXT("StartPvE: GameMap 이 비어 있다 — BP_BGGameInstance 의 BG|맵 에서 게임 맵을 고를 것."));
+		return false;
+	}
+
 	//	세션을 만들지 않는다 - 단독 플레이라 광고할 방이 없다.
 	//	?listen 도 붙이지 않는다. 넷드라이버를 열면 난입 경로가 생긴다.
-	UE_LOG(LogBGNet, Log, TEXT("StartPvE: PvE 로 게임 맵 이동 (%s)"), *GameMapPath);
+	UE_LOG(LogBGNet, Log, TEXT("StartPvE: PvE 로 게임 맵 이동 (%s)"), *TargetMap);
 
-	World->ServerTravel(GameMapPath + TEXT("?PlayMode=PvE"), /*bAbsolute*/ true);
+	World->ServerTravel(TargetMap + TEXT("?PlayMode=PvE"), /*bAbsolute*/ true);
 	return true;
 }
 

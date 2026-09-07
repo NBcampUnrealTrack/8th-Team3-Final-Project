@@ -7,6 +7,16 @@
 
 namespace BG
 {
+	// 나이아가라 시스템 및 효과/연출용 게임플레이 큐
+	namespace GameplayCue
+	{
+		namespace Card
+		{
+			UE_DEFINE_GAMEPLAY_TAG(Primary,   "GameplayCue.Card.Primary")
+			UE_DEFINE_GAMEPLAY_TAG(Secondary, "GameplayCue.Card.Secondary")
+		}
+	}
+
 	namespace Card
 	{
 		namespace Type

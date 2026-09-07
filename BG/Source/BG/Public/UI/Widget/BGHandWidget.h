@@ -9,6 +9,7 @@
 #include "BGHandWidget.generated.h"
 
 class UBGCardWidget;
+class UBGPlayZoneWidget;
 class UCanvasPanel;
 class UPanelWidget;
 
@@ -62,7 +63,7 @@ struct FBGCardSlotLayout
  *     연출을 쓰려면 WBP 에서 Box_Cards 를 CanvasPanel 로 바꿔야 한다(로그로 안내한다).
  *
  *  덱/버린 패의 화면 위치는 손패가 알 수 없다(손패 바깥이다). 기본값으로 두고,
- *  나중에 UBGCardFXComponent 가 SetDeckAnchor / SetDiscardAnchor 로 채워 준다.
+	*  나중에 HUD 조정자가 SetDeckAnchor / SetDiscardAnchor 로 채워 준다.
  */
 UCLASS(Abstract, Blueprintable)
 class BG_API UBGHandWidget : public UUserWidget
@@ -144,7 +145,7 @@ public:
 	//
 	//	손패는 덱이 화면 어디에 있는지 알 수 없다 — 알게 되면 HUD 구조에 묶여
 	//	재사용도 테스트도 못 하게 된다. 그래서 좌표만 주입받는다.
-	//	나중에 UBGCardFXComponent 가 덱/버린패 위젯의 지오메트리를 손패 로컬 좌표로
+	//	나중에 HUD 조정자가 덱/버린패 위젯의 지오메트리를 손패 로컬 좌표로
 	//	변환해 여기에 넣어 준다. 안 넣으면 아래 Fallback 값이 쓰인다.
 
 	/** 카드가 등장할 출발점(손패 패널 로컬 좌표). */
@@ -155,9 +156,23 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Hand|Motion")
 	void SetDiscardAnchor(const FVector2D& InLocalPosition);
 
-	/** 사용한 카드가 잠시 머물 자리(손패 패널 로컬 좌표). 보통 플레이 존 중앙이다. */
+	/**
+	 * 사용한 카드가 잠시 머물 자리(손패 패널 로컬 좌표). 보통 플레이 존 중앙이다.
+	 *
+	 * ⚠️ 한 번 넣으면 그 좌표가 **고정**된다 — 플레이 존이 움직여도 따라가지 않는다.
+	 *    보통은 부를 필요가 없다: 플레이 존 위젯이 화면에 있으면 그 중앙을 매번 직접 읽는다.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Hand|Motion")
 	void SetPlayZoneAnchor(const FVector2D& InLocalPosition);
+
+	/**
+	 * 중앙 연출의 기준이 될 플레이 존 위젯을 지정한다.
+	 *
+	 * 보통은 부를 필요가 없다 — 처음 필요해질 때 화면에서 알아서 찾는다.
+	 * 플레이 존이 화면에 둘 이상 있을 때만 어느 쪽인지 못 고르므로 여기서 못 박는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Hand|Motion")
+	void SetPlayZoneWidget(UBGPlayZoneWidget* InPlayZone);
 
 	/**
 	 * "이 카드는 내가 냈다" 고 표시한다. 손패에서 빠질 때 곧장 사라지지 않고
@@ -181,6 +196,18 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Hand|Motion")
 	void ClearPlayedMark(int32 InstanceId);
+
+	/**
+	 * **남이 낸 카드**를 중앙에 띄운다(관전 연출). 판정이 이미 끝난 상태로만 부른다.
+	 *
+	 * 손패 연출과 같은 길(중앙 등장 → 판정 연출 → 디졸브)을 타지만 손패에는 속하지 않는다 —
+	 * CardWidgets 에 넣지 않으므로 부채꼴 배치·호버·드래그와 무관하다.
+	 *
+	 * ⚠️ 내 카드에는 쓰지 말 것. 내 카드는 손패에 실물 위젯이 있고 그쪽이 정식 경로다
+	 *    (여기로 오면 같은 카드가 둘 보인다).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Hand|Motion")
+	void ShowSpectatorCard(const FBGCardView& Card, const FBGCardPlayContext& Context);
 
 	/**
 	 * 중앙에 잡혀 있던 카드를 손패로 되돌린다. 대상 선택을 취소했을 때 부른다.
@@ -436,11 +463,24 @@ protected:
 	FVector2D DiscardAnchorFallback = FVector2D(0.f, -180.f);
 
 	/**
-	 * SetPlayZoneAnchor 가 아직 안 불렸을 때 쓸 중앙 자리.
+	 * 플레이 존을 못 찾았고 SetPlayZoneAnchor 도 안 불렸을 때 쓸 중앙 자리.
 	 * 손패 가운데를 기준으로 한 오프셋이다 — Y 를 음수로 줄수록 위로 올라간다.
+	 *
+	 * ⚠️ 여기까지 내려오면 내 카드와 관전 카드가 같은 자리에 서기는 하지만 실제
+	 *    플레이 존과는 어긋난다. 존이 화면에 있는데 이 값이 쓰였다면 그 프레임에
+	 *    존의 지오메트리가 아직 0 이었다는 뜻이다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion")
 	FVector2D PlayZoneAnchorFallback = FVector2D(0.f, -260.f);
+
+	/**
+	 * 관전 카드(ShowSpectatorCard)가 중앙에 서기 전에 출발하는 자리. 중앙 기준 오프셋이다.
+	 *
+	 * 남의 카드는 손패가 없어 출발점이 없다 — 중앙에서 그냥 튀어나오면 "언제 나타났는지"
+	 * 가 안 읽히므로 조금 떨어진 곳에서 날아오게 한다. 0 으로 두면 중앙에서 그대로 커진다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion")
+	FVector2D SpectatorCardEntryOffset = FVector2D(0.f, 120.f);
 
 	/**
 	 * "내가 냈다" 표시가 유지되는 시간(초).
@@ -534,7 +574,15 @@ private:
 
 	FVector2D GetDeckAnchor() const;
 	FVector2D GetDiscardAnchor() const;
+
+	/**
+	 * 카드가 서는 중앙 자리. **내가 낸 카드와 남이 낸 카드가 모두 이 값을 쓴다** —
+	 * 두 경로가 따로 계산하면 같은 판인데 화면마다 카드가 다른 자리에 선다.
+	 */
 	FVector2D GetPlayZoneAnchor() const;
+
+	/** 중앙 연출의 기준이 될 플레이 존. 지정이 없으면 화면에서 한 번 찾아 기억한다. */
+	UBGPlayZoneWidget* ResolvePlayZoneWidget() const;
 
 	/** 캔버스가 아닌 패널에 붙었을 때의 옛 동작(전부 다시 만들기). */
 	void SetHandLegacy(const TArray<FBGCardView>& InCards);
@@ -559,6 +607,9 @@ private:
 	TOptional<FVector2D> DeckAnchor;
 	TOptional<FVector2D> DiscardAnchor;
 	TOptional<FVector2D> PlayZoneAnchor;
+
+	//	찾기가 비싸지는 않지만 카드마다 할 이유도 없다. 약참조라 존이 사라지면 다시 찾는다.
+	mutable TWeakObjectPtr<UBGPlayZoneWidget> PlayZoneWidget;
 
 	/** InstanceId → 표시가 만료되기까지 남은 시간. 틱에서 줄어든다. */
 	TMap<int32, float> PlayedMarks;

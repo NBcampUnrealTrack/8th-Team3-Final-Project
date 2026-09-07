@@ -204,8 +204,16 @@ protected:
 	TSubclassOf<ABGAIPlayerController> AIControllerClass;
 
 private:
-	// PvE 직업 배정. 인원 목록을 받아 CollectPlayers 를 두 번 돌지 않는다.
+	// 인원 목록을 받아 CollectPlayers 를 두 번 돌지 않는다.
+	// AssignRolesPvE 가 역할을 먼저 적용한 뒤 불러야 한다 - PS->GetCachedRole() 을 읽는다.
 	void AssignJobsPvE(const TArray<APlayerController*>& Players);
+
+	// PvE 적 전용 직업 화이트리스트 - 조우가 진행될수록 누적된다.
+	TArray<FGameplayTag> BuildAllowedEnemyJobPool(int32 EncounterIndex) const;
+
+	// 셔플은 호출부가 한다. 뽑은 태그는 OutUsedTags 에 누적된다(초기화하지 않는다).
+	void AssignJobsFromPool(const TArray<APlayerController*>& Players,
+		const TArray<FGameplayTag>& Pool, TArray<FGameplayTag>& OutUsedTags);
 
 	// URL 옵션(?PlayMode=PvE) > MapPlayModes > PvP 순으로 정한다.
 	EBGPlayMode ResolvePlayMode(const FString& MapName, const FString& Options) const;

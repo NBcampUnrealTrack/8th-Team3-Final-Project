@@ -35,6 +35,10 @@ public:
 	UPROPERTY(EditAnywhere, Config, Category = "Data", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGStatusFXRow"))
 	TSoftObjectPtr<UDataTable> StatusFXTable;
 
+	/** 카드 기능과 분리된 시네마틱 Niagara 매핑 표 (FBGCardFXRow). */
+	UPROPERTY(EditAnywhere, Config, Category = "Data", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGCardFXRow"))
+	TSoftObjectPtr<UDataTable> CardFXTable;
+
 	/**
 	 * 암살자가 대성공 시 받는 카드 (Card.Id.*). 기본값은 그림자 일격.
 	 *

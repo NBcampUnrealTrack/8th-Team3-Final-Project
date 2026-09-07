@@ -13,6 +13,7 @@
 #include "Core/BGGameState.h"
 #include "AI/BGAIPlayerController.h"
 #include "Lobby/BGReadyComponent.h"
+#include "Core/BGGameInstance.h"
 
 namespace
 {
@@ -302,6 +303,30 @@ TArray<FGameplayTag> ABGGameMode::BuildJobPool()
 	};
 }
 
+TArray<FGameplayTag> ABGGameMode::BuildAllowedEnemyJobPool(int32 EncounterIndex) const
+{
+	using namespace BG::Character::Job;
+
+	// 순서나 경계는 플레이테스트로 바뀔 수 있다.
+	static const TArray<TArray<FGameplayTag>> TierUnlocks =
+	{
+		{ Knight.GetTag(),     Scout.GetTag()    },   // 조우1
+		{ Priest.GetTag(),     Healer.GetTag()   },   // 조우2
+		{ Diviner.GetTag(),    Thief.GetTag()    },   // 조우3
+		{ Hunter.GetTag(),     Mage.GetTag()     },   // 조우4
+		{ Monk.GetTag(),       Brawler.GetTag()  },   // 조우5
+		{ Mercenary.GetTag(),  Assassin.GetTag() },   // 조우6(보스)
+	};
+
+	TArray<FGameplayTag> Pool;
+	const int32 Tier = FMath::Clamp(EncounterIndex, 0, TierUnlocks.Num() - 1);
+	for (int32 i = 0; i <= Tier; ++i)
+	{
+		Pool.Append(TierUnlocks[i]);
+	}
+	return Pool;
+}
+
 void ABGGameMode::AssignJobs()
 {
 	if (!HasAuthority())
@@ -529,9 +554,6 @@ void ABGGameMode::AssignRolesPvE()
 	TArray<APlayerController*> Players;
 	CollectPlayers(Players);
 
-	//	직업이 먼저다 - 스탯 GE 를 붙이는 쪽이라 역할보다 앞서야 한다.
-	AssignJobsPvE(Players);
-
 	int32 NumBots = 0;
 	for (const APlayerController* PC : Players)
 	{
@@ -545,6 +567,7 @@ void ABGGameMode::AssignRolesPvE()
 	ShuffleTags(BotPool);
 	int32 NextBot = 0;
 
+	// 역할을 직업보다 먼저 적용한다 - 뒤에서 그 결과를 읽는다(AssignJobsPvE 참고).
 	for (APlayerController* PC : Players)
 	{
 		ABGCharacter* Char = PC ? Cast<ABGCharacter>(PC->GetPawn()) : nullptr;
@@ -580,25 +603,16 @@ void ABGGameMode::AssignRolesPvE()
 		UE_LOG(LogBGNet, Log, TEXT("[PvE] 역할 배정: %s → %s"),
 			*PC->GetName(), *RoleTag.ToString());
 	}
+
+	AssignJobsPvE(Players);
 }
 
-void ABGGameMode::AssignJobsPvE(const TArray<APlayerController*>& Players)
+void ABGGameMode::AssignJobsFromPool(const TArray<APlayerController*>& Players,
+	const TArray<FGameplayTag>& Pool, TArray<FGameplayTag>& OutUsedTags)
 {
-	//	풀은 PvP 와 같은 BuildJobPool 을 읽는다. AssignJobs 를 부르지 않는 이유는
-	//	그 함수가 4~7인 가드를 갖고 있어서다 - 배정 자체는 인원수 제약이 없다.
-	TArray<FGameplayTag> Pool = BuildJobPool();
-	if (Pool.Num() < Players.Num())
+	for (int32 i = 0; i < Players.Num(); ++i)
 	{
-		UE_LOG(LogBGNet, Error, TEXT("[PvE] 직업 %d종 < 인원 %d명 - 중복 없는 배정 불가."),
-			Pool.Num(), Players.Num());
-		return;
-	}
-
-	ShuffleTags(Pool);
-	int32 NextJob = 0;
-
-	for (APlayerController* PC : Players)
-	{
+		APlayerController* PC = Players[i];
 		ABGCharacter* Char = PC ? Cast<ABGCharacter>(PC->GetPawn()) : nullptr;
 		if (!Char)
 		{
@@ -607,7 +621,9 @@ void ABGGameMode::AssignJobsPvE(const TArray<APlayerController*>& Players)
 			continue;
 		}
 
-		const FGameplayTag JobTag = Pool[NextJob++];
+		const FGameplayTag JobTag = Pool[i];
+		OutUsedTags.Add(JobTag);
+
 		Char->SetJobTag(JobTag);
 
 		//	재접속으로 폰을 새로 스폰하면 이 값으로 직업을 다시 세운다.
@@ -616,9 +632,60 @@ void ABGGameMode::AssignJobsPvE(const TArray<APlayerController*>& Players)
 			PS->SetCachedJob(JobTag);
 		}
 
-		UE_LOG(LogBGNet, Log, TEXT("[PvE] 직업 배정: %s → %s"),
-			*PC->GetName(), *JobTag.ToString());
+		UE_LOG(LogBGNet, Log, TEXT("[PvE] 직업 배정: %s → %s"), *PC->GetName(), *JobTag.ToString());
 	}
+}
+
+void ABGGameMode::AssignJobsPvE(const TArray<APlayerController*>& Players)
+{
+	// 화이트리스트는 진영으로 구분. 부관 봇(용사 진영)은 아군이라 대상이 아니다.
+	// 역할이 이미 적용된 뒤라 PS 의 캐시된 역할로 진영을 본다.
+	TArray<APlayerController*> SheriffSide;
+	TArray<APlayerController*> OutlawSide;
+
+	for (APlayerController* PC : Players)
+	{
+		if (!PC)
+		{
+			continue;
+		}
+
+		const ABGPlayerState* PS = PC->GetPlayerState<ABGPlayerState>();
+		const bool bIsOutlaw = PS && PS->GetCachedRole() == BG::Role::Outlaw.GetTag();
+		(bIsOutlaw ? OutlawSide : SheriffSide).Add(PC);
+	}
+
+	TArray<FGameplayTag> UsedTags;
+
+	// ── 용사 진영: 전체 풀에서 제한 없이 뽑는다 ──
+	TArray<FGameplayTag> SheriffPool = BuildJobPool();
+	ShuffleTags(SheriffPool);
+	AssignJobsFromPool(SheriffSide, SheriffPool, UsedTags);
+
+	if (OutlawSide.Num() == 0)
+	{
+		return;
+	}
+
+	// ── 무법자 진영(적): 조우별 화이트리스트에서만 뽑는다 ──
+	int32 EncounterIndex = 0;
+	if (const UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+	{
+		EncounterIndex = GI->GetPvEEncounterIndex();
+	}
+
+	TArray<FGameplayTag> OutlawPool = BuildAllowedEnemyJobPool(EncounterIndex);
+	OutlawPool.RemoveAll([&UsedTags](const FGameplayTag& Tag) { return UsedTags.Contains(Tag); });
+
+	if (OutlawPool.Num() < OutlawSide.Num())
+	{
+		UE_LOG(LogBGNet, Error,
+			TEXT("[PvE] 조우 %d 허용 직업 %d종 < 적 인원 %d명 - 중복 없는 배정 불가."),
+			EncounterIndex, OutlawPool.Num(), OutlawSide.Num());
+		return;
+	}
+	ShuffleTags(OutlawPool);
+	AssignJobsFromPool(OutlawSide, OutlawPool, UsedTags);
 }
 
 // ======================================================================================

@@ -22,6 +22,28 @@ class UBGResolutionWidget;
 class ABGPlayerState;
 class UCameraShakeBase;
 
+/**
+ * 서버가 카드 사용을 거부한 사유.
+ *
+ * ⚠️ 거부는 **반드시** 클라에 통지해야 한다. 통지가 없으면 클라는 중앙에 올라간 카드를
+ *    풀어 줄 신호를 영영 못 받고, 안전장치(HoldTimeoutSeconds)가 도는 30초 동안 카드가
+ *    화면 한복판에 박혀 있는다. 중복 장착처럼 정상 플레이 중에 밟는 경로가 있다.
+ */
+UENUM(BlueprintType)
+enum class EBGCardPlayRejectReason : uint8
+{
+	NotYourTurn        UMETA(DisplayName = "차례가 아님"),
+	NoCardUsesLeft     UMETA(DisplayName = "카드 사용 한도 소진"),
+	TargetDead         UMETA(DisplayName = "대상이 이미 사망"),
+	CardNotInHand      UMETA(DisplayName = "손패에 없는 카드"),
+	AlreadyEquipped    UMETA(DisplayName = "이미 장착 중"),
+	StatusAlreadyOn    UMETA(DisplayName = "이미 같은 상태 — 중첩 불가"),
+	InternalError      UMETA(DisplayName = "내부 오류")
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardPlayRejected,
+	int32, InstanceId, EBGCardPlayRejectReason, Reason);
+
 UCLASS()
 class BG_API ABGPlayerController : public APlayerController, public IBGGameplayHudOwner
 {
@@ -142,6 +164,27 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "BG|Target")
 	FOnBGTargetSelectionCancelled OnTargetSelectionCancelled;
+	
+	// ─────────────── 채팅 ───────────────────── //
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerSendChatMessage(const FString& Message);
+	
+	UPROPERTY(EditDefaultsOnly, Category = "BG|UI")
+	TSubclassOf<class UBGChatingWidget> ChatWidgetClass;
+
+	UPROPERTY()
+	class UBGChatingWidget* ChatWidgetInstance;
+
+	/**
+	 * 서버가 카드 사용을 거부했다. 카드는 이미 손패로 되돌려 놓은 뒤에 발생한다 —
+	 * 구독자는 사유를 보여 주기만 하면 된다(전용 UI 가 생기면 여기에 붙일 것).
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "BG|Card")
+	FOnBGCardPlayRejected OnCardPlayRejected;
+
+	/** 거부 사유를 플레이어에게 보여 줄 문장으로. */
+	UFUNCTION(BlueprintPure, Category = "BG|Card")
+	static FText GetPlayRejectText(EBGCardPlayRejectReason Reason);
 
 	// ── 콘솔 테스트 트리거 (구현: BGCardExec.cpp) ──────────────
 	//
@@ -214,6 +257,12 @@ protected:
 
 	/** 판정 결과가 도착했다. 게임 로직 타입 → UI 뷰모델 변환이 여기서 일어난다. */
 	void HandleCardResolved(const struct FBGCardResolution& Resolution);
+
+	/**
+	 * 누군가 장비를 착용했다. 남의 착용이면 관전 카드를 중앙에 세운다.
+	 * 판정이 없으므로 등급도 눈도 없다 — bResolvedWithoutRoll 로 표시해 넘긴다.
+	 */
+	void HandleCardEquipped(int32 SeatIndex, FGameplayTag CardId);
 
 	// GameState 의 턴 상태 통지를 구독한다. 늦게 도착하므로 여러 진입점에서 재시도한다.
 	void TryBindTurnStateDelegate();
@@ -323,6 +372,19 @@ protected:
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerRequestPlayCard(int32 InstanceId, int32 TargetSeat);
 
+	/**
+	 * 서버 → 소유 클라. 사용이 거부됐으니 카드를 손패로 되돌리라고 알린다.
+	 *
+	 * ⚠️ HandlePlayCard 에서 **거부하며 빠져나가는 모든 return 은 이걸 거쳐야 한다.**
+	 *    하나라도 빠지면 그 경로에서만 카드가 중앙에 30초 박히는, 재현 조건이 좁은
+	 *    버그가 된다 — RejectPlayCard 를 통해서만 거부하도록 통일했다.
+	 */
+	UFUNCTION(Client, Reliable)
+	void ClientPlayCardRejected(int32 InstanceId, EBGCardPlayRejectReason Reason);
+
+	/** 서버: 거부를 기록하고 소유 클라에 통지한다. HandlePlayCard 의 유일한 거부 출구다. */
+	void RejectPlayCard(int32 InstanceId, EBGCardPlayRejectReason Reason);
+
 	UFUNCTION(Server, Reliable)
 	void ServerRequestEndTurn();
 
@@ -399,4 +461,6 @@ private:
 	TObjectPtr<class ABGCinematicCamera> CinematicCamera;
 
 	FTimerHandle SeatRefreshTimer;
+	
+	void HandleChatKeyPressed();
 };
