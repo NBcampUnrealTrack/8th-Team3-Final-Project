@@ -1195,12 +1195,63 @@ FReply UBGCardWidget::NativeOnMouseMove(const FGeometry& InGeometry, const FPoin
 	{
 		//	커서의 카드 안 위치를 -1 ~ +1 로. 카드 크기가 달라져도 같은 감도로 반응한다.
 		const FVector2D Local = InGeometry.AbsoluteToLocal(InMouseEvent.GetScreenSpacePosition());
+		const FVector2D Raw(
+			(Local.X / LocalSize.X - 0.5f) * 2.f,
+			(Local.Y / LocalSize.Y - 0.5f) * 2.f);
+
+		//	⚠️ 클램프 **전에** 판정해야 한다. 밖으로 얼마나 나갔는지가 판정의 전부인데
+		//	   클램프하면 그 정보가 -1/+1 로 뭉개진다.
+		UpdateHoverBounds(Raw);
+
 		HoverLocalNormalized = FVector2D(
-			FMath::Clamp((Local.X / LocalSize.X - 0.5f) * 2.f, -1.f, 1.f),
-			FMath::Clamp((Local.Y / LocalSize.Y - 0.5f) * 2.f, -1.f, 1.f));
+			FMath::Clamp(Raw.X, -1.f, 1.f),
+			FMath::Clamp(Raw.Y, -1.f, 1.f));
 	}
 
 	return Super::NativeOnMouseMove(InGeometry, InMouseEvent);
+}
+
+void UBGCardWidget::UpdateHoverBounds(const FVector2D& RawLocal)
+{
+	if (!bUnhoverAtOriginalBounds)
+	{
+		return;
+	}
+
+	//	호버로 커진 배율. 아직 안 커졌으면 커진 영역과 원래 영역이 같아 볼 것이 없다.
+	const float HoverFactor = FMath::Lerp(1.f, HoverScale, HoverBlend);
+	if (HoverFactor <= 1.f + KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	//	슬레이트의 로컬 좌표 -1~+1 은 **커진 카드 전체**를 덮는다(렌더 트랜스폼이
+	//	AbsoluteToLocal 에 이미 반영돼 있다). 커지기 전 카드는 그 가운데 1/배율 만큼이다 —
+	//	이 비교가 곧 "원래 크기 기준" 이다.
+	//
+	//	⚠️ 배율이 줄어드는 동안에도 판정이 흔들리지 않는다. 커서의 절대 거리로 환산하면
+	//	   양변이 같은 배율로 나뉘어 상쇄되므로, 경계는 언제나 원래 카드의 가장자리다.
+	//	   (그래서 "나갔다 → 작아졌다 → 다시 들어왔다" 로 진동하지 않는다.)
+	const float ExitLimit  = 1.f / HoverFactor;
+	const float EnterLimit = ExitLimit * (1.f - HoverExitDeadband);
+
+	//	사각형 판정이라 두 축 중 더 많이 벗어난 쪽을 본다.
+	const float Reach = FMath::Max(FMath::Abs(RawLocal.X), FMath::Abs(RawLocal.Y));
+
+	if (bHovered)
+	{
+		if (Reach > ExitLimit)
+		{
+			bHovered = false;
+		}
+	}
+	else if (Reach < EnterLimit)
+	{
+		//	커진 카드 안이라 마우스 이벤트는 계속 오는데 원래 크기 밖으로 나갔던 커서가
+		//	되돌아온 경우다. 여기서 되살리지 않으면 카드를 벗어났다 다시 들어와도
+		//	호버가 안 붙는다(슬레이트는 이미 Enter 를 보냈으므로 다시 안 보낸다).
+		bHovered = true;
+	}
 }
 
 FReply UBGCardWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)

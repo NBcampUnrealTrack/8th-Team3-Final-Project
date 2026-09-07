@@ -550,6 +550,29 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Hover", meta = (ClampMin = "0.1"))
 	float HoverInterpSpeed = 15.f;
 
+	/**
+	 * 호버가 **풀리는** 기준을 커지기 전 카드 크기로 되돌린다.
+	 *
+	 * 끄면(슬레이트 기본 동작) 들어갈 때는 원래 크기, 나올 때는 HoverScale 만큼 커진
+	 * 영역이 기준이라 경계가 어긋난다. 부채꼴에서 카드가 겹쳐 있으면 커진 카드가 옆 카드를
+	 * 덮어서, 커서를 옆으로 옮겨도 호버가 넘어가지 않고 끈적하게 붙어 있는다.
+	 *
+	 * ⚠️ 슬레이트는 렌더 트랜스폼을 히트테스트에도 반영한다 — 그래서 코드가 직접 재야 한다.
+	 *    들어오는 판정은 건드리지 않는다(그쪽은 원래도 원래 크기 기준이다).
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Hover")
+	bool bUnhoverAtOriginalBounds = true;
+
+	/**
+	 * 경계에서 호버가 떠는 것을 막는 여유(0~1). 나갈 때는 경계에서, 다시 들어올 때는
+	 * 그보다 이만큼 안쪽에서 붙는다.
+	 *
+	 * ⚠️ 0 으로 두지 말 것. 커서를 경계에 걸치면 OnHoverChanged 가 프레임마다 오가고,
+	 *    거기 물린 WBP 애니메이션이 계속 처음으로 되감긴다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Hover", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float HoverExitDeadband = 0.06f;
+
 	/** 퇴장할 때 줄어드는 최종 크기. */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion", meta = (ClampMin = "0.01"))
 	float ExitEndScale = 0.65f;
@@ -699,6 +722,13 @@ private:
 
 	/** 주 움직임에 얹히는 부수 효과(관성 기울기·호버). 정지 상태에서도 굴러야 기울기가 0 으로 돌아온다. */
 	void TickSecondaryMotion(float DeltaTime, const FVector2D& PositionBeforeTick);
+
+	/**
+	 * 커서가 **커지기 전** 카드 밖으로 나갔는지 보고 bHovered 를 갱신한다.
+	 * 인자는 클램프하지 않은 로컬 좌표(-1~+1 이 커진 카드 전체)다 — 밖으로 나간 것을
+	 * 알아야 하므로 클램프된 HoverLocalNormalized 로는 판정할 수 없다.
+	 */
+	void UpdateHoverBounds(const FVector2D& RawLocal);
 
 	/** 등급별 확률 숫자를 채운다. 판정하지 않는 카드면 숨긴다. */
 	void RefreshChanceText();
