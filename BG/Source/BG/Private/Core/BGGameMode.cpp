@@ -319,7 +319,8 @@ TArray<FGameplayTag> ABGGameMode::BuildAllowedEnemyJobPool(int32 EncounterIndex)
 	};
 
 	TArray<FGameplayTag> Pool;
-	const int32 Tier = FMath::Clamp(EncounterIndex, 0, TierUnlocks.Num() - 1);
+	//	EncounterIndex 는 1-base(조우1부터)지만 TierUnlocks 는 배열이라 0-base다 - 여기서만 보정한다.
+	const int32 Tier = FMath::Clamp(EncounterIndex - 1, 0, TierUnlocks.Num() - 1);
 	for (int32 i = 0; i <= Tier; ++i)
 	{
 		Pool.Append(TierUnlocks[i]);
@@ -668,7 +669,7 @@ void ABGGameMode::AssignJobsPvE(const TArray<APlayerController*>& Players)
 	}
 
 	// ── 무법자 진영(적): 조우별 화이트리스트에서만 뽑는다 ──
-	int32 EncounterIndex = 0;
+	int32 EncounterIndex = 1;
 	if (const UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
 	{
 		EncounterIndex = GI->GetPvEEncounterIndex();

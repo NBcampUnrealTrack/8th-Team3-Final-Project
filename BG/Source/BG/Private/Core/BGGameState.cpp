@@ -517,7 +517,7 @@ void ABGGameState::BeginPlay()
 	{
 		//	PvE 런 진행도는 GameInstance 에 있다. ServerTravel 로 이 GameState 는 새로
 		//	만들어져도 GameInstance 는 살아있기 때문이다.
-		int32 EncounterIndex = 0;
+		int32 EncounterIndex = 1;
 		if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
 		{
 			if (const UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
@@ -637,9 +637,10 @@ void ABGGameState::InitializeDeck(int32 Seed, int32 EncounterIndex)
 		Subsystem->BuildPvEDeck(Deck, EBGDeckSide::Player, EncounterIndex);
 		Subsystem->BuildPvEDeck(EnemyDeck, EBGDeckSide::Enemy, EncounterIndex);
 
-		//	조우 승리 보상. 직전 조우를 이겼으면(EncounterIndex 가 1 이상) 장비 카드 하나를
-		//	기억해 둔다. 지면 AdvancePvEEncounter 가 0 으로 되돌리므로 여기 안 온다.
-		if (EncounterIndex >= 1)
+		//	조우 승리 보상. 직전 조우를 이겼으면(EncounterIndex 가 2 이상 — 1은 첫 조우라
+		//	이긴 적이 없다) 장비 카드 하나를 기억해 둔다. 지면 ResetPvERun 이 1로 되돌리므로
+		//	여기 안 온다.
+		if (EncounterIndex >= 2)
 		{
 			FName RewardCardId;
 			if (Subsystem->GetRandomEquipCardId(RandomStream, RewardCardId))
@@ -1627,8 +1628,7 @@ bool ABGGameState::CheckWinCondition()
 
 	WinningRoleTag = Winner;
 
-	//	PvE 는 사람이 항상 Sheriff다. Sheriff 승리만 "이겼다"로 본다. 다음 조우로 넘어갈
-	//	때(InitializeDeck) 이 진행도를 보고 보상(장비 카드)을 얹을지 정한다.
+	//	PvE 는 사람이 항상 Sheriff다. Sheriff 승리만 "이겼다"로 본다.
 	if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
 	{
 		if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
