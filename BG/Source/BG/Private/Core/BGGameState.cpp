@@ -1541,7 +1541,16 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 			DeadSeat, *DeadRole.ToString(), Dropped.Num());
 	}
 
-	// ── 2. 보상 / 벌칙 (뱅 원작) ──
+	// ── 2. 승패 판정 ──
+	//	조우를 끝내는 킬이면 보상/벌칙을 주지 않는다 — 이번 판 손패에 넣어봐야
+	//	곧바로 ServerTravel 로 리셋되어 버려지는 카드다(덱·장비 조우간 리셋 확정,
+	//	PvE-Mode-Design.md:18).
+	if (CheckWinCondition())
+	{
+		return;   // 판이 끝났으면 보상도, 턴 넘기기도 하지 않는다.
+	}
+
+	// ── 3. 보상 / 벌칙 (뱅 원작) ──
 	if (KillerSeat != INDEX_NONE && KillerSeat != DeadSeat && IsSeatAlive(KillerSeat))
 	{
 		if (DeadRole == BG::Role::Outlaw.GetTag())
@@ -1567,12 +1576,6 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 					KillerSeat, Lost.Num());
 			}
 		}
-	}
-
-	// ── 3. 승패 판정 ──
-	if (CheckWinCondition())
-	{
-		return;   // 판이 끝났으면 턴을 넘기지 않는다.
 	}
 
 	// ── 4. 죽은 사람이 현재 턴이었다면 턴을 넘긴다 ──
