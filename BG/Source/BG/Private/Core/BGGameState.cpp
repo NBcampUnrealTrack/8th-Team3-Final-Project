@@ -1586,6 +1586,24 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 	}
 }
 
+void ABGGameState::HandlePvERunWin()
+{
+	// TODO: PvE 조우 승리 연출
+	if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+	{
+		GI->AdvancePvEEncounter();
+	}
+}
+
+void ABGGameState::HandlePvERunLoss()
+{
+	// TODO: PvE 게임 오버 연출
+	if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+	{
+		GI->ResetPvERun();
+	}
+}
+
 bool ABGGameState::CheckWinCondition()
 {
 	if (!bMatchRunning)
@@ -1631,16 +1649,13 @@ bool ABGGameState::CheckWinCondition()
 	//	PvE 는 사람이 항상 Sheriff다. Sheriff 승리만 "이겼다"로 본다.
 	if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
 	{
-		if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+		if (Winner == BG::Role::Sheriff.GetTag())
 		{
-			if (Winner == BG::Role::Sheriff.GetTag())
-			{
-				GI->AdvancePvEEncounter();
-			}
-			else
-			{
-				GI->ResetPvERun();
-			}
+			HandlePvERunWin();
+		}
+		else
+		{
+			HandlePvERunLoss();
 		}
 	}
 

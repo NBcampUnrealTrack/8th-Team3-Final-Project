@@ -621,6 +621,14 @@ protected:
 	 */
 	void ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat);
 
+	// ── PvE 런 승패 처리 (CheckWinCondition 전용, 다른 곳에서 부르지 말 것) ──
+
+	//	PvE 에서 사람(Sheriff) 이 이겼을 때. 다음 조우로 진행한다.
+	void HandlePvERunWin();
+
+	//	PvE 에서 사람(Sheriff) 이 졌을 때. 런을 끝낸다.
+	void HandlePvERunLoss();
+
 	/**
 	 * 죽은 좌석을 **화면상으로도** 죽은 것으로 만든다. DeathPrimary 진입 직전에 불린다.
 	 *
