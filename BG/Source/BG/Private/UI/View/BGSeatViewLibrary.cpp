@@ -207,6 +207,7 @@ TArray<FBGSeatView> UBGSeatViewLibrary::MakeSeatViews(const APlayerController* V
 		if (const ABGCharacter* Character = Cast<ABGCharacter>(GetSeatPawn(PS)))
 		{
 			const FGameplayTag JobTag = Character->GetJobTag();
+			View.JobTag  = JobTag;
 			View.JobName = JobDisplayName(JobTag, Data);
 
 			//	설명은 폴백을 만들지 않는다 — 비면 툴팁이 표의 기본 문구를 쓴다.

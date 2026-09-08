@@ -15,6 +15,7 @@ class UButton;
 class UDataTable;
 class UImage;
 class UTextBlock;
+class UTexture2D;
 
 /**
  * WBP 서브클래스에 아래 이름의 위젯이 있어야 한다:
@@ -31,6 +32,8 @@ class UTextBlock;
  *   Text_Health    (TextBlock, 선택 — "체력 5 / 5")
  *   Img_Heart_1..6 (Image,     선택 — 체력을 하트로. Text_Health 대신 쓰는 표시다)
  *   Text_Role      (TextBlock, 선택 — 내 역할. 본인 것이라 숨기지 않는다)
+ *   Img_JobIcon    (Image,     선택 — 직업 아이콘. JobIcons 에서 태그로 고른다)
+ *   Img_RoleIcon   (Image,     선택 — 역할 아이콘. RoleIcons 에서 태그로 고른다)
  *   Text_Equipment (TextBlock, 선택 — 장비 목록)
  *   손패 장수는 Text_HandLimit 이 이미 보여주므로 따로 두지 않는다.
  *
@@ -148,6 +151,25 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Role;
 
+	/** 직업 아이콘. 직업이 배정되기 전에는 접힌다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_JobIcon;
+
+	/** 역할 아이콘. Text_Role 과 같은 조건 — 역할을 알기 전에는 접힌다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_RoleIcon;
+
+	/**
+	 * 직업 태그(Character.Job.*) → 아이콘. WBP 에서 채운다.
+	 * 태그가 없거나 표에 없는 직업이면 Img_JobIcon 은 접힌다 — 빈 흰 사각형을 남기지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Turn|Icon")
+	TMap<FGameplayTag, TObjectPtr<UTexture2D>> JobIcons;
+
+	/** 역할 태그(Role.*) → 아이콘. JobIcons 와 같은 규칙이다. */
+	UPROPERTY(EditAnywhere, Category = "BG|Turn|Icon")
+	TMap<FGameplayTag, TObjectPtr<UTexture2D>> RoleIcons;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Equipment;
 
@@ -224,6 +246,9 @@ private:
 
 	//	LocalSeatView 의 체력을 하트 줄에 반영한다.
 	void RefreshHealthHearts();
+
+	// 직업·역할 아이콘을 LocalSeatView 의 태그에 맞춘다.
+	void RefreshIcons();
 
 	// 밧줄 컴포넌트를 찾아 구독한다. 아직 없으면 false — 다음 틱에 다시 시도한다.
 	bool TryBindRope();

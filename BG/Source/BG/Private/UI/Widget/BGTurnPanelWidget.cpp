@@ -8,6 +8,7 @@
 #include "UI/View/BGInfoTooltipRow.h"
 #include "UI/Widget/BGInfoTooltipWidget.h"
 #include "Engine/DataTable.h"
+#include "Engine/Texture2D.h"
 #include "Engine/World.h"
 
 void UBGTurnPanelWidget::NativeOnInitialized()
@@ -53,6 +54,7 @@ void UBGTurnPanelWidget::NativeConstruct()
 	RefreshVisual();
 
 	RefreshHealthHearts();
+	RefreshIcons();
 }
 
 namespace
@@ -341,6 +343,7 @@ void UBGTurnPanelWidget::SetLocalSeatInfo(const FBGSeatView& InView)
 	}
 
 	RefreshHealthHearts();
+	RefreshIcons();
 
 	OnLocalSeatInfoChanged(LocalSeatView);
 }
@@ -371,5 +374,35 @@ void UBGTurnPanelWidget::RefreshHealthHearts()
 
 		Heart->SetVisibility(ESlateVisibility::HitTestInvisible);
 		Heart->SetColorAndOpacity(Index < Health ? HeartFullTint : HeartEmptyTint);
+	}
+}
+
+void UBGTurnPanelWidget::RefreshIcons()
+{
+	//	태그가 없거나(배정 전) 표에 없는 태그면 접는다. 브러시를 비우기만 하면
+	//	이미지가 흰 사각형으로 남아 자리를 차지한다.
+	struct FIconSlot { UImage* Image; const TMap<FGameplayTag, TObjectPtr<UTexture2D>>& Table; FGameplayTag Tag; };
+	const FIconSlot Slots[] = {
+		{ Img_JobIcon,  JobIcons,  LocalSeatView.JobTag  },
+		{ Img_RoleIcon, RoleIcons, LocalSeatView.RoleTag },
+	};
+
+	for (const FIconSlot& IconSlot : Slots)
+	{
+		if (!IconSlot.Image)
+		{
+			continue;
+		}
+
+		const TObjectPtr<UTexture2D>* Found = IconSlot.Tag.IsValid() ? IconSlot.Table.Find(IconSlot.Tag) : nullptr;
+		UTexture2D* Icon = Found ? Found->Get() : nullptr;
+
+		IconSlot.Image->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		if (Icon)
+		{
+			//	bMatchSize=false — 크기는 WBP 의 슬롯이 정한다. 텍스처 해상도를 따라가면
+			//	직업마다 아이콘 크기가 달라진다.
+			IconSlot.Image->SetBrushFromTexture(Icon, /*bMatchSize=*/ false);
+		}
 	}
 }

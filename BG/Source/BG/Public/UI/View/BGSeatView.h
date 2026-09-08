@@ -66,6 +66,10 @@ struct FBGSeatView
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
 	FText JobName;
 
+	/** JobName 과 같은 값의 태그. 아이콘처럼 이름이 아니라 종류로 고르는 곳이 쓴다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
+	FGameplayTag JobTag;
+
 	/** DT_BGCharacterRow 의 Description. 직업이 무엇을 하는지 한 줄 설명이다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
 	FText JobDescription;
