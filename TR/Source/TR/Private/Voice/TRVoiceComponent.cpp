@@ -67,6 +67,12 @@ void UTRVoiceComponent::StartPushToTalk()
 {
 	bPushToTalkHeld = true;
 
+	// 등록 없이 StartTalking 을 부르면 엔진이 0xFFFFFFFF 로 조용히 거절한다.
+	if (UTRVoiceSubsystem* Voice = UTRVoiceSubsystem::Get(this))
+	{
+		Voice->EnsureLocalTalkerRegistered();
+	}
+
 	if (APlayerController* PC = GetOwningController())
 	{
 		PC->StartTalking();
@@ -107,6 +113,10 @@ void UTRVoiceComponent::ApplyTransmitMode(bool bInPushToTalk)
 		return;
 	}
 
+	if (UTRVoiceSubsystem* Voice = UTRVoiceSubsystem::Get(this))
+	{
+		Voice->EnsureLocalTalkerRegistered();
+	}
 	PC->StartTalking();
 }
 

@@ -24,6 +24,30 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTRVoiceSettingsChanged);
  */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTRVoiceTalkingChanged, const FString&, PlayerId, bool, bIsTalking);
 
+/** 접속자 목록 한 줄. 패널이 개인별 음량 행을 만드는 데 쓴다. */
+USTRUCT(BlueprintType)
+struct FTRVoicePlayerInfo
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Voice")
+	FString NetId;
+
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Voice")
+	FString DisplayName;
+
+	// 0~2. 1 이 원음.
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Voice")
+	float Volume = 1.f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Voice")
+	bool bIsTalking = false;
+
+	// 0~1. 지원 안 되면 0.
+	UPROPERTY(BlueprintReadOnly, Category = "TR|Voice")
+	float Level = 0.f;
+};
+
 /**
  * 설정값은 GameUserSettings.ini 의 [/Script/TR.TRVoiceSubsystem] 에 남는다.
  * 실제 반영은 전부 voice.* 콘솔 변수로 나간다 — 엔진이 그 경로만 열어 두었다.
@@ -72,15 +96,43 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TR|Voice|Output")
 	float GetJitterDelay() const { return JitterDelay; }
 
+	/** 수신 음성 전체 음량 0~2. 개인 음량과 곱해진다. */
+	UFUNCTION(BlueprintPure, Category = "TR|Voice|Output")
+	float GetOutputVolume() const { return OutputVolume; }
+
 	UFUNCTION(BlueprintCallable, Category = "TR|Voice|Output")
 	void SetOutputMuted(bool bValue);
 
 	UFUNCTION(BlueprintCallable, Category = "TR|Voice|Output")
 	void SetJitterDelay(float Value);
 
+	UFUNCTION(BlueprintCallable, Category = "TR|Voice|Output")
+	void SetOutputVolume(float Value);
+
+	//--- 개인별 음량 ---
+	UFUNCTION(BlueprintPure, Category = "TR|Voice|Players")
+	float GetPlayerVolume(const FString& NetId) const;
+
+	UFUNCTION(BlueprintCallable, Category = "TR|Voice|Players")
+	void SetPlayerVolume(const FString& NetId, float Value);
+
+	/** 나를 뺀 접속자. 토커가 없는 사람에게는 이 호출에서 붙인다. */
+	UFUNCTION(BlueprintCallable, Category = "TR|Voice|Players")
+	TArray<FTRVoicePlayerInfo> GetRemotePlayers();
+
 	//--- 조회 ---
 	UFUNCTION(BlueprintPure, Category = "TR|Voice")
 	bool IsLocalTalking() const;
+
+	/** 내 마이크 입력 크기 0~1. 캡처가 멈춰 있으면(무전 키를 안 누른 상태) 0. */
+	UFUNCTION(BlueprintPure, Category = "TR|Voice")
+	float GetLocalMicLevel() const;
+
+	/**
+	 * 송신 전에 로컬 토커를 엔진에 등록한다. 등록이 없으면 StartLocalVoiceProcessing 이
+	 * 조용히 실패한다(0xFFFFFFFF). 여러 번 불러도 된다.
+	 */
+	bool EnsureLocalTalkerRegistered();
 
 	UFUNCTION(BlueprintPure, Category = "TR|Voice")
 	bool IsVoiceInterfaceReady() const;
@@ -143,7 +195,23 @@ private:
 
 	APlayerController* GetLocalController() const;
 
+	/** 해당 PlayerState 에 토커가 없으면 붙인다. UniqueId 가 아직 없으면 다음 기회로. */
+	class UTRVoiceTalker* EnsureTalker(class APlayerState* PlayerState);
+
+	void ApplyAllPlayerVolumes();
+
+	float GetEffectiveVolume(const FString& NetId) const;
+
+	uint32 GetLocalUserNum() const;
+
 	//--- GameUserSettings.ini 저장값 ---
+	UPROPERTY(Config)
+	float OutputVolume = 1.f;
+
+	// NetId 문자열 -> 개인 음량. 스팀은 ID 가 고정이라 다음 판에도 유지된다.
+	UPROPERTY(Config)
+	TMap<FString, float> PlayerVolumes;
+
 	UPROPERTY(Config)
 	bool bPushToTalk = true;
 
@@ -171,6 +239,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> SettingsWidget;
+
+	// 패널을 열기 전 커서 상태. 닫을 때 그대로 되돌린다.
+	bool bCursorWasVisible = false;
 
 	TArray<IConsoleObject*> ConsoleCommands;
 

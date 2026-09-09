@@ -2,10 +2,16 @@
 
 #include "Voice/TRVoiceSettingsWidget.h"
 
+#include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/CheckBox.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
+#include "Components/ProgressBar.h"
 #include "Components/Slider.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Voice/TRVoiceSubsystem.h"
 
 namespace TRVoiceUI
@@ -13,6 +19,55 @@ namespace TRVoiceUI
 	// 슬라이더는 0~1 이라 실제 범위로 환산해서 쓴다.
 	static constexpr float MaxMicGain = 2.f;
 	static constexpr float MaxJitterDelay = 1.f;
+	static constexpr float MaxVolume = 2.f;
+
+	// 게이지가 튀지 않게 이 속도로 따라간다.
+	static constexpr float GaugeFollowSpeed = 14.f;
+
+	// 접속자 집합은 이 간격으로만 다시 본다.
+	static constexpr float ListCheckInterval = 1.f;
+
+	static FText VolumeText(float Value)
+	{
+		FNumberFormattingOptions Options;
+		Options.SetMaximumFractionalDigits(2);
+		return FText::AsNumber(Value, &Options);
+	}
+
+	static void SetFill(UWidget* Widget, float Weight)
+	{
+		if (UHorizontalBoxSlot* BoxSlot = Widget ? Cast<UHorizontalBoxSlot>(Widget->Slot) : nullptr)
+		{
+			BoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+			BoxSlot->SetVerticalAlignment(VAlign_Center);
+			BoxSlot->SetPadding(FMargin(4.f, 0.f));
+			FSlateChildSize Size(ESlateSizeRule::Fill);
+			Size.Value = Weight;
+			BoxSlot->SetSize(Size);
+		}
+	}
+}
+
+//--- 접속자 줄 ---
+
+void UTRVoicePlayerRow::HandleVolumeChanged(float Value)
+{
+	if (UTRVoiceSubsystem* Voice = UTRVoiceSubsystem::Get(this))
+	{
+		Voice->SetPlayerVolume(NetId, Value * TRVoiceUI::MaxVolume);
+	}
+	if (Text_Volume != nullptr)
+	{
+		Text_Volume->SetText(TRVoiceUI::VolumeText(Value * TRVoiceUI::MaxVolume));
+	}
+}
+
+//--- 패널 ---
+
+UTRVoiceSettingsWidget::UTRVoiceSettingsWidget(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	// 틱 빈도 Auto 는 C++ 부모를 가진 위젯의 NativeTick 을 그대로 돌린다. 따로 만질 것이 없다.
 }
 
 UTRVoiceSubsystem* UTRVoiceSettingsWidget::GetVoice() const
@@ -48,6 +103,10 @@ void UTRVoiceSettingsWidget::NativeConstruct()
 	{
 		Slider_JitterDelay->OnValueChanged.AddDynamic(this, &UTRVoiceSettingsWidget::HandleJitterDelayChanged);
 	}
+	if (Slider_OutputVolume != nullptr)
+	{
+		Slider_OutputVolume->OnValueChanged.AddDynamic(this, &UTRVoiceSettingsWidget::HandleOutputVolumeChanged);
+	}
 	if (Button_Save != nullptr)
 	{
 		Button_Save->OnClicked.AddDynamic(this, &UTRVoiceSettingsWidget::HandleSaveClicked);
@@ -68,7 +127,9 @@ void UTRVoiceSettingsWidget::NativeConstruct()
 		Voice->OnTalkingChanged.AddDynamic(this, &UTRVoiceSettingsWidget::HandleTalkingChanged);
 	}
 
+	FixRowSlots();
 	RefreshFromSettings();
+	RebuildPlayerRows();
 }
 
 void UTRVoiceSettingsWidget::NativeDestruct()
@@ -80,6 +141,26 @@ void UTRVoiceSettingsWidget::NativeDestruct()
 	}
 
 	Super::NativeDestruct();
+}
+
+void UTRVoiceSettingsWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	UpdateGauges(InDeltaTime);
+
+	ListCheckAccum += InDeltaTime;
+	if (ListCheckAccum >= TRVoiceUI::ListCheckInterval)
+	{
+		ListCheckAccum = 0.f;
+		RebuildPlayerRows();
+	}
+}
+
+void UTRVoiceSettingsWidget::FixRowSlots()
+{
+	TRVoiceUI::SetFill(Bar_MicLevel, 0.65f);
+	TRVoiceUI::SetFill(Text_OutputVolume, 0.3f);
 }
 
 void UTRVoiceSettingsWidget::HandleTalkingChanged(const FString& PlayerId, bool bIsTalking)
@@ -121,22 +202,44 @@ void UTRVoiceSettingsWidget::RefreshFromSettings()
 	{
 		Slider_JitterDelay->SetValue(Voice->GetJitterDelay() / TRVoiceUI::MaxJitterDelay);
 	}
+	if (Slider_OutputVolume != nullptr)
+	{
+		Slider_OutputVolume->SetValue(Voice->GetOutputVolume() / TRVoiceUI::MaxVolume);
+	}
 
 	if (Text_MicGain != nullptr)
 	{
-		Text_MicGain->SetText(FText::AsNumber(Voice->GetMicGain()));
+		Text_MicGain->SetText(TRVoiceUI::VolumeText(Voice->GetMicGain()));
 	}
 	if (Text_MicThreshold != nullptr)
 	{
-		Text_MicThreshold->SetText(FText::AsNumber(Voice->GetMicThreshold()));
+		Text_MicThreshold->SetText(TRVoiceUI::VolumeText(Voice->GetMicThreshold()));
 	}
 	if (Text_MicNoiseGate != nullptr)
 	{
-		Text_MicNoiseGate->SetText(FText::AsNumber(Voice->GetMicNoiseGate()));
+		Text_MicNoiseGate->SetText(TRVoiceUI::VolumeText(Voice->GetMicNoiseGate()));
 	}
 	if (Text_JitterDelay != nullptr)
 	{
-		Text_JitterDelay->SetText(FText::AsNumber(Voice->GetJitterDelay()));
+		Text_JitterDelay->SetText(TRVoiceUI::VolumeText(Voice->GetJitterDelay()));
+	}
+	if (Text_OutputVolume != nullptr)
+	{
+		Text_OutputVolume->SetText(TRVoiceUI::VolumeText(Voice->GetOutputVolume()));
+	}
+
+	// 개인 음량이 밖에서 바뀌었을 수 있다(콘솔, 기본값 복귀).
+	for (UTRVoicePlayerRow* Row : PlayerRows)
+	{
+		if (Row != nullptr && Row->Slider_Volume != nullptr)
+		{
+			const float Volume = Voice->GetPlayerVolume(Row->NetId);
+			Row->Slider_Volume->SetValue(Volume / TRVoiceUI::MaxVolume);
+			if (Row->Text_Volume != nullptr)
+			{
+				Row->Text_Volume->SetText(TRVoiceUI::VolumeText(Volume));
+			}
+		}
 	}
 
 	RefreshStatus();
@@ -148,6 +251,105 @@ void UTRVoiceSettingsWidget::RefreshStatus()
 	if (Text_Status != nullptr && Voice != nullptr)
 	{
 		Text_Status->SetText(FText::FromString(Voice->GetStatusText()));
+	}
+}
+
+void UTRVoiceSettingsWidget::UpdateGauges(float DeltaTime)
+{
+	UTRVoiceSubsystem* Voice = GetVoice();
+	if (Voice == nullptr)
+	{
+		return;
+	}
+
+	if (Bar_MicLevel != nullptr)
+	{
+		ShownMicLevel = FMath::FInterpTo(ShownMicLevel, Voice->GetLocalMicLevel(), DeltaTime, TRVoiceUI::GaugeFollowSpeed);
+		Bar_MicLevel->SetPercent(ShownMicLevel);
+	}
+
+	if (PlayerRows.Num() == 0)
+	{
+		return;
+	}
+
+	const TArray<FTRVoicePlayerInfo> Players = Voice->GetRemotePlayers();
+	for (UTRVoicePlayerRow* Row : PlayerRows)
+	{
+		if (Row == nullptr || Row->Bar_Level == nullptr)
+		{
+			continue;
+		}
+
+		const FTRVoicePlayerInfo* Info = Players.FindByPredicate([Row](const FTRVoicePlayerInfo& P)
+		{
+			return P.NetId == Row->NetId;
+		});
+
+		const float Target = (Info != nullptr && Info->bIsTalking) ? FMath::Max(Info->Level, 0.15f) : (Info ? Info->Level : 0.f);
+		Row->ShownLevel = FMath::FInterpTo(Row->ShownLevel, Target, DeltaTime, TRVoiceUI::GaugeFollowSpeed);
+		Row->Bar_Level->SetPercent(Row->ShownLevel);
+	}
+}
+
+void UTRVoiceSettingsWidget::RebuildPlayerRows()
+{
+	UTRVoiceSubsystem* Voice = GetVoice();
+	if (Box_Players == nullptr || Voice == nullptr || WidgetTree == nullptr)
+	{
+		return;
+	}
+
+	const TArray<FTRVoicePlayerInfo> Players = Voice->GetRemotePlayers();
+
+	// 집합이 같으면 줄을 다시 만들지 않는다. 슬라이더를 잡고 있는 손이 끊긴다.
+	bool bSame = (Players.Num() == PlayerRows.Num());
+	for (int32 Index = 0; bSame && Index < Players.Num(); ++Index)
+	{
+		bSame = (PlayerRows[Index] != nullptr && PlayerRows[Index]->NetId == Players[Index].NetId);
+	}
+	if (bSame)
+	{
+		return;
+	}
+
+	Box_Players->ClearChildren();
+	PlayerRows.Reset();
+
+	for (const FTRVoicePlayerInfo& Player : Players)
+	{
+		UTRVoicePlayerRow* Row = NewObject<UTRVoicePlayerRow>(this);
+		Row->NetId = Player.NetId;
+
+		UHorizontalBox* Line = WidgetTree->ConstructWidget<UHorizontalBox>();
+
+		Row->Text_Name = WidgetTree->ConstructWidget<UTextBlock>();
+		Row->Text_Name->SetText(FText::FromString(Player.DisplayName));
+		Line->AddChildToHorizontalBox(Row->Text_Name);
+		TRVoiceUI::SetFill(Row->Text_Name, 0.35f);
+
+		Row->Bar_Level = WidgetTree->ConstructWidget<UProgressBar>();
+		Row->Bar_Level->SetPercent(0.f);
+		Line->AddChildToHorizontalBox(Row->Bar_Level);
+		TRVoiceUI::SetFill(Row->Bar_Level, 0.2f);
+
+		Row->Slider_Volume = WidgetTree->ConstructWidget<USlider>();
+		Row->Slider_Volume->SetValue(Player.Volume / TRVoiceUI::MaxVolume);
+		Row->Slider_Volume->OnValueChanged.AddDynamic(Row, &UTRVoicePlayerRow::HandleVolumeChanged);
+		Line->AddChildToHorizontalBox(Row->Slider_Volume);
+		TRVoiceUI::SetFill(Row->Slider_Volume, 0.35f);
+
+		Row->Text_Volume = WidgetTree->ConstructWidget<UTextBlock>();
+		Row->Text_Volume->SetText(TRVoiceUI::VolumeText(Player.Volume));
+		Line->AddChildToHorizontalBox(Row->Text_Volume);
+		TRVoiceUI::SetFill(Row->Text_Volume, 0.1f);
+
+		if (UVerticalBoxSlot* LineSlot = Box_Players->AddChildToVerticalBox(Line))
+		{
+			LineSlot->SetPadding(FMargin(0.f, 2.f));
+		}
+
+		PlayerRows.Add(Row);
 	}
 }
 
@@ -213,6 +415,17 @@ void UTRVoiceSettingsWidget::HandleJitterDelayChanged(float Value)
 		if (UTRVoiceSubsystem* Voice = GetVoice())
 		{
 			Voice->SetJitterDelay(Value * TRVoiceUI::MaxJitterDelay);
+		}
+	}
+}
+
+void UTRVoiceSettingsWidget::HandleOutputVolumeChanged(float Value)
+{
+	if (!bRefreshing)
+	{
+		if (UTRVoiceSubsystem* Voice = GetVoice())
+		{
+			Voice->SetOutputVolume(Value * TRVoiceUI::MaxVolume);
 		}
 	}
 }

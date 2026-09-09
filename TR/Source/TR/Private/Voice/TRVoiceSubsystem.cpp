@@ -6,7 +6,9 @@
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
 #include "HAL/IConsoleManager.h"
 #include "Interfaces/VoiceInterface.h"
 #include "Kismet/GameplayStatics.h"
@@ -15,7 +17,29 @@
 #include "OnlineSubsystemUtils.h"
 #include "Session/TRNetLog.h"
 #include "UObject/UObjectGlobals.h"
+#include "VoiceInterfaceImpl.h"
 #include "Voice/TRVoiceComponent.h"
+#include "Voice/TRVoiceTalker.h"
+
+namespace
+{
+	// 로컬 마이크 진폭은 IVoiceEngine 에만 있고 FOnlineVoiceImpl::VoiceEngine 은 protected 다.
+	// NULL·Steam 보이스 모두 FOnlineVoiceImpl 파생이라 파생 타입을 통해 읽는다.
+	struct FTRVoiceEngineAccess : public FOnlineVoiceImpl
+	{
+		static IVoiceEnginePtr Get(IOnlineVoice& Voice)
+		{
+			return static_cast<FTRVoiceEngineAccess&>(Voice).*(&FTRVoiceEngineAccess::VoiceEngine);
+		}
+	};
+
+	IOnlineVoicePtr GetVoiceInterface(const UObject* WorldContext)
+	{
+		const UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
+		IOnlineSubsystem* OSS = Online::GetSubsystem(World);
+		return OSS ? OSS->GetVoiceInterface() : nullptr;
+	}
+}
 
 namespace TRVoiceCVar
 {
@@ -136,7 +160,27 @@ void UTRVoiceSubsystem::HandleLocalPlayerAdded(ULocalPlayer* LocalPlayer)
 		BoundLocalPlayer = LocalPlayer;
 	}
 
+	// 컴포넌트가 오픈마이크로 송신을 열기 전에 토커가 등록돼 있어야 한다.
+	BindVoiceInterfaceDelegates();
 	EnsureVoiceComponent(LocalPlayer->PlayerController);
+}
+
+uint32 UTRVoiceSubsystem::GetLocalUserNum() const
+{
+	const ULocalPlayer* LP = GetGameInstance() ? GetGameInstance()->GetFirstGamePlayer() : nullptr;
+	return LP ? (uint32)LP->GetControllerId() : 0;
+}
+
+bool UTRVoiceSubsystem::EnsureLocalTalkerRegistered()
+{
+	const IOnlineVoicePtr Voice = GetVoiceInterface(this);
+	if (!Voice.IsValid())
+	{
+		return false;
+	}
+
+	// 이미 등록돼 있으면 엔진이 그대로 true 를 준다.
+	return Voice->RegisterLocalTalker(GetLocalUserNum());
 }
 
 void UTRVoiceSubsystem::BindVoiceInterfaceDelegates()
@@ -156,10 +200,9 @@ void UTRVoiceSubsystem::BindVoiceInterfaceDelegates()
 	TalkingStateHandle = Voice->AddOnPlayerTalkingStateChangedDelegate_Handle(
 		FOnPlayerTalkingStateChangedDelegate::CreateUObject(this, &UTRVoiceSubsystem::HandleTalkingStateChanged));
 
-	// 로컬 토커의 발화 알림과 IsLocalPlayerTalking 은 등록된 토커에만 나온다.
+	// 로컬 토커의 발화 알림·송신 시작·마이크 진폭은 등록된 토커에만 동작한다.
 	// 엔진은 이 등록을 자동으로 하지 않는다(RegisterLocalTalkers 호출부가 없다).
-	const ULocalPlayer* LP = GetGameInstance() ? GetGameInstance()->GetFirstGamePlayer() : nullptr;
-	Voice->RegisterLocalTalker(LP ? (uint32)LP->GetControllerId() : 0);
+	EnsureLocalTalkerRegistered();
 }
 
 void UTRVoiceSubsystem::UnbindVoiceInterfaceDelegates()
@@ -173,9 +216,7 @@ void UTRVoiceSubsystem::UnbindVoiceInterfaceDelegates()
 	if (const IOnlineVoicePtr Voice = OSS ? OSS->GetVoiceInterface() : nullptr)
 	{
 		Voice->ClearOnPlayerTalkingStateChangedDelegate_Handle(TalkingStateHandle);
-
-		const ULocalPlayer* LP = GetGameInstance() ? GetGameInstance()->GetFirstGamePlayer() : nullptr;
-		Voice->UnregisterLocalTalker(LP ? (uint32)LP->GetControllerId() : 0);
+		Voice->UnregisterLocalTalker(GetLocalUserNum());
 	}
 	TalkingStateHandle.Reset();
 }
@@ -272,6 +313,131 @@ void UTRVoiceSubsystem::SetJitterDelay(float Value)
 	ApplyToRuntime();
 }
 
+void UTRVoiceSubsystem::SetOutputVolume(float Value)
+{
+	OutputVolume = FMath::Clamp(Value, 0.f, 2.f);
+	ApplyAllPlayerVolumes();
+	OnVoiceSettingsChanged.Broadcast();
+}
+
+//--- 개인별 음량 ---
+
+float UTRVoiceSubsystem::GetPlayerVolume(const FString& NetId) const
+{
+	const float* Found = PlayerVolumes.Find(NetId);
+	return Found ? *Found : 1.f;
+}
+
+void UTRVoiceSubsystem::SetPlayerVolume(const FString& NetId, float Value)
+{
+	if (NetId.IsEmpty())
+	{
+		return;
+	}
+
+	PlayerVolumes.Add(NetId, FMath::Clamp(Value, 0.f, 2.f));
+	ApplyAllPlayerVolumes();
+	OnVoiceSettingsChanged.Broadcast();
+}
+
+float UTRVoiceSubsystem::GetEffectiveVolume(const FString& NetId) const
+{
+	return OutputVolume * GetPlayerVolume(NetId);
+}
+
+UTRVoiceTalker* UTRVoiceSubsystem::EnsureTalker(APlayerState* PlayerState)
+{
+	if (PlayerState == nullptr || !PlayerState->GetUniqueId().IsValid())
+	{
+		return nullptr;
+	}
+
+	UTRVoiceTalker* Talker = PlayerState->FindComponentByClass<UTRVoiceTalker>();
+	if (Talker == nullptr)
+	{
+		Talker = NewObject<UTRVoiceTalker>(PlayerState, UTRVoiceTalker::StaticClass(), TEXT("TRVoiceTalker"));
+		Talker->RegisterComponent();
+		Talker->RegisterWithPlayerState(PlayerState);
+		Talker->ApplyVolume(GetEffectiveVolume((*PlayerState->GetUniqueId()).ToString()));
+	}
+	return Talker;
+}
+
+void UTRVoiceSubsystem::ApplyAllPlayerVolumes()
+{
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	if (GameState == nullptr)
+	{
+		return;
+	}
+
+	for (APlayerState* PS : GameState->PlayerArray)
+	{
+		if (UTRVoiceTalker* Talker = EnsureTalker(PS))
+		{
+			Talker->ApplyVolume(GetEffectiveVolume((*PS->GetUniqueId()).ToString()));
+		}
+	}
+}
+
+TArray<FTRVoicePlayerInfo> UTRVoiceSubsystem::GetRemotePlayers()
+{
+	TArray<FTRVoicePlayerInfo> Result;
+
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	if (GameState == nullptr)
+	{
+		return Result;
+	}
+
+	const APlayerController* LocalPC = GetLocalController();
+	const APlayerState* LocalPS = LocalPC ? LocalPC->PlayerState : nullptr;
+	const IOnlineVoicePtr Voice = GetVoiceInterface(this);
+
+	for (APlayerState* PS : GameState->PlayerArray)
+	{
+		if (PS == nullptr || PS == LocalPS || !PS->GetUniqueId().IsValid())
+		{
+			continue;
+		}
+
+		EnsureTalker(PS);
+
+		const FUniqueNetIdRepl& Id = PS->GetUniqueId();
+		FTRVoicePlayerInfo& Info = Result.AddDefaulted_GetRef();
+		Info.NetId = (*Id).ToString();
+		Info.DisplayName = PS->GetPlayerName();
+		Info.Volume = GetPlayerVolume(Info.NetId);
+		if (Voice.IsValid())
+		{
+			Info.bIsTalking = Voice->IsRemotePlayerTalking(*Id);
+			Info.Level = FMath::Max(0.f, Voice->GetAmplitudeOfRemoteTalker(*Id));
+		}
+	}
+
+	return Result;
+}
+
+float UTRVoiceSubsystem::GetLocalMicLevel() const
+{
+	const IOnlineVoicePtr Voice = GetVoiceInterface(this);
+	if (!Voice.IsValid())
+	{
+		return 0.f;
+	}
+
+	const IVoiceEnginePtr Engine = FTRVoiceEngineAccess::Get(*Voice);
+	if (!Engine.IsValid())
+	{
+		return 0.f;
+	}
+
+	// 지원 안 되면 -1 이 온다.
+	return FMath::Clamp(Engine->GetMicrophoneAmplitude((int32)GetLocalUserNum()), 0.f, 1.f);
+}
+
 void UTRVoiceSubsystem::ApplyToRuntime()
 {
 	TRVoiceCVar::SetFloat(TRVoiceCVar::MicGain, MicGain);
@@ -298,6 +464,9 @@ void UTRVoiceSubsystem::ResetVoiceSettings()
 	MicNoiseGate = Defaults->MicNoiseGate;
 	bOutputMuted = Defaults->bOutputMuted;
 	JitterDelay = Defaults->JitterDelay;
+	OutputVolume = Defaults->OutputVolume;
+	PlayerVolumes.Empty();
+	ApplyAllPlayerVolumes();
 
 	if (UTRVoiceComponent* Component = GetLocalVoiceComponent())
 	{
@@ -337,7 +506,7 @@ FString UTRVoiceSubsystem::GetStatusText() const
 	FString Text = FString::Printf(
 		TEXT("OSS=%s 인터페이스=%s 무전키=%s 바인딩=%s\n")
 		TEXT("송신모드=%s 송신중=%s 증폭=%.2f 문턱=%.3f 노이즈게이트=%.3f\n")
-		TEXT("출력음소거=%s 지터=%.2fs"),
+		TEXT("출력음소거=%s 수신음량=%.2f 지터=%.2fs"),
 		OSS ? *OSS->GetSubsystemName().ToString() : TEXT("없음"),
 		Voice.IsValid() ? TEXT("있음") : TEXT("없음"),
 		Component ? *Component->GetPushToTalkKey().ToString() : TEXT("컴포넌트없음"),
@@ -346,7 +515,7 @@ FString UTRVoiceSubsystem::GetStatusText() const
 		IsLocalTalking() ? TEXT("예") : TEXT("아니오"),
 		MicGain, MicThreshold, MicNoiseGate,
 		bOutputMuted ? TEXT("켜짐") : TEXT("꺼짐"),
-		JitterDelay);
+		OutputVolume, JitterDelay);
 
 	if (Voice.IsValid())
 	{
@@ -376,6 +545,16 @@ void UTRVoiceSubsystem::SetSettingsUIVisible(bool bVisible)
 		{
 			SettingsWidget->RemoveFromParent();
 			SettingsWidget = nullptr;
+
+			// 판 진행 중이면 커서를 다시 숨긴다. 로비처럼 원래 보이던 상태면 그대로 둔다.
+			APlayerController* PC = GetLocalController();
+			if (PC != nullptr && !bCursorWasVisible)
+			{
+				FInputModeGameOnly Mode;
+				Mode.SetConsumeCaptureMouseDown(true);
+				PC->SetInputMode(Mode);
+				PC->SetShowMouseCursor(false);
+			}
 		}
 		return;
 	}
@@ -401,10 +580,20 @@ void UTRVoiceSubsystem::SetSettingsUIVisible(bool bVisible)
 	}
 
 	SettingsWidget = CreateWidget<UUserWidget>(PC, WidgetClass);
-	if (SettingsWidget != nullptr)
+	if (SettingsWidget == nullptr)
 	{
-		SettingsWidget->AddToViewport(1000);
+		return;
 	}
+
+	SettingsWidget->AddToViewport(1000);
+
+	// 판이 시작되면 게임이 커서를 숨긴다. 패널은 마우스로 조작하므로 여는 동안만 켠다.
+	bCursorWasVisible = PC->bShowMouseCursor;
+	FInputModeGameAndUI Mode;
+	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	Mode.SetWidgetToFocus(SettingsWidget->TakeWidget());
+	PC->SetInputMode(Mode);
+	PC->SetShowMouseCursor(true);
 }
 
 //--- 콘솔 명령 ---
@@ -478,6 +667,28 @@ void UTRVoiceSubsystem::RegisterConsoleCommands()
 		[](UTRVoiceSubsystem& Voice, const TArray<FString>& Args)
 		{
 			Voice.SetOutputMuted(Args.Num() > 0 ? (FCString::Atoi(*Args[0]) != 0) : false);
+		});
+
+	AddCommand(TEXT("TR.Voice.OutputVolume"), TEXT("수신 음성 전체 음량 0~2."),
+		[](UTRVoiceSubsystem& Voice, const TArray<FString>& Args)
+		{
+			if (Args.Num() > 0) { Voice.SetOutputVolume(FCString::Atof(*Args[0])); }
+		});
+
+	AddCommand(TEXT("TR.Voice.PlayerVolume"), TEXT("개인 음량. <NetId> <0~2>. NetId 는 TR.Voice.Players 로."),
+		[](UTRVoiceSubsystem& Voice, const TArray<FString>& Args)
+		{
+			if (Args.Num() > 1) { Voice.SetPlayerVolume(Args[0], FCString::Atof(*Args[1])); }
+		});
+
+	AddCommand(TEXT("TR.Voice.Players"), TEXT("접속자와 개인 음량·발화 상태를 로그로."),
+		[](UTRVoiceSubsystem& Voice, const TArray<FString>&)
+		{
+			for (const FTRVoicePlayerInfo& P : Voice.GetRemotePlayers())
+			{
+				UE_LOG(LogTRNet, Log, TEXT("접속자 %s (%s) 음량=%.2f 발화=%s 레벨=%.2f"),
+					*P.DisplayName, *P.NetId, P.Volume, P.bIsTalking ? TEXT("예") : TEXT("아니오"), P.Level);
+			}
 		});
 
 	AddCommand(TEXT("TR.Voice.JitterDelay"), TEXT("수신 버퍼 지연(초). 끊기면 올린다."),

@@ -9,9 +9,39 @@
 
 class UButton;
 class UCheckBox;
+class UProgressBar;
 class USlider;
 class UTextBlock;
+class UVerticalBox;
 class UTRVoiceSubsystem;
+
+/** 접속자 한 줄. 슬라이더 콜백이 어느 플레이어 것인지 알아야 해서 줄마다 객체를 둔다. */
+UCLASS()
+class UTRVoicePlayerRow : public UObject
+{
+	GENERATED_BODY()
+
+public:
+	UFUNCTION()
+	void HandleVolumeChanged(float Value);
+
+	UPROPERTY()
+	FString NetId;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> Text_Name;
+
+	UPROPERTY()
+	TObjectPtr<UProgressBar> Bar_Level;
+
+	UPROPERTY()
+	TObjectPtr<USlider> Slider_Volume;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> Text_Volume;
+
+	float ShownLevel = 0.f;
+};
 
 /**
  * WBP 를 이 클래스로 파생시키고 아래 이름 그대로 위젯을 두면 자동으로 연결된다.
@@ -23,6 +53,8 @@ class TR_API UTRVoiceSettingsWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	UTRVoiceSettingsWidget(const FObjectInitializer& ObjectInitializer);
+
 	/** 서브시스템 값으로 모든 슬롯을 다시 채운다. */
 	UFUNCTION(BlueprintCallable, Category = "TR|Voice")
 	void RefreshFromSettings();
@@ -31,6 +63,9 @@ protected:
 	virtual void NativeConstruct() override;
 
 	virtual void NativeDestruct() override;
+
+	/** 게이지는 매 프레임 움직여야 해서 여기만 폴링한다. 설정값·발화 알림은 델리게이트다. */
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
 	UFUNCTION()
@@ -52,6 +87,9 @@ private:
 	void HandleJitterDelayChanged(float Value);
 
 	UFUNCTION()
+	void HandleOutputVolumeChanged(float Value);
+
+	UFUNCTION()
 	void HandleSaveClicked();
 
 	UFUNCTION()
@@ -66,6 +104,14 @@ private:
 
 	void RefreshStatus();
 
+	/** 접속자 집합이 바뀌었을 때만 줄을 다시 만든다. */
+	void RebuildPlayerRows();
+
+	void UpdateGauges(float DeltaTime);
+
+	/** 가로 박스 안 게이지·값 칸이 0폭으로 접히지 않게 Fill 을 준다. */
+	void FixRowSlots();
+
 	UTRVoiceSubsystem* GetVoice() const;
 
 	//--- 선택 슬롯. 이름이 맞는 위젯이 WBP 에 있으면 연결된다 ---
@@ -75,7 +121,7 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCheckBox> Check_OutputMuted;
 
-	// 0~1 슬라이더. 실제 범위 환산은 위젯이 한다(마이크 증폭은 0~2).
+	// 0~1 슬라이더. 실제 범위 환산은 위젯이 한다(마이크 증폭은 0~2, 수신 음량도 0~2).
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<USlider> Slider_MicGain;
 
@@ -87,6 +133,9 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<USlider> Slider_JitterDelay;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USlider> Slider_OutputVolume;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_MicGain;
@@ -101,7 +150,18 @@ private:
 	TObjectPtr<UTextBlock> Text_JitterDelay;
 
 	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_OutputVolume;
+
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Status;
+
+	// 내 마이크 입력 게이지. 무전 키를 누르는 동안만 움직인다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UProgressBar> Bar_MicLevel;
+
+	// 접속자 줄이 들어갈 자리. 줄은 C++ 가 만든다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UVerticalBox> Box_Players;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_Save;
@@ -112,6 +172,13 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Button_Close;
 
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UTRVoicePlayerRow>> PlayerRows;
+
 	// 슬라이더 콜백이 다시 슬라이더를 쓰는 것을 막는다.
 	bool bRefreshing = false;
+
+	float ShownMicLevel = 0.f;
+
+	float ListCheckAccum = 0.f;
 };
