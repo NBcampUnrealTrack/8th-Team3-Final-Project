@@ -3,13 +3,24 @@
 #include "Voice/TRVoiceComponent.h"
 
 #include "Components/InputComponent.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Session/TRNetLog.h"
+#include "TimerManager.h"
 #include "Voice/TRVoiceSubsystem.h"
+
+namespace TRVoiceComponentConfig
+{
+	// 핸드셰이크 RPC 바로 뒤에 오는 송신 끄기 RPC 가 처리될 시간을 준 뒤 모드를 되돌린다.
+	static constexpr float ReapplyDelay = 0.3f;
+	static constexpr float HandshakePollInterval = 0.1f;
+}
 
 UTRVoiceComponent::UTRVoiceComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = true;
+	PrimaryComponentTick.TickInterval = TRVoiceComponentConfig::HandshakePollInterval;
 }
 
 void UTRVoiceComponent::BeginPlay()
@@ -18,6 +29,34 @@ void UTRVoiceComponent::BeginPlay()
 
 	BindKeys();
 
+	if (const UTRVoiceSubsystem* Voice = UTRVoiceSubsystem::Get(this))
+	{
+		ApplyTransmitMode(Voice->IsPushToTalk());
+	}
+}
+
+void UTRVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	const APlayerController* PC = GetOwningController();
+	if (PC == nullptr || bHandshakeSeen || !PC->MuteList.bHasVoiceHandshakeCompleted)
+	{
+		return;
+	}
+
+	bHandshakeSeen = true;
+	SetComponentTickEnabled(false);
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(ReapplyTimer, this, &UTRVoiceComponent::ReapplyTransmitMode,
+			TRVoiceComponentConfig::ReapplyDelay, false);
+	}
+}
+
+void UTRVoiceComponent::ReapplyTransmitMode()
+{
 	if (const UTRVoiceSubsystem* Voice = UTRVoiceSubsystem::Get(this))
 	{
 		ApplyTransmitMode(Voice->IsPushToTalk());

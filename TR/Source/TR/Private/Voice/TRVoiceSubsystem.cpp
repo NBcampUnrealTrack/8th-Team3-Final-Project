@@ -16,7 +16,10 @@
 #include "OnlineSubsystem.h"
 #include "OnlineSubsystemUtils.h"
 #include "Session/TRNetLog.h"
+#include "Settings/TRSettingsProjectSettings.h"
 #include "Sound/SoundAttenuation.h"
+#include "Sound/SoundClass.h"
+#include "UI/TRPlayerHUD.h"
 #include "UObject/UObjectGlobals.h"
 #include "VoiceInterfaceImpl.h"
 #include "Voice/TRVoiceComponent.h"
@@ -29,7 +32,7 @@ namespace
 	{
 		static IVoiceEnginePtr Get(IOnlineVoice& Voice)
 		{
-			return static_cast<FTRVoiceEngineAccess&>(Voice).*(&FTRVoiceEngineAccess::VoiceEngine);
+			return static_cast<FOnlineVoiceImpl&>(Voice).*(&FTRVoiceEngineAccess::VoiceEngine);
 		}
 	};
 
@@ -39,6 +42,22 @@ namespace
 		IOnlineSubsystem* OSS = Online::GetSubsystem(World);
 		return OSS ? OSS->GetVoiceInterface() : nullptr;
 	}
+}
+
+namespace TRVoiceDefaults
+{
+	// 기본값 버튼이 되돌리는 값. CDO 는 저장된 ini 로 덮이므로 여기 상수를 쓴다.
+	static constexpr bool bPushToTalk = true;
+	static constexpr float MicGain = 1.f;
+	static constexpr float MicThreshold = 0.08f;
+	static constexpr float MicNoiseGate = 0.f;
+	static constexpr bool bOutputMuted = false;
+	static constexpr float JitterDelay = 0.2f;
+	static constexpr float OutputVolume = 1.f;
+	static constexpr bool bSpatialVoice = true;
+
+	// 접속자 토커를 이 간격으로 확인해 붙인다.
+	static constexpr float TalkerRefreshInterval = 1.f;
 }
 
 namespace TRVoiceCVar
@@ -107,10 +126,22 @@ void UTRVoiceSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		this, &UTRVoiceSubsystem::HandlePostLoadMap);
 
 	RegisterConsoleCommands();
+
+	// 접속자가 들어오고 나가는 것을 알려 주는 델리게이트가 없어 주기적으로 토커를 확인한다.
+	TalkerRefreshTicker = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateWeakLambda(this, [this](float)
+		{
+			RefreshTalkers();
+			return true;
+		}),
+		TRVoiceDefaults::TalkerRefreshInterval);
 }
 
 void UTRVoiceSubsystem::Deinitialize()
 {
+	FTSTicker::GetCoreTicker().RemoveTicker(TalkerRefreshTicker);
+	TalkerRefreshTicker.Reset();
+
 	UnregisterConsoleCommands();
 	UnbindVoiceInterfaceDelegates();
 
@@ -411,9 +442,40 @@ UTRVoiceTalker* UTRVoiceSubsystem::EnsureTalker(APlayerState* PlayerState)
 		Talker->RegisterComponent();
 		Talker->RegisterWithPlayerState(PlayerState);
 		Talker->ApplyVolume(GetEffectiveVolume((*PlayerState->GetUniqueId()).ToString()));
+		Talker->SetSoundClass(GetVoiceSoundClass());
 		ApplySpatialToTalker(Talker);
 	}
 	return Talker;
+}
+
+USoundClass* UTRVoiceSubsystem::GetVoiceSoundClass()
+{
+	if (VoiceSoundClass == nullptr)
+	{
+		VoiceSoundClass = GetDefault<UTRSettingsProjectSettings>()->MasterSoundClass.LoadSynchronous();
+	}
+	return VoiceSoundClass;
+}
+
+void UTRVoiceSubsystem::RefreshTalkers()
+{
+	const UWorld* World = GetWorld();
+	const AGameStateBase* GameState = World ? World->GetGameState() : nullptr;
+	if (GameState == nullptr)
+	{
+		return;
+	}
+
+	const APlayerController* LocalPC = GetLocalController();
+	const APlayerState* LocalPS = LocalPC ? LocalPC->PlayerState : nullptr;
+
+	for (APlayerState* PS : GameState->PlayerArray)
+	{
+		if (PS != nullptr && PS != LocalPS && !PS->IsInactive())
+		{
+			EnsureTalker(PS);
+		}
+	}
 }
 
 void UTRVoiceSubsystem::ApplyAllPlayerVolumes()
@@ -523,15 +585,14 @@ void UTRVoiceSubsystem::SaveVoiceSettings()
 
 void UTRVoiceSubsystem::ResetVoiceSettings()
 {
-	const UTRVoiceSubsystem* Defaults = GetDefault<UTRVoiceSubsystem>();
-	bPushToTalk = Defaults->bPushToTalk;
-	MicGain = Defaults->MicGain;
-	MicThreshold = Defaults->MicThreshold;
-	MicNoiseGate = Defaults->MicNoiseGate;
-	bOutputMuted = Defaults->bOutputMuted;
-	JitterDelay = Defaults->JitterDelay;
-	OutputVolume = Defaults->OutputVolume;
-	bSpatialVoice = Defaults->bSpatialVoice;
+	bPushToTalk = TRVoiceDefaults::bPushToTalk;
+	MicGain = TRVoiceDefaults::MicGain;
+	MicThreshold = TRVoiceDefaults::MicThreshold;
+	MicNoiseGate = TRVoiceDefaults::MicNoiseGate;
+	bOutputMuted = TRVoiceDefaults::bOutputMuted;
+	JitterDelay = TRVoiceDefaults::JitterDelay;
+	OutputVolume = TRVoiceDefaults::OutputVolume;
+	bSpatialVoice = TRVoiceDefaults::bSpatialVoice;
 	PlayerVolumes.Empty();
 	ApplyAllPlayerVolumes();
 
@@ -614,15 +675,8 @@ void UTRVoiceSubsystem::SetSettingsUIVisible(bool bVisible)
 			SettingsWidget->RemoveFromParent();
 			SettingsWidget = nullptr;
 
-			// 열기 전에 커서가 숨겨져 있었으면 다시 숨긴다.
-			APlayerController* PC = GetLocalController();
-			if (PC != nullptr && !bCursorWasVisible)
-			{
-				FInputModeGameOnly Mode;
-				Mode.SetConsumeCaptureMouseDown(true);
-				PC->SetInputMode(Mode);
-				PC->SetShowMouseCursor(false);
-			}
+			// 다른 팝업과 같은 스택으로 입력 모드를 되돌린다.
+			ATRPlayerHUD::PopPopupInputMode(GetLocalController());
 		}
 		return;
 	}
@@ -655,13 +709,8 @@ void UTRVoiceSubsystem::SetSettingsUIVisible(bool bVisible)
 
 	SettingsWidget->AddToViewport(1000);
 
-	// 패널이 열린 동안 커서와 UI 입력을 켠다.
-	bCursorWasVisible = PC->bShowMouseCursor;
-	FInputModeGameAndUI Mode;
-	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	Mode.SetWidgetToFocus(SettingsWidget->TakeWidget());
-	PC->SetInputMode(Mode);
-	PC->SetShowMouseCursor(true);
+	// 패널이 열린 동안 커서와 UI 입력을 켠다. 일시정지 메뉴와 같은 팝업 스택을 쓴다.
+	ATRPlayerHUD::PushPopupInputMode(PC, SettingsWidget);
 }
 
 //--- 콘솔 명령 ---

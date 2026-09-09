@@ -44,8 +44,14 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	/** 서버 보이스 핸드셰이크가 끝나는 순간을 잡아 송신 모드를 다시 적용한다. */
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
 private:
 	void ToggleSettingsUI();
+
+	/** 서브시스템의 현재 모드를 다시 적용한다. 핸드셰이크 뒤 서버가 보낸 송신 끄기를 덮는다. */
+	void ReapplyTransmitMode();
 
 	APlayerController* GetOwningController() const;
 
@@ -53,11 +59,15 @@ private:
 	UPROPERTY(Config, EditDefaultsOnly, Category = "TR|Voice")
 	FKey PushToTalkKey = EKeys::V;
 
-	/** 임시 음성 설정 패널 토글 키. */
+	/** 임시 음성 설정 패널 토글 키. 엔진 디버그 바인딩(F1~F5, F9, F11)과 겹치지 않는 키를 쓴다. */
 	UPROPERTY(Config, EditDefaultsOnly, Category = "TR|Voice")
-	FKey SettingsUIKey = EKeys::F9;
+	FKey SettingsUIKey = EKeys::F7;
+
+	FTimerHandle ReapplyTimer;
 
 	bool bBound = false;
 
 	bool bPushToTalkHeld = false;
+
+	bool bHandshakeSeen = false;
 };

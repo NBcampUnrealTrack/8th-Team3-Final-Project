@@ -41,6 +41,9 @@ public:
 	TObjectPtr<UTextBlock> Text_Volume;
 
 	float ShownLevel = 0.f;
+
+	// 코드가 슬라이더 값을 쓸 때 콜백이 저장값을 덮지 않게 막는다.
+	bool bRefreshing = false;
 };
 
 /**

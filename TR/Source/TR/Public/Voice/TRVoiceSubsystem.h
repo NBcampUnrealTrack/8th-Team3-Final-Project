@@ -4,6 +4,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Containers/Ticker.h"
 #include "Online/CoreOnline.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "UObject/SoftObjectPath.h"
@@ -13,6 +14,7 @@ class APlayerController;
 class IConsoleObject;
 class ULocalPlayer;
 class USoundAttenuation;
+class USoundClass;
 class UTRVoiceComponent;
 class UUserWidget;
 
@@ -214,6 +216,12 @@ private:
 	/** 감쇠 설정 객체. 없으면 ini 값으로 만든다. */
 	USoundAttenuation* GetVoiceAttenuation();
 
+	/** 음성 재생용 사운드 클래스. 프로젝트 마스터 클래스라 설정 메뉴의 마스터 볼륨이 적용된다. */
+	USoundClass* GetVoiceSoundClass();
+
+	/** 접속자 전원에게 토커가 붙어 있는지 확인한다. 주기적으로 불린다. */
+	void RefreshTalkers();
+
 	void ApplySpatialToTalker(class UTRVoiceTalker* Talker);
 
 	float GetEffectiveVolume(const FString& NetId) const;
@@ -266,8 +274,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> SettingsWidget;
 
-	// 패널을 열기 전 커서 상태. 닫을 때 그대로 되돌린다.
-	bool bCursorWasVisible = false;
+	UPROPERTY(Transient)
+	TObjectPtr<USoundClass> VoiceSoundClass;
+
+	FTSTicker::FDelegateHandle TalkerRefreshTicker;
 
 	TArray<IConsoleObject*> ConsoleCommands;
 

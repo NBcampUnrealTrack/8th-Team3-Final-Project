@@ -39,12 +39,11 @@ namespace TRVoiceUI
 	{
 		if (UHorizontalBoxSlot* BoxSlot = Widget ? Cast<UHorizontalBoxSlot>(Widget->Slot) : nullptr)
 		{
-			BoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-			BoxSlot->SetVerticalAlignment(VAlign_Center);
-			BoxSlot->SetPadding(FMargin(4.f, 0.f));
 			FSlateChildSize Size(ESlateSizeRule::Fill);
 			Size.Value = Weight;
 			BoxSlot->SetSize(Size);
+			BoxSlot->SetVerticalAlignment(VAlign_Center);
+			BoxSlot->SetPadding(FMargin(4.f, 0.f));
 		}
 	}
 }
@@ -53,6 +52,11 @@ namespace TRVoiceUI
 
 void UTRVoicePlayerRow::HandleVolumeChanged(float Value)
 {
+	if (bRefreshing)
+	{
+		return;
+	}
+
 	if (UTRVoiceSubsystem* Voice = UTRVoiceSubsystem::Get(this))
 	{
 		Voice->SetPlayerVolume(NetId, Value * TRVoiceUI::MaxVolume);
@@ -246,6 +250,7 @@ void UTRVoiceSettingsWidget::RefreshFromSettings()
 		if (Row != nullptr && Row->Slider_Volume != nullptr)
 		{
 			const float Volume = Voice->GetPlayerVolume(Row->NetId);
+			TGuardValue<bool> RowGuard(Row->bRefreshing, true);
 			Row->Slider_Volume->SetValue(Volume / TRVoiceUI::MaxVolume);
 			if (Row->Text_Volume != nullptr)
 			{
