@@ -517,7 +517,7 @@ void ABGGameState::BeginPlay()
 	{
 		//	PvE 런 진행도는 GameInstance 에 있다. ServerTravel 로 이 GameState 는 새로
 		//	만들어져도 GameInstance 는 살아있기 때문이다.
-		int32 EncounterIndex = 0;
+		int32 EncounterIndex = 1;
 		if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
 		{
 			if (const UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
@@ -637,9 +637,10 @@ void ABGGameState::InitializeDeck(int32 Seed, int32 EncounterIndex)
 		Subsystem->BuildPvEDeck(Deck, EBGDeckSide::Player, EncounterIndex);
 		Subsystem->BuildPvEDeck(EnemyDeck, EBGDeckSide::Enemy, EncounterIndex);
 
-		//	조우 승리 보상. 직전 조우를 이겼으면(EncounterIndex 가 1 이상) 장비 카드 하나를
-		//	기억해 둔다. 지면 AdvancePvEEncounter 가 0 으로 되돌리므로 여기 안 온다.
-		if (EncounterIndex >= 1)
+		//	조우 승리 보상. 직전 조우를 이겼으면(EncounterIndex 가 2 이상 — 1은 첫 조우라
+		//	이긴 적이 없다) 장비 카드 하나를 기억해 둔다. 지면 ResetPvERun 이 1로 되돌리므로
+		//	여기 안 온다.
+		if (EncounterIndex >= 2)
 		{
 			FName RewardCardId;
 			if (Subsystem->GetRandomEquipCardId(RandomStream, RewardCardId))
@@ -1541,7 +1542,16 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 			DeadSeat, *DeadRole.ToString(), Dropped.Num());
 	}
 
-	// ── 2. 보상 / 벌칙 (뱅 원작) ──
+	// ── 2. 승패 판정 ──
+	//	조우를 끝내는 킬이면 보상/벌칙을 주지 않는다 — 이번 판 손패에 넣어봐야
+	//	곧바로 ServerTravel 로 리셋되어 버려지는 카드다(덱·장비 조우간 리셋 확정,
+	//	PvE-Mode-Design.md:18).
+	if (CheckWinCondition())
+	{
+		return;   // 판이 끝났으면 보상도, 턴 넘기기도 하지 않는다.
+	}
+
+	// ── 3. 보상 / 벌칙 (뱅 원작) ──
 	if (KillerSeat != INDEX_NONE && KillerSeat != DeadSeat && IsSeatAlive(KillerSeat))
 	{
 		if (DeadRole == BG::Role::Outlaw.GetTag())
@@ -1569,16 +1579,42 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 		}
 	}
 
-	// ── 3. 승패 판정 ──
-	if (CheckWinCondition())
-	{
-		return;   // 판이 끝났으면 턴을 넘기지 않는다.
-	}
-
 	// ── 4. 죽은 사람이 현재 턴이었다면 턴을 넘긴다 ──
 	if (DeadSeat == CurrentSeat && bMatchRunning)
 	{
 		AdvanceToNextSeat();
+	}
+}
+
+void ABGGameState::HandlePvERunWin()
+{
+	UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
+	if (!GI)
+	{
+		return;
+	}
+
+	const int32 ClearedEncounter = GI->GetPvEEncounterIndex();
+	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
+
+	if (GM && ClearedEncounter == GM->BossEncounterIndex)
+	{
+		// TODO: 게임 클리어 연출
+		GI->ResetPvERun();
+	}
+	else
+	{
+		// TODO: PvE 조우 승리 연출
+		GI->AdvancePvEEncounter();
+	}
+}
+
+void ABGGameState::HandlePvERunLoss()
+{
+	// TODO: PvE 게임 오버 연출
+	if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+	{
+		GI->ResetPvERun();
 	}
 }
 
@@ -1624,20 +1660,16 @@ bool ABGGameState::CheckWinCondition()
 
 	WinningRoleTag = Winner;
 
-	//	PvE 는 사람이 항상 Sheriff다. Sheriff 승리만 "이겼다"로 본다. 다음 조우로 넘어갈
-	//	때(InitializeDeck) 이 진행도를 보고 보상(장비 카드)을 얹을지 정한다.
+	//	PvE 는 사람이 항상 Sheriff다. Sheriff 승리만 "이겼다"로 본다.
 	if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
 	{
-		if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+		if (Winner == BG::Role::Sheriff.GetTag())
 		{
-			if (Winner == BG::Role::Sheriff.GetTag())
-			{
-				GI->AdvancePvEEncounter();
-			}
-			else
-			{
-				GI->ResetPvERun();
-			}
+			HandlePvERunWin();
+		}
+		else
+		{
+			HandlePvERunLoss();
 		}
 	}
 

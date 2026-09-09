@@ -75,21 +75,22 @@ ABGGameMode* UBGMatchStartComponent::GetGameMode() const
 
 int32 UBGMatchStartComponent::ComputeTargetSeatsForEncounter(int32 EncounterIndex) const
 {
+	// EncounterIndex 는 1-base(조우1부터) — UBGGameInstance::PvEEncounterIndex 와 동일.
 	switch (EncounterIndex)
 	{
-	case 0:
+	case 1:
 		{
 			return 2;   // 조우1: 1대1
 		}
-	case 1:
+	case 2:
 		{
 			return 3;   // 조우2: 1대2
 		}
-	case 2:
+	case 3:
 		{
 			return 5;   // 조우3: 2대3 (부관 등장)
 		}
-	case 3:
+	case 4:
 		{
 			return 6;   // 조우4: 2대4
 		}

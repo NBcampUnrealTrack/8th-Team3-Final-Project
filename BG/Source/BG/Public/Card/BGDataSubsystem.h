@@ -51,7 +51,7 @@ public:
 	 * EncounterIndex 는 지금은 쓰지 않는다. 항상 DT 의 기준치 그대로 나간다.
 	 * TODO: 조우가 진행될수록 매수를 조정하는 난이도 축 스케일링을 넣는다.
 	 */
-	void BuildPvEDeck(TArray<FBGCardInstance>& OutDeck, EBGDeckSide Side, int32 EncounterIndex = 0) const;
+	void BuildPvEDeck(TArray<FBGCardInstance>& OutDeck, EBGDeckSide Side, int32 EncounterIndex = 1) const;
 
 	/**
 	 * PvE 조우 승리 보상용. DT_BGCard 에서 파란(장비) Row 중 하나를 무작위로 고른다.

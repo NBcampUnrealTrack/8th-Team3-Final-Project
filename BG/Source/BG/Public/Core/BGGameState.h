@@ -164,9 +164,9 @@ public:
 
 	//	서버에서 덱을 구성·셔플한다. 이미 초기화됐으면 아무것도 하지 않는다(시드 보존).
 	//	Seed == 0 이면 새 시드를 뽑아 쓰고, 사용한 값을 로그에 남긴다 — 재현에 필수.
-	//	EncounterIndex 는 PvE 전용이고 지금은 쓰지 않는다.
+	//	EncounterIndex 는 PvE 전용, 1-base(조우1부터). 지금은 보상 카드 여부만 본다.
 	//	TODO: 조우별 난이도 스케일링을 여기에 넣는다.
-	void InitializeDeck(int32 Seed = 0, int32 EncounterIndex = 0);
+	void InitializeDeck(int32 Seed = 0, int32 EncounterIndex = 1);
 
 	// Side 생략 시 Player 덱. 소진 시 그 진영의 Discard 를 리셔플한다.
 	bool DrawFromDeck(FBGCardInstance& OutCard, EBGDeckSide Side = EBGDeckSide::Player);
@@ -620,6 +620,14 @@ protected:
 	 * HandleSeatDeath 를 거치지 않으면 연출을 건너뛰고 결과부터 나온다.
 	 */
 	void ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat);
+
+	// ── PvE 런 승패 처리 (CheckWinCondition 전용, 다른 곳에서 부르지 말 것) ──
+
+	//	PvE 에서 사람(Sheriff) 이 이겼을 때. 다음 조우로 진행한다.
+	void HandlePvERunWin();
+
+	//	PvE 에서 사람(Sheriff) 이 졌을 때. 런을 끝낸다.
+	void HandlePvERunLoss();
 
 	/**
 	 * 죽은 좌석을 **화면상으로도** 죽은 것으로 만든다. DeathPrimary 진입 직전에 불린다.

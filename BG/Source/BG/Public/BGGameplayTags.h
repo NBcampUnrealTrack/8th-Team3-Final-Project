@@ -165,6 +165,7 @@ namespace BG
 		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Dead)         // 사망 → 좌석 원에서 제외
 		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Jailed)       // 감옥. 턴 시작 뽑기 판정 대상
 		UE_DECLARE_GAMEPLAY_TAG_EXTERN(HasDynamite)  // 다이너마이트 보유
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Boss)         // PvE 보스 조우에서 지정된 무법자
 
 		// State.Turn.* — 현재 턴 진행 중 플레이어의 임시 상태
 		namespace Turn

@@ -22,6 +22,7 @@ class ABGAIPlayerController;
 class ABGCampfire;
 class UBGMatchStartComponent;
 class UBGSeatComponent;
+class UGameplayEffect;
 
 // 판의 진행 모드. PvP/PvE 는 규칙이 같고 빈자리를 누가 채우느냐만 다르므로
 // 게임모드 클래스를 나누지 않고 이 값으로 가른다. (메인메뉴는 ABGMainMenuGameMode 담당)
@@ -170,7 +171,11 @@ public:
 	 */
 	UFUNCTION(Exec)
 	void BG_ArrangeSeats(float Radius);
-
+	
+	// 보스 조우 번호(1-base). 이 조우를 이기면 런이 끝난다(HandlePvERunWin 참고).
+	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
+	int32 BossEncounterIndex = 6;
+	
 protected:
 	// 모드는 여기서 확정한다 — 첫 로그인보다 먼저라 좌석·역할 배정이 모드를 볼 수 있다.
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
@@ -202,6 +207,10 @@ protected:
 	// AbilityByCardId 가 채워진 BP 를 꽂아야 한다 - 비면 봇이 낸 카드가 전부 거부된다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
 	TSubclassOf<ABGAIPlayerController> AIControllerClass;
+
+	// 보스 좌석에 추가로 거는 스탯 강화 GE (ABGCharacter::MarkAsBoss 참고).
+	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
+	TSubclassOf<UGameplayEffect> BossStatBoostGE;
 
 private:
 	// 인원 목록을 받아 CollectPlayers 를 두 번 돌지 않는다.
