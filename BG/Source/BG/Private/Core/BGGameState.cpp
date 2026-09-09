@@ -1588,9 +1588,23 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 
 void ABGGameState::HandlePvERunWin()
 {
-	// TODO: PvE 조우 승리 연출
-	if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+	UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
+	if (!GI)
 	{
+		return;
+	}
+
+	const int32 ClearedEncounter = GI->GetPvEEncounterIndex();
+	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
+
+	if (GM && ClearedEncounter == GM->BossEncounterIndex)
+	{
+		// TODO: 게임 클리어 연출
+		GI->ResetPvERun();
+	}
+	else
+	{
+		// TODO: PvE 조우 승리 연출
 		GI->AdvancePvEEncounter();
 	}
 }

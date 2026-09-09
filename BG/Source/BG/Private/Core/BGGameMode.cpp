@@ -687,6 +687,19 @@ void ABGGameMode::AssignJobsPvE(const TArray<APlayerController*>& Players)
 	}
 	ShuffleTags(OutlawPool);
 	AssignJobsFromPool(OutlawSide, OutlawPool, UsedTags);
+
+	// 보스 조우면 무법자 중 한 명을 보스로 지정한다.
+	if (EncounterIndex == BossEncounterIndex && OutlawSide.Num() > 0)
+	{
+		APlayerController* BossPC = OutlawSide[FMath::RandRange(0, OutlawSide.Num() - 1)];
+		ABGCharacter* BossChar = BossPC ? Cast<ABGCharacter>(BossPC->GetPawn()) : nullptr;
+		if (BossChar)
+		{
+			BossChar->MarkAsBoss(BossStatBoostGE);
+			UE_LOG(LogBGNet, Warning, TEXT("[PvE] 조우 %d 보스 지정 - %s"),
+				EncounterIndex, *BossPC->GetName());
+		}
+	}
 }
 
 // ======================================================================================

@@ -100,6 +100,7 @@ namespace BG
 		UE_DEFINE_GAMEPLAY_TAG(Dead,        "State.Dead")
 		UE_DEFINE_GAMEPLAY_TAG(Jailed,      "State.Jailed")
 		UE_DEFINE_GAMEPLAY_TAG(HasDynamite, "State.HasDynamite")
+		UE_DEFINE_GAMEPLAY_TAG(Boss,        "State.Boss")
 
 		namespace Turn
 		{
