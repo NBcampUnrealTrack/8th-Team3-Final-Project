@@ -137,9 +137,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TR|Voice")
 	bool IsVoiceInterfaceReady() const;
 
-	/** 진단 문자열. 패널과 콘솔 명령이 같은 것을 쓴다. */
+	/** 진단 문자열. 엔진 덤프는 길어서 패널에서는 뺀다. 콘솔 TR.Voice.Status 는 포함한다. */
 	UFUNCTION(BlueprintPure, Category = "TR|Voice")
-	FString GetStatusText() const;
+	FString GetStatusText(bool bIncludeEngineDump = true) const;
 
 	UFUNCTION(BlueprintPure, Category = "TR|Voice")
 	UTRVoiceComponent* GetLocalVoiceComponent() const;

@@ -4,6 +4,7 @@
 
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/CheckBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
@@ -161,6 +162,15 @@ void UTRVoiceSettingsWidget::FixRowSlots()
 {
 	TRVoiceUI::SetFill(Bar_MicLevel, 0.65f);
 	TRVoiceUI::SetFill(Text_OutputVolume, 0.3f);
+
+	// 접속자 줄과 상태 텍스트로 높이가 늘어난다. 배경 패널이 내용에 맞춰 자라게 한다.
+	if (UWidget* Panel = GetWidgetFromName(TEXT("Panel")))
+	{
+		if (UCanvasPanelSlot* PanelSlot = Cast<UCanvasPanelSlot>(Panel->Slot))
+		{
+			PanelSlot->SetAutoSize(true);
+		}
+	}
 }
 
 void UTRVoiceSettingsWidget::HandleTalkingChanged(const FString& PlayerId, bool bIsTalking)
@@ -250,7 +260,7 @@ void UTRVoiceSettingsWidget::RefreshStatus()
 	const UTRVoiceSubsystem* Voice = GetVoice();
 	if (Text_Status != nullptr && Voice != nullptr)
 	{
-		Text_Status->SetText(FText::FromString(Voice->GetStatusText()));
+		Text_Status->SetText(FText::FromString(Voice->GetStatusText(/*bIncludeEngineDump=*/false)));
 	}
 }
 

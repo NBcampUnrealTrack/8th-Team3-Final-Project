@@ -499,7 +499,7 @@ bool UTRVoiceSubsystem::IsLocalTalking() const
 	return Voice->IsLocalPlayerTalking(LP ? (uint32)LP->GetControllerId() : 0);
 }
 
-FString UTRVoiceSubsystem::GetStatusText() const
+FString UTRVoiceSubsystem::GetStatusText(bool bIncludeEngineDump) const
 {
 	IOnlineSubsystem* OSS = Online::GetSubsystem(GetWorld());
 	const IOnlineVoicePtr Voice = OSS ? OSS->GetVoiceInterface() : nullptr;
@@ -519,7 +519,7 @@ FString UTRVoiceSubsystem::GetStatusText() const
 		bOutputMuted ? TEXT("켜짐") : TEXT("꺼짐"),
 		OutputVolume, JitterDelay);
 
-	if (Voice.IsValid())
+	if (bIncludeEngineDump && Voice.IsValid())
 	{
 		Text += TEXT("\n") + Voice->GetVoiceDebugState();
 	}
