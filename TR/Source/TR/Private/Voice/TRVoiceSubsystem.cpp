@@ -16,6 +16,7 @@
 #include "OnlineSubsystem.h"
 #include "OnlineSubsystemUtils.h"
 #include "Session/TRNetLog.h"
+#include "Sound/SoundAttenuation.h"
 #include "UObject/UObjectGlobals.h"
 #include "VoiceInterfaceImpl.h"
 #include "Voice/TRVoiceComponent.h"
@@ -78,12 +79,19 @@ void UTRVoiceSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	LoadConfig();
 
-	// 패널 WBP 경로는 DefaultGame.ini 에서 읽는다.
+	// 패널 WBP 경로와 공간 음성 거리는 DefaultGame.ini 에서 읽는다.
+	const TCHAR* Section = TEXT("/Script/TR.TRVoiceSubsystem");
 	FString WidgetPath;
-	if (GConfig->GetString(TEXT("/Script/TR.TRVoiceSubsystem"), TEXT("SettingsWidgetClass"), WidgetPath, GGameIni)
-		&& !WidgetPath.IsEmpty())
+	if (GConfig->GetString(Section, TEXT("SettingsWidgetClass"), WidgetPath, GGameIni) && !WidgetPath.IsEmpty())
 	{
 		SettingsWidgetClass = FSoftClassPath(WidgetPath);
+	}
+	GConfig->GetFloat(Section, TEXT("VoiceInnerRadius"), VoiceInnerRadius, GGameIni);
+	GConfig->GetFloat(Section, TEXT("VoiceFalloffDistance"), VoiceFalloffDistance, GGameIni);
+	FString AttenuationPath;
+	if (GConfig->GetString(Section, TEXT("VoiceAttenuationAsset"), AttenuationPath, GGameIni) && !AttenuationPath.IsEmpty())
+	{
+		VoiceAttenuationAsset = FSoftObjectPath(AttenuationPath);
 	}
 
 	ApplyToRuntime();
@@ -316,6 +324,54 @@ void UTRVoiceSubsystem::SetOutputVolume(float Value)
 	OnVoiceSettingsChanged.Broadcast();
 }
 
+//--- 공간 음성 ---
+
+void UTRVoiceSubsystem::SetSpatialVoice(bool bValue)
+{
+	bSpatialVoice = bValue;
+	ApplyAllPlayerVolumes();
+	OnVoiceSettingsChanged.Broadcast();
+}
+
+USoundAttenuation* UTRVoiceSubsystem::GetVoiceAttenuation()
+{
+	if (VoiceAttenuation != nullptr)
+	{
+		return VoiceAttenuation;
+	}
+
+	if (VoiceAttenuationAsset.IsValid())
+	{
+		VoiceAttenuation = Cast<USoundAttenuation>(VoiceAttenuationAsset.TryLoad());
+		if (VoiceAttenuation != nullptr)
+		{
+			return VoiceAttenuation;
+		}
+	}
+
+	// 구형 선형 감쇠. 안쪽 반지름까지 원음, 그 뒤 FalloffDistance 에 걸쳐 0 으로.
+	VoiceAttenuation = NewObject<USoundAttenuation>(this, TEXT("TRVoiceAttenuation"));
+	FSoundAttenuationSettings& A = VoiceAttenuation->Attenuation;
+	A.bAttenuate = true;
+	A.bSpatialize = true;
+	A.bAttenuateWithLPF = false;
+	A.bEnableListenerFocus = false;
+	A.AttenuationShape = EAttenuationShape::Sphere;
+	A.DistanceAlgorithm = EAttenuationDistanceModel::Linear;
+	A.AttenuationShapeExtents = FVector(VoiceInnerRadius, 0.f, 0.f);
+	A.FalloffDistance = VoiceFalloffDistance;
+	A.SpatializationAlgorithm = ESoundSpatializationAlgorithm::SPATIALIZATION_Default;
+	return VoiceAttenuation;
+}
+
+void UTRVoiceSubsystem::ApplySpatialToTalker(UTRVoiceTalker* Talker)
+{
+	if (Talker != nullptr)
+	{
+		Talker->SetSpatial(bSpatialVoice, bSpatialVoice ? GetVoiceAttenuation() : nullptr);
+	}
+}
+
 //--- 개인별 음량 ---
 
 float UTRVoiceSubsystem::GetPlayerVolume(const FString& NetId) const
@@ -355,6 +411,7 @@ UTRVoiceTalker* UTRVoiceSubsystem::EnsureTalker(APlayerState* PlayerState)
 		Talker->RegisterComponent();
 		Talker->RegisterWithPlayerState(PlayerState);
 		Talker->ApplyVolume(GetEffectiveVolume((*PlayerState->GetUniqueId()).ToString()));
+		ApplySpatialToTalker(Talker);
 	}
 	return Talker;
 }
@@ -373,6 +430,7 @@ void UTRVoiceSubsystem::ApplyAllPlayerVolumes()
 		if (UTRVoiceTalker* Talker = EnsureTalker(PS))
 		{
 			Talker->ApplyVolume(GetEffectiveVolume((*PS->GetUniqueId()).ToString()));
+			ApplySpatialToTalker(Talker);
 		}
 	}
 }
@@ -473,6 +531,7 @@ void UTRVoiceSubsystem::ResetVoiceSettings()
 	bOutputMuted = Defaults->bOutputMuted;
 	JitterDelay = Defaults->JitterDelay;
 	OutputVolume = Defaults->OutputVolume;
+	bSpatialVoice = Defaults->bSpatialVoice;
 	PlayerVolumes.Empty();
 	ApplyAllPlayerVolumes();
 
@@ -514,7 +573,7 @@ FString UTRVoiceSubsystem::GetStatusText(bool bIncludeEngineDump) const
 	FString Text = FString::Printf(
 		TEXT("OSS=%s 인터페이스=%s 무전키=%s 바인딩=%s\n")
 		TEXT("송신모드=%s 송신중=%s 증폭=%.2f 문턱=%.3f 노이즈게이트=%.3f\n")
-		TEXT("출력음소거=%s 수신음량=%.2f 지터=%.2fs"),
+		TEXT("출력음소거=%s 수신음량=%.2f 지터=%.2fs 공간=%s(원음 %.0fcm, 소멸 +%.0fcm)"),
 		OSS ? *OSS->GetSubsystemName().ToString() : TEXT("없음"),
 		Voice.IsValid() ? TEXT("있음") : TEXT("없음"),
 		Component ? *Component->GetPushToTalkKey().ToString() : TEXT("컴포넌트없음"),
@@ -523,7 +582,8 @@ FString UTRVoiceSubsystem::GetStatusText(bool bIncludeEngineDump) const
 		IsLocalTalking() ? TEXT("예") : TEXT("아니오"),
 		MicGain, MicThreshold, MicNoiseGate,
 		bOutputMuted ? TEXT("켜짐") : TEXT("꺼짐"),
-		OutputVolume, JitterDelay);
+		OutputVolume, JitterDelay,
+		bSpatialVoice ? TEXT("켜짐") : TEXT("꺼짐"), VoiceInnerRadius, VoiceFalloffDistance);
 
 	if (bIncludeEngineDump && Voice.IsValid())
 	{
@@ -680,6 +740,12 @@ void UTRVoiceSubsystem::RegisterConsoleCommands()
 		[](UTRVoiceSubsystem& Voice, const TArray<FString>& Args)
 		{
 			if (Args.Num() > 0) { Voice.SetOutputVolume(FCString::Atof(*Args[0])); }
+		});
+
+	AddCommand(TEXT("TR.Voice.Spatial"), TEXT("1 = 거리 감쇠 공간 음성, 0 = 2D. 다음 발화부터 적용."),
+		[](UTRVoiceSubsystem& Voice, const TArray<FString>& Args)
+		{
+			Voice.SetSpatialVoice(Args.Num() > 0 ? (FCString::Atoi(*Args[0]) != 0) : true);
 		});
 
 	AddCommand(TEXT("TR.Voice.PlayerVolume"), TEXT("개인 음량. <NetId> <0~2>. NetId 는 TR.Voice.Players 로."),

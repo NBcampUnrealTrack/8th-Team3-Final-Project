@@ -12,6 +12,7 @@
 class APlayerController;
 class IConsoleObject;
 class ULocalPlayer;
+class USoundAttenuation;
 class UTRVoiceComponent;
 class UUserWidget;
 
@@ -106,6 +107,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "TR|Voice|Output")
 	void SetOutputVolume(float Value);
 
+	//--- 공간 음성 ---
+	/** 켜면 상대 음성이 그 플레이어 위치에서 나고 거리에 따라 작아진다. */
+	UFUNCTION(BlueprintPure, Category = "TR|Voice|Spatial")
+	bool IsSpatialVoice() const { return bSpatialVoice; }
+
+	UFUNCTION(BlueprintCallable, Category = "TR|Voice|Spatial")
+	void SetSpatialVoice(bool bValue);
+
+	/** 감쇠 시작 거리(cm). 이 안에서는 원음. */
+	UFUNCTION(BlueprintPure, Category = "TR|Voice|Spatial")
+	float GetVoiceInnerRadius() const { return VoiceInnerRadius; }
+
+	/** 감쇠 끝 거리(cm). 안쪽 반지름에서 이만큼 더 가면 들리지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "TR|Voice|Spatial")
+	float GetVoiceFalloffDistance() const { return VoiceFalloffDistance; }
+
 	//--- 개인별 음량 ---
 	UFUNCTION(BlueprintPure, Category = "TR|Voice|Players")
 	float GetPlayerVolume(const FString& NetId) const;
@@ -194,11 +211,19 @@ private:
 
 	void ApplyAllPlayerVolumes();
 
+	/** 감쇠 설정 객체. 없으면 ini 값으로 만든다. */
+	USoundAttenuation* GetVoiceAttenuation();
+
+	void ApplySpatialToTalker(class UTRVoiceTalker* Talker);
+
 	float GetEffectiveVolume(const FString& NetId) const;
 
 	uint32 GetLocalUserNum() const;
 
 	//--- GameUserSettings.ini 저장값 ---
+	UPROPERTY(Config)
+	bool bSpatialVoice = true;
+
 	UPROPERTY(Config)
 	float OutputVolume = 1.f;
 
@@ -226,6 +251,17 @@ private:
 
 	/** 임시 설정 패널 WBP. DefaultGame.ini 의 [/Script/TR.TRVoiceSubsystem] 에서 읽는다. */
 	FSoftClassPath SettingsWidgetClass;
+
+	//--- DefaultGame.ini 프로젝트값 ---
+	float VoiceInnerRadius = 300.f;
+
+	float VoiceFalloffDistance = 2500.f;
+
+	// 지정하면 ini 값 대신 이 감쇠 애셋을 쓴다.
+	FSoftObjectPath VoiceAttenuationAsset;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundAttenuation> VoiceAttenuation;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> SettingsWidget;

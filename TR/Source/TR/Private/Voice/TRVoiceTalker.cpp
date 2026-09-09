@@ -3,6 +3,17 @@
 #include "Voice/TRVoiceTalker.h"
 
 #include "Components/AudioComponent.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerState.h"
+#include "Sound/SoundAttenuation.h"
+
+UTRVoiceTalker::UTRVoiceTalker(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = true;
+	PrimaryComponentTick.TickInterval = 0.5f;
+}
 
 void UTRVoiceTalker::ApplyVolume(float InVolume)
 {
@@ -11,6 +22,37 @@ void UTRVoiceTalker::ApplyVolume(float InVolume)
 	if (UAudioComponent* Audio = ActiveAudio.Get())
 	{
 		Audio->SetVolumeMultiplier(Volume);
+	}
+}
+
+void UTRVoiceTalker::SetSpatial(bool bInSpatial, USoundAttenuation* InAttenuation)
+{
+	bSpatial = bInSpatial;
+	Attenuation = bInSpatial ? InAttenuation : nullptr;
+	RefreshAttachTarget();
+}
+
+void UTRVoiceTalker::RefreshAttachTarget()
+{
+	USceneComponent* Target = nullptr;
+	if (bSpatial)
+	{
+		const APlayerState* PS = GetOwner<APlayerState>();
+		const APawn* Pawn = PS ? PS->GetPawn() : nullptr;
+		Target = Pawn ? Pawn->GetRootComponent() : nullptr;
+	}
+
+	Settings.ComponentToAttachTo = Target;
+	Settings.AttenuationSettings = (Target != nullptr) ? Attenuation.Get() : nullptr;
+}
+
+void UTRVoiceTalker::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (bSpatial)
+	{
+		RefreshAttachTarget();
 	}
 }
 

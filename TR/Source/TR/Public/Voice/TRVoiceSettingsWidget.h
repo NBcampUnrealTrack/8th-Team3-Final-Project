@@ -73,6 +73,9 @@ private:
 	void HandleOutputMutedChanged(bool bIsChecked);
 
 	UFUNCTION()
+	void HandleSpatialChanged(bool bIsChecked);
+
+	UFUNCTION()
 	void HandleMicGainChanged(float Value);
 
 	UFUNCTION()
@@ -118,6 +121,9 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCheckBox> Check_OutputMuted;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCheckBox> Check_Spatial;
 
 	// 0~1 슬라이더. 실제 범위 환산은 위젯이 한다(마이크 증폭은 0~2, 수신 음량도 0~2).
 	UPROPERTY(meta = (BindWidgetOptional))

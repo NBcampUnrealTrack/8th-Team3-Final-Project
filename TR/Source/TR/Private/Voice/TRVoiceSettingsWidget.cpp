@@ -82,6 +82,10 @@ void UTRVoiceSettingsWidget::NativeConstruct()
 	{
 		Check_OutputMuted->OnCheckStateChanged.AddDynamic(this, &UTRVoiceSettingsWidget::HandleOutputMutedChanged);
 	}
+	if (Check_Spatial != nullptr)
+	{
+		Check_Spatial->OnCheckStateChanged.AddDynamic(this, &UTRVoiceSettingsWidget::HandleSpatialChanged);
+	}
 	if (Slider_MicGain != nullptr)
 	{
 		Slider_MicGain->OnValueChanged.AddDynamic(this, &UTRVoiceSettingsWidget::HandleMicGainChanged);
@@ -189,6 +193,10 @@ void UTRVoiceSettingsWidget::RefreshFromSettings()
 	if (Check_OutputMuted != nullptr)
 	{
 		Check_OutputMuted->SetIsChecked(Voice->IsOutputMuted());
+	}
+	if (Check_Spatial != nullptr)
+	{
+		Check_Spatial->SetIsChecked(Voice->IsSpatialVoice());
 	}
 	if (Slider_MicGain != nullptr)
 	{
@@ -375,6 +383,17 @@ void UTRVoiceSettingsWidget::HandleOutputMutedChanged(bool bIsChecked)
 		if (UTRVoiceSubsystem* Voice = GetVoice())
 		{
 			Voice->SetOutputMuted(bIsChecked);
+		}
+	}
+}
+
+void UTRVoiceSettingsWidget::HandleSpatialChanged(bool bIsChecked)
+{
+	if (!bRefreshing)
+	{
+		if (UTRVoiceSubsystem* Voice = GetVoice())
+		{
+			Voice->SetSpatialVoice(bIsChecked);
 		}
 	}
 }
