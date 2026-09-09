@@ -434,8 +434,10 @@ float UTRVoiceSubsystem::GetLocalMicLevel() const
 		return 0.f;
 	}
 
-	// 지원 안 되면 -1 이 온다.
-	return FMath::Clamp(Engine->GetMicrophoneAmplitude((int32)GetLocalUserNum()), 0.f, 1.f);
+	// 엔진 진폭은 증폭을 곱하기 전 원본이다(VoiceCaptureWindows: 검출 488줄, 증폭 518줄).
+	// 게이지는 실제로 나가는 크기를 보여야 하므로 증폭을 곱한다. 지원 안 되면 -1 이 온다.
+	const float Raw = Engine->GetMicrophoneAmplitude((int32)GetLocalUserNum());
+	return FMath::Clamp(Raw * MicGain, 0.f, 1.f);
 }
 
 void UTRVoiceSubsystem::ApplyToRuntime()
