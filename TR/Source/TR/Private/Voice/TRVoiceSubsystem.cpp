@@ -390,11 +390,22 @@ TArray<FTRVoicePlayerInfo> UTRVoiceSubsystem::GetRemotePlayers()
 
 	const APlayerController* LocalPC = GetLocalController();
 	const APlayerState* LocalPS = LocalPC ? LocalPC->PlayerState : nullptr;
+	const FUniqueNetIdRepl LocalId = LocalPS ? LocalPS->GetUniqueId() : FUniqueNetIdRepl();
 	const IOnlineVoicePtr Voice = GetVoiceInterface(this);
 
 	for (APlayerState* PS : GameState->PlayerArray)
 	{
-		if (PS == nullptr || PS == LocalPS || !PS->GetUniqueId().IsValid())
+		if (PS == nullptr || PS->IsInactive() || !PS->GetUniqueId().IsValid())
+		{
+			continue;
+		}
+
+		// 나 자신은 뺀다. 같은 객체, 로컬 컨트롤러 소유, 같은 UniqueId 중 하나면 나다.
+		const APlayerController* OwnerPC = PS->GetPlayerController();
+		const bool bIsLocal = (PS == LocalPS)
+			|| (OwnerPC != nullptr && OwnerPC->IsLocalController())
+			|| (LocalId.IsValid() && *LocalId == *PS->GetUniqueId());
+		if (bIsLocal)
 		{
 			continue;
 		}
