@@ -6,6 +6,7 @@
 #include "Blueprint/UserWidget.h"
 #include "UI/View/BGCardView.h"
 #include "UI/View/BGCardFXTypes.h"   // FBGCardDealContext / FBGCardPlayContext
+#include "UI/Widget/BGCardMotionRuntime.h"   // FBGCardDealRuntime / FBGCardCenterRuntime
 #include "BGCardWidget.generated.h"
 
 class UTextBlock;
@@ -17,6 +18,21 @@ class UBGHandWidget;
 class UMaterialInstanceDynamic;
 class UCurveFloat;
 class URetainerBox;
+class UBGCardWidget;
+
+/**
+ * 카드가 중앙에서 발동 연출을 터뜨리는 순간. 화면 전체 연출(HUD)이 여기 맞춰 켜진다.
+ * BP 훅 OnPlayResolved 와 같은 순간이지만 그쪽은 WBP 서브클래스 전용이라 바깥이 못 쓴다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardPlayFXStarted,
+	UBGCardWidget*, Card, const FBGCardPlayContext&, Context);
+
+/**
+ * 위에서 켠 연출을 끌 시점. **켜졌다면 반드시 한 번 나간다**(카드가 그냥 파괴돼도).
+ * Context 는 켤 때 쓴 것과 같은 값이라 끄는 쪽도 Category 로 갈라도 된다.
+ */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardPlayFXFinished,
+	UBGCardWidget*, Card, const FBGCardPlayContext&, Context);
 
 /** 판정 등급 하나의 글로우 값. ⚠️ 색만으로 가르지 말 것(색각이상) — Intensity·Seconds 로도 구분되게. */
 USTRUCT(BlueprintType)
@@ -156,6 +172,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Card|Motion")
 	void FinishDwell();
 
+	/**
+	 * 공격·피격 연출이 끝났다 — OnPlayFXFinished 를 지금 보낸다.
+	 * 여러 번 불러도, 켠 적이 없어도 안전하다(두 번째부터 아무 일도 없다).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Card|Motion")
+	void NotifyPlayFXFinished();
+
+	/**
+	 * 중앙 대기 자리를 지금 위치에서 새 자리로 옮긴다. 이미 그 자리면 아무 일도 없다.
+	 * 대상 선택 중 비켜서 있던 카드를 확정 시점에 중앙으로 데려오는 데 쓴다 —
+	 * 안 그러면 낸 사람 화면과 남의 화면에서 카드가 다른 곳에 선다.
+	 */
+	void MoveHoldTo(const FVector2D& NewCenterPosition);
+
 	UFUNCTION(BlueprintPure, Category = "BG|Card")
 	const FBGCardView& GetCardView() const { return CardView; }
 
@@ -220,7 +250,7 @@ public:
 
 	/** 중앙에 잡혀 대기 중인가(아직 확정되지 않았다). */
 	UFUNCTION(BlueprintPure, Category = "BG|Card|Motion")
-	bool IsHoldingAtCenter() const { return bHoldingAtCenter; }
+	bool IsHoldingAtCenter() const { return Center.bHolding; }
 
 	/** 떠나던 카드를 손패로 되돌린다(대상 선택 취소 등). 이미 Exiting 이면 false. */
 	bool ReturnToHand();
@@ -240,7 +270,7 @@ public:
 
 	/** 아직 덱에서 날아오는 중인가(대기 포함). 순차 배분과 Z 순서 판단에 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "BG|Card|Motion")
-	bool IsDealInProgress() const { return bDealInProgress; }
+	bool IsDealInProgress() const { return Deal.bInProgress; }
 
 	/** 지금 마우스가 올라와 연출이 걸려 있는가. 손패가 Z 순서를 올릴 때 쓴다. */
 	UFUNCTION(BlueprintPure, Category = "BG|Card|Motion")
@@ -250,10 +280,10 @@ public:
 	float GetDealFlightDuration() const { return DealFlightDuration; }
 
 	/** 이번 묶음의 총 장수를 뒤늦게 채운다 — BeginDeal 시점에는 몇 장인지 아직 모른다. */
-	void SetDealBatchTotal(int32 InTotal) { DealContext.TotalInBatch = InTotal; }
+	void SetDealBatchTotal(int32 InTotal) { Deal.Context.TotalInBatch = InTotal; }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Card|Motion")
-	const FBGCardDealContext& GetDealContext() const { return DealContext; }
+	const FBGCardDealContext& GetDealContext() const { return Deal.Context; }
 
 	// ── BP 훅 ────────────────────────────────────────────────────────
 	//
@@ -290,8 +320,18 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Card|Motion")
 	void OnExitStarted();
 
+	// ── 바깥 구독용 ──────────────────────────────────────────────────
+	//	손패가 받아 다시 쏘고 HUD 는 손패만 구독한다 — 카드는 HUD 를 모른다.
+
+	UPROPERTY(BlueprintAssignable, Category = "BG|Card|Motion")
+	FOnBGCardPlayFXStarted OnPlayFXStarted;
+
+	UPROPERTY(BlueprintAssignable, Category = "BG|Card|Motion")
+	FOnBGCardPlayFXFinished OnPlayFXFinished;
+
 protected:
 	virtual void NativePreConstruct() override;
+	virtual void NativeDestruct() override;
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
 
@@ -551,11 +591,16 @@ protected:
 	float HoverInterpSpeed = 15.f;
 
 	/**
-	 * 호버가 **풀리는** 기준을 커지기 전 카드 크기로 되돌린다.
+	 * 호버가 **풀리는** 기준을 **가로만** 커지기 전 카드 폭으로 되돌린다.
+	 * 세로는 커진 카드 높이 그대로다.
 	 *
 	 * 끄면(슬레이트 기본 동작) 들어갈 때는 원래 크기, 나올 때는 HoverScale 만큼 커진
 	 * 영역이 기준이라 경계가 어긋난다. 부채꼴에서 카드가 겹쳐 있으면 커진 카드가 옆 카드를
 	 * 덮어서, 커서를 옆으로 옮겨도 호버가 넘어가지 않고 끈적하게 붙어 있는다.
+	 *
+	 * ⚠️ 세로까지 좁히지 않는 이유: 카드가 겹치는 축은 가로뿐이라 세로를 좁혀도 얻는 것이
+	 *    없고, 눈에는 카드 위에 커서가 있는데 호버가 풀리는 띠만 생긴다.
+	 *    판정은 UpdateHoverBounds 에 있다.
 	 *
 	 * ⚠️ 슬레이트는 렌더 트랜스폼을 히트테스트에도 반영한다 — 그래서 코드가 직접 재야 한다.
 	 *    들어오는 판정은 건드리지 않는다(그쪽은 원래도 원래 크기 기준이다).
@@ -684,8 +729,23 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Play")
 	bool bWaitForDwellAnimation = false;
 
+	/**
+	 * 끄기 신호(OnPlayFXFinished)의 시점을 바깥이 정하게 한다.
+	 * 끄면 카드가 중앙을 뜰 때 꺼지고, 켜면 NotifyPlayFXFinished 를 부를 때까지 기다린다 —
+	 * 월드의 공격·피격 몽타주가 카드보다 오래 갈 때 이쪽이다.
+	 * ⚠️ 상한은 카드의 파괴다. 신호가 안 오면 그때까지 켜져 있다(굳지는 않지만 늦다).
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Play")
+	bool bWaitForExternalPlayFXFinish = false;
+
 private:
 	void RefreshVisual();
+
+	/** 켜기 신호를 이미 쐈는가. 끄기가 한 번만 나가게 하는 짝 표시다. */
+	bool bPlayFXStarted = false;
+
+	/** 켤 때 실어 보낸 맥락. 끌 때 같은 값을 돌려주려고 붙잡아 둔다. */
+	FBGCardPlayContext PlayFXContext;
 
 	/** 현재 보간값을 실제 슬롯/렌더 트랜스폼에 적용한다. */
 	void ApplyMotionTransform();
@@ -696,15 +756,13 @@ private:
 	/** 판정 연출을 터뜨린다. 중앙에 서 있는 상태에서만 불린다(ReleaseHold / 도착 시점). */
 	void PlayResolvedFX(const FBGCardPlayContext& Context);
 
-	/** 중앙 도착을 기다리던 신호를 버린다. 연출이 새로 시작되거나 끝날 때. */
-	void ClearPendingPlaySignals();
 
 	/** 중앙에 도착한 순간, 날아오는 사이에 밀린 신호를 순서대로 소비한다. */
 	void ConsumePendingPlaySignals();
 
 	/**
 	 * 손패를 떠나기 시작할 때의 공통 처리(가시성 갈무리·입력 차단). 이미 떠나는 중이면 false.
-	 * BeginExit 와 BeginPlayExit 이 여기까지 같고, 갈라지는 것은 bHoldingAtCenter · bPlayExit 이다.
+	 * BeginExit 와 BeginPlayExit 이 여기까지 같고, 갈라지는 것은 Center.bHolding · bPlayExit 이다.
 	 */
 	bool BeginLeaveHand();
 
@@ -724,7 +782,10 @@ private:
 	void TickSecondaryMotion(float DeltaTime, const FVector2D& PositionBeforeTick);
 
 	/**
-	 * 커서가 **커지기 전** 카드 밖으로 나갔는지 보고 bHovered 를 갱신한다.
+	 * 커서가 카드 밖으로 나갔는지 보고 bHovered 를 갱신한다.
+	 * 기준이 축마다 다르다 — 가로는 **커지기 전** 폭, 세로는 **커진** 높이다
+	 * (이유는 bUnhoverAtOriginalBounds 주석 참고).
+	 *
 	 * 인자는 클램프하지 않은 로컬 좌표(-1~+1 이 커진 카드 전체)다 — 밖으로 나간 것을
 	 * 알아야 하므로 클램프된 HoverLocalNormalized 로는 판정할 수 없다.
 	 */
@@ -824,67 +885,22 @@ private:
 	float TargetAngle  = 0.f;
 	float CurrentScale = 1.f;
 
-	//	Pending 동안 남은 대기 시간.
-	float DealDelayRemaining = 0.f;
-
-	//	등장 맥락. 대기가 끝나 실제로 나타나는 시점에 BP 로 넘어간다.
-	FBGCardDealContext DealContext;
-
-	//	등장 연출이 자리에 도착할 때까지 true. 스냅으로 연출이 잘리는 것을 막는다.
-	bool bDealInProgress = false;
-
-	//	비행 시작점. 목표는 날아오는 중에도 바뀌므로(카드가 추가되면 자리가 밀린다) 시작점만 고정이다.
-	FVector2D DealStartPosition = FVector2D::ZeroVector;
-	float DealElapsed = 0.f;
-
-	//	비행이 실제로 겨누는 지점. TargetPosition 을 그대로 쓰지 않고 이 값이 쫓아간다.
-	//	⚠️ 목표를 매 프레임 그대로 읽으면 자리가 순간이동할 때마다 카드가 툭 튀어 궤적이 N 자로 꺾인다.
-	FVector2D DealAimPosition = FVector2D::ZeroVector;
-
-	//	호가 휘는 방향. 첫 비행 프레임에 한 번 정하고 유지한다.
-	//	⚠️ 매 프레임 다시 구하면 수직 성분의 부호가 넘어가는 순간 호가 180도 뒤집힌다.
-	FVector2D DealArcDirection = FVector2D::ZeroVector;
-	bool bDealAimInitialized = false;
-
-	//	stagger 로 숨기기 전의 가시성. Visible 로 하드코딩하면 WBP 의 히트테스트 설정을 덮어쓴다.
-	ESlateVisibility PreDealVisibility = ESlateVisibility::Visible;
+	//	덱 → 손패 비행, 그리고 손패 → 중앙 대기. 값의 뜻은 각 구조체 주석에 있다.
+	//	⚠️ 여기 있는 것은 런타임 상태뿐이다. 튜닝 값(위쪽 EditAnywhere)을 옮기면
+	//	   WBP 에 저장된 디자이너 값이 전부 기본값으로 돌아간다.
+	FBGCardDealRuntime   Deal;
+	FBGCardCenterRuntime Center;
 
 	//	퇴장은 고정 시간 보간이라 시작점을 기억해야 한다.
 	FVector2D ExitStartPosition = FVector2D::ZeroVector;
 	float ExitStartScale = 1.f;
 	float ExitElapsed = 0.f;
 
-	// ── 중앙 연출 내부 상태 ──
-	FVector2D PresentStartPosition = FVector2D::ZeroVector;
-	FVector2D PresentTargetPosition = FVector2D::ZeroVector;
-	float PresentStartScale = 1.f;
-	float PresentStartAngle = 0.f;
-	float PresentElapsed = 0.f;
-
-	//	중앙 대기가 끝난 뒤 날아갈 곳. 대기 중에는 아직 쓰이지 않는다.
-	FVector2D PendingExitPosition = FVector2D::ZeroVector;
-	float DwellRemaining = 0.f;
-
-	//	true 면 DwellRemaining 이 줄지 않는다 — ReleaseHold 가 올 때까지 무한 대기.
-	bool bHoldingAtCenter = false;
-
-	/**
-	 * 중앙에 도착하면 터뜨릴 판정 연출. 날아가는 중에 ReleaseHold 가 오면 여기 담긴다.
-	 * ⚠️ 도착 전에 쏘면 BP 연출이 날아가는 동안 재생되고 그 FinishDwell 이 Presenting 에서
-	 *    버려진다 — 카드가 DwellDuration 상한까지 멀뚱히 서 있게 된다.
-	 */
-	bool bPendingResolvedFX = false;
-	FBGCardPlayContext PendingResolvedContext;
-
-	//	중앙에 닿기 전에 도착한 FinishDwell. 상태로 거르지 않고 기억한다 —
-	//	조용히 깨지는 것보다 늦게라도 지켜지는 쪽이 추적 가능하다.
-	bool bDwellFinishRequested = false;
-
 	//	떠나기 전의 가시성. 손패로 되돌릴 때 복원한다.
 	ESlateVisibility PreLeaveVisibility = ESlateVisibility::Visible;
 
 	//	드래그로 실루엣이 되기 전의 가시성·불투명도. ⚠️ Visible / 1.0 으로 하드코딩하면
-	//	WBP 가 정한 히트테스트 설정을 덮어쓴다(PreDealVisibility 와 같은 이유).
+	//	WBP 가 정한 히트테스트 설정을 덮어쓴다(Deal.PreVisibility 와 같은 이유).
 	ESlateVisibility PreDragVisibility = ESlateVisibility::Visible;
 	float PreDragOpacity = 1.f;
 

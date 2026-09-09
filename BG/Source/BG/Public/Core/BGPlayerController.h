@@ -22,6 +22,10 @@ class UBGResolutionWidget;
 class ABGPlayerState;
 class UCameraShakeBase;
 
+//	기반 타입을 적어 두면 전방 선언이 된다 — 연출 단계 하나 때문에 GameState 헤더 전체를
+//	끌어오지 않는다(BGGameState.h 는 GAS·DT 까지 딸려 온다).
+enum class EBGCinematicStage : uint8;
+
 /**
  * 서버가 카드 사용을 거부한 사유.
  *
@@ -71,6 +75,13 @@ public:
 	// (SetHandWidget / OnRep_PlayerState) 에서 모두 바인딩을 시도한다.
 	UFUNCTION(BlueprintCallable, Category = "BG|UI")
 	void SetHandWidget(UBGHandWidget* InHandWidget);
+
+	/**
+	 * HUD 가 넘겨준 손패 위젯. 아직 안 넘겼으면 nullptr.
+	 * 몽타주를 재생하는 액터는 UI 를 모르므로, 연출 종료 통지가 여기를 거쳐 손패를 찾는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "BG|UI")
+	UBGHandWidget* GetHandWidget() const { return HandWidget; }
 
 	// ── 좌석 보드 UI 배선 ────────────────────────────────────────
 	//
@@ -226,7 +237,11 @@ public:
 
 	// 서버: 검증 통과 후 실제 처리. 카드가 구동할 GA 를 부여+발동한다.
 	void HandlePlayCard(int32 InstanceId, int32 TargetSeat);
-	
+
+	/** 카드 연출 큐. HUD·손패·GameplayCue 가 여기에 구독하거나 신호를 넣는다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Presentation")
+	class UBGPresentationDirector* GetPresentationDirector() const { return PresentationDirector; }
+
 protected:
 	// PlayerState 의 OnHandChanged 에 구독한다. 위젯/PlayerState 중 늦게 오는 쪽에 맞춰 재시도된다.
 	void TryBindHandDelegate();
@@ -250,10 +265,10 @@ protected:
 	void HandleWeightAttributeChanged(const struct FOnAttributeChangeData& Data);
 
 	/**
-	 * GameState 의 판정 통지를 구독한다. GameState 는 클라에 늦게 도착하므로
-	 * 손패 델리게이트와 마찬가지로 여러 진입점에서 재시도한다.
+	 * GameState 의 통지(판정 · 장비 · 카메라 샷 · 연출 단계 · 턴)를 한 번에 구독한다.
+	 * GameState 는 클라에 늦게 도착하므로 여러 진입점에서 재시도한다.
 	 */
-	void TryBindResolutionDelegate();
+	void TryBindGameStateDelegates();
 
 	/** 판정 결과가 도착했다. 게임 로직 타입 → UI 뷰모델 변환이 여기서 일어난다. */
 	void HandleCardResolved(const struct FBGCardResolution& Resolution);
@@ -264,8 +279,8 @@ protected:
 	 */
 	void HandleCardEquipped(int32 SeatIndex, FGameplayTag CardId);
 
-	// GameState 의 턴 상태 통지를 구독한다. 늦게 도착하므로 여러 진입점에서 재시도한다.
-	void TryBindTurnStateDelegate();
+	/** 이 판의 GameState. 아직 복제되지 않았으면 nullptr — 판 초반에는 흔한 일이다. */
+	class ABGGameState* GetBGGameState() const;
 
 	/** 페이즈·현재 좌석이 바뀌었다. 턴 패널과 좌석 보드를 다시 그린다. */
 	UFUNCTION()
@@ -273,6 +288,12 @@ protected:
 
 	// 내 차례가 아니게 됐다. 진행 중이던 대상 선택을 접고 중앙에 잡혀 있던 카드를 손패로 되돌린다.
 	void AbortActionIfTurnLost();
+
+	/**
+	 * 연출 단계가 바뀌었다. None 이면 카드 연출 전체가 끝난 것이므로 HUD 연출을 내린다.
+	 * ⚠️ 몽타주 종료가 아니라 여기가 끝이다 — 그때 내리면 피격·카메라 복귀 전에 풀린다.
+	 */
+	void HandleCinematicStageChangedForFX(EBGCinematicStage Stage, class ABGCharacter* Subject);
 
 
 	/** EBGDiceOutcome → EBGResolutionTier. 뷰 계층이 게임 enum 을 모르게 하는 경계다. */
@@ -310,9 +331,6 @@ protected:
 	float MaxShakeScale = 3.f;
 
 	// ── 연출 카메라 ────────────────────────────────────────────────
-
-	/** GameState 의 샷 상태를 구독한다. GameState 가 늦게 오므로 재시도된다. */
-	void TryBindCameraShotDelegate();
 
 	/** 샷이 바뀌었다 — 뷰타깃과 로컬 카메라 액터를 갱신한다. */
 	void HandleCameraShotChanged(const struct FBGCameraShot& Shot);
@@ -435,13 +453,6 @@ private:
 	UPROPERTY()
 	TWeakObjectPtr<class ABGGameState> BoundGameState;
 
-	//	카메라 샷 구독은 판정 구독과 시점이 다를 수 있어 따로 기억한다.
-	UPROPERTY()
-	TWeakObjectPtr<class ABGGameState> BoundCameraGameState;
-
-	//	턴 상태 통지를 구독한 GameState. 중복 구독을 막는다.
-	TWeakObjectPtr<class ABGGameState> BoundTurnGameState;
-
 	/** 지금 차례인 캐릭터에 CurrentTurn 스텐실을 찍는다. 내 차례면 아무도 찍지 않는다. */
 	void RefreshTurnHighlight();
 
@@ -455,6 +466,11 @@ private:
 	//	월드 캐릭터를 눌러 대상을 고르는 조준 모드.
 	UPROPERTY(VisibleAnywhere, Category = "BG|Target")
 	TObjectPtr<class UBGWorldTargetingComponent> WorldTargeting;
+
+	//	카드 연출의 순서를 정하는 곳. 연출 상태의 주인이라 판 내내 살아 있어야 한다 —
+	//	카드 위젯이 대신 들면 카드가 죽을 때 연출도 함께 끊긴다.
+	UPROPERTY(VisibleAnywhere, Category = "BG|Presentation")
+	TObjectPtr<class UBGPresentationDirector> PresentationDirector;
 
 	//	로컬 연출 카메라. 복제하지 않는다 — 각 클라가 자기 것을 스폰한다.
 	UPROPERTY()

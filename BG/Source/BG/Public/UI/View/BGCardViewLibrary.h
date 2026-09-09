@@ -74,4 +74,18 @@ public:
 	 *    UI 계층으로는 FBGCardFXStep 만 넘어간다.
 	 */
 	static TArray<FBGCardFXStep> MakeFXSteps(const FBGCardRow& Row, EBGResolutionTier Tier);
+
+	/**
+	 * 카드 대분류(장비/공격/마법)를 Row 에서 유도한다. 유도 규칙은 EBGCardCategory 주석 참고.
+	 *
+	 * MakeCardView 안에 있던 것을 꺼낸 것이다. 손패 뷰를 만들 수 없는 자리 —
+	 * 판정 통지처럼 카드 "종류" 만 아는 곳 — 에서도 같은 분류가 필요해졌기 때문이다.
+	 *
+	 * ⚠️ 여기 말고 다른 곳에서 다시 유도하지 말 것. 두 곳으로 갈라지면 카드 UI 와
+	 *    판정 UI 가 같은 카드를 다른 종류로 그린다.
+	 *
+	 * ⚠️ MakeFXSteps 와 같은 이유로 UFUNCTION 이 아니다 — FBGCardRow 는 게임 로직 타입이라
+	 *    BP 로 넘기지 않는다. BP 는 뷰에 실려 온 Category 를 읽는다.
+	 */
+	static EBGCardCategory DeriveCategory(const FBGCardRow& Row);
 };

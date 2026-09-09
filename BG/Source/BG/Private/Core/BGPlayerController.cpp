@@ -18,6 +18,7 @@
 #include "Core/BGPlayerState.h"
 #include "UI/View/BGSeatViewLibrary.h"
 #include "GameFramework/GameStateBase.h"      // PlayerArray
+#include "UI/Presentation/BGPresentationDirector.h"
 #include "UI/Widget/BGHandWidget.h"
 #include "UI/Widget/BGSeatBoardWidget.h"
 #include "UI/Widget/BGTurnPanelWidget.h"
@@ -50,6 +51,9 @@ ABGPlayerController::ABGPlayerController()
 	//	둘 다 보는 사람 화면에만 있는 것이라 복제하지 않는다. 서버에서는 스스로 틱을 끈다.
 	SeatInfoDisplay = CreateDefaultSubobject<UBGSeatInfoDisplayComponent>(TEXT("SeatInfoDisplay"));
 	WorldTargeting  = CreateDefaultSubobject<UBGWorldTargetingComponent>(TEXT("WorldTargeting"));
+
+	//	연출 큐도 화면 쪽이라 같이 복제하지 않는다.
+	PresentationDirector = CreateDefaultSubobject<UBGPresentationDirector>(TEXT("PresentationDirector"));
 }
 
 // ======================================================================================
@@ -78,9 +82,7 @@ void ABGPlayerController::SetHandWidget(UBGHandWidget* InHandWidget)
 
 	TryBindHandDelegate();
 	TryBindAttributeDelegates();
-	TryBindResolutionDelegate();
-	TryBindCameraShotDelegate();
-	TryBindTurnStateDelegate();
+	TryBindGameStateDelegates();
 	RefreshHandWidget();
 	UpdateHandInteractionLock();
 }
@@ -106,7 +108,7 @@ void ABGPlayerController::UpdateHandInteractionLock()
 
 	//	Play 페이즈에서는 사용 횟수가 남아 있어야 조작할 수 있다(GDD §5.2).
 	//	Discard 페이즈는 버리기라 한도와 무관하다.
-	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	const ABGGameState* GS = GetBGGameState();
 	const int32 MySeat = GetMySeatIndex();
 
 	//	1회성 카드(암살자)는 한도를 쓰지 않으므로 한도가 찼어도 낼 수 있다.
@@ -219,16 +221,14 @@ void ABGPlayerController::OnRep_PlayerState()
 	// 클라: PlayerState 가 이제야 도착했다. 여기서 구독하지 않으면 첫 손패를 놓친다.
 	TryBindHandDelegate();
 	TryBindAttributeDelegates();
-	TryBindResolutionDelegate();
-	TryBindCameraShotDelegate();
-	TryBindTurnStateDelegate();
+	TryBindGameStateDelegates();
 	RefreshHandWidget();
 }
 
 void ABGPlayerController::Destroyed()
 {
 	//	판이 도는 중이면 폰을 떼어 내 월드에 남긴다. Super 가 폰을 파괴하기 전 마지막 기회다.
-	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	const ABGGameState* GS = GetBGGameState();
 	APawn* Current = GetPawn();
 
 	if (HasAuthority() && GS && GS->IsMatchRunning() && Current)
@@ -292,28 +292,7 @@ void ABGPlayerController::SetResolutionWidget(UBGResolutionWidget* InResolutionW
 		ResolutionWidget->HideResolution();
 	}
 
-	TryBindResolutionDelegate();
-}
-
-void ABGPlayerController::TryBindResolutionDelegate()
-{
-	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
-	if (!GS || BoundGameState.Get() == GS)
-	{
-		return;   // GameState 가 아직 복제되지 않았거나 이미 구독 중
-	}
-
-	if (ABGGameState* Previous = BoundGameState.Get())
-	{
-		Previous->OnCardResolved.RemoveAll(this);
-		Previous->OnCardEquipped.RemoveAll(this);
-	}
-
-	GS->OnCardResolved.AddUObject(this, &ABGPlayerController::HandleCardResolved);
-	GS->OnCardEquipped.AddUObject(this, &ABGPlayerController::HandleCardEquipped);
-	BoundGameState = GS;
-
-	UE_LOG(LogBGCard, Verbose, TEXT("[PC] 판정 결과 통지 구독"));
+	TryBindGameStateDelegates();
 }
 
 EBGResolutionTier ABGPlayerController::ToResolutionTier(EBGDiceOutcome Outcome)
@@ -380,7 +359,7 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 			: Resolution.CardId.GetTagName().ToString();
 
 		FString SeatName = FString::Printf(TEXT("좌석 %d"), Resolution.SeatIndex);
-		if (const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+		if (const ABGGameState* GS = GetBGGameState())
 		{
 			if (const ABGPlayerState* SeatPS = GS->GetPlayerStateBySeat(Resolution.SeatIndex))
 			{
@@ -468,9 +447,17 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 		? Row->DisplayName
 		: FText::FromName(Resolution.CardId.GetTagName());
 
+	//	카드 종류(장비/공격/마법). 손패 뷰와 같은 함수로 유도한다 —
+	//	여기서 TypeTag 를 다시 읽으면 카드 UI 와 판정 UI 가 같은 카드를 다르게 그린다.
+	//	Row 가 없으면 기본값(마법)이 남는다. DT 에 없는 카드라 어차피 이름도 태그로 뜬다.
+	if (Row)
+	{
+		View.Category = UBGCardViewLibrary::DeriveCategory(*Row);
+	}
+
 	//	좌석 이름. 좌석 뷰를 거치지 않고 PlayerState 를 직접 찾는다 —
 	//	좌석 보드가 없어도 판정 표시는 동작해야 한다.
-	if (const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+	if (const ABGGameState* GS = GetBGGameState())
 	{
 		if (const ABGPlayerState* SeatPS = GS->GetPlayerStateBySeat(Resolution.SeatIndex))
 		{
@@ -578,27 +565,6 @@ void ABGPlayerController::EnsureCinematicCamera()
 	}
 }
 
-void ABGPlayerController::TryBindCameraShotDelegate()
-{
-	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
-	if (!GS || BoundCameraGameState.Get() == GS)
-	{
-		return;
-	}
-
-	if (ABGGameState* Previous = BoundCameraGameState.Get())
-	{
-		Previous->OnCameraShotChanged.RemoveAll(this);
-	}
-
-	GS->OnCameraShotChanged.AddUObject(this, &ABGPlayerController::HandleCameraShotChanged);
-	BoundCameraGameState = GS;
-
-	//	구독보다 샷이 먼저 시작됐을 수 있다(늦게 접속). 현재 상태를 즉시 한 번 적용한다 —
-	//	이게 "이벤트가 아니라 상태" 로 둔 것의 값어치다.
-	HandleCameraShotChanged(GS->GetCameraShot());
-}
-
 void ABGPlayerController::HandleCameraShotChanged(const FBGCameraShot& Shot)
 {
 	if (!IsLocalController())
@@ -608,7 +574,7 @@ void ABGPlayerController::HandleCameraShotChanged(const FBGCameraShot& Shot)
 
 	//	연출 속도 설정은 GameState 가 들고 있다 — 세 구간을 한곳에서 조율하기 위해서다.
 	//	EditDefaultsOnly(CDO) 값이라 클라에서도 복제 없이 그대로 읽힌다.
-	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	const ABGGameState* GS = GetBGGameState();
 
 	if (!Shot.IsActive())
 	{
@@ -799,21 +765,59 @@ void ABGPlayerController::CollectGameplayHudWidgets(TArray<UWidget*>& OutWidgets
 	OutWidgets.Append({ HandWidget, SeatBoardWidget, TurnPanelWidget });
 }
 
-void ABGPlayerController::TryBindTurnStateDelegate()
+ABGGameState* ABGPlayerController::GetBGGameState() const
 {
-	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
-	if (!GS || BoundTurnGameState.Get() == GS)
+	return GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+}
+
+void ABGPlayerController::TryBindGameStateDelegates()
+{
+	//	GameState 는 PlayerController 보다 늦게 복제된다 — 여러 진입점에서 재시도하고,
+	//	같은 것을 다시 구독하지 않도록 여기서 한 번만 거른다.
+	ABGGameState* GS = GetBGGameState();
+	if (!GS || BoundGameState.Get() == GS)
 	{
 		return;
 	}
 
-	GS->OnTurnStateChanged.AddUniqueDynamic(this, &ABGPlayerController::HandleTurnStateChanged);
-	BoundTurnGameState = GS;
+	//	판이 갈아치워진 경우(시드 전환)다. 옛 GameState 의 구독을 끊지 않으면 통지가 겹친다.
+	if (ABGGameState* Previous = BoundGameState.Get())
+	{
+		Previous->OnCardResolved.RemoveAll(this);
+		Previous->OnCardEquipped.RemoveAll(this);
+		Previous->OnCameraShotChanged.RemoveAll(this);
+		Previous->OnCinematicStageChanged.RemoveAll(this);
+	}
 
-	//	구독 전에 이미 판이 시작됐을 수 있다 — 지금 상태로 한 번 맞춘다.
+	GS->OnCardResolved.AddUObject(this, &ABGPlayerController::HandleCardResolved);
+	GS->OnCardEquipped.AddUObject(this, &ABGPlayerController::HandleCardEquipped);
+	GS->OnCameraShotChanged.AddUObject(this, &ABGPlayerController::HandleCameraShotChanged);
+	GS->OnCinematicStageChanged.AddUObject(this, &ABGPlayerController::HandleCinematicStageChangedForFX);
+	GS->OnTurnStateChanged.AddUniqueDynamic(this, &ABGPlayerController::HandleTurnStateChanged);
+
+	BoundGameState = GS;
+
+	//	⚠️ 구독보다 판이 먼저 시작됐을 수 있다(늦게 접속). 상태로 둔 것들은 지금 한 번
+	//	   맞춰 줘야 첫 통지가 올 때까지 화면이 비어 있지 않다.
+	HandleCameraShotChanged(GS->GetCameraShot());
 	HandleTurnStateChanged();
 
-	UE_LOG(LogBGCard, Verbose, TEXT("[PC] 턴 상태 통지 구독"));
+	UE_LOG(LogBGCard, Verbose, TEXT("[PC] GameState 통지 구독"));
+}
+
+void ABGPlayerController::HandleCinematicStageChangedForFX(EBGCinematicStage Stage, ABGCharacter* Subject)
+{
+	if (Stage != EBGCinematicStage::None)
+	{
+		return;   // 아직 연출 중이다. 단계가 넘어가는 것뿐이라 화면 연출은 그대로 둔다.
+	}
+
+	//	여기서야 카메라가 제자리로 돌아오고 손패가 다시 열린다 — 그것이 월드 연출의 끝이다.
+	//	여기서 끝나는지는 디렉터가 정한다. 다른 구독자가 아직 표를 쥐고 있을 수 있다.
+	if (PresentationDirector)
+	{
+		PresentationDirector->NotifyWorldFXFinished();
+	}
 }
 
 void ABGPlayerController::HandleTurnStateChanged()
@@ -838,7 +842,7 @@ void ABGPlayerController::RefreshTurnHighlight()
 		return;
 	}
 
-	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	const ABGGameState* GS = GetBGGameState();
 	const ABGPlayerState* ViewerState = GetPlayerState<ABGPlayerState>();
 	const int32 CurrentSeat = GS ? GS->GetCurrentSeat() : INDEX_NONE;
 	const int32 ViewerSeat  = ViewerState ? ViewerState->GetSeatIndex() : INDEX_NONE;
@@ -930,10 +934,8 @@ void ABGPlayerController::RefreshSeatBoard()
 	//	늦게 도착하는 것들에 대한 구독 재시도. 둘 다 이미 걸려 있으면 즉시 빠져나온다.
 	//	  · GameState — 클라에서는 PlayerState 보다 늦게 올 수 있다. 놓치면 판정이 영영 안 뜬다.
 	//	  · 폰의 ASC  — 손패보다 늦게 스폰되면 보정 구독이 비어, 장비를 껴도 확률이 안 바뀐다.
-	TryBindResolutionDelegate();
-	TryBindCameraShotDelegate();
+	TryBindGameStateDelegates();
 	TryBindAttributeDelegates();
-	TryBindTurnStateDelegate();
 }
 
 // ======================================================================================
@@ -969,7 +971,7 @@ void ABGPlayerController::RefreshTurnPanel()
 		return;
 	}
 
-	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	const ABGGameState* GS = GetBGGameState();
 	const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
 
 	FBGTurnView View;
@@ -1257,7 +1259,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	// 클라의 UI 표시는 힌트일 뿐이므로 서버가 반드시 다시 본다.
 	// TODO: 사거리(WeaponRange vs 거리)·턴당 BANG 한도(BangLimit)는 아직 없다.
 	{
-		const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+		const ABGGameState* GS = GetBGGameState();
 		const int32 MySeat = GetMySeatIndex();
 
 		if (GBGIgnoreTurnOrder == 0 && (!GS || !GS->CanSeatPlayCards(MySeat)))
@@ -1501,7 +1503,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		//	     Multicast_CardEquipped       — UI. 남의 화면에 관전 카드를 세운다.
 		//	     PlayResolvedCardPresentation — 월드. Niagara · GameplayCue 를 재생한다.
 		//	   합쳐 놓고 보면 당연하지만, 각자 다른 브랜치에서 같은 자리에 들어와 충돌했다.
-		if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+		if (ABGGameState* MutableGS = GetBGGameState())
 		{
 			//	이게 없으면 남의 화면에서는 장비가 아무 연출 없이 장비창에만 슬쩍 나타난다.
 			MutableGS->Multicast_CardEquipped(EquipPS->GetSeatIndex(), CardId);
@@ -1536,7 +1538,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	//	결과는 Resolution.* 태그로, 등급별 수치는 EventMagnitude 로 실어 보낸다.
 	{
 		UBGDiceComponent* Dice = UBGDiceComponent::Get(this);
-		const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+		const ABGGameState* GS = GetBGGameState();
 
 		if (Dice && CardRow)
 		{
@@ -1650,7 +1652,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			Resolution.bForced = bForcedOutcome;
 			Resolution.Weights = Weights;
 
-			if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+			if (ABGGameState* MutableGS = GetBGGameState())
 			{
 				MutableGS->Multicast_CardResolved(Resolution);
 			}
@@ -1764,7 +1766,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 		if (GrantCount > 0)
 		{
-			if (ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+			if (ABGGameState* GS = GetBGGameState())
 			{
 				//	어떤 카드를 주는지도, 그게 일회용인지도 여기서 정하지 않는다 —
 				//	카드는 설정이, 일회용 여부는 DT 의 Card.Trait.Ephemeral 이 정한다.
@@ -1814,7 +1816,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 	if (MyPS)
 	{
-		if (const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+		if (const ABGGameState* GS = GetBGGameState())
 		{
 			UE_LOG(LogBGCard, Log, TEXT("[Turn] 좌석 %d 카드 사용 %d / %d"),
 				GetMySeatIndex(), MyPS->GetCardsUsedThisTurn(), GS->GetCardUseLimitForSeat(GetMySeatIndex()));
@@ -1827,7 +1829,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	//	연출이 켜지든 말든 여기까지의 결과는 완전히 동일하다.
 	//	GameState가 DT_BGCardFX와 Card.Trait.Cinematic을 보고
 	//  단발 Cue 또는 시네마틱 Primary/Secondary Cue를 선택한다. 여기서는 연출을 직접 제어하지 않는다.
-	if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+	if (ABGGameState* MutableGS = GetBGGameState())
 	{
 		MutableGS->PlayResolvedCardPresentation(
 			Cast<ABGCharacter>(GetPawn()),
@@ -1848,13 +1850,13 @@ int32 ABGPlayerController::GetMySeatIndex() const
 
 bool ABGPlayerController::IsMyTurnToPlay() const
 {
-	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	const ABGGameState* GS = GetBGGameState();
 	return GS && GS->CanSeatPlayCards(GetMySeatIndex());
 }
 
 bool ABGPlayerController::IsMyTurnToDiscard() const
 {
-	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	const ABGGameState* GS = GetBGGameState();
 	return GS && GS->CanSeatDiscard(GetMySeatIndex());
 }
 
@@ -1865,7 +1867,7 @@ void ABGPlayerController::RequestEndTurn()
 
 void ABGPlayerController::ServerRequestEndTurn_Implementation()
 {
-	if (ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+	if (ABGGameState* GS = GetBGGameState())
 	{
 		//	좌석은 서버가 가진 PlayerState 에서 읽는다 — 클라가 보낸 값을 믿지 않는다.
 		GS->RequestEndTurn(GetMySeatIndex());
@@ -1879,7 +1881,7 @@ bool ABGPlayerController::ServerRequestDiscardCard_Validate(int32 InstanceId)
 
 void ABGPlayerController::ServerRequestDiscardCard_Implementation(int32 InstanceId)
 {
-	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	ABGGameState* GS = GetBGGameState();
 	const int32 MySeat = GetMySeatIndex();
 
 	//	Discard 페이즈 + 자기 턴에서만 허용. 아니면 손패를 마음대로 버릴 수 있게 된다.
@@ -1898,7 +1900,7 @@ void ABGPlayerController::ServerSendChatMessage_Implementation(const FString& Me
 	ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
 	const FString SenderName = PS ? PS->GetPlayerName() : TEXT("?Who?");
 	
-	if (ABGGameState* GS = GetWorld()->GetGameState<ABGGameState>())
+	if (ABGGameState* GS = GetBGGameState())
 	{
 		GS->Multicast_ChatMessage(SenderName, Message);
 	}
@@ -1939,7 +1941,7 @@ void ABGPlayerController::ConsumeCard(int32 InstanceId)
 	}
 
 	// 버린 패로. DiscardTop 갱신과 DeckCount/DiscardCount 재계산이 함께 처리된다.
-	if (ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+	if (ABGGameState* GS = GetBGGameState())
 	{
 		GS->PushToDiscard(Removed);
 	}

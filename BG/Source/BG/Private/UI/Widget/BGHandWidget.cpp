@@ -3,6 +3,8 @@
 #include "UI/Widget/BGHandWidget.h"
 #include "UI/Widget/BGCardWidget.h"
 #include "UI/Widget/BGPlayZoneWidget.h"
+#include "UI/Presentation/BGPresentationDirector.h"
+#include "Core/BGPlayerController.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -267,6 +269,10 @@ UBGCardWidget* UBGHandWidget::CreateCardWidget(const FBGCardView& Card)
 	// SetOwningHand 는 SetCardView 보다 먼저. 드래그 시작 시 핸드를 알아야 한다.
 	CardWidget->SetOwningHand(this);
 	CardWidget->SetCardView(Card);
+
+	//	연출 신호를 밖으로 중계한다. 해제는 카드가 파괴되면서 함께 사라진다.
+	CardWidget->OnPlayFXStarted.AddDynamic(this, &UBGHandWidget::HandleCardPlayFXStarted);
+	CardWidget->OnPlayFXFinished.AddDynamic(this, &UBGHandWidget::HandleCardPlayFXFinished);
 
 	//	잠긴 동안 손패가 갱신될 수 있다(서버 복제와 대상 선택은 동시에 일어난다).
 	//	새 위젯에도 잠금을 그대로 물려주지 않으면 갱신 한 번에 잠금이 풀린다.
@@ -705,6 +711,11 @@ void UBGHandWidget::SetPlayZoneAnchor(const FVector2D& InLocalPosition)
 	PlayZoneAnchor = InLocalPosition;
 }
 
+void UBGHandWidget::SetTargetingAnchor(const FVector2D& InLocalPosition)
+{
+	TargetingAnchor = InLocalPosition;
+}
+
 void UBGHandWidget::SetPlayZoneWidget(UBGPlayZoneWidget* InPlayZone)
 {
 	PlayZoneWidget = InPlayZone;
@@ -782,6 +793,19 @@ FVector2D UBGHandWidget::GetPlayZoneAnchor() const
 		GetLayoutHeight() + PlayZoneAnchorFallback.Y);
 }
 
+FVector2D UBGHandWidget::GetTargetingAnchor() const
+{
+	//	못 박아 준 자리가 있으면 그게 최우선이다(SetPlayZoneAnchor 와 같은 순서).
+	if (TargetingAnchor.IsSet())
+	{
+		return *TargetingAnchor;
+	}
+
+	//	기본은 플레이 존 중앙에서 오프셋만큼 비킨 자리다. 절대 좌표로 두지 않는 이유는
+	//	GetPlayZoneAnchor 와 같다 — 존이 움직이거나 해상도가 바뀌면 이 카드만 남는다.
+	return GetPlayZoneAnchor() + TargetingAnchorOffset;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════════════
 //  틱 — 카드들의 보간을 여기서 한 번에 돌린다.
 //
@@ -792,7 +816,7 @@ FVector2D UBGHandWidget::GetPlayZoneAnchor() const
 //	한 프레임에 흘려보낼 시간의 상한(초).
 //
 //	포커스를 잃으면 슬레이트가 틱을 줄이거나 아예 멈춘다. 돌아오는 순간 그동안 쌓인
-//	시간이 **한 프레임에 몰려서** 들어오는데, 그대로 흘리면 DealElapsed 가 통째로 뛰어
+//	시간이 **한 프레임에 몰려서** 들어오는데, 그대로 흘리면 Deal.Elapsed 가 통째로 뛰어
 //	카드가 호 중간을 건너뛰고, InterpTo 계열은 큰 델타에서 목표로 스냅해 궤적이 무너진다.
 //
 //	⚠️ 자르는 것은 **여기 한 곳뿐**이다. 카드 이동 · "내가 냈다" 표시 만료 · 중앙 대기
@@ -989,20 +1013,26 @@ void UBGHandWidget::NotifyCardDroppedOnPlayZone(
 	//	   지금은 GetPlayZoneAnchor 가 존의 중앙을 직접 읽으므로 두 경로가 같은 자리다.
 	//	   (드롭 지오메트리는 그 존의 캐시 지오메트리와 같은 것이라 잃는 정보가 없다.)
 
-	//	⚠️ 대상 지정 카드는 중앙 연출을 지금 시작하지 않는다. 좌석을 고르는 동안 중앙에
-	//	   박혀 서 있으면 아직 낸 것도 아닌데 화면 한복판을 차지한다 — 손패에 그대로 두고,
-	//	   서버가 확정해 손패에서 빠질 때 BeginExitFor 가 중앙 연출과 디졸브를 태운다.
-	if (Canvas && !Card.bNeedsTarget)
+	//	대상 지정 카드(뱅 등)도 카드를 세운다 — 좌석을 고르는 동안 무엇을 내는 중인지
+	//	화면에 남아 있어야 한다. 다만 아직 확정된 카드가 아니므로 낸 카드와 같은 자리에
+	//	두지 않는다: GetTargetingAnchor 가 플레이 존을 비켜선 자리를 준다.
+	//	취소되면 HandleTargetSelectionCancelled → ReturnHeldCardToHand 로 손패에 돌아간다.
+	//
+	//	bPresentCardWhileTargeting 을 끄면 예전처럼 손패에 그대로 두고, 서버가 확정해
+	//	손패에서 빠질 때 BeginExitFor 가 중앙 연출과 디졸브를 태운다.
+	const bool bTargeting = Card.bNeedsTarget;
+	if (Canvas && (!bTargeting || bPresentCardWhileTargeting))
 	{
 		//	커서를 놓은 지점에서 이어받는다. 드래그 비주얼이 있던 자리와 같아야 끊겨 보이지 않는다.
 		BeginPlayPresentationAt(Card.InstanceId,
-			Canvas->GetCachedGeometry().AbsoluteToLocal(DropScreenPosition));
+			Canvas->GetCachedGeometry().AbsoluteToLocal(DropScreenPosition), bTargeting);
 	}
 
 	NotifyCardPlayRequested(Card);
 }
 
-bool UBGHandWidget::BeginPlayPresentationAt(int32 InstanceId, const FVector2D& LocalStartPosition)
+bool UBGHandWidget::BeginPlayPresentationAt(int32 InstanceId, const FVector2D& LocalStartPosition,
+	bool bTargeting)
 {
 	for (int32 Index = 0; Index < CardWidgets.Num(); ++Index)
 	{
@@ -1025,7 +1055,12 @@ bool UBGHandWidget::BeginPlayPresentationAt(int32 InstanceId, const FVector2D& L
 			CanvasSlot->SetZOrder(LeavingCardZOrder);
 		}
 
-		CardWidget->BeginPlayExit(GetPlayZoneAnchor(), GetDiscardAnchor());
+		//	⚠️ 대상 선택 중에는 다른 자리에 세운다. 여기서 GetPlayZoneAnchor 를 쓰면 아직
+		//	   내지도 않은 카드가 판 한복판에 서서, 좌석을 고르는 동안 보드를 가린다.
+		CardWidget->BeginPlayExit(
+			bTargeting ? GetTargetingAnchor() : GetPlayZoneAnchor(),
+			GetDiscardAnchor());
+
 		OutgoingWidgets.Add(CardWidget);
 
 		RelayoutCards();
@@ -1110,12 +1145,76 @@ void UBGHandWidget::ReleaseHeldCard(UBGCardWidget* CardWidget, const FBGCardPlay
 		return;
 	}
 
+	//	⚠️ ReleaseHold 보다 **먼저**다. 대상 선택 중인 카드는 보드를 가리지 않으려고
+	//	   비켜선 자리에 서 있는데, 확정 뒤에도 거기 있으면 낸 사람 화면에서만 카드가
+	//	   옆에 서고 남의 화면(ShowSpectatorCard)에서는 중앙에 선다.
+	CardWidget->MoveHoldTo(GetPlayZoneAnchor());
+
 	//	빈 칸(연출 원형)은 카드가 스스로 채워 돌려준다. 그 결과를 관찰자에게 흘린다 —
 	//	카드가 받은 것과 바깥이 받는 것이 어긋나면 추적이 매우 어렵다.
 	const FBGCardPlayContext Resolved = CardWidget->ReleaseHold(Context);
 
 	HeldCards.Remove(CardWidget->GetInstanceId());
 	OnCardPlayResolved.Broadcast(CardWidget->GetInstanceId(), Resolved);
+}
+
+void UBGHandWidget::HandleCardPlayFXStarted(UBGCardWidget* Card, const FBGCardPlayContext& Context)
+{
+	//	디렉터가 연출의 주인이다. 여기서는 "카드가 중앙에 서서 터졌다"만 알린다.
+	ActivePlayFXCard = Card;
+	if (UBGPresentationDirector* Director = GetPresentationDirector())
+	{
+		Director->EnqueueCardPlay(Context);
+	}
+
+	//	거르지 않고 그대로 흘린다. "공격일 때만" 같은 판단은 구독자(HUD)가 한다.
+	OnCardPlayFXStarted.Broadcast(Card, Context);
+}
+
+UBGPresentationDirector* UBGHandWidget::GetPresentationDirector()
+{
+	ABGPlayerController* PC = GetOwningPlayer<ABGPlayerController>();
+	UBGPresentationDirector* Director = PC ? PC->GetPresentationDirector() : nullptr;
+	if (!Director)
+	{
+		return nullptr;   // 아직 PlayerController 가 붙기 전이다.
+	}
+
+	//	연출 종료는 디렉터가 정한다 — 손패는 그 결정을 카드에 전달만 한다.
+	//	AddUniqueDynamic 이라 여러 번 불려도 구독은 하나다.
+	Director->OnPresentationFinished.AddUniqueDynamic(
+		this, &UBGHandWidget::HandlePresentationFinished);
+
+	return Director;
+}
+
+void UBGHandWidget::HandlePresentationFinished(const FBGPresentationRequest& Request)
+{
+	if (UBGCardWidget* Card = ActivePlayFXCard.Get())
+	{
+		Card->NotifyPlayFXFinished();
+	}
+	ActivePlayFXCard = nullptr;
+}
+
+void UBGHandWidget::HandleCardPlayFXFinished(UBGCardWidget* Card, const FBGCardPlayContext& Context)
+{
+	if (ActivePlayFXCard == Card)
+	{
+		ActivePlayFXCard = nullptr;
+	}
+
+	OnCardPlayFXFinished.Broadcast(Card, Context);
+}
+
+void UBGHandWidget::NotifyCardPlayFXFinished()
+{
+	//	월드 연출이 끝났다는 것뿐이다. 실제로 끝낼지는 디렉터가 정한다 —
+	//	다른 구독자가 아직 표를 쥐고 있을 수 있다.
+	if (UBGPresentationDirector* Director = GetPresentationDirector())
+	{
+		Director->NotifyWorldFXFinished();
+	}
 }
 
 void UBGHandWidget::NotifyCardResolved(const FBGCardPlayContext& Context, int32 InstanceId)

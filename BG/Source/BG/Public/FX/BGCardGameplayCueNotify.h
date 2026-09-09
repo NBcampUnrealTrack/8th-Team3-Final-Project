@@ -47,6 +47,13 @@ private:
 		bool bAllowSpawnDelay = true);
 	void FinishCueRemoval();
 
+	/**
+	 * 로컬 PlayerController → 손패 순으로 찾아 "카드 연출 끝" 을 알린다.
+	 * ⚠️ 시네마틱 카드는 여기로 오지 않는다 — 단계마다 Cue 가 떨어져 중간에 꺼진다.
+	 *    그쪽 끝은 PlayerController 의 연출 단계 통지(Stage == None)가 맡는다.
+	 */
+	void NotifyHandPlayFXFinished();
+
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> SpawnedEffect;
 

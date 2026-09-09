@@ -64,6 +64,19 @@ struct FBGResolutionView
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution")
 	FText CardName;
 
+	/**
+	 * 카드 대분류(장비/공격/마법). HUD 가 카드 종류에 따라 다른 연출을 고를 때 쓴다.
+	 *
+	 * 카드 위젯은 자기 뷰(FBGCardView::Category)에서 같은 값을 읽는다 — 유도가 한 곳
+	 * (UBGCardViewLibrary::DeriveCategory)이므로 둘이 갈리지 않는다.
+	 *
+	 * ⚠️ 이 값이 여기 실려 있어야 **카드 위젯이 HUD 를 건드릴 이유가 없어진다.**
+	 *    카드가 HUD 를 직접 부르면 카드가 퇴장 연출 끝에 파괴될 때 HUD 가 되돌아오지
+	 *    못한 채로 굳는다 — 카드는 판마다 생겼다 사라지고 HUD 는 계속 살아 있다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution")
+	EBGCardCategory Category = EBGCardCategory::Magic;
+
 	/** 누가 썼는가 — 좌석 번호. 모르면 INDEX_NONE. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution")
 	int32 SeatIndex = INDEX_NONE;

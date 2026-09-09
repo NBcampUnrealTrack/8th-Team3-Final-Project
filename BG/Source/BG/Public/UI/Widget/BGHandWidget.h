@@ -6,6 +6,7 @@
 #include "Blueprint/UserWidget.h"
 #include "UI/View/BGCardView.h"
 #include "UI/View/BGCardFXTypes.h"   // FBGCardDealContext / FBGCardPlayContext
+#include "UI/Widget/BGCardWidget.h"  // FOnBGCardPlayFXStarted/Finished — 카드의 신호를 그대로 중계한다
 #include "BGHandWidget.generated.h"
 
 class UBGCardWidget;
@@ -106,6 +107,27 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "BG|Hand|FX")
 	FOnBGCardPlayResolvedDelegate OnCardPlayResolved;
 
+	/**
+	 * 카드가 중앙에서 실제로 연출을 터뜨리는 순간. HUD 연출은 여기 붙인다.
+	 *
+	 * ⚠️ 위의 OnCardPlayResolved 와 다르다. 저쪽은 판정 확정(논리)이라 내가 낸 카드에만
+	 *    나가고, 카드가 날아가는 중이면 연출보다 최대 PresentDuration 만큼 빠르다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "BG|Hand|FX")
+	FOnBGCardPlayFXStarted OnCardPlayFXStarted;
+
+	/** 위 연출을 끌 시점. 켜졌다면 반드시 한 번 온다(카드가 파괴돼도). */
+	UPROPERTY(BlueprintAssignable, Category = "BG|Hand|FX")
+	FOnBGCardPlayFXFinished OnCardPlayFXFinished;
+
+	/**
+	 * 월드의 공격·피격 연출이 끝났다 — 연출을 쥔 카드에 끄기 신호를 보낸다.
+	 * 부르는 쪽이 카드 위젯을 몰라도 되도록 손패가 대신 찾아 준다.
+	 * ⚠️ 카드 쪽 bWaitForExternalPlayFXFinish 를 켜야 이 호출이 시점을 정한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Hand|FX")
+	void NotifyCardPlayFXFinished();
+
 	/** 플레이 존이 드롭을 받으면 호출한다. 직접 호출로 드래그 없이 테스트할 수도 있다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Hand")
 	void NotifyCardPlayRequested(const FBGCardView& Card);
@@ -164,6 +186,18 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Hand|Motion")
 	void SetPlayZoneAnchor(const FVector2D& InLocalPosition);
+
+	/**
+	 * 대상 선택 중인 카드가 설 자리를 못 박는다(손패 패널 로컬 좌표).
+	 *
+	 * 보통은 부를 필요가 없다 — 기본값은 플레이 존 중앙 + TargetingAnchorOffset 이라
+	 * 오프셋만 만져도 자리가 잡힌다. HUD 안의 특정 슬롯에 정확히 세워야 할 때만 쓴다.
+	 *
+	 * ⚠️ SetPlayZoneAnchor 와 같은 주의 — 한 번 넣으면 **고정**이다. 플레이 존이 움직여도,
+	 *    해상도가 바뀌어도 따라가지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Hand|Motion")
+	void SetTargetingAnchor(const FVector2D& InLocalPosition);
 
 	/**
 	 * 중앙 연출의 기준이 될 플레이 존 위젯을 지정한다.
@@ -473,6 +507,32 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion")
 	FVector2D PlayZoneAnchorFallback = FVector2D(0.f, -260.f);
 
+	// ── 대상 선택 중인 카드 (뱅 등) ──────────────────────────────────
+	//
+	//	대상 좌석을 고르는 동안 그 카드를 어디에 세울 것인가.
+	//	카드를 손패에 그대로 두면 무엇을 내는 중인지 화면에서 사라지고, 그렇다고 플레이 존
+	//	한복판에 세우면 아직 내지도 않은 카드가 판을 가린다 — 그래서 자리를 따로 둔다.
+
+	/**
+	 * 대상 선택 중에 카드를 세울 것인가.
+	 *
+	 * 끄면 카드는 손패에 그대로 남고, 서버가 확정해 손패에서 빠질 때 비로소 중앙 연출을 탄다
+	 * (BeginExitFor). 화면을 최대한 비우고 싶을 때 쓴다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion|Targeting")
+	bool bPresentCardWhileTargeting = true;
+
+	/**
+	 * 대상 선택 중인 카드가 설 자리 — **플레이 존 중앙 기준 오프셋**이다.
+	 * 0 이면 낸 카드와 같은 자리에 선다. Y 를 키우면 아래로, X 를 줄이면 왼쪽으로 간다.
+	 *
+	 * 오프셋으로 둔 이유: 절대 좌표로 잡으면 플레이 존이 움직였을 때 따라가지 않아,
+	 * 해상도가 다른 화면에서 카드만 엉뚱한 곳에 선다(PlayZoneAnchor 주석과 같은 이유).
+	 * 자리를 완전히 못 박아야 하면 SetTargetingAnchor 를 쓴다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Hand|Motion|Targeting")
+	FVector2D TargetingAnchorOffset = FVector2D(-420.f, 180.f);
+
 	/**
 	 * 관전 카드(ShowSpectatorCard)가 중앙에 서기 전에 출발하는 자리. 중앙 기준 오프셋이다.
 	 *
@@ -508,6 +568,26 @@ private:
 	/** 카드 위젯 하나를 만들어 패널에 붙인다. 슬롯 설정까지 여기서 끝낸다. */
 	UBGCardWidget* CreateCardWidget(const FBGCardView& Card);
 
+	// ── 카드 연출 신호 중계 ──────────────────────────────────────────
+	//	CreateCardWidget 에서 카드마다 바인딩한다 — 손패 카드와 관전 카드가 모두 거길 지난다.
+	//	HUD 가 카드에 직접 구독하지 않는 이유는 수명이다: 카드는 판마다 생겼다 사라진다.
+
+	UFUNCTION()
+	void HandleCardPlayFXStarted(UBGCardWidget* Card, const FBGCardPlayContext& Context);
+
+	UFUNCTION()
+	void HandleCardPlayFXFinished(UBGCardWidget* Card, const FBGCardPlayContext& Context);
+
+	/** 연출 큐. 처음 찾을 때 종료 통지 구독도 함께 건다. 없으면 nullptr(PC 가 아직 없음). */
+	class UBGPresentationDirector* GetPresentationDirector();
+
+	/** 디렉터가 연출을 끝냈다 — 중앙에 서 있던 카드에 전달한다. */
+	UFUNCTION()
+	void HandlePresentationFinished(const struct FBGPresentationRequest& Request);
+
+	/** 지금 화면 연출을 쥔 카드. 소유가 아니라 지목이므로 약참조다. */
+	TWeakObjectPtr<UBGCardWidget> ActivePlayFXCard;
+
 	/** 슬롯 정렬과 회전 축을 CardAlignment 로 맞춘다. 둘은 항상 같아야 한다. */
 	void ApplyCardAlignment(UBGCardWidget* CardWidget) const;
 
@@ -532,8 +612,12 @@ private:
 	/**
 	 * 이 카드를 지금 당장 손패에서 떼어내 중앙 연출로 넘긴다(서버 응답을 기다리지 않는다).
 	 * LocalStartPosition 에서 출발한다. 카드를 찾지 못하면 false.
+	 *
+	 * bTargeting 이면 카드가 설 자리가 다르다(GetTargetingAnchor) — 아직 확정된 카드가
+	 * 아니므로 플레이 존 한복판을 차지하지 않는다.
 	 */
-	bool BeginPlayPresentationAt(int32 InstanceId, const FVector2D& LocalStartPosition);
+	bool BeginPlayPresentationAt(int32 InstanceId, const FVector2D& LocalStartPosition,
+		bool bTargeting = false);
 
 	/** 이미 손패를 떠나 연출 중인 카드인가. 갱신이 겹칠 때 복제본이 생기는 것을 막는다. */
 	bool IsOutgoing(int32 InstanceId) const;
@@ -581,6 +665,12 @@ private:
 	 */
 	FVector2D GetPlayZoneAnchor() const;
 
+	/**
+	 * 대상 선택 중인 카드가 설 자리. SetTargetingAnchor 로 못 박았으면 그 값,
+	 * 아니면 플레이 존 중앙 + TargetingAnchorOffset.
+	 */
+	FVector2D GetTargetingAnchor() const;
+
 	/** 중앙 연출의 기준이 될 플레이 존. 지정이 없으면 화면에서 한 번 찾아 기억한다. */
 	UBGPlayZoneWidget* ResolvePlayZoneWidget() const;
 
@@ -607,6 +697,7 @@ private:
 	TOptional<FVector2D> DeckAnchor;
 	TOptional<FVector2D> DiscardAnchor;
 	TOptional<FVector2D> PlayZoneAnchor;
+	TOptional<FVector2D> TargetingAnchor;
 
 	//	찾기가 비싸지는 않지만 카드마다 할 이유도 없다. 약참조라 존이 사라지면 다시 찾는다.
 	mutable TWeakObjectPtr<UBGPlayZoneWidget> PlayZoneWidget;

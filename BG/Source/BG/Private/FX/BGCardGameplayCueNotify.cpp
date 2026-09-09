@@ -4,6 +4,9 @@
 #include "Card/BGDataSubsystem.h"
 #include "Card/BGGameDataTypes.h"
 #include "Core/BGCharacter.h"
+#include "Core/BGGameState.h"
+#include "Core/BGPlayerController.h"
+#include "UI/Presentation/BGPresentationDirector.h"
 #include "Debug/BGCardLog.h"
 #include "FX/BGCardNiagaraTypes.h"
 #include "NiagaraComponent.h"
@@ -135,6 +138,23 @@ bool ABGCardGameplayCueNotify::OnRemove_Implementation(AActor* MyTarget,
 	return true;
 }
 
+//	월드 연출이 끝났음을 연출 큐에 알린다 (시네마틱 없는 카드 전용).
+//	⚠️ 시네마틱 카드는 단계마다 Cue 가 붙었다 떨어져 여기서 알리면 중간에 꺼진다 —
+//	   그쪽 끝은 ABGPlayerController::HandleCinematicStageChangedForFX 가 맡는다.
+void ABGCardGameplayCueNotify::NotifyHandPlayFXFinished()
+{
+	//	연출은 화면마다 따로 돈다 — 찾는 것은 이 클라이언트의 디렉터다.
+	const UWorld* World = GetWorld();
+	ABGPlayerController* PC = World
+		? Cast<ABGPlayerController>(World->GetFirstPlayerController())
+		: nullptr;
+
+	if (UBGPresentationDirector* Director = PC ? PC->GetPresentationDirector() : nullptr)
+	{
+		Director->NotifyWorldFXFinished();
+	}
+}
+
 //나이아가라 VFX 스폰
 void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 	const FGameplayCueParameters& Parameters, bool bAllowSpawnDelay)
@@ -251,6 +271,14 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 //이펙트 종료후 비활성화
 void ABGCardGameplayCueNotify::FinishCueRemoval()
 {
+	//	⚠️ 시네마틱 중이면 알리지 않는다. 단계가 넘어가느라 Cue 가 잠깐 떨어진 것뿐이라,
+	//	   여기서 알리면 연출 중간에 HUD 만 먼저 풀린다.
+	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	if (!GS || !GS->IsCinematicPlaying())
+	{
+		NotifyHandPlayFXFinished();
+	}
+
 	GetWorldTimerManager().ClearTimer(SpawnTimer);
 	GetWorldTimerManager().ClearTimer(EndTimer);
 	if (SpawnedEffect)
@@ -267,6 +295,9 @@ void ABGCardGameplayCueNotify::FinishCueRemoval()
 //종료시 타이머 초기화 및 이펙트 비활성화
 void ABGCardGameplayCueNotify::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	//	⚠️ 안전망. Cue 액터가 통째로 사라지면(레벨 전환) 끝 신호를 낼 사람이 없어진다.
+	NotifyHandPlayFXFinished();
+
 	if (GetWorld())
 	{
 		GetWorldTimerManager().ClearTimer(SpawnTimer);
