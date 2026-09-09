@@ -16,7 +16,7 @@ void UTRVoiceTalker::ApplyVolume(float InVolume)
 
 void UTRVoiceTalker::OnTalkingBegin(UAudioComponent* AudioComponent)
 {
-	// 엔진이 토커마다 오디오 컴포넌트를 만들었다 없앴다 하므로 발화마다 다시 건다.
+	// 발화마다 넘어오는 오디오 컴포넌트에 음량을 건다.
 	ActiveAudio = AudioComponent;
 	if (AudioComponent != nullptr)
 	{

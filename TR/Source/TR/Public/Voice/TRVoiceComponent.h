@@ -10,10 +10,7 @@
 
 class APlayerController;
 
-/**
- * 로컬 PlayerController 에 붙는 무전 입력 컴포넌트.
- * UTRVoiceSubsystem 이 컨트롤러가 바뀔 때마다 붙인다 — 컨트롤러 클래스는 건드리지 않는다.
- */
+/** 로컬 PlayerController 에 붙는 무전 입력 컴포넌트. UTRVoiceSubsystem 이 붙인다. */
 UCLASS(Config = Game, ClassGroup = (TR), meta = (BlueprintSpawnableComponent))
 class TR_API UTRVoiceComponent : public UActorComponent
 {
@@ -22,10 +19,7 @@ class TR_API UTRVoiceComponent : public UActorComponent
 public:
 	UTRVoiceComponent();
 
-	/**
-	 * 소유 컨트롤러의 입력 컴포넌트에 키를 건다. 여러 번 불러도 한 번만 걸린다.
-	 * 입력 컴포넌트가 아직 없으면 걸지 않고 false — 서브시스템이 다음 기회에 다시 부른다.
-	 */
+	/** 소유 컨트롤러의 입력 컴포넌트에 키를 건다. 이미 걸려 있으면 건너뛰고, 입력 컴포넌트가 없으면 false. */
 	bool BindKeys();
 
 	UFUNCTION(BlueprintCallable, Category = "TR|Voice")
@@ -55,7 +49,7 @@ private:
 
 	APlayerController* GetOwningController() const;
 
-	/** 무전 키. DefaultGame.ini 의 [/Script/TR.TRVoiceComponent] 에서 빌드 없이 바꾼다. */
+	/** 무전 키. DefaultGame.ini 의 [/Script/TR.TRVoiceComponent] 에서 바꾼다. */
 	UPROPERTY(Config, EditDefaultsOnly, Category = "TR|Voice")
 	FKey PushToTalkKey = EKeys::V;
 

@@ -23,8 +23,7 @@
 
 namespace
 {
-	// 로컬 마이크 진폭은 IVoiceEngine 에만 있고 FOnlineVoiceImpl::VoiceEngine 은 protected 다.
-	// NULL·Steam 보이스 모두 FOnlineVoiceImpl 파생이라 파생 타입을 통해 읽는다.
+	// FOnlineVoiceImpl 의 protected VoiceEngine 을 파생 타입을 통해 읽는다.
 	struct FTRVoiceEngineAccess : public FOnlineVoiceImpl
 	{
 		static IVoiceEnginePtr Get(IOnlineVoice& Voice)
@@ -43,7 +42,7 @@ namespace
 
 namespace TRVoiceCVar
 {
-	// 엔진이 노출한 유일한 조절 경로다. ini 키는 [Voice] bEnabled 말고는 없다.
+	// 음성 조절용 콘솔 변수 이름.
 	static const TCHAR* MicGain = TEXT("voice.MicInputGain");
 	static const TCHAR* SilenceThreshold = TEXT("voice.SilenceDetectionThreshold");
 	static const TCHAR* NoiseGate = TEXT("voice.MicNoiseGateThreshold");
@@ -79,7 +78,7 @@ void UTRVoiceSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	LoadConfig();
 
-	// LoadConfig 는 GameUserSettings.ini 만 본다. 패널 경로는 프로젝트 설정이라 거기 없다.
+	// 패널 WBP 경로는 DefaultGame.ini 에서 읽는다.
 	FString WidgetPath;
 	if (GConfig->GetString(TEXT("/Script/TR.TRVoiceSubsystem"), TEXT("SettingsWidgetClass"), WidgetPath, GGameIni)
 		&& !WidgetPath.IsEmpty())
@@ -89,8 +88,7 @@ void UTRVoiceSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	ApplyToRuntime();
 
-	// PostLoadMapWithWorld 는 UEngine::LoadMap 에서만 나온다. PIE 는 월드를 복제할 뿐이라
-	// 그 경로로는 안 잡힌다. 로컬 플레이어 생성 이벤트가 양쪽 모두에서 확실하다.
+	// 로컬 플레이어가 생길 때 컴포넌트를 붙인다.
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		GI->OnLocalPlayerAddedEvent.AddUObject(this, &UTRVoiceSubsystem::HandleLocalPlayerAdded);
@@ -160,7 +158,7 @@ void UTRVoiceSubsystem::HandleLocalPlayerAdded(ULocalPlayer* LocalPlayer)
 		BoundLocalPlayer = LocalPlayer;
 	}
 
-	// 컴포넌트가 오픈마이크로 송신을 열기 전에 토커가 등록돼 있어야 한다.
+	// 송신 전에 토커 등록과 델리게이트 구독을 마친다.
 	BindVoiceInterfaceDelegates();
 	EnsureVoiceComponent(LocalPlayer->PlayerController);
 }
@@ -179,7 +177,6 @@ bool UTRVoiceSubsystem::EnsureLocalTalkerRegistered()
 		return false;
 	}
 
-	// 이미 등록돼 있으면 엔진이 그대로 true 를 준다.
 	return Voice->RegisterLocalTalker(GetLocalUserNum());
 }
 
@@ -200,8 +197,7 @@ void UTRVoiceSubsystem::BindVoiceInterfaceDelegates()
 	TalkingStateHandle = Voice->AddOnPlayerTalkingStateChangedDelegate_Handle(
 		FOnPlayerTalkingStateChangedDelegate::CreateUObject(this, &UTRVoiceSubsystem::HandleTalkingStateChanged));
 
-	// 로컬 토커의 발화 알림·송신 시작·마이크 진폭은 등록된 토커에만 동작한다.
-	// 엔진은 이 등록을 자동으로 하지 않는다(RegisterLocalTalkers 호출부가 없다).
+	// 로컬 토커 등록. 발화 알림·송신·마이크 진폭에 필요하다.
 	EnsureLocalTalkerRegistered();
 }
 
@@ -223,7 +219,7 @@ void UTRVoiceSubsystem::UnbindVoiceInterfaceDelegates()
 
 void UTRVoiceSubsystem::HandleTalkingStateChanged(FUniqueNetIdRef PlayerId, bool bIsTalking)
 {
-	// 상대 PC 에서 이 줄이 찍히면 음성 패킷이 실제로 도착한 것이다. 귀로 듣지 않아도 판정된다.
+	// 발화 시작/종료 로그. 수신 판정용.
 	UE_LOG(LogTRNet, Log, TEXT("발화 %s: %s"), bIsTalking ? TEXT("시작") : TEXT("종료"), *PlayerId->ToString());
 
 	OnTalkingChanged.Broadcast(PlayerId->ToString(), bIsTalking);
@@ -248,7 +244,7 @@ void UTRVoiceSubsystem::EnsureVoiceComponent(APlayerController* PC)
 		Component->RegisterComponent();
 	}
 
-	// 컴포넌트가 등록될 때 입력 컴포넌트가 아직 없을 수 있다. 여기서 한 번 더 시도한다.
+	// 키 바인딩을 다시 시도한다.
 	const bool bBound = Component->BindKeys();
 	Component->ApplyTransmitMode(bPushToTalk);
 
@@ -434,8 +430,7 @@ float UTRVoiceSubsystem::GetLocalMicLevel() const
 		return 0.f;
 	}
 
-	// 엔진 진폭은 증폭을 곱하기 전 원본이다(VoiceCaptureWindows: 검출 488줄, 증폭 518줄).
-	// 게이지는 실제로 나가는 크기를 보여야 하므로 증폭을 곱한다. 지원 안 되면 -1 이 온다.
+	// 게이지는 증폭이 적용된 크기를 보여 준다. 지원 안 되면 -1 이 온다.
 	const float Raw = Engine->GetMicrophoneAmplitude((int32)GetLocalUserNum());
 	return FMath::Clamp(Raw * MicGain, 0.f, 1.f);
 }
@@ -548,7 +543,7 @@ void UTRVoiceSubsystem::SetSettingsUIVisible(bool bVisible)
 			SettingsWidget->RemoveFromParent();
 			SettingsWidget = nullptr;
 
-			// 판 진행 중이면 커서를 다시 숨긴다. 로비처럼 원래 보이던 상태면 그대로 둔다.
+			// 열기 전에 커서가 숨겨져 있었으면 다시 숨긴다.
 			APlayerController* PC = GetLocalController();
 			if (PC != nullptr && !bCursorWasVisible)
 			{
@@ -589,7 +584,7 @@ void UTRVoiceSubsystem::SetSettingsUIVisible(bool bVisible)
 
 	SettingsWidget->AddToViewport(1000);
 
-	// 판이 시작되면 게임이 커서를 숨긴다. 패널은 마우스로 조작하므로 여는 동안만 켠다.
+	// 패널이 열린 동안 커서와 UI 입력을 켠다.
 	bCursorWasVisible = PC->bShowMouseCursor;
 	FInputModeGameAndUI Mode;
 	Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
@@ -604,8 +599,7 @@ void UTRVoiceSubsystem::RegisterConsoleCommands()
 {
 	IConsoleManager& Manager = IConsoleManager::Get();
 
-	// PIE 는 인스턴스마다 서브시스템이 생긴다. 명령은 한 벌만 두고, 실행 시점에
-	// GWorld 로 대상을 다시 찾는다.
+	// 명령은 한 벌만 등록하고 실행 시점의 GWorld 로 대상을 찾는다.
 	if (Manager.FindConsoleObject(TEXT("TR.Voice.Status")) != nullptr)
 	{
 		return;

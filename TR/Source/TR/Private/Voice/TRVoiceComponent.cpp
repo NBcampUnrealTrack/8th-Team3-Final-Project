@@ -42,8 +42,7 @@ bool UTRVoiceComponent::BindKeys()
 		return false;
 	}
 
-	// Enhanced Input 이 아니라 키 바인딩을 쓴다. IMC 는 캐릭터가 들고 있어 폰이 있어야
-	// 살아나지만, 무전은 로비·사망·관전 중에도 눌려야 한다.
+	// 컨트롤러 입력 컴포넌트에 직접 건다. 폰이 없어도 동작한다.
 	if (PushToTalkKey.IsValid())
 	{
 		PC->InputComponent->BindKey(PushToTalkKey, IE_Pressed, this, &UTRVoiceComponent::StartPushToTalk);
@@ -67,7 +66,7 @@ void UTRVoiceComponent::StartPushToTalk()
 {
 	bPushToTalkHeld = true;
 
-	// 등록 없이 StartTalking 을 부르면 엔진이 0xFFFFFFFF 로 조용히 거절한다.
+	// 송신 전에 로컬 토커를 등록한다.
 	if (UTRVoiceSubsystem* Voice = UTRVoiceSubsystem::Get(this))
 	{
 		Voice->EnsureLocalTalkerRegistered();

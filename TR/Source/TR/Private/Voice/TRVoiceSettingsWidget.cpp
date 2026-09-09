@@ -65,12 +65,6 @@ void UTRVoicePlayerRow::HandleVolumeChanged(float Value)
 
 //--- 패널 ---
 
-UTRVoiceSettingsWidget::UTRVoiceSettingsWidget(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-{
-	// 틱 빈도 Auto 는 C++ 부모를 가진 위젯의 NativeTick 을 그대로 돌린다. 따로 만질 것이 없다.
-}
-
 UTRVoiceSubsystem* UTRVoiceSettingsWidget::GetVoice() const
 {
 	return UTRVoiceSubsystem::Get(this);
@@ -121,7 +115,7 @@ void UTRVoiceSettingsWidget::NativeConstruct()
 		Button_Close->OnClicked.AddDynamic(this, &UTRVoiceSettingsWidget::HandleCloseClicked);
 	}
 
-	// 값 변경과 발화 상태 모두 서브시스템이 알려 준다. 폴링하지 않는다.
+	// 설정 변경과 발화 상태 알림을 구독한다.
 	if (UTRVoiceSubsystem* Voice = GetVoice())
 	{
 		Voice->OnVoiceSettingsChanged.AddDynamic(this, &UTRVoiceSettingsWidget::RefreshFromSettings);
@@ -163,7 +157,7 @@ void UTRVoiceSettingsWidget::FixRowSlots()
 	TRVoiceUI::SetFill(Bar_MicLevel, 0.65f);
 	TRVoiceUI::SetFill(Text_OutputVolume, 0.3f);
 
-	// 접속자 줄과 상태 텍스트로 높이가 늘어난다. 배경 패널이 내용에 맞춰 자라게 한다.
+	// 배경 패널을 내용 크기에 맞춘다.
 	if (UWidget* Panel = GetWidgetFromName(TEXT("Panel")))
 	{
 		if (UCanvasPanelSlot* PanelSlot = Cast<UCanvasPanelSlot>(Panel->Slot))
@@ -238,7 +232,7 @@ void UTRVoiceSettingsWidget::RefreshFromSettings()
 		Text_OutputVolume->SetText(TRVoiceUI::VolumeText(Voice->GetOutputVolume()));
 	}
 
-	// 개인 음량이 밖에서 바뀌었을 수 있다(콘솔, 기본값 복귀).
+	// 개인 음량 슬라이더를 저장값으로 맞춘다.
 	for (UTRVoicePlayerRow* Row : PlayerRows)
 	{
 		if (Row != nullptr && Row->Slider_Volume != nullptr)
@@ -312,7 +306,7 @@ void UTRVoiceSettingsWidget::RebuildPlayerRows()
 
 	const TArray<FTRVoicePlayerInfo> Players = Voice->GetRemotePlayers();
 
-	// 집합이 같으면 줄을 다시 만들지 않는다. 슬라이더를 잡고 있는 손이 끊긴다.
+	// 접속자 집합이 같으면 기존 줄을 유지한다.
 	bool bSame = (Players.Num() == PlayerRows.Num());
 	for (int32 Index = 0; bSame && Index < Players.Num(); ++Index)
 	{

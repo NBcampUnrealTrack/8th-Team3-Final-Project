@@ -15,7 +15,7 @@ class UTextBlock;
 class UVerticalBox;
 class UTRVoiceSubsystem;
 
-/** 접속자 한 줄. 슬라이더 콜백이 어느 플레이어 것인지 알아야 해서 줄마다 객체를 둔다. */
+/** 접속자 한 줄의 위젯과 NetId. */
 UCLASS()
 class UTRVoicePlayerRow : public UObject
 {
@@ -53,8 +53,6 @@ class TR_API UTRVoiceSettingsWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	UTRVoiceSettingsWidget(const FObjectInitializer& ObjectInitializer);
-
 	/** 서브시스템 값으로 모든 슬롯을 다시 채운다. */
 	UFUNCTION(BlueprintCallable, Category = "TR|Voice")
 	void RefreshFromSettings();
@@ -64,7 +62,7 @@ protected:
 
 	virtual void NativeDestruct() override;
 
-	/** 게이지는 매 프레임 움직여야 해서 여기만 폴링한다. 설정값·발화 알림은 델리게이트다. */
+	/** 게이지를 갱신하고 접속자 집합 변화를 확인한다. */
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
@@ -109,7 +107,7 @@ private:
 
 	void UpdateGauges(float DeltaTime);
 
-	/** 가로 박스 안 게이지·값 칸이 0폭으로 접히지 않게 Fill 을 준다. */
+	/** 가로 박스 안 게이지·값 칸에 Fill 크기를 주고 배경 패널을 내용 크기에 맞춘다. */
 	void FixRowSlots();
 
 	UTRVoiceSubsystem* GetVoice() const;

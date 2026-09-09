@@ -9,10 +9,7 @@
 
 class UAudioComponent;
 
-/**
- * PlayerState 에 붙는다. 엔진이 그 플레이어의 음성을 재생하기 시작할 때
- * OnTalkingBegin 으로 오디오 컴포넌트를 넘겨 주므로, 거기에 음량을 건다.
- */
+/** PlayerState 에 붙어 그 플레이어 음성의 오디오 컴포넌트에 음량을 적용한다. */
 UCLASS()
 class TR_API UTRVoiceTalker : public UVOIPTalker
 {

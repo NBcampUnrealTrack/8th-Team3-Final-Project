@@ -18,10 +18,7 @@ class UUserWidget;
 /** 값이 바뀌었다. 패널이 슬라이더를 다시 채우는 데 쓴다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTRVoiceSettingsChanged);
 
-/**
- * 누군가 말하기 시작했거나 멈췄다. 엔진의 OnPlayerTalkingStateChanged 를
- * 블루프린트가 붙을 수 있는 형태로 옮긴 것이다.
- */
+/** 발화 시작/종료 알림. 블루프린트에서 구독할 수 있다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FTRVoiceTalkingChanged, const FString&, PlayerId, bool, bIsTalking);
 
 /** 접속자 목록 한 줄. 패널이 개인별 음량 행을 만드는 데 쓴다. */
@@ -49,8 +46,8 @@ struct FTRVoicePlayerInfo
 };
 
 /**
- * 설정값은 GameUserSettings.ini 의 [/Script/TR.TRVoiceSubsystem] 에 남는다.
- * 실제 반영은 전부 voice.* 콘솔 변수로 나간다 — 엔진이 그 경로만 열어 두었다.
+ * 설정값은 GameUserSettings.ini 의 [/Script/TR.TRVoiceSubsystem] 에 저장하고,
+ * 런타임에는 voice.* 콘솔 변수로 반영한다.
  */
 UCLASS(Config = GameUserSettings)
 class TR_API UTRVoiceSubsystem : public UGameInstanceSubsystem
@@ -61,7 +58,7 @@ public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 
-	/** 월드 컨텍스트로 얻는다. PIE 는 인스턴스마다 별도 서브시스템이라 이 경로를 써야 한다. */
+	/** 월드 컨텍스트의 GameInstance 에서 얻는다. */
 	static UTRVoiceSubsystem* Get(const UObject* WorldContext);
 
 	//--- 마이크 설정 ---
@@ -124,20 +121,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TR|Voice")
 	bool IsLocalTalking() const;
 
-	/** 내 마이크 입력 크기 0~1. 캡처가 멈춰 있으면(무전 키를 안 누른 상태) 0. */
+	/** 내 마이크 입력 크기 0~1. 캡처 중이 아니면 0. */
 	UFUNCTION(BlueprintPure, Category = "TR|Voice")
 	float GetLocalMicLevel() const;
 
-	/**
-	 * 송신 전에 로컬 토커를 엔진에 등록한다. 등록이 없으면 StartLocalVoiceProcessing 이
-	 * 조용히 실패한다(0xFFFFFFFF). 여러 번 불러도 된다.
-	 */
+	/** 송신 전에 로컬 토커를 등록한다. 여러 번 불러도 된다. */
 	bool EnsureLocalTalkerRegistered();
 
 	UFUNCTION(BlueprintPure, Category = "TR|Voice")
 	bool IsVoiceInterfaceReady() const;
 
-	/** 진단 문자열. 엔진 덤프는 길어서 패널에서는 뺀다. 콘솔 TR.Voice.Status 는 포함한다. */
+	/** 진단 문자열. bIncludeEngineDump 면 엔진 보이스 상태 덤프를 뒤에 붙인다. */
 	UFUNCTION(BlueprintPure, Category = "TR|Voice")
 	FString GetStatusText(bool bIncludeEngineDump = true) const;
 
@@ -174,10 +168,10 @@ public:
 private:
 	void HandlePostLoadMap(UWorld* LoadedWorld);
 
-	/** 로컬 플레이어가 생기는 시점. PIE 는 맵을 로드하지 않아 이 경로로만 잡힌다. */
+	/** 로컬 플레이어가 생기면 컨트롤러 변경을 구독하고 컴포넌트를 붙인다. */
 	void HandleLocalPlayerAdded(ULocalPlayer* LocalPlayer);
 
-	/** 보이스 인터페이스는 늦게 생긴다. 생긴 뒤 한 번만 붙는다. */
+	/** 보이스 인터페이스 델리게이트를 한 번만 구독하고 로컬 토커를 등록한다. */
 	void BindVoiceInterfaceDelegates();
 
 	void UnbindVoiceInterfaceDelegates();
@@ -208,7 +202,7 @@ private:
 	UPROPERTY(Config)
 	float OutputVolume = 1.f;
 
-	// NetId 문자열 -> 개인 음량. 스팀은 ID 가 고정이라 다음 판에도 유지된다.
+	// NetId 문자열 -> 개인 음량.
 	UPROPERTY(Config)
 	TMap<FString, float> PlayerVolumes;
 
@@ -230,11 +224,7 @@ private:
 	UPROPERTY(Config)
 	float JitterDelay = 0.2f;
 
-	/**
-	 * 임시 설정 패널 WBP. 사용자 설정이 아니라 프로젝트 설정이라 DefaultGame.ini 에 둔다.
-	 * 이 클래스의 Config 파일은 GameUserSettings.ini 이므로 UPROPERTY(Config) 로는 못 읽는다.
-	 * Initialize 에서 GGameIni 를 직접 조회한다.
-	 */
+	/** 임시 설정 패널 WBP. DefaultGame.ini 의 [/Script/TR.TRVoiceSubsystem] 에서 읽는다. */
 	FSoftClassPath SettingsWidgetClass;
 
 	UPROPERTY(Transient)
