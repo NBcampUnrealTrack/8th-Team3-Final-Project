@@ -1723,6 +1723,12 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	// (뱅!이 빗나가도 그 뱅! 카드는 돌아오지 않는다)
 	ConsumeCard(InstanceId);
 
+	//	카드 사용이 확정됐다 — 밧줄은 GameState 가 다시 채운다.
+	if (ABGGameState* PlayedGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+	{
+		PlayedGS->NotifyCardPlayed(GetMySeatIndex());
+	}
+
 	//	사용 횟수는 발동 전에 이미 셌다(위 참조). 판정 실패도 소비된다 (GDD §5.3) —
 	//	실패 여부는 GA 안에서 갈리므로 여기서는 아무 조건도 보지 않는다.
 	//	── 대비(Status.NextCard.KeepCardUse) ──

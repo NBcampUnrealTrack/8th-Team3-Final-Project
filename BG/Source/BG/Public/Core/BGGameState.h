@@ -257,6 +257,9 @@ public:
 	/** 손패를 한 장 버렸다는 통지. 한도 이하가 되면 턴을 넘긴다. */
 	void NotifyCardDiscarded(int32 Seat);
 
+	/** 카드 사용이 확정됐다는 통지. 그 좌석의 밧줄을 전체 길이로 다시 채운다. */
+	void NotifyCardPlayed(int32 Seat);
+
 	/**
 	 * 손패 상한. 좌석과 무관하게 MaxHandSize 다.
 	 *
