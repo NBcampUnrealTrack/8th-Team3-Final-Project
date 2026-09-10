@@ -11,6 +11,7 @@ class UScrollBox;
 class UEditableTextBox;
 class UButton;
 class UBGChatingSubsystem;
+class UTexture2D;
 
 UCLASS(Abstract, Blueprintable)
 class BG_API UBGChatingWidget : public UUserWidget
@@ -87,6 +88,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
 	FLinearColor SystemTextColor = FLinearColor(1.f, 0.85f, 0.4f, 0.9f);
 
+	/** 필터 탭 배경. 선택된 탭만 Active 를 쓴다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
+	TObjectPtr<UTexture2D> FilterTabActive;
+
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
+	TObjectPtr<UTexture2D> FilterTabInactive;
+
 private:
 	UFUNCTION()
 	void HandleMessageReceived(const FBGChatEntry& Entry);
@@ -116,6 +124,8 @@ private:
 
 	/** 지금 필터에서 이 줄을 보여줄 것인가. */
 	bool PassesFilter(const FBGChatEntry& Entry) const;
+
+	void RefreshFilterButtons();
 
 	/** ScrollBox 를 비우고 History 전체를 필터에 맞춰 다시 그린다. */
 	void RebuildLog();
