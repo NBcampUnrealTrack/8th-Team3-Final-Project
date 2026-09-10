@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Card/BGCardPresentationTypes.h"
 #include "Engine/DataAsset.h"
 #include "UObject/SoftObjectPtr.h"
 #include "BGPresentationDataAsset.generated.h"
@@ -27,4 +28,33 @@ public:
 	/** 주사위 대실패 시 카드별 Primary FX 대신 재생하는 공통 연출. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Resolution")
 	TSoftObjectPtr<UNiagaraSystem> CriticalFailureEffect;
+
+	/** 일반 카드의 대상 선택 선. 다른 계열이 비어 있으면 이 연출로 폴백한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target Selection")
+	TSoftObjectPtr<UNiagaraSystem> BasicTargetSelectionEffect;
+
+	/** 마법 계열 카드의 대상 선택 선. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target Selection")
+	TSoftObjectPtr<UNiagaraSystem> MagicTargetSelectionEffect;
+
+	/** 물리/무기 계열 카드의 대상 선택 선. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target Selection")
+	TSoftObjectPtr<UNiagaraSystem> PhysicalTargetSelectionEffect;
+
+	/** User.bIsEnding 전달 후 컴포넌트를 제거하기까지 기다리는 시간. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target Selection", meta = (ClampMin = "0.0"))
+	float TargetSelectionEndDelaySeconds = 1.f;
+
+	const TSoftObjectPtr<UNiagaraSystem>& GetTargetSelectionEffect(EBGTargetSelectionStyle Style) const
+	{
+		switch (Style)
+		{
+		case EBGTargetSelectionStyle::Magic:
+			return MagicTargetSelectionEffect;
+		case EBGTargetSelectionStyle::Physical:
+			return PhysicalTargetSelectionEffect;
+		default:
+			return BasicTargetSelectionEffect;
+		}
+	}
 };

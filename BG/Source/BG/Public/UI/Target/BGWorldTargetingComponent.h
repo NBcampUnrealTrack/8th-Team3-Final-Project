@@ -13,6 +13,8 @@
 class ABGCharacter;
 class ABGPlayerController;
 class UBGSeatInfoDisplayComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
 
 UCLASS(ClassGroup = (BG), meta = (BlueprintSpawnableComponent))
 class BG_API UBGWorldTargetingComponent : public UActorComponent
@@ -101,6 +103,15 @@ private:
 	/** 모든 후보의 하이라이트를 지운다. */
 	void ClearHighlights();
 
+	/** 현재 호버 대상까지의 대상선을 생성하거나 끝점을 갱신한다. */
+	void UpdateTargetSelectionEffect(int32 AimedSeat);
+
+	/** 대상선에 종료 신호를 보내고 안전하게 제거한다. */
+	void StopTargetSelectionEffect(bool bPlayEndAnimation);
+
+	/** 현재 요청 스타일에 맞는 Niagara를 Presentation DataAsset에서 찾는다. */
+	UNiagaraSystem* ResolveTargetSelectionSystem() const;
+
 	/** 커서 위치를 보고 카메라를 좌우로 돌린다. */
 	void UpdateEdgePan(float DeltaTime);
 
@@ -126,6 +137,10 @@ private:
 	//	후보 좌석으로 다시 찾으면 그 사이 죽은 캐릭터의 하이라이트가 남는다.
 	UPROPERTY()
 	TArray<TWeakObjectPtr<ABGCharacter>> HighlightedCharacters;
+
+	/** 현재 조준 세션의 로컬 전용 대상선. 서버/다른 클라이언트에는 복제하지 않는다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> TargetSelectionEffect;
 
 	bool bTargeting = false;
 

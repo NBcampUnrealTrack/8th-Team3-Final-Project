@@ -883,11 +883,18 @@ void ABGPlayerController::RefreshTurnPanel()
 
 void ABGPlayerController::BeginTargetSelection(int32 ContextId, const FText& Prompt, const TArray<int32>& SelectableSeats)
 {
+	BeginTargetSelectionWithStyle(ContextId, Prompt, SelectableSeats, EBGTargetSelectionStyle::Basic);
+}
+
+void ABGPlayerController::BeginTargetSelectionWithStyle(int32 ContextId, const FText& Prompt,
+	const TArray<int32>& SelectableSeats, EBGTargetSelectionStyle PresentationStyle)
+{
 	FBGTargetRequest Request;
 	Request.ContextId        = ContextId;
 	Request.Prompt           = Prompt;
 	Request.SelectableSeats  = SelectableSeats;
 	Request.bAllowCancel     = true;
+	Request.PresentationStyle = PresentationStyle;
 
 	//	월드 조준이 켜져 있으면 그쪽으로 보낸다. 두 표현이 같은 계약을 쓰므로
 	//	받는 쪽(HandleSeatSelected)은 어느 쪽에서 왔는지 알 필요가 없다.
@@ -908,11 +915,36 @@ void ABGPlayerController::BeginTargetSelection(int32 ContextId, const FText& Pro
 
 void ABGPlayerController::BeginTargetSelectionForCard(int32 CardInstanceId)
 {
+	EBGTargetSelectionStyle PresentationStyle = EBGTargetSelectionStyle::Basic;
+
+	// InstanceId로 실제 손패 카드를 찾은 뒤 DT의 순수 연출값만 요청에 싣는다.
+	// 타기팅 컴포넌트가 카드 DT를 직접 읽지 않으므로 UI 표현 계층과 카드 규칙 계층이 섞이지 않는다.
+	if (const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
+	{
+		const FBGCardInstance* Card = PS->GetHand().FindByPredicate(
+			[CardInstanceId](const FBGCardInstance& Entry)
+			{
+				return Entry.InstanceId == CardInstanceId;
+			});
+
+		if (Card)
+		{
+			const UBGDataSubsystem* Data = GetGameInstance()
+				? GetGameInstance()->GetSubsystem<UBGDataSubsystem>()
+				: nullptr;
+			if (const FBGCardRow* Row = Data ? Data->GetCardRow(Card->CardId) : nullptr)
+			{
+				PresentationStyle = Row->TargetSelectionStyle;
+			}
+		}
+	}
+
 	//	사거리 판정은 아직 없다 — 살아 있는 다른 좌석 전부를 후보로 연다(STEP 7/8 에서 좁힌다).
-	BeginTargetSelection(
+	BeginTargetSelectionWithStyle(
 		CardInstanceId,
 		NSLOCTEXT("BG", "SelectTargetSeat", "대상을 선택하세요"),
-		UBGSeatViewLibrary::GetSelectableSeats(this, /*bExcludeSelf=*/true));
+		UBGSeatViewLibrary::GetSelectableSeats(this, /*bExcludeSelf=*/true),
+		PresentationStyle);
 }
 
 void ABGPlayerController::CancelTargetSelection()
