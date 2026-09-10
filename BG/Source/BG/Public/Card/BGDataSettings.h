@@ -9,8 +9,9 @@
 #include "BGDataSettings.generated.h"
 
 class UDataTable;
+class UStaticMesh;
 /**
- * 
+ *
  */
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "BG Data"))
 class BG_API UBGDataSettings : public UDeveloperSettings
@@ -51,4 +52,28 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, Config, Category = "Data", meta = (Categories = "Card.Id"))
 	FGameplayTag EphemeralAttackCardId;
+
+	// ── 정체 공개 연출 (사망 2단계, BAAM 아트 기획서 "캐릭터의 사망") ──
+	//
+	// 역할(Role.*)은 4종이지만 시체 외형은 진영 3종뿐이다 — 보안관과 부관은 같은 인간 메시를 쓴다.
+	// ABGCharacter 가 RoleReveal 단계에 들어가면 본체 메시를 숨기고 이 메시를 대신 보여준다.
+
+	/** 보안관 / 부관 사망 시 — 해골. */
+	UPROPERTY(EditAnywhere, Config, Category = "Reveal")
+	TSoftObjectPtr<UStaticMesh> HumanRevealMesh;
+
+	/** 무법자 사망 시 — 마족 시체. */
+	UPROPERTY(EditAnywhere, Config, Category = "Reveal")
+	TSoftObjectPtr<UStaticMesh> DemonkindRevealMesh;
+
+	/** 배신자 사망 시 — 해골 + 편지. */
+	UPROPERTY(EditAnywhere, Config, Category = "Reveal")
+	TSoftObjectPtr<UStaticMesh> RenegadeRevealMesh;
+
+	/**
+	 * 공개된 역할(Role.*)로 어느 정체 공개 메시를 쓸지 고른다.
+	 * 무법자/배신자가 아니면 전부 인간으로 본다 — 보안관을 따로 갈라 쓰지 않는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Reveal")
+	TSoftObjectPtr<UStaticMesh> GetRevealMeshForRole(FGameplayTag RoleTag) const;
 };
