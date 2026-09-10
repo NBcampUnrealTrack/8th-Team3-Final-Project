@@ -170,6 +170,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Turn")
 	int32 GetMySeatIndex() const;
 
+	// 서버가 아니라 각 클라이언트가 로컬로 "나는 이 판을 이겼나"를 판정한다.
+	// OnMatchWon 이 넘겨주는 WinningRole 과 내 PlayerState 의 캐시된 역할을 비교한다.
+	UFUNCTION(BlueprintPure, Category = "BG|Match")
+	bool DidIWin(FGameplayTag WinningRole) const;
+
 	/** 좌석이 확정됐다. 기본 동작으로 ServerRequestPlayCard 를 보낸다. */
 	UPROPERTY(BlueprintAssignable, Category = "BG|Target")
 	FOnBGSeatSelected OnTargetSeatSelected;

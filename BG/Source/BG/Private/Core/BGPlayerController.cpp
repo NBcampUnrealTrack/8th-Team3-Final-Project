@@ -1859,6 +1859,25 @@ int32 ABGPlayerController::GetMySeatIndex() const
 	return PS ? PS->GetSeatIndex() : INDEX_NONE;
 }
 
+bool ABGPlayerController::DidIWin(FGameplayTag WinningRole) const
+{
+	const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
+	if (!PS)
+	{
+		return false;
+	}
+
+	const FGameplayTag MyRole = PS->GetCachedRole();
+
+	// 보안관 진영이 이기면 부관도 함께 승리로 본다(뱅 원작 규칙).
+	if (WinningRole == BG::Role::Sheriff.GetTag())
+	{
+		return MyRole == BG::Role::Sheriff.GetTag() || MyRole == BG::Role::Deputy.GetTag();
+	}
+
+	return MyRole == WinningRole;
+}
+
 bool ABGPlayerController::IsMyTurnToPlay() const
 {
 	const ABGGameState* GS = GetBGGameState();
