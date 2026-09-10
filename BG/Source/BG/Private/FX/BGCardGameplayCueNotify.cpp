@@ -213,13 +213,12 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 
 	const UGameInstance* GI = GetGameInstance();
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
-	const FGameplayTag CardId = FindCardId(Parameters.AggregatedSourceTags);
-	const FBGCardFXRow* Row = Data ? Data->GetCardFXRow(CardId) : nullptr;
-	if (!Row)
+	if (!Data)
 	{
 		return;
 	}
 
+	const FGameplayTag CardId = FindCardId(Parameters.AggregatedSourceTags);
 	const FGameplayTag CueTag = Parameters.OriginalTag.IsValid()
 		? Parameters.OriginalTag
 		: Parameters.MatchedTagName;
@@ -228,6 +227,13 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 		BG::Resolution::CriticalFailure.GetTag());
 	const bool bFailure = Parameters.AggregatedSourceTags.HasTagExact(
 		BG::Resolution::Failure.GetTag());
+	const bool bGlobalFailure = bPrimary && (bFailure || bCriticalFailure);
+	const UBGPresentationDataAsset* Presentation = Data->GetPresentationData();
+	const FBGCardFXRow* Row = Data->GetCardFXRow(CardId);
+	if (!Row && !bGlobalFailure)
+	{
+		return;
+	}
 
 	// 실패 계열은 Primary에서 전역 실패 연출 하나만 재생한다. 시네마틱 Secondary까지
 	// 통과시키면 카드/직업 피격 FX와 실패 FX가 함께 보일 수 있으므로 여기서 막는다.
@@ -236,7 +242,9 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 		return;
 	}
 
-	const float SpawnDelaySeconds = bPrimary
+	const float SpawnDelaySeconds = bGlobalFailure && Presentation
+		? Presentation->FailureSpawnDelaySeconds
+		: bPrimary
 		? Row->PrimarySpawnDelaySeconds
 		: Row->SecondarySpawnDelaySeconds;
 
@@ -264,7 +272,6 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 	}
 
 	const TSoftObjectPtr<UNiagaraSystem>* Effect = nullptr;
-	const UBGPresentationDataAsset* Presentation = Data->GetPresentationData();
 	if (bPrimary && bCriticalFailure)
 	{
 		Effect = Presentation ? &Presentation->CriticalFailureEffect : nullptr;
@@ -303,7 +310,7 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 	}
 
 	FName AttachPoint = NAME_None;
-	if (!Row->AttachSocket.IsNone())
+	if (!bGlobalFailure && !Row->AttachSocket.IsNone())
 	{
 		if (const ABGCharacter* TargetCharacter = Cast<ABGCharacter>(MyTarget))
 		{
@@ -321,16 +328,33 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 		return;
 	}
 
-	FVector SpawnOffset = Row->LocationOffset;
-	SpawnOffset.Z += Data->GetGlobalFXSpawnZOffset();
+	// Row/DataAsset 오프셋은 부착 대상 기준의 개별 로컬 보정으로 적용한다.
+	const FVector SpawnOffset = bGlobalFailure && Presentation
+		? Presentation->FailureLocationOffset
+		: Row->LocationOffset;
+	const FRotator SpawnRotation = bGlobalFailure && Presentation
+		? Presentation->FailureRotationOffset
+		: Row->RotationOffset;
+	const float SpawnScale = bGlobalFailure && Presentation
+		? Presentation->FailureScale
+		: Row->Scale;
 	SpawnedEffect = UNiagaraFunctionLibrary::SpawnSystemAttached(
-		System, AttachTo, AttachPoint, SpawnOffset, Row->RotationOffset,
-		EAttachLocation::KeepRelativeOffset, false);
+		System, AttachTo, AttachPoint, SpawnOffset, SpawnRotation,
+		EAttachLocation::KeepRelativeOffset,
+		/*bAutoDestroy=*/false,
+		/*bAutoActivate=*/false);
 	if (SpawnedEffect)
 	{
-		SpawnedEffect->SetRelativeScale3D(FVector(Row->Scale));
-		EndBoolParameter = Row->EndBoolParameter;
-		EndDelaySeconds = Row->EndDelaySeconds;
+		// 전역 높이 World Z를 적용한다.
+		SpawnedEffect->AddWorldOffset(FVector::UpVector * Data->GetGlobalFXSpawnZOffset());
+		SpawnedEffect->SetRelativeScale3D(FVector(SpawnScale));
+		EndBoolParameter = bGlobalFailure && Presentation
+			? Presentation->FailureEndBoolParameter
+			: Row->EndBoolParameter;
+		EndDelaySeconds = bGlobalFailure && Presentation
+			? Presentation->FailureEndDelaySeconds
+			: Row->EndDelaySeconds;
+		SpawnedEffect->Activate(true);
 		UE_LOG(LogBGCard, Verbose, TEXT("[CardCue] 재생 — %s / %s"),
 			*System->GetName(), *MyTarget->GetName());
 	}

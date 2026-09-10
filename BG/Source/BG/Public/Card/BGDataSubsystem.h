@@ -83,7 +83,7 @@ public:
 	/** 카드에 종속되지 않는 공통 연출 카탈로그. 설정/로드 경로를 호출자에게 노출하지 않는다. */
 	const class UBGPresentationDataAsset* GetPresentationData() const { return PresentationData; }
 
-	/** 모든 캐릭터 부착 Niagara에 공통 적용하는 메쉬 상대 Z 보정값. */
+	/** 카드·상태·대상 선택을 포함해 코드에서 관리하는 모든 Niagara에 공통 적용하는 Z 보정값. */
 	UFUNCTION(BlueprintPure, Category = "BG|FX")
 	float GetGlobalFXSpawnZOffset() const { return GlobalFXSpawnZOffset; }
 
