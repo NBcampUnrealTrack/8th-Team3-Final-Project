@@ -27,13 +27,6 @@ class UBGCardWidget;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardPlayFXStarted,
 	UBGCardWidget*, Card, const FBGCardPlayContext&, Context);
 
-/**
- * 위에서 켠 연출을 끌 시점. **켜졌다면 반드시 한 번 나간다**(카드가 그냥 파괴돼도).
- * Context 는 켤 때 쓴 것과 같은 값이라 끄는 쪽도 Category 로 갈라도 된다.
- */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardPlayFXFinished,
-	UBGCardWidget*, Card, const FBGCardPlayContext&, Context);
-
 /** 판정 등급 하나의 글로우 값. ⚠️ 색만으로 가르지 말 것(색각이상) — Intensity·Seconds 로도 구분되게. */
 USTRUCT(BlueprintType)
 struct FBGCardTierFX
@@ -325,9 +318,6 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "BG|Card|Motion")
 	FOnBGCardPlayFXStarted OnPlayFXStarted;
-
-	UPROPERTY(BlueprintAssignable, Category = "BG|Card|Motion")
-	FOnBGCardPlayFXFinished OnPlayFXFinished;
 
 protected:
 	virtual void NativePreConstruct() override;
@@ -733,7 +723,7 @@ protected:
 	 * 끄기 신호(OnPlayFXFinished)의 시점을 바깥이 정하게 한다.
 	 * 끄면 카드가 중앙을 뜰 때 꺼지고, 켜면 NotifyPlayFXFinished 를 부를 때까지 기다린다 —
 	 * 월드의 공격·피격 몽타주가 카드보다 오래 갈 때 이쪽이다.
-	 * ⚠️ 상한은 카드의 파괴다. 신호가 안 오면 그때까지 켜져 있다(굳지는 않지만 늦다).
+	 * ⚠️ 상한은 카드의 파괴다. 신호가 안 오면 그때까지 중앙에 서 있다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Card|Motion|Play")
 	bool bWaitForExternalPlayFXFinish = false;
@@ -741,11 +731,8 @@ protected:
 private:
 	void RefreshVisual();
 
-	/** 켜기 신호를 이미 쐈는가. 끄기가 한 번만 나가게 하는 짝 표시다. */
+	/** 켜기 신호를 이미 쐈는가. 끄기가 한 번만 먹게 하는 짝 표시다. */
 	bool bPlayFXStarted = false;
-
-	/** 켤 때 실어 보낸 맥락. 끌 때 같은 값을 돌려주려고 붙잡아 둔다. */
-	FBGCardPlayContext PlayFXContext;
 
 	/** 현재 보간값을 실제 슬롯/렌더 트랜스폼에 적용한다. */
 	void ApplyMotionTransform();

@@ -9,6 +9,7 @@
 #include "UI/View/BGCardView.h"       // FBGCardView (OnCardPlayRequested 콜백 시그니처)
 #include "UI/View/BGSeatView.h"       // FOnBGSeatSelected 등 델리게이트 타입
 #include "UI/View/BGResolutionView.h" // EBGResolutionTier (ToResolutionTier 반환형)
+#include "UI/Presentation/BGPresentationTypes.h"  // FBGPresentationHandle (시네마틱 트랙)
 #include "Card/BGGameDataTypes.h"     // EBGDiceOutcome (ToResolutionTier 인자)
 #include "UI/Target/BGGameplayHudOwner.h"   // 조준 중 클릭 통과 대상 알려주기
 #include "BGPlayerController.generated.h"   // 항상 마지막
@@ -289,11 +290,11 @@ protected:
 	// 내 차례가 아니게 됐다. 진행 중이던 대상 선택을 접고 중앙에 잡혀 있던 카드를 손패로 되돌린다.
 	void AbortActionIfTurnLost();
 
-	/**
-	 * 연출 단계가 바뀌었다. None 이면 카드 연출 전체가 끝난 것이므로 HUD 연출을 내린다.
-	 * ⚠️ 몽타주 종료가 아니라 여기가 끝이다 — 그때 내리면 피격·카메라 복귀 전에 풀린다.
-	 */
+	/** 연출 단계가 바뀌었다. 시네마틱 트랙의 표를 여기서 쥐고 놓는다. */
 	void HandleCinematicStageChangedForFX(EBGCinematicStage Stage, class ABGCharacter* Subject);
+
+	/** 시네마틱이 도는 동안 쥐고 있는 표. */
+	FBGPresentationTrackHold CinematicHold;
 
 
 	/** EBGDiceOutcome → EBGResolutionTier. 뷰 계층이 게임 enum 을 모르게 하는 경계다. */

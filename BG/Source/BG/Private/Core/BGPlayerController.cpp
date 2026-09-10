@@ -807,17 +807,22 @@ void ABGPlayerController::TryBindGameStateDelegates()
 
 void ABGPlayerController::HandleCinematicStageChangedForFX(EBGCinematicStage Stage, ABGCharacter* Subject)
 {
-	if (Stage != EBGCinematicStage::None)
+	if (!PresentationDirector)
 	{
-		return;   // 아직 연출 중이다. 단계가 넘어가는 것뿐이라 화면 연출은 그대로 둔다.
+		return;
 	}
 
-	//	여기서야 카메라가 제자리로 돌아오고 손패가 다시 열린다 — 그것이 월드 연출의 끝이다.
-	//	여기서 끝나는지는 디렉터가 정한다. 다른 구독자가 아직 표를 쥐고 있을 수 있다.
-	if (PresentationDirector)
+	//	시네마틱 트랙의 주체는 여기 하나다 — 단계가 도는 동안 표를 쥐고, None 에서 놓는다.
+	//	⚠️ 단계 전환(Primary → Secondary)에서는 놓지 않는다. 표를 계속 쥐고 있으므로
+	//	   중간에 화면 연출이 풀리지 않는다.
+	if (Stage != EBGCinematicStage::None)
 	{
-		PresentationDirector->NotifyWorldFXFinished();
+		CinematicHold.Begin(PresentationDirector, EBGPresentationTrack::Cinematic);
+		return;
 	}
+
+	//	여기서야 카메라가 제자리로 돌아오고 손패가 다시 열린다 — 시네마틱 트랙의 끝이다.
+	CinematicHold.End(PresentationDirector);
 }
 
 void ABGPlayerController::HandleTurnStateChanged()

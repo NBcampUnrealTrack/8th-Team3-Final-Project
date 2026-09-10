@@ -18,7 +18,30 @@ enum class EBGPresentationKind : uint8
 };
 
 /**
- * 연출이 끝나기를 기다리는 표. 구독자가 Hold 로 받아 두었다가 Release 로 놓는다.
+ * 연출을 이루는 갈래. 렌더 틱 / 물리 틱처럼 **책임이 다른 축**이라 따로 센다.
+ *
+ * 디렉터는 어느 트랙이 몇 개 도는지만 알고 내용은 모른다. 트랙을 나눈 이득은 두 가지다:
+ *   ① 끝내는 주체가 트랙마다 하나로 정해진다 — "누가 끝내는가" 를 찾을 곳이 한 곳이다.
+ *   ② 멈췄을 때 어느 축이 안 끝났는지 로그에 이름으로 찍힌다.
+ */
+UENUM(BlueprintType)
+enum class EBGPresentationTrack : uint8
+{
+	/** 시네마틱 단계. 끝내는 주체: ABGPlayerController(단계 None). */
+	Cinematic UMETA(DisplayName = "시네마틱"),
+
+	/** GameplayCue 의 파티클·사운드 수명. 끝내는 주체: ABGCardGameplayCueNotify(Cue 제거). */
+	WorldFX   UMETA(DisplayName = "월드 이펙트"),
+
+	/** 캐릭터 애님 몽타주. 끝내는 주체: ABGCardGameplayCueNotify(몽타주 종료). */
+	Montage   UMETA(DisplayName = "몽타주"),
+
+	/** 위젯 연출. 끝내는 주체: BP(UMG 애니메이션 Finished). */
+	UI        UMETA(DisplayName = "UI"),
+};
+
+/**
+ * 연출이 끝나기를 기다리는 표. 참여자가 Hold 로 받아 두었다가 Release 로 놓는다.
  * 전부 놓여야 디렉터가 다음 연출로 넘어간다.
  */
 USTRUCT(BlueprintType)
@@ -29,7 +52,31 @@ struct FBGPresentationHandle
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Presentation")
 	int32 Id = INDEX_NONE;
 
+	/** 어느 갈래의 표인가. 진단용이며 동작에는 쓰이지 않는다. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Presentation")
+	EBGPresentationTrack Track = EBGPresentationTrack::UI;
+
 	bool IsValid() const { return Id != INDEX_NONE; }
+};
+
+/**
+ * 트랙 표 한 장. 쥐기와 놓기를 짝지어 둔다 — 참여자마다 같은 세 줄을 되풀이하지 않게.
+ *
+ * ⚠️ 디렉터를 들고 있지 않는다. 쓸 때 넘겨받는다 — 표를 쥐는 쪽(Cue 액터)이
+ *    디렉터보다 짧게 살기 때문에, 참조를 들면 죽은 포인터를 보게 된다.
+ */
+struct FBGPresentationTrackHold
+{
+	/** 이미 쥐고 있으면 아무 일도 하지 않는다. */
+	void Begin(class UBGPresentationDirector* Director, EBGPresentationTrack Track);
+
+	/** 쥔 적이 없으면 아무 일도 하지 않는다. 여러 번 불러도 안전하다. */
+	void End(class UBGPresentationDirector* Director);
+
+	bool IsHeld() const { return Handle.IsValid(); }
+
+private:
+	FBGPresentationHandle Handle;
 };
 
 /** 연출 하나의 요청. */
@@ -52,4 +99,13 @@ struct FBGPresentationRequest
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Presentation", meta = (ClampMin = "0.1"))
 	float TimeoutSeconds = 8.f;
+
+	/**
+	 * 이 연출의 **바닥**(초). 트랙이 다 끝나도 이 시간까지는 붙잡는다.
+	 *
+	 * ⚠️ 없으면 짧은 몽타주가 카드보다 먼저 끝났을 때 잡힌 트랙이 하나도 없는 채로
+	 *    연출이 시작돼 그 프레임에 끝난다 — HUD 가 켜지자마자 꺼져 깜빡인다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Presentation", meta = (ClampMin = "0.0"))
+	float MinDurationSeconds = 0.f;
 };

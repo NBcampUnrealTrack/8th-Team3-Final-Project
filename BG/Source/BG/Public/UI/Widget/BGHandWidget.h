@@ -6,7 +6,7 @@
 #include "Blueprint/UserWidget.h"
 #include "UI/View/BGCardView.h"
 #include "UI/View/BGCardFXTypes.h"   // FBGCardDealContext / FBGCardPlayContext
-#include "UI/Widget/BGCardWidget.h"  // FOnBGCardPlayFXStarted/Finished — 카드의 신호를 그대로 중계한다
+#include "UI/Widget/BGCardWidget.h"  // UBGCardWidget — 손패가 카드 위젯을 직접 만들고 들고 있다
 #include "BGHandWidget.generated.h"
 
 class UBGCardWidget;
@@ -24,6 +24,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardDealtDelegate, int32, Inst
 
 /** 사용한 카드의 효과가 확정됐다. 화면 전체 연출(흔들림·플래시)이 여기 붙는다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardPlayResolvedDelegate, int32, InstanceId, const FBGCardPlayContext&, Context);
+
 
 /** 카드 한 장이 있어야 할 자리. ComputeCardSlot 이 계산한다. */
 USTRUCT(BlueprintType)
@@ -107,26 +108,8 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "BG|Hand|FX")
 	FOnBGCardPlayResolvedDelegate OnCardPlayResolved;
 
-	/**
-	 * 카드가 중앙에서 실제로 연출을 터뜨리는 순간. HUD 연출은 여기 붙인다.
-	 *
-	 * ⚠️ 위의 OnCardPlayResolved 와 다르다. 저쪽은 판정 확정(논리)이라 내가 낸 카드에만
-	 *    나가고, 카드가 날아가는 중이면 연출보다 최대 PresentDuration 만큼 빠르다.
-	 */
-	UPROPERTY(BlueprintAssignable, Category = "BG|Hand|FX")
-	FOnBGCardPlayFXStarted OnCardPlayFXStarted;
-
-	/** 위 연출을 끌 시점. 켜졌다면 반드시 한 번 온다(카드가 파괴돼도). */
-	UPROPERTY(BlueprintAssignable, Category = "BG|Hand|FX")
-	FOnBGCardPlayFXFinished OnCardPlayFXFinished;
-
-	/**
-	 * 월드의 공격·피격 연출이 끝났다 — 연출을 쥔 카드에 끄기 신호를 보낸다.
-	 * 부르는 쪽이 카드 위젯을 몰라도 되도록 손패가 대신 찾아 준다.
-	 * ⚠️ 카드 쪽 bWaitForExternalPlayFXFinish 를 켜야 이 호출이 시점을 정한다.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "BG|Hand|FX")
-	void NotifyCardPlayFXFinished();
+	//	⚠️ 카드 사용 연출은 여기서 나가지 않는다. 구독은 연출 큐에 직접 할 것 —
+	//	   UBGPresentationDirector::Get → OnPresentationStarted / OnPresentationFinished.
 
 	/** 플레이 존이 드롭을 받으면 호출한다. 직접 호출로 드래그 없이 테스트할 수도 있다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Hand")
@@ -575,18 +558,22 @@ private:
 	UFUNCTION()
 	void HandleCardPlayFXStarted(UBGCardWidget* Card, const FBGCardPlayContext& Context);
 
-	UFUNCTION()
-	void HandleCardPlayFXFinished(UBGCardWidget* Card, const FBGCardPlayContext& Context);
-
-	/** 연출 큐. 처음 찾을 때 종료 통지 구독도 함께 건다. 없으면 nullptr(PC 가 아직 없음). */
-	class UBGPresentationDirector* GetPresentationDirector();
+	/**
+	 * 연출 큐를 찾고, 아직이면 종료 통지를 구독한다. 없으면 nullptr(PC 가 아직 없음).
+	 * ⚠️ 이름이 Get 이 아닌 이유: 구독을 건다. 단순 조회가 필요하면
+	 *    UBGPresentationDirector::Get 을 쓸 것.
+	 */
+	class UBGPresentationDirector* EnsureDirectorBound();
 
 	/** 디렉터가 연출을 끝냈다 — 중앙에 서 있던 카드에 전달한다. */
 	UFUNCTION()
 	void HandlePresentationFinished(const struct FBGPresentationRequest& Request);
 
-	/** 지금 화면 연출을 쥔 카드. 소유가 아니라 지목이므로 약참조다. */
-	TWeakObjectPtr<UBGCardWidget> ActivePlayFXCard;
+	/**
+	 * 연출을 기다리는 카드들. 디렉터 큐와 **같은 순서**로 쌓고 앞에서 뺀다.
+	 * 소유가 아니라 지목이므로 약참조 — 연출 중 카드가 파괴될 수 있다.
+	 */
+	TArray<TWeakObjectPtr<UBGCardWidget>> PresentingCards;
 
 	/** 슬롯 정렬과 회전 축을 CardAlignment 로 맞춘다. 둘은 항상 같아야 한다. */
 	void ApplyCardAlignment(UBGCardWidget* CardWidget) const;

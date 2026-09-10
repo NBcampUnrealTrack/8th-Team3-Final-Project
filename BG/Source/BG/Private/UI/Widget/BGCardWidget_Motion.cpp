@@ -285,7 +285,6 @@ void UBGCardWidget::NotifyPlayFXFinished()
 	}
 
 	bPlayFXStarted = false;
-	OnPlayFXFinished.Broadcast(this, PlayFXContext);
 }
 
 void UBGCardWidget::MoveHoldTo(const FVector2D& NewCenterPosition)
@@ -525,7 +524,6 @@ void UBGCardWidget::PlayResolvedFX(const FBGCardPlayContext& Context)
 
 	//	BP 훅 뒤에 둔다 — 카드 자신의 연출이 먼저 자리를 잡아야 화면 연출이 거기 얹힌다.
 	bPlayFXStarted = true;
-	PlayFXContext  = Context;   // 끌 때 같은 값을 돌려주려고 붙잡아 둔다
 	OnPlayFXStarted.Broadcast(this, Context);
 }
 
