@@ -52,7 +52,8 @@ struct FBGStatusFXRow : public FTableRowBase
 	TSoftObjectPtr<UNiagaraSystem> Effect;
 
 	/**
-	 * 캐릭터 메쉬의 어느 소켓에 붙는가. 비우면 메쉬 원점(발밑)이다.
+	 * 캐릭터 메쉬의 어느 소켓에 붙는가. 비우면 위치는 Actor Root,
+	 * 회전은 캐릭터 메쉬를 기준으로 한다.
 	 *
 	 * ⚠️ 직업 8종이 메쉬를 갈아끼우므로(FBGCharacterRow::SkeletalMesh) **공용 스켈레톤에
 	 *    있는 소켓만 쓸 것.** 없는 이름을 적으면 조용히 원점에 붙어 발밑에서 터진다.
@@ -60,7 +61,7 @@ struct FBGStatusFXRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FName AttachSocket;
 
-	/** 소켓 기준 추가 오프셋. */
+	/** 소켓 또는 메쉬 회전 기준 추가 오프셋. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FVector LocationOffset = FVector::ZeroVector;
 

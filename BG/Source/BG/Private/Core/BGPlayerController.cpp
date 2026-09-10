@@ -1714,6 +1714,10 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	//	⚠️ 1회성 카드(암살자)는 사용 한도를 소모하지 않는다. 여기서 세지 않으므로
 	//	   아래 발동 실패 롤백과 대비·무투가 환급도 모두 건너뛴다 — 되돌릴 것이 없다.
 	ABGPlayerState* MyPS = GetPlayerState<ABGPlayerState>();
+	//	대비는 GA 안에서 KeepCardUse를 새로 부여한다. 발동 뒤 현재 상태만 검사하면
+	//	그 대비 카드 자신을 "다음 카드"로 잘못 소비하므로, 발동 전 보유 여부를 고정해 둔다.
+	const bool bHadKeepCardUseBeforeActivation = MyPS
+		&& MyPS->HasPendingStatus(BG::Status::NextCard::KeepCardUse.GetTag());
 	if (MyPS && !bEphemeralCard)
 	{
 		MyPS->IncrementCardsUsedThisTurn();
@@ -1795,8 +1799,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	//	대비·무투가 양쪽을 건너뛴다 — 그냥 두면 이 턴에 낸 **다른** 카드의 사용횟수가 환급된다.
 	bool bCardUseRefunded = bEphemeralCard;
 
-	if (MyPS && !bCardUseRefunded && bResolved
-		&& MyPS->HasPendingStatus(BG::Status::NextCard::KeepCardUse.GetTag()))
+	if (MyPS && !bCardUseRefunded && bResolved && bHadKeepCardUseBeforeActivation)
 	{
 		int32 Unused = 0;
 		MyPS->ConsumePendingStatus(BG::Status::NextCard::KeepCardUse.GetTag(), Unused);
