@@ -80,6 +80,9 @@ public:
 	/** 카드 연출 정책/전용 연출 Row. Row 이름은 CardId 태그 문자열과 동일하다. */
 	const struct FBGCardFXRow* GetCardFXRow(FGameplayTag CardId) const;
 
+	/** 카드에 종속되지 않는 공통 연출 카탈로그. 설정/로드 경로를 호출자에게 노출하지 않는다. */
+	const class UBGPresentationDataAsset* GetPresentationData() const { return PresentationData; }
+
 	/** 모든 캐릭터 부착 Niagara에 공통 적용하는 메쉬 상대 Z 보정값. */
 	UFUNCTION(BlueprintPure, Category = "BG|FX")
 	float GetGlobalFXSpawnZOffset() const { return GlobalFXSpawnZOffset; }
@@ -106,6 +109,9 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UDataTable> CardFXTable;
+
+	UPROPERTY()
+	TObjectPtr<class UBGPresentationDataAsset> PresentationData;
 
 	/** 카드·상태 FX가 공유하는 유일한 기본 높이. Row LocationOffset은 개별 보정만 담당한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "FX|Transform", meta = (AllowPrivateAccess = "true", Units = "cm"))

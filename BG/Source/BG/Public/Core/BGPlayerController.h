@@ -432,6 +432,10 @@ protected:
 	AActor* ResolveTargetActor(int32 TargetSeat) const;
 
 private:
+	/** 기존 공개 API는 Basic을 유지하고, 카드 경로만 DT의 연출 스타일을 함께 전달한다. */
+	void BeginTargetSelectionWithStyle(int32 ContextId, const FText& Prompt,
+		const TArray<int32>& SelectableSeats, EBGTargetSelectionStyle PresentationStyle);
+
 	// HUD 가 넘겨준 손패 위젯. 소유는 HUD 에 있고 여기서는 참조만 한다.
 	UPROPERTY()
 	TObjectPtr<UBGHandWidget> HandWidget;

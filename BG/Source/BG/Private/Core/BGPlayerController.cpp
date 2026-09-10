@@ -1040,11 +1040,18 @@ void ABGPlayerController::RefreshTurnPanel()
 
 void ABGPlayerController::BeginTargetSelection(int32 ContextId, const FText& Prompt, const TArray<int32>& SelectableSeats)
 {
+	BeginTargetSelectionWithStyle(ContextId, Prompt, SelectableSeats, EBGTargetSelectionStyle::Basic);
+}
+
+void ABGPlayerController::BeginTargetSelectionWithStyle(int32 ContextId, const FText& Prompt,
+	const TArray<int32>& SelectableSeats, EBGTargetSelectionStyle PresentationStyle)
+{
 	FBGTargetRequest Request;
 	Request.ContextId        = ContextId;
 	Request.Prompt           = Prompt;
 	Request.SelectableSeats  = SelectableSeats;
 	Request.bAllowCancel     = true;
+	Request.PresentationStyle = PresentationStyle;
 
 	//	월드 조준이 켜져 있으면 그쪽으로 보낸다. 두 표현이 같은 계약을 쓰므로
 	//	받는 쪽(HandleSeatSelected)은 어느 쪽에서 왔는지 알 필요가 없다.
@@ -1065,11 +1072,36 @@ void ABGPlayerController::BeginTargetSelection(int32 ContextId, const FText& Pro
 
 void ABGPlayerController::BeginTargetSelectionForCard(int32 CardInstanceId)
 {
+	EBGTargetSelectionStyle PresentationStyle = EBGTargetSelectionStyle::Basic;
+
+	// InstanceId로 실제 손패 카드를 찾은 뒤 DT의 순수 연출값만 요청에 싣는다.
+	// 타기팅 컴포넌트가 카드 DT를 직접 읽지 않으므로 UI 표현 계층과 카드 규칙 계층이 섞이지 않는다.
+	if (const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
+	{
+		const FBGCardInstance* Card = PS->GetHand().FindByPredicate(
+			[CardInstanceId](const FBGCardInstance& Entry)
+			{
+				return Entry.InstanceId == CardInstanceId;
+			});
+
+		if (Card)
+		{
+			const UBGDataSubsystem* Data = GetGameInstance()
+				? GetGameInstance()->GetSubsystem<UBGDataSubsystem>()
+				: nullptr;
+			if (const FBGCardRow* Row = Data ? Data->GetCardRow(Card->CardId) : nullptr)
+			{
+				PresentationStyle = Row->TargetSelectionStyle;
+			}
+		}
+	}
+
 	//	사거리 판정은 아직 없다 — 살아 있는 다른 좌석 전부를 후보로 연다(STEP 7/8 에서 좁힌다).
-	BeginTargetSelection(
+	BeginTargetSelectionWithStyle(
 		CardInstanceId,
 		NSLOCTEXT("BG", "SelectTargetSeat", "대상을 선택하세요"),
-		UBGSeatViewLibrary::GetSelectableSeats(this, /*bExcludeSelf=*/true));
+		UBGSeatViewLibrary::GetSelectableSeats(this, /*bExcludeSelf=*/true),
+		PresentationStyle);
 }
 
 void ABGPlayerController::CancelTargetSelection()
@@ -1657,10 +1689,6 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			Resolution.bForced = bForcedOutcome;
 			Resolution.Weights = Weights;
 
-			if (ABGGameState* MutableGS = GetBGGameState())
-			{
-				MutableGS->Multicast_CardResolved(Resolution);
-			}
 		}
 		else if (!Dice)
 		{
@@ -1724,6 +1752,26 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 				*AbilityClass->GetName(), InstanceId),
 			FColor::Red, /*Time=*/8.f);
 		return;
+	}
+
+	// ── 연출 (아트 기획서 "전투 연출") ──────────────────────────────
+	//	맨 마지막에 시작한다. 판정·효과 적용·카드 소비가 모두 끝난 뒤라야
+	//	연출이 규칙에 관여하지 않는다는 원칙(Card.Trait.Cinematic 주석)이 지켜진다.
+	//	연출이 켜지든 말든 결과는 완전히 동일하다.
+	//
+	//  GA 발동 성공이 확정됐고, 아직 ConsumeCard가 손패를 갱신하기 전인 지점에서
+	//  먼저 GameState에 판정 결과를 넘기고 소유 클라이언트의 중앙 카드가 실제 등급으로
+	//  ReleaseHold되고 주사위/판정 UI 애니메이션을 시작한다.
+	//
+	//	GameState가 DT_BGCardFX와 Card.Trait.Cinematic을 보고
+	//  단발 Cue 또는 시네마틱 Primary/Secondary Cue를 선택한다. 여기서는 연출을 직접 제어하지 않는다.
+	//  판정 UI 통지와 월드 연출 타이머만 열고, 실제 GameplayCue는 ResolutionPresentationSeconds 뒤에 시작한다.
+	if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+	{
+		MutableGS->PlayResolvedCardPresentation(
+			Cast<ABGCharacter>(GetPawn()),
+			Cast<ABGCharacter>(ResolveTargetActor(TargetSeat)),
+			Resolution);
 	}
 
 	// 뱅 규칙: 낸 카드는 결과와 무관하게 버린 패로 간다.
@@ -1834,19 +1882,6 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		}
 	}
 
-	// ── 연출 (아트 기획서 "전투 연출") ──────────────────────────────
-	//	맨 마지막에 시작한다. 판정·효과 적용·카드 소비가 모두 끝난 뒤라야
-	//	연출이 규칙에 관여하지 않는다는 원칙(Card.Trait.Cinematic 주석)이 지켜진다.
-	//	연출이 켜지든 말든 여기까지의 결과는 완전히 동일하다.
-	//	GameState가 DT_BGCardFX와 Card.Trait.Cinematic을 보고
-	//  단발 Cue 또는 시네마틱 Primary/Secondary Cue를 선택한다. 여기서는 연출을 직접 제어하지 않는다.
-	if (ABGGameState* MutableGS = GetBGGameState())
-	{
-		MutableGS->PlayResolvedCardPresentation(
-			Cast<ABGCharacter>(GetPawn()),
-			Cast<ABGCharacter>(ResolveTargetActor(TargetSeat)),
-			Resolution);
-	}
 }
 
 // ======================================================================================

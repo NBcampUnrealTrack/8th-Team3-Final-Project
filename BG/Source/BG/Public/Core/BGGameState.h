@@ -410,12 +410,17 @@ public:
 	/**
 	 * 서버 전용. 카드 규칙 처리 성공 뒤의 공통 연출 입구.
 	 *
-	 * DT_BGCardFX가 없으면 아무 것도 하지 않는다. Card.Trait.Cinematic 카드는
-	 * BeginCardCinematic으로 넘기고, 나머지는 카메라 전환 없이 Primary Cue를 짧게
-	 * Add/Remove한다. PlayerController는 이 함수 호출만 담당한다.
+	 * 주사위 판정 카드면 먼저 Multicast_CardResolved로 UI를 시작하고
+	 * ResolutionPresentationSeconds 뒤에 월드 연출을 연다. BGCardWidget의 종료 신호에는
+	 * 의존하지 않는다. 그 뒤 DT_BGCardFX와 Card.Trait.Cinematic을 보고 시네마틱 또는
+	 * 단발 GameplayCue를 선택한다. PlayerController는 이 함수 호출만 담당한다.
 	 */
 	void PlayResolvedCardPresentation(class ABGCharacter* Caster, class ABGCharacter* Target,
 		const FBGCardResolution& Resolution);
+
+	/** 주사위/판정 UI가 끝나 월드 카드 연출을 시작하기 전까지의 서버 권위 대기 상태. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	bool IsResolutionPresentationPlaying() const { return bResolutionPresentationActive; }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
@@ -700,6 +705,27 @@ protected:
 	FGameplayTag ActiveNonCinematicCardCueTag;
 	FTimerHandle NonCinematicCardCueTimer;
 
+	/** 판정 UI 대기 없이 기존 시네마틱/단발 Cue 분기를 실행한다. 서버 전용. */
+	void PlayResolvedCardPresentationNow(class ABGCharacter* Caster, class ABGCharacter* Target,
+		const FBGCardResolution& Resolution);
+
+	/** 서버 판정 연출 타이머가 끝난 뒤 보관한 월드 연출을 시작한다. */
+	void FinishResolutionPresentation();
+
+	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
+	bool bResolutionPresentationActive = false;
+
+	UPROPERTY()
+	TObjectPtr<class ABGCharacter> PendingPresentationCaster;
+
+	UPROPERTY()
+	TObjectPtr<class ABGCharacter> PendingPresentationTarget;
+
+	UPROPERTY()
+	FBGCardResolution PendingPresentationResolution;
+
+	FTimerHandle ResolutionPresentationTimer;
+
 	//	서버·클라 공통. 현재 단계에 맞춰 델리게이트를 쏘고 카메라를 맞춘다.
 	void HandleCinematicStage();
 
@@ -853,13 +879,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "BG|Rope")
 	TObjectPtr<class UBGRopeComponent> Rope;
 
-	//	주사위(판정) 표시 동안 밧줄을 멈추는 시간. 판정 위젯의 DisplaySeconds 와 맞출 것.
-	//	0 이하면 멈추지 않는다.
-	UPROPERTY(EditDefaultsOnly, Category = "BG|Rope")
-	float ResolutionRopePauseSeconds = 2.5f;
-
-	//	판정 표시가 끝나는 시점에 밧줄을 놓는 타이머. 연속 판정이면 갱신된다.
-	FTimerHandle ResolutionPauseTimer;
+	/**
+	 * 주사위/판정 UI를 보여준 뒤 월드 GameplayCue를 시작하기까지의 시간.
+	 * WBP_BGCard의 Anim_Decision + 결과 애니메이션 전체 길이에 맞춘다.
+	 * 이 시간 동안 카드 사용과 턴 종료를 막고 밧줄도 멈춘다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0", Units = "s"))
+	float ResolutionPresentationSeconds = 2.5f;
 
 public:
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")
