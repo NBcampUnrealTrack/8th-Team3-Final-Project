@@ -9,6 +9,7 @@
 #include "BGDataSettings.generated.h"
 
 class UDataTable;
+class UBGPresentationDataAsset;
 class UStaticMesh;
 /**
  *
@@ -39,6 +40,10 @@ public:
 	/** 카드 기능과 분리된 시네마틱 Niagara 매핑 표 (FBGCardFXRow). */
 	UPROPERTY(EditAnywhere, Config, Category = "Data", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGCardFXRow"))
 	TSoftObjectPtr<UDataTable> CardFXTable;
+
+	/** 카드와 무관한 공통 연출 카탈로그. 아트 작업자는 이 DataAsset 안의 참조를 교체한다. */
+	UPROPERTY(EditAnywhere, Config, Category = "Presentation")
+	TSoftObjectPtr<UBGPresentationDataAsset> PresentationData;
 
 	/**
 	 * 암살자가 대성공 시 받는 카드 (Card.Id.*). 기본값은 그림자 일격.

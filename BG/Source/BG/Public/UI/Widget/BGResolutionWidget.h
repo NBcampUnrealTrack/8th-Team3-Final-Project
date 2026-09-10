@@ -15,6 +15,15 @@
 class UTextBlock;
 class UBorder;
 
+//	HUD(이 위젯을 품고 있는 쪽)가 구독하는 통지. 판정 표시의 시작·끝에 맞춰
+//	평상시 패널 ↔ 연출 패널을 바꾸는 데 쓴다.
+//
+//	⚠️ 이 위젯이 HUD 를 직접 부르지 않는 이유: 참조 방향이 뒤집히면 판정 위젯이 HUD 의
+//	   구성(어떤 패널이 있는지)까지 알아야 한다. 통지만 쏘고 무엇을 할지는 구독자가 정한다.
+//	   위젯 참조를 PlayerController 만 소유하는 이 프로젝트의 규칙과 같은 이유다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGResolutionShownEvent, const FBGResolutionView&, Shown);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGResolutionHiddenEvent);
+
 /**
  * WBP 서브클래스에 아래 이름의 위젯이 있으면 자동으로 채워진다. **전부 선택**이다 —
  * 하나도 없어도 컴파일과 실행이 유지되고, 있는 것만 갱신된다.
@@ -69,6 +78,21 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Resolution")
 	void OnResolutionHidden();
 
+	/**
+	 * 위 두 훅과 **같은 순간**을 위젯 바깥에 알린다.
+	 *
+	 * OnResolutionShown/Hidden 은 BlueprintImplementableEvent 라 이 위젯의 WBP 서브클래스에서만
+	 * 구현할 수 있다. HUD 처럼 밖에 있는 구독자는 쓸 수 없어서 통지를 따로 둔다 —
+	 * HUD 는 Event Construct 에서 여기에 바인딩해 패널을 바꾼다.
+	 *
+	 * ⚠️ Hidden 은 실제로 떠 있던 판정이 사라질 때만 온다(bShowing 참고).
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "BG|Resolution")
+	FOnBGResolutionShownEvent OnResolutionShownEvent;
+
+	UPROPERTY(BlueprintAssignable, Category = "BG|Resolution")
+	FOnBGResolutionHiddenEvent OnResolutionHiddenEvent;
+
 protected:
 	virtual void NativePreConstruct() override;
 	virtual void NativeDestruct() override;
@@ -121,6 +145,15 @@ protected:
 
 private:
 	void RefreshVisual();
+
+	/**
+	 * 지금 판정이 떠 있는가. 퇴장 통지를 한 번만 쏘기 위한 것이다.
+	 *
+	 * ⚠️ 없으면 HUD 가 게임 시작과 동시에 복귀 연출을 한 번 돌린다 —
+	 *    ABGPlayerController::SetResolutionWidget 이 등록 직후 빈 패널을 감추려고
+	 *    HideResolution 을 부르기 때문이다(보여 준 적이 없는데 "사라졌다" 가 나간다).
+	 */
+	bool bShowing = false;
 
 	/** 자동 숨김 타이머. 위젯이 파괴될 때 반드시 지운다. */
 	FTimerHandle HideTimerHandle;

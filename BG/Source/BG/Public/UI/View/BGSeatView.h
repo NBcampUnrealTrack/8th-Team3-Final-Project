@@ -6,6 +6,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Card/BGCardPresentationTypes.h"
 #include "GameplayTagContainer.h"
 #include "BGSeatView.generated.h"
 
@@ -135,6 +136,10 @@ struct FBGTargetRequest
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Target")
 	bool bAllowCancel = true;
+
+	/** 월드 대상선의 시각 계열. 2D 좌석 보드는 이 값을 무시한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Target")
+	EBGTargetSelectionStyle PresentationStyle = EBGTargetSelectionStyle::Basic;
 
 	bool IsValid() const { return ContextId != INDEX_NONE; }
 };

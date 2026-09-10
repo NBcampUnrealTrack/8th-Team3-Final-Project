@@ -1,6 +1,7 @@
 #include "UI/Target/BGWorldTargetingComponent.h"
 
 #include "Camera/CameraComponent.h"
+#include "Card/BGDataSubsystem.h"
 #include "Components/InputComponent.h"
 #include "Components/Widget.h"
 #include "Core/BGCharacter.h"
@@ -8,6 +9,11 @@
 #include "Core/BGPlayerState.h"
 #include "Debug/BGCardLog.h"
 #include "Engine/World.h"
+#include "FX/BGPresentationDataAsset.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+#include "TimerManager.h"
 #include "UI/Target/BGGameplayHudOwner.h"
 #include "UI/Target/BGSeatInfoDisplayComponent.h"
 #include "UI/Target/BGTargetHighlight.h"
@@ -72,6 +78,7 @@ void UBGWorldTargetingComponent::BeginTargeting(const FBGTargetRequest& Request)
 		const int32 PreviousContext = ActiveRequest.ContextId;
 		bTargeting = false;
 		ClearHighlights();
+		StopTargetSelectionEffect(true);
 		OnTargetSelectionCancelled.Broadcast(PreviousContext);
 	}
 
@@ -157,6 +164,7 @@ void UBGWorldTargetingComponent::ApplyTargetingState(bool bEnter)
 	}
 
 	ClearHighlights();
+	StopTargetSelectionEffect(true);
 	SetHudClickThrough(false);
 
 	//	카메라가 정면으로 돌아올 때까지는 틱을 계속 돌려야 한다.
@@ -266,6 +274,8 @@ void UBGWorldTargetingComponent::RefreshHighlights()
 
 		HighlightedCharacters.Add(Character);
 	}
+
+	UpdateTargetSelectionEffect(IsSelectableSeat(AimedSeat) ? AimedSeat : INDEX_NONE);
 }
 
 void UBGWorldTargetingComponent::ClearHighlights()
@@ -278,6 +288,144 @@ void UBGWorldTargetingComponent::ClearHighlights()
 		}
 	}
 	HighlightedCharacters.Reset();
+}
+
+//대상 선택 이펙트 획득 함수
+UNiagaraSystem* UBGWorldTargetingComponent::ResolveTargetSelectionSystem() const
+{
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UBGDataSubsystem* Data = GameInstance ? GameInstance->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	const UBGPresentationDataAsset* Presentation = Data ? Data->GetPresentationData() : nullptr;
+	if (!Presentation)
+	{
+		return nullptr;
+	}
+
+	const TSoftObjectPtr<UNiagaraSystem>& Styled =
+		Presentation->GetTargetSelectionEffect(ActiveRequest.PresentationStyle);
+	if (!Styled.IsNull())
+	{
+		return Styled.LoadSynchronous();
+	}
+
+	// 개별 계열이 아직 배정되지 않았어도 대상선 자체는 보이게 Basic으로 폴백한다.
+	return Presentation->BasicTargetSelectionEffect.LoadSynchronous();
+}
+
+//대상 선택 이펙트 업데이트 함수, 위치와 보임 여부 업데이트
+void UBGWorldTargetingComponent::UpdateTargetSelectionEffect(int32 AimedSeat)
+{
+	ABGCharacter* Target = IsSelectableSeat(AimedSeat) ? FindCharacterBySeat(AimedSeat) : nullptr;
+	ABGCharacter* Source = GetOwningController()
+		? Cast<ABGCharacter>(GetOwningController()->GetPawn())
+		: nullptr;
+
+	if (!Source || !Target)
+	{
+		// 호버가 잠시 끊겼다고 시스템을 매 프레임 재생성하지 않는다. 다시 유효한 대상에
+		// 올라오면 같은 컴포넌트를 보이고 EndPosition만 바꾼다.
+		if (TargetSelectionEffect)
+		{
+			TargetSelectionEffect->SetVisibility(false, true);
+		}
+		return;
+	}
+
+	if (!TargetSelectionEffect)
+	{
+		UNiagaraSystem* System = ResolveTargetSelectionSystem();
+		if (!System)
+		{
+			return;
+		}
+
+		const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+		const UBGDataSubsystem* Data = GameInstance
+			? GameInstance->GetSubsystem<UBGDataSubsystem>()
+			: nullptr;
+		const float GlobalZ = Data ? Data->GetGlobalFXSpawnZOffset() : 0.f;
+
+		// 이 시스템의 이미터는 World Space다. 시스템 원점과 EndPosition을 같은 World +Z만큼
+		// 올린다. User.EffectZOffset은 이미터 내부 원점 보정이므로 코드에서 덮어쓰지 않는다.
+		TargetSelectionEffect = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			this,
+			System,
+			Source->GetActorLocation() + FVector::UpVector * GlobalZ,
+			Source->GetActorRotation(),
+			FVector::OneVector,
+			/*bAutoDestroy=*/false,
+			/*bAutoActivate=*/false);
+
+		if (!TargetSelectionEffect)
+		{
+			return;
+		}
+
+		TargetSelectionEffect->SetVariableBool(TEXT("User.bIsEnding"), false);
+		TargetSelectionEffect->SetVariablePosition(
+			TEXT("User.EndPosition"), Target->GetActorLocation() + FVector::UpVector * GlobalZ);
+		TargetSelectionEffect->Activate(true);
+	}
+
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UBGDataSubsystem* Data = GameInstance ? GameInstance->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	const float GlobalZ = Data ? Data->GetGlobalFXSpawnZOffset() : 0.f;
+	TargetSelectionEffect->SetVariablePosition(
+		TEXT("User.EndPosition"), Target->GetActorLocation() + FVector::UpVector * GlobalZ);
+	TargetSelectionEffect->SetVisibility(true, true);
+}
+
+//대상 선택 이펙트 종료 함수
+void UBGWorldTargetingComponent::StopTargetSelectionEffect(bool bPlayEndAnimation)
+{
+	UNiagaraComponent* Effect = TargetSelectionEffect;
+	TargetSelectionEffect = nullptr;
+	if (!Effect)
+	{
+		return;
+	}
+
+	// 마지막 유효 대상이 보이던 상태에서만 종료 연출을 재생한다. 호버가 끊겨 숨겨진
+	// 선을 취소 순간 다시 드러내면 이전 대상 쪽으로 잘못 튀는 것처럼 보인다.
+	if (!bPlayEndAnimation || !Effect->IsVisible())
+	{
+		Effect->DestroyComponent();
+		return;
+	}
+
+	Effect->SetVariableBool(TEXT("User.bIsEnding"), true);
+
+	float EndDelay = 1.f;
+	if (const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr)
+	{
+		if (const UBGDataSubsystem* Data = GameInstance->GetSubsystem<UBGDataSubsystem>())
+		{
+			if (const UBGPresentationDataAsset* Presentation = Data->GetPresentationData())
+			{
+				EndDelay = Presentation->TargetSelectionEndDelaySeconds;
+			}
+		}
+	}
+
+	if (EndDelay <= 0.f || !GetWorld())
+	{
+		Effect->DestroyComponent();
+		return;
+	}
+
+	const TWeakObjectPtr<UNiagaraComponent> WeakEffect = Effect;
+	FTimerHandle CleanupTimer;
+	GetWorld()->GetTimerManager().SetTimer(
+		CleanupTimer,
+		FTimerDelegate::CreateWeakLambda(this, [WeakEffect]()
+		{
+			if (UNiagaraComponent* Component = WeakEffect.Get())
+			{
+				Component->DestroyComponent();
+			}
+		}),
+		EndDelay,
+		false);
 }
 
 void UBGWorldTargetingComponent::UpdateEdgePan(float DeltaTime)

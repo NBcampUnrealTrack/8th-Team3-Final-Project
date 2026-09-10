@@ -438,6 +438,36 @@ void ABGCharacter::SetJobTag(const FGameplayTag& NewTag)
 	}
 }
 
+void ABGCharacter::MarkAsBoss(TSubclassOf<UGameplayEffect> StatBoostGE)
+{
+	if (!HasAuthority() || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	// State.Dead 등과 같은 방식. 룰 상태는 루즈 게임플레이 태그로 얹는다.
+	AbilitySystemComponent->AddLooseGameplayTag(BG::State::Boss.GetTag());
+
+	if (!StatBoostGE)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BG] 보스 강화 GE 없음. %s 는 태그만 붙고 스탯은 그대로."), *GetName());
+		return;
+	}
+
+	FGameplayEffectContextHandle Context = AbilitySystemComponent->MakeEffectContext();
+	Context.AddSourceObject(this);
+
+	const FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(StatBoostGE, 1.f, Context);
+	if (!Spec.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[BG] 보스 강화 GE 적용 실패. %s (Spec 무효)"), *GetName());
+		return;
+	}
+
+	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+	UE_LOG(LogTemp, Log, TEXT("[BG] 보스 지정: %s"), *GetName());
+}
+
 void ABGCharacter::OnRep_RoleTag()
 {
 	// 소유 클라: 역할 태그를 로컬 ASC 루즈 태그에 반영 (HUD/능력 조건 검사용).

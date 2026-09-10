@@ -195,6 +195,22 @@ namespace
 	}
 }
 
+EBGCardCategory UBGCardViewLibrary::DeriveCategory(const FBGCardRow& Row)
+{
+	//	IsEquipmentRow 를 그대로 쓴다 — 장비 판별이 두 곳에서 각자 계산되면 갈릴 수 있다.
+	if (IsEquipmentRow(Row))
+	{
+		return EBGCardCategory::Equipment;
+	}
+
+	//	장비가 아닌 카드에서는 "대상 좌석을 지정하는가" 가 공격/마법을 가른다.
+	//	⚠️ Card.Trait.Attack 이 아니다 — 그쪽은 직업 패시브의 적용 범위를 가리는 다른 축이다
+	//	   (EBGCardCategory 주석 참고). 함정처럼 Trait.Attack 이 없어도 여기서는 공격이다.
+	return Row.TraitTags.HasTag(BG::Card::Trait::NeedsTargetSeat.GetTag())
+		? EBGCardCategory::Attack
+		: EBGCardCategory::Magic;
+}
+
 TArray<FBGCardFXStep> UBGCardViewLibrary::MakeFXSteps(const FBGCardRow& Row, EBGResolutionTier Tier)
 {
 	TArray<FBGCardFXStep> Steps;
@@ -269,10 +285,8 @@ FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, 
 	View.bNeedsTarget = !IsEquipmentRow(*Row)
 		&& Row->TraitTags.HasTag(BG::Card::Trait::NeedsTargetSeat.GetTag());
 
-	//	장비/공격/마법 — TypeTag·NeedsTargetSeat 에서 유도한다(EBGCardCategory 주석 참고).
-	//	IsEquipmentRow 를 그대로 쓴다 — 장비 판별이 두 곳에서 각자 계산되면 갈릴 수 있다.
-	View.Category = IsEquipmentRow(*Row) ? EBGCardCategory::Equipment
-		: (View.bNeedsTarget ? EBGCardCategory::Attack : EBGCardCategory::Magic);
+	//	장비/공격/마법 — 유도는 DeriveCategory 한 곳에만 있다(판정 통지 쪽에서도 같은 것을 쓴다).
+	View.Category = DeriveCategory(*Row);
 
 	// ── 카드 그림 ────────────────────────────────────────────────────────
 	//	여기서 동기 로드한다. 뷰는 손패에 실제로 들어온 카드에 대해서만 만들어지므로

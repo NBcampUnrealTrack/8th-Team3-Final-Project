@@ -121,6 +121,13 @@ public:
 	void SetJobTag(const FGameplayTag& NewTag);
 
 	/**
+	 * 서버 전용. 적 AI를 PvE 보스로 지정한다. 새 직업을 만들지 않고, 이미 적용된
+	 * 직업 스탯 위에 State.Boss 태그와 StatBoostGE(스탯 배율 GameplayEffect)를 얹는다.
+	 * 반드시 SetJobTag 이후에 불러야 한다(순서가 바뀌면 강화가 덮어써진다).
+	 */
+	void MarkAsBoss(TSubclassOf<UGameplayEffect> StatBoostGE);
+
+	/**
 	 * 서버 전용. Health 가 0 이 되었음을 AttributeSet 이 알려온다.
 	 * 값 판정은 AttributeSet 이, 사망이라는 "규칙 사건" 은 여기서부터 처리한다.
 	 * 이미 죽었으면 무시한다(회복→재사망 중복 방지).
