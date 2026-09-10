@@ -15,7 +15,9 @@
 #include "GAS/BGAttributeSet.h"             // GetOutcomeWeightAttributes
 #include "BGGameplayTags.h"           // BG::Status::*
 #include "Core/BGGameState.h"               // PushToDiscard
+#include "Core/BGGameMode.h"                // GetPlayMode
 #include "Core/BGPlayerState.h"
+#include "Lobby/BGMatchStartComponent.h"    // RequestStartPvEMatch
 #include "UI/View/BGSeatViewLibrary.h"
 #include "GameFramework/GameStateBase.h"      // PlayerArray
 #include "UI/Presentation/BGPresentationDirector.h"
@@ -23,6 +25,7 @@
 #include "UI/Widget/BGSeatBoardWidget.h"
 #include "UI/Widget/BGTurnPanelWidget.h"
 #include "UI/Widget/BGResolutionWidget.h"
+#include "UI/Widget/BGPvELobbyWidget.h"
 #include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
 #include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
 #include "Core/BGCharacter.h"                // 연출 주인공 캐스팅
@@ -738,6 +741,18 @@ void ABGPlayerController::BeginPlay()
 			UE_LOG(LogTemp, Warning, TEXT("[Chat] 위젯 생성 - Controller: %s"), *GetName());
 		}
 	}
+
+	//	세션 로비가 없는 PvE 전용 "게임 시작" 버튼. 판이 시작되면 위젯이 스스로 없앤다
+	//	(UBGPvELobbyWidget::HandleTurnStateChanged 참고).
+	if (GetLocalPlayer() && PvELobbyWidgetClass && ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
+	{
+		PvELobbyWidgetInstance = CreateWidget<UBGPvELobbyWidget>(this, PvELobbyWidgetClass);
+		if (PvELobbyWidgetInstance)
+		{
+			PvELobbyWidgetInstance->AddToViewport();
+		}
+	}
+
 	//	UI 주기 갱신은 위젯 연결과 무관하게 돌린다.
 	//	예전에는 SetSeatBoardWidget 안에서 타이머를 걸었는데, 그러면 좌석 보드를 연결하지
 	//	않은 HUD 에서는 손패 잠금 갱신까지 함께 멈춰버린다(숨은 의존성).
@@ -1936,6 +1951,25 @@ void ABGPlayerController::ServerRequestEndTurn_Implementation()
 	{
 		//	좌석은 서버가 가진 PlayerState 에서 읽는다 — 클라가 보낸 값을 믿지 않는다.
 		GS->RequestEndTurn(GetMySeatIndex());
+	}
+}
+
+void ABGPlayerController::RequestStartPvEMatch()
+{
+	ServerRequestStartPvEMatch();
+}
+
+void ABGPlayerController::ServerRequestStartPvEMatch_Implementation()
+{
+	//	PvP 클라가 실수로(혹은 악의적으로) 이걸 불러도 세션 로비를 건너뛰지 못하게 막는다.
+	if (ABGGameMode::GetPlayMode(this) != EBGPlayMode::PvE)
+	{
+		return;
+	}
+
+	if (UBGMatchStartComponent* Match = UBGMatchStartComponent::Find(GetWorld()))
+	{
+		Match->StartMatch();
 	}
 }
 

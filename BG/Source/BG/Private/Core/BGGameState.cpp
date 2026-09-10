@@ -1701,11 +1701,12 @@ void ABGGameState::HandlePvERunWin()
 	if (GM && ClearedEncounter == GM->BossEncounterIndex)
 	{
 		// TODO: 게임 클리어 연출
-		GI->ResetPvERun();
+		GI->ResetPvERun();   // 런 종료. 로비에서 시작 버튼 기다림(자동 시작 안 함)
 	}
 	else
 	{
 		// TODO: PvE 조우 승리 연출
+		GI->SetAutoStartNextPvEMatch(true);
 		GI->AdvancePvEEncounter();
 	}
 }

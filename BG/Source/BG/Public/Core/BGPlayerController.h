@@ -158,6 +158,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Turn")
 	void RequestEndTurn();
 
+	// PvE 로비의 "시작" 버튼이 부른다. PvP는 세션 로비(UBGSessionFlow::StartGame)를 쓰고,
+	// PvE는 세션을 안 만들어서 그 UI가 없다. 여기가 PvE 전용 진입점이다.
+	UFUNCTION(BlueprintCallable, Category = "BG|PvE")
+	void RequestStartPvEMatch();
+
 	/** 지금 내가 카드를 낼 수 있는가 (자기 턴 + Play 페이즈). UI 표시용. */
 	UFUNCTION(BlueprintPure, Category = "BG|Turn")
 	bool IsMyTurnToPlay() const;
@@ -191,6 +196,13 @@ public:
 
 	UPROPERTY()
 	class UBGChatingWidget* ChatWidgetInstance;
+
+	// PvE 로비(세션 없음)에서 "게임 시작" 버튼 하나짜리 위젯. PvP는 세션 로비를 쓰므로 비워둔다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
+	TSubclassOf<class UBGPvELobbyWidget> PvELobbyWidgetClass;
+
+	UPROPERTY()
+	class UBGPvELobbyWidget* PvELobbyWidgetInstance;
 
 	/**
 	 * 서버가 카드 사용을 거부했다. 카드는 이미 손패로 되돌려 놓은 뒤에 발생한다 —
@@ -411,6 +423,9 @@ protected:
 
 	UFUNCTION(Server, Reliable)
 	void ServerRequestEndTurn();
+
+	UFUNCTION(Server, Reliable)
+	void ServerRequestStartPvEMatch();
 
 	// 클라 → 서버. Discard 페이즈에서 손패를 한 장 버린다.
 	UFUNCTION(Server, Reliable, WithValidation)
