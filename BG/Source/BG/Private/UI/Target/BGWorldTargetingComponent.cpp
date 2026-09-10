@@ -339,25 +339,39 @@ void UBGWorldTargetingComponent::UpdateTargetSelectionEffect(int32 AimedSeat)
 			return;
 		}
 
-		// 이 시스템의 이미터는 World Space다. 시스템 원점이 곧 선의 시작점이며,
-		// User.EndPosition에는 대상의 월드 좌표를 넣는다.
+		const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+		const UBGDataSubsystem* Data = GameInstance
+			? GameInstance->GetSubsystem<UBGDataSubsystem>()
+			: nullptr;
+		const float GlobalZ = Data ? Data->GetGlobalFXSpawnZOffset() : 0.f;
+
+		// 이 시스템의 이미터는 World Space다. 시스템 원점과 EndPosition을 같은 World +Z만큼
+		// 올린다. User.EffectZOffset은 이미터 내부 원점 보정이므로 코드에서 덮어쓰지 않는다.
 		TargetSelectionEffect = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
 			this,
 			System,
-			Source->GetActorLocation(),
+			Source->GetActorLocation() + FVector::UpVector * GlobalZ,
 			Source->GetActorRotation(),
 			FVector::OneVector,
 			/*bAutoDestroy=*/false,
-			/*bAutoActivate=*/true);
+			/*bAutoActivate=*/false);
 
 		if (!TargetSelectionEffect)
 		{
 			return;
 		}
+
 		TargetSelectionEffect->SetVariableBool(TEXT("User.bIsEnding"), false);
+		TargetSelectionEffect->SetVariablePosition(
+			TEXT("User.EndPosition"), Target->GetActorLocation() + FVector::UpVector * GlobalZ);
+		TargetSelectionEffect->Activate(true);
 	}
 
-	TargetSelectionEffect->SetVariablePosition(TEXT("User.EndPosition"), Target->GetActorLocation());
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UBGDataSubsystem* Data = GameInstance ? GameInstance->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	const float GlobalZ = Data ? Data->GetGlobalFXSpawnZOffset() : 0.f;
+	TargetSelectionEffect->SetVariablePosition(
+		TEXT("User.EndPosition"), Target->GetActorLocation() + FVector::UpVector * GlobalZ);
 	TargetSelectionEffect->SetVisibility(true, true);
 }
 

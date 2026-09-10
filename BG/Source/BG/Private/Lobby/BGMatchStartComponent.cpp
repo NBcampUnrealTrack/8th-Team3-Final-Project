@@ -44,19 +44,30 @@ void UBGMatchStartComponent::NotifyPlayerJoined()
 	UE_LOG(LogBGNet, Log, TEXT("[MatchStart] 로비 %d/%d명 · 준비 %d명"),
 		Total, GetMinStartPlayers(), Ready);
 
-	//	PvE 는 기다릴 사람이 없다 - 조건이 차면 바로 연다.
-	//	준비 상태가 바뀔 때도 불리므로 재시도가 된다. PostLogin 에 직접 넣지 말 것.
+	//	직전 조우를 이겨서 이어서 왔으면(런이 안 끝났으면) 시작 버튼 없이 자동으로 잇는다.
+	//	패배·런클리어로 돌아왔거나 처음 들어왔으면 PvP처럼 시작 버튼을 기다린다.
 	if (GM->IsPvE())
 	{
-		FString Error;
-		if (CanStartMatch(Error))
+		if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetWorld()->GetGameInstance()))
 		{
-			UE_LOG(LogBGNet, Log, TEXT("[PvE] 시작 조건 충족 — 자동 시작"));
-			StartMatch();
-		}
-		else
-		{
-			UE_LOG(LogBGNet, Verbose, TEXT("[PvE] 자동 시작 보류 — %s"), *Error);
+			if (GI->ShouldAutoStartNextPvEMatch())
+			{
+				FString Error;
+				if (CanStartMatch(Error))
+				{
+					//	조건을 채웠을 때만 소비한다. 여기서 바로 끄면, 아직 준비(Ready)가
+					//	안 갖춰진 시점에 이 함수가 먼저 불렸을 때 플래그만 꺼지고 시작은
+					//	안 되는 상태로 끝나 버린다 - 이후 준비 상태가 바뀌어 다시 불려도
+					//	재시도가 안 되고 로비에 멈춘다.
+					GI->SetAutoStartNextPvEMatch(false);
+					UE_LOG(LogBGNet, Log, TEXT("[PvE] 조우 이어가기: 자동 시작"));
+					StartMatch();
+				}
+				else
+				{
+					UE_LOG(LogBGNet, Verbose, TEXT("[PvE] 조우 이어가기 대기: %s"), *Error);
+				}
+			}
 		}
 	}
 }

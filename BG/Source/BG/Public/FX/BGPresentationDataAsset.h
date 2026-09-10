@@ -29,6 +29,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Resolution")
 	TSoftObjectPtr<UNiagaraSystem> CriticalFailureEffect;
 
+	/** 실패/대실패 공통 FX의 스폰 지연. 카드별 DT_BGCardFX와 무관하다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Resolution|Timing", meta = (ClampMin = "0.0", Units = "s"))
+	float FailureSpawnDelaySeconds = 0.1f;
+
+	/** 실패/대실패 GameplayCue를 활성 상태로 유지하는 시간. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Resolution|Timing", meta = (ClampMin = "0.01", Units = "s"))
+	float FailureCueSeconds = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Resolution|Transform")
+	FVector FailureLocationOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Resolution|Transform")
+	FRotator FailureRotationOffset = FRotator::ZeroRotator;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Resolution|Transform", meta = (ClampMin = "0.01"))
+	float FailureScale = 1.f;
+
+	/** 실패/대실패 FX의 종료 연출 신호. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Resolution|Lifetime")
+	FName FailureEndBoolParameter = TEXT("User.bIsEnding");
+
+	/** 종료 bool 전달 뒤 시스템을 비활성화하기까지 기다리는 시간. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Card Resolution|Lifetime", meta = (ClampMin = "0.0", Units = "s"))
+	float FailureEndDelaySeconds = 1.f;
+
 	/** 일반 카드의 대상 선택 선. 다른 계열이 비어 있으면 이 연출로 폴백한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Target Selection")
 	TSoftObjectPtr<UNiagaraSystem> BasicTargetSelectionEffect;

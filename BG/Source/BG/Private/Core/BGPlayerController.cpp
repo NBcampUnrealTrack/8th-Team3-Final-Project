@@ -15,7 +15,9 @@
 #include "GAS/BGAttributeSet.h"             // GetOutcomeWeightAttributes
 #include "BGGameplayTags.h"           // BG::Status::*
 #include "Core/BGGameState.h"               // PushToDiscard
+#include "Core/BGGameMode.h"                // GetPlayMode
 #include "Core/BGPlayerState.h"
+#include "Lobby/BGMatchStartComponent.h"    // RequestStartPvEMatch
 #include "UI/View/BGSeatViewLibrary.h"
 #include "GameFramework/GameStateBase.h"      // PlayerArray
 #include "UI/Presentation/BGPresentationDirector.h"
@@ -23,6 +25,7 @@
 #include "UI/Widget/BGSeatBoardWidget.h"
 #include "UI/Widget/BGTurnPanelWidget.h"
 #include "UI/Widget/BGResolutionWidget.h"
+#include "UI/Widget/BGPvELobbyWidget.h"
 #include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
 #include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
 #include "Core/BGCharacter.h"                // 연출 주인공 캐스팅
@@ -738,6 +741,18 @@ void ABGPlayerController::BeginPlay()
 			UE_LOG(LogTemp, Warning, TEXT("[Chat] 위젯 생성 - Controller: %s"), *GetName());
 		}
 	}
+
+	//	세션 로비가 없는 PvE 전용 "게임 시작" 버튼. 판이 시작되면 위젯이 스스로 없앤다
+	//	(UBGPvELobbyWidget::HandleTurnStateChanged 참고).
+	if (GetLocalPlayer() && PvELobbyWidgetClass && ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
+	{
+		PvELobbyWidgetInstance = CreateWidget<UBGPvELobbyWidget>(this, PvELobbyWidgetClass);
+		if (PvELobbyWidgetInstance)
+		{
+			PvELobbyWidgetInstance->AddToViewport();
+		}
+	}
+
 	//	UI 주기 갱신은 위젯 연결과 무관하게 돌린다.
 	//	예전에는 SetSeatBoardWidget 안에서 타이머를 걸었는데, 그러면 좌석 보드를 연결하지
 	//	않은 HUD 에서는 손패 잠금 갱신까지 함께 멈춰버린다(숨은 의존성).
@@ -1732,6 +1747,10 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	//	⚠️ 1회성 카드(암살자)는 사용 한도를 소모하지 않는다. 여기서 세지 않으므로
 	//	   아래 발동 실패 롤백과 대비·무투가 환급도 모두 건너뛴다 — 되돌릴 것이 없다.
 	ABGPlayerState* MyPS = GetPlayerState<ABGPlayerState>();
+	//	대비는 GA 안에서 KeepCardUse를 새로 부여한다. 발동 뒤 현재 상태만 검사하면
+	//	그 대비 카드 자신을 "다음 카드"로 잘못 소비하므로, 발동 전 보유 여부를 고정해 둔다.
+	const bool bHadKeepCardUseBeforeActivation = MyPS
+		&& MyPS->HasPendingStatus(BG::Status::NextCard::KeepCardUse.GetTag());
 	if (MyPS && !bEphemeralCard)
 	{
 		MyPS->IncrementCardsUsedThisTurn();
@@ -1813,8 +1832,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	//	대비·무투가 양쪽을 건너뛴다 — 그냥 두면 이 턴에 낸 **다른** 카드의 사용횟수가 환급된다.
 	bool bCardUseRefunded = bEphemeralCard;
 
-	if (MyPS && !bCardUseRefunded && bResolved
-		&& MyPS->HasPendingStatus(BG::Status::NextCard::KeepCardUse.GetTag()))
+	if (MyPS && !bCardUseRefunded && bResolved && bHadKeepCardUseBeforeActivation)
 	{
 		int32 Unused = 0;
 		MyPS->ConsumePendingStatus(BG::Status::NextCard::KeepCardUse.GetTag(), Unused);
@@ -1954,6 +1972,25 @@ void ABGPlayerController::ServerRequestEndTurn_Implementation()
 	{
 		//	좌석은 서버가 가진 PlayerState 에서 읽는다 — 클라가 보낸 값을 믿지 않는다.
 		GS->RequestEndTurn(GetMySeatIndex());
+	}
+}
+
+void ABGPlayerController::RequestStartPvEMatch()
+{
+	ServerRequestStartPvEMatch();
+}
+
+void ABGPlayerController::ServerRequestStartPvEMatch_Implementation()
+{
+	//	PvP 클라가 실수로(혹은 악의적으로) 이걸 불러도 세션 로비를 건너뛰지 못하게 막는다.
+	if (ABGGameMode::GetPlayMode(this) != EBGPlayMode::PvE)
+	{
+		return;
+	}
+
+	if (UBGMatchStartComponent* Match = UBGMatchStartComponent::Find(GetWorld()))
+	{
+		Match->StartMatch();
 	}
 }
 

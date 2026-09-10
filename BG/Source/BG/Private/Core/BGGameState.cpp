@@ -19,6 +19,7 @@
 #include "Lobby/BGSeatComponent.h"
 #include "GAS/Effect/GE_BGDamage.h"
 #include "FX/BGCardNiagaraTypes.h"
+#include "FX/BGPresentationDataAsset.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
@@ -176,9 +177,16 @@ void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGChar
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
 	const FBGCardFXRow* FXRow = Data ? Data->GetCardFXRow(Resolution.CardId) : nullptr;
 	const FBGCardRow* CardRow = Data ? Data->GetCardRow(Resolution.CardId) : nullptr;
-	if (!FXRow || !CardRow)
+	const bool bFailed = Resolution.Roll != INDEX_NONE
+		&& (Resolution.Outcome == EBGDiceOutcome::Failure
+			|| Resolution.Outcome == EBGDiceOutcome::CriticalFailure);
+	const UBGPresentationDataAsset* Presentation = Data ? Data->GetPresentationData() : nullptr;
+	const bool bHasFailureEffect = Presentation && !(Resolution.Outcome == EBGDiceOutcome::CriticalFailure
+		? Presentation->CriticalFailureEffect
+		: Presentation->FailureEffect).IsNull();
+	if (!CardRow || (!FXRow && !(bFailed && bHasFailureEffect)))
 	{
-		return; // 연출 Row가 없는 카드는 규칙만 처리한다.
+		return; // 성공 계열은 카드 FX Row, 실패 계열은 Presentation 전역 FX가 있어야 한다.
 	}
 
 	// 같은 Cue 태그는 ASC에서 중첩 파라미터를 보존하지 않는다. 다음 카드가 오면 이전 단발
@@ -191,7 +199,10 @@ void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGChar
 		return;
 	}
 
-	AddNonCinematicCardGameplayCue(Caster, Target, Resolution, FXRow->NonCinematicCueSeconds);
+	const float ActiveSeconds = bFailed && Presentation
+		? Presentation->FailureCueSeconds
+		: FXRow->NonCinematicCueSeconds;
+	AddNonCinematicCardGameplayCue(Caster, Target, Resolution, ActiveSeconds);
 }
 
 void ABGGameState::FinishResolutionPresentation()
@@ -332,14 +343,13 @@ void ABGGameState::AddCardGameplayCueForStage(EBGCinematicStage Stage)
 	const UGameInstance* GI = GetGameInstance();
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
 	const FBGCardFXRow* FXRow = Data ? Data->GetCardFXRow(CinematicResolution.CardId) : nullptr;
-	if (!FXRow)
-	{
-		return;
-	}
-
 	const bool bFailed = CinematicResolution.Roll != INDEX_NONE
 		&& (CinematicResolution.Outcome == EBGDiceOutcome::Failure
 			|| CinematicResolution.Outcome == EBGDiceOutcome::CriticalFailure);
+	if (!FXRow && !bFailed)
+	{
+		return;
+	}
 	if (bFailed && Stage == EBGCinematicStage::Secondary)
 	{
 		return; // 실패 전역 FX는 사용자 기준 Primary에서 한 번만 재생한다.
@@ -415,14 +425,13 @@ void ABGGameState::AddNonCinematicCardGameplayCue(ABGCharacter* Caster, ABGChara
 	const UGameInstance* GI = GetGameInstance();
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
 	const FBGCardFXRow* FXRow = Data ? Data->GetCardFXRow(Resolution.CardId) : nullptr;
-	if (!FXRow)
-	{
-		return;
-	}
-
 	const bool bFailed = Resolution.Roll != INDEX_NONE
 		&& (Resolution.Outcome == EBGDiceOutcome::Failure
 			|| Resolution.Outcome == EBGDiceOutcome::CriticalFailure);
+	if (!FXRow && !bFailed)
+	{
+		return;
+	}
 	ABGCharacter* CueTarget = !bFailed
 		&& FXRow->PrimaryAnchor == EBGCardFXAnchor::Target && Target
 		? Target
@@ -450,9 +459,13 @@ void ABGGameState::AddNonCinematicCardGameplayCue(ABGCharacter* Caster, ABGChara
 	ActiveNonCinematicCardCueASC = ASC;
 	ActiveNonCinematicCardCueTag = CueTag;
 
+	const UBGPresentationDataAsset* Presentation = Data ? Data->GetPresentationData() : nullptr;
+	const float CueSeconds = bFailed && Presentation
+		? Presentation->FailureCueSeconds
+		: ActiveSeconds;
 	GetWorldTimerManager().SetTimer(NonCinematicCardCueTimer, this,
 		&ABGGameState::RemoveActiveNonCinematicCardGameplayCue,
-		FMath::Max(0.01f, ActiveSeconds), /*bLoop=*/false);
+		FMath::Max(0.01f, CueSeconds), /*bLoop=*/false);
 }
 
 //시네마틱 사용하지 않는 카드의 게임플레이 큐 태그 제거
@@ -1701,11 +1714,12 @@ void ABGGameState::HandlePvERunWin()
 	if (GM && ClearedEncounter == GM->BossEncounterIndex)
 	{
 		// TODO: 게임 클리어 연출
-		GI->ResetPvERun();
+		GI->ResetPvERun();   // 런 종료. 로비에서 시작 버튼 기다림(자동 시작 안 함)
 	}
 	else
 	{
 		// TODO: PvE 조우 승리 연출
+		GI->SetAutoStartNextPvEMatch(true);
 		GI->AdvancePvEEncounter();
 	}
 }
