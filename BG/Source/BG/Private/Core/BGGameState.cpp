@@ -1326,6 +1326,16 @@ void ABGGameState::NotifyCardDiscarded(int32 Seat)
 	}
 }
 
+void ABGGameState::NotifyCardPlayed(int32 Seat)
+{
+	if (!HasAuthority() || !Rope)
+	{
+		return;
+	}
+
+	Rope->ResetRope(Seat);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════════════
 //  사망 / 승패
 // ══════════════════════════════════════════════════════════════════════════════════════
