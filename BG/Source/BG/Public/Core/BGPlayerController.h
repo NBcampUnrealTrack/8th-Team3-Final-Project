@@ -301,6 +301,10 @@ protected:
 	/** 시네마틱이 도는 동안 쥐고 있는 표. */
 	FBGPresentationTrackHold CinematicHold;
 
+	/** 판정 UI 대기가 도는 동안 쥐고 있는 표. 턴 상태 통지마다 상태를 맞춘다. */
+	void RefreshResolutionPresentationTrack();
+	FBGPresentationTrackHold ResolutionHold;
+
 
 	/** EBGDiceOutcome → EBGResolutionTier. 뷰 계층이 게임 enum 을 모르게 하는 경계다. */
 	static EBGResolutionTier ToResolutionTier(EBGDiceOutcome Outcome);

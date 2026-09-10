@@ -69,6 +69,7 @@ void UBGPresentationDirector::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	{
 		World->GetTimerManager().ClearTimer(TimeoutTimer);
 		World->GetTimerManager().ClearTimer(MinDurationTimer);
+		World->GetTimerManager().ClearTimer(GraceTimer);
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -118,6 +119,15 @@ FBGPresentationHandle UBGPresentationDirector::Hold(EBGPresentationTrack Track)
 	//	그 사이에 Release 되면 PendingHolds 에서 빠지므로 다음 연출을 붙잡지 않는다.
 	(bPresenting ? ActiveHolds : PendingHolds).Add(Handle.Id, Track);
 
+	//	교대가 이뤄졌다 — 앞 트랙이 놓이고 이 트랙이 이어받았으므로 유예를 취소한다.
+	if (bPresenting)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(GraceTimer);
+		}
+	}
+
 	return Handle;
 }
 
@@ -142,7 +152,7 @@ void UBGPresentationDirector::Release(FBGPresentationHandle Handle)
 
 	if (ActiveHolds.IsEmpty())
 	{
-		FinishActive(/*bTimedOut=*/false);
+		ScheduleFinishAfterGrace();
 	}
 }
 
@@ -200,11 +210,11 @@ void UBGPresentationDirector::StartNext()
 			OnPresentationStarted.Broadcast(Active);
 		}
 
-		//	참여하는 트랙이 없거나, 통지 도중에 다 놓였다. 기다릴 것이 없으므로 끝낸다.
+		//	참여하는 트랙이 없거나, 통지 도중에 다 놓였다. 유예를 주고 끝낸다.
 		if (bFinishRequestedDuringStart || ActiveHolds.IsEmpty())
 		{
 			bFinishRequestedDuringStart = false;
-			FinishActive(/*bTimedOut=*/false);
+			ScheduleFinishAfterGrace();
 		}
 	}
 }
@@ -219,6 +229,29 @@ void UBGPresentationDirector::HandleTimeout()
 		Active.TimeoutSeconds, *TrackNames(ActiveHolds), ActiveHolds.Num());
 
 	FinishActive(/*bTimedOut=*/true);
+}
+
+void UBGPresentationDirector::ScheduleFinishAfterGrace()
+{
+	UWorld* World = GetWorld();
+	if (!World || HandoffGraceSeconds <= 0.f)
+	{
+		FinishActive(/*bTimedOut=*/false);
+		return;
+	}
+
+	//	⚠️ 곧장 끝내지 않는다. 다음 트랙이 이 사이에 표를 잡으면 Hold 가 이 타이머를 취소한다 —
+	//	   판정 대기 → 월드 연출처럼 신호가 서로 다른 경로로 오는 교대를 이어 준다.
+	World->GetTimerManager().SetTimer(GraceTimer,
+		FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			//	유예가 끝났는데도 비어 있다 = 진짜 끝이다.
+			if (ActiveHolds.IsEmpty())
+			{
+				FinishActive(/*bTimedOut=*/false);
+			}
+		}),
+		HandoffGraceSeconds, /*bLoop=*/false);
 }
 
 void UBGPresentationDirector::HandleMinDurationElapsed()
@@ -247,6 +280,7 @@ void UBGPresentationDirector::FinishActive(bool bTimedOut)
 	{
 		World->GetTimerManager().ClearTimer(TimeoutTimer);
 		World->GetTimerManager().ClearTimer(MinDurationTimer);
+		World->GetTimerManager().ClearTimer(GraceTimer);
 	}
 
 	const FBGPresentationRequest Finished = Active;

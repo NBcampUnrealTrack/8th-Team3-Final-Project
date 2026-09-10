@@ -27,6 +27,13 @@ enum class EBGPresentationKind : uint8
 UENUM(BlueprintType)
 enum class EBGPresentationTrack : uint8
 {
+	/**
+	 * 판정 UI 대기(주사위·결과 표시). 끝내는 주체: ABGPlayerController(복제된 대기 플래그).
+	 * ⚠️ 월드 연출은 이 대기가 끝난 **뒤에** 시작한다(ResolutionPresentationSeconds).
+	 *    이 트랙이 없으면 그 사이 잡힌 트랙이 하나도 없어 연출이 곧바로 끝난다.
+	 */
+	Resolution UMETA(DisplayName = "판정 대기"),
+
 	/** 시네마틱 단계. 끝내는 주체: ABGPlayerController(단계 None). */
 	Cinematic UMETA(DisplayName = "시네마틱"),
 

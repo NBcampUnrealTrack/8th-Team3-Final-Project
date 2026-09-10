@@ -86,6 +86,15 @@ public:
 	UPROPERTY(EditAnywhere, Category = "BG|Presentation", meta = (ClampMin = "0.0"))
 	float CardPlayMinDuration = 0.4f;
 
+	/**
+	 * 마지막 표가 놓인 뒤 이만큼 기다렸다가 끝낸다. 그 사이 새 표가 잡히면 취소된다.
+	 *
+	 * ⚠️ 트랙이 교대할 때(판정 대기 → 월드 연출) 두 신호가 서로 다른 복제 경로로 와서
+	 *    한 프레임 어긋날 수 있다. 유예가 없으면 그 틈에 연출이 끝나 버린다.
+	 */
+	UPROPERTY(EditAnywhere, Category = "BG|Presentation", meta = (ClampMin = "0.0"))
+	float HandoffGraceSeconds = 0.25f;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -100,6 +109,9 @@ private:
 
 	/** 바닥 시간이 지났다 — 붙잡아 두던 표를 놓는다. */
 	void HandleMinDurationElapsed();
+
+	/** 표가 다 놓였다. 곧장 끝내지 않고 교대 유예를 준다. */
+	void ScheduleFinishAfterGrace();
 
 	UPROPERTY()
 	TArray<FBGPresentationRequest> Queue;
@@ -129,4 +141,7 @@ private:
 	/** 바닥 시간 동안 디렉터가 쥐고 있는 표. 참여자가 없어도 연출이 즉시 끝나지 않게 한다. */
 	FBGPresentationHandle MinDurationHold;
 	FTimerHandle MinDurationTimer;
+
+	/** 교대 유예 타이머. 도는 동안 새 표가 잡히면 취소된다. */
+	FTimerHandle GraceTimer;
 };

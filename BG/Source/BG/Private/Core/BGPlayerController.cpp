@@ -835,6 +835,24 @@ void ABGPlayerController::HandleTurnStateChanged()
 	RefreshTurnHighlight();
 	UpdateHandInteractionLock();
 	RefreshHandWidget();   //	카드의 사용 가능 표시가 페이즈에 걸려 있다.
+	RefreshResolutionPresentationTrack();
+}
+
+void ABGPlayerController::RefreshResolutionPresentationTrack()
+{
+	//	판정 UI 대기(주사위·결과 표시)가 도는 동안 표를 쥔다.
+	//	⚠️ 이 구간에는 월드 연출이 아직 없다 — 여기서 안 쥐면 잡힌 트랙이 하나도 없어
+	//	   연출이 시작하자마자 끝난다.
+	//	대기 플래그는 복제되고 그 OnRep 이 턴 상태 통지를 쏘므로, 클라도 양 끝을 받는다.
+	const ABGGameState* GS = GetBGGameState();
+	if (GS && GS->IsResolutionPresentationPlaying())
+	{
+		ResolutionHold.Begin(PresentationDirector, EBGPresentationTrack::Resolution);
+	}
+	else
+	{
+		ResolutionHold.End(PresentationDirector);
+	}
 }
 
 void ABGPlayerController::RefreshTurnHighlight()
