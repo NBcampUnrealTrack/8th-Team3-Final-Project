@@ -6,6 +6,7 @@
 #include "Core/BGCharacter.h"
 #include "Debug/BGCardLog.h"
 #include "FX/BGCardNiagaraTypes.h"
+#include "FX/BGPresentationDataAsset.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -42,14 +43,6 @@ namespace
 		if (Tags.HasTagExact(BG::Resolution::Success.GetTag()))
 		{
 			return &Row.SuccessEffect;
-		}
-		if (Tags.HasTagExact(BG::Resolution::Failure.GetTag()))
-		{
-			return &Row.FailureEffect;
-		}
-		if (Tags.HasTagExact(BG::Resolution::CriticalFailure.GetTag()))
-		{
-			return &Row.CriticalFailureEffect;
 		}
 		return nullptr;
 	}
@@ -157,6 +150,18 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 		? Parameters.OriginalTag
 		: Parameters.MatchedTagName;
 	const bool bPrimary = CueTag.MatchesTagExact(BG::GameplayCue::Card::Primary.GetTag());
+	const bool bCriticalFailure = Parameters.AggregatedSourceTags.HasTagExact(
+		BG::Resolution::CriticalFailure.GetTag());
+	const bool bFailure = Parameters.AggregatedSourceTags.HasTagExact(
+		BG::Resolution::Failure.GetTag());
+
+	// 실패 계열은 Primary에서 전역 실패 연출 하나만 재생한다. 시네마틱 Secondary까지
+	// 통과시키면 카드/직업 피격 FX와 실패 FX가 함께 보일 수 있으므로 여기서 막는다.
+	if (!bPrimary && (bFailure || bCriticalFailure))
+	{
+		return;
+	}
+
 	const float SpawnDelaySeconds = bPrimary
 		? Row->PrimarySpawnDelaySeconds
 		: Row->SecondarySpawnDelaySeconds;
@@ -185,7 +190,16 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 	}
 
 	const TSoftObjectPtr<UNiagaraSystem>* Effect = nullptr;
-	if (Row->FXSource == EBGCardFXSource::CharacterAttack)
+	const UBGPresentationDataAsset* Presentation = Data->GetPresentationData();
+	if (bPrimary && bCriticalFailure)
+	{
+		Effect = Presentation ? &Presentation->CriticalFailureEffect : nullptr;
+	}
+	else if (bPrimary && bFailure)
+	{
+		Effect = Presentation ? &Presentation->FailureEffect : nullptr;
+	}
+	else if (Row->FXSource == EBGCardFXSource::CharacterAttack)
 	{
 		const ABGCharacter* SourceCharacter = Cast<ABGCharacter>(Parameters.GetInstigator());
 		const FBGCharacterRow* CharacterRow = SourceCharacter

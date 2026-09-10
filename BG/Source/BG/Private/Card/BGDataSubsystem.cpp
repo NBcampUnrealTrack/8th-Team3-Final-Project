@@ -6,6 +6,7 @@
 #include "Card/BGCardType.h"
 #include "FX/BGStatusFXTypes.h"
 #include "FX/BGCardNiagaraTypes.h"
+#include "FX/BGPresentationDataAsset.h"
 #include "UObject/ConstructorHelpers.h"
 
 const FString UBGDataSubsystem::CharacterTablePath = TEXT("/Game/Data/DT_BGCharacterRow");
@@ -218,6 +219,12 @@ void UBGDataSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	//	카드 표와 달리 check() 로 막지 않는 이유가 이것이다.
 	StatusFXTable = Settings->StatusFXTable.LoadSynchronous();
 	CardFXTable = Settings->CardFXTable.LoadSynchronous();
+	PresentationData = Settings->PresentationData.LoadSynchronous();
+	if (!PresentationData)
+	{
+		UE_LOG(LogBGCard, Warning,
+			TEXT("Initialize: PresentationData 로드 실패 — 공통 시스템 연출이 재생되지 않습니다."));
+	}
 
 	CardTable = Settings->CardTable.LoadSynchronous();
 	check(CardTable != nullptr);	//	BuildDeck: CardTable 이 없습니다 (프로젝트 설정 확인).

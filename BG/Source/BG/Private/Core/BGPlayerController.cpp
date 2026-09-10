@@ -1443,10 +1443,6 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			Resolution.bForced = bForcedOutcome;
 			Resolution.Weights = Weights;
 
-			if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
-			{
-				MutableGS->Multicast_CardResolved(Resolution);
-			}
 		}
 		else if (!Dice)
 		{
@@ -1510,6 +1506,26 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 				*AbilityClass->GetName(), InstanceId),
 			FColor::Red, /*Time=*/8.f);
 		return;
+	}
+
+	// ── 연출 (아트 기획서 "전투 연출") ──────────────────────────────
+	//	맨 마지막에 시작한다. 판정·효과 적용·카드 소비가 모두 끝난 뒤라야
+	//	연출이 규칙에 관여하지 않는다는 원칙(Card.Trait.Cinematic 주석)이 지켜진다.
+	//	연출이 켜지든 말든 결과는 완전히 동일하다.
+	//
+	//  GA 발동 성공이 확정됐고, 아직 ConsumeCard가 손패를 갱신하기 전인 지점에서
+	//  먼저 GameState에 판정 결과를 넘기고 소유 클라이언트의 중앙 카드가 실제 등급으로
+	//  ReleaseHold되고 주사위/판정 UI 애니메이션을 시작한다.
+	//
+	//	GameState가 DT_BGCardFX와 Card.Trait.Cinematic을 보고
+	//  단발 Cue 또는 시네마틱 Primary/Secondary Cue를 선택한다. 여기서는 연출을 직접 제어하지 않는다.
+	//  판정 UI 통지와 월드 연출 타이머만 열고, 실제 GameplayCue는 ResolutionPresentationSeconds 뒤에 시작한다.
+	if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+	{
+		MutableGS->PlayResolvedCardPresentation(
+			Cast<ABGCharacter>(GetPawn()),
+			Cast<ABGCharacter>(ResolveTargetActor(TargetSeat)),
+			Resolution);
 	}
 
 	// 뱅 규칙: 낸 카드는 결과와 무관하게 버린 패로 간다.
@@ -1614,19 +1630,6 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		}
 	}
 
-	// ── 연출 (아트 기획서 "전투 연출") ──────────────────────────────
-	//	맨 마지막에 시작한다. 판정·효과 적용·카드 소비가 모두 끝난 뒤라야
-	//	연출이 규칙에 관여하지 않는다는 원칙(Card.Trait.Cinematic 주석)이 지켜진다.
-	//	연출이 켜지든 말든 여기까지의 결과는 완전히 동일하다.
-	//	GameState가 DT_BGCardFX와 Card.Trait.Cinematic을 보고
-	//  단발 Cue 또는 시네마틱 Primary/Secondary Cue를 선택한다. 여기서는 연출을 직접 제어하지 않는다.
-	if (ABGGameState* MutableGS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
-	{
-		MutableGS->PlayResolvedCardPresentation(
-			Cast<ABGCharacter>(GetPawn()),
-			Cast<ABGCharacter>(ResolveTargetActor(TargetSeat)),
-			Resolution);
-	}
 }
 
 // ======================================================================================
