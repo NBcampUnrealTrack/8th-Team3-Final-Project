@@ -163,6 +163,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|PvE")
 	void RequestStartPvEMatch();
 
+	// PvE 보상 선택 화면의 카드 버튼이 부른다. CardId 는 DT_BGCard 의 Row 이름.
+	UFUNCTION(BlueprintCallable, Category = "BG|PvE")
+	void RequestSelectPvEReward(FName CardId);
+
 	/** 지금 내가 카드를 낼 수 있는가 (자기 턴 + Play 페이즈). UI 표시용. */
 	UFUNCTION(BlueprintPure, Category = "BG|Turn")
 	bool IsMyTurnToPlay() const;
@@ -203,6 +207,13 @@ public:
 
 	UPROPERTY()
 	class UBGPvELobbyWidget* PvELobbyWidgetInstance;
+
+	// PvE 조우 승리 보상 선택 위젯. 보상 후보가 있을 때만 스스로 나타난다(PvELobbyWidget과 짝).
+	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
+	TSubclassOf<class UBGRewardSelectWidget> RewardSelectWidgetClass;
+
+	UPROPERTY()
+	class UBGRewardSelectWidget* RewardSelectWidgetInstance;
 
 	/**
 	 * 서버가 카드 사용을 거부했다. 카드는 이미 손패로 되돌려 놓은 뒤에 발생한다 —
@@ -430,6 +441,9 @@ protected:
 
 	UFUNCTION(Server, Reliable)
 	void ServerRequestStartPvEMatch();
+
+	UFUNCTION(Server, Reliable)
+	void ServerRequestSelectPvEReward(FName CardId);
 
 	// 클라 → 서버. Discard 페이즈에서 손패를 한 장 버린다.
 	UFUNCTION(Server, Reliable, WithValidation)

@@ -60,8 +60,20 @@ void UBGMatchStartComponent::NotifyPlayerJoined()
 					//	안 되는 상태로 끝나 버린다 - 이후 준비 상태가 바뀌어 다시 불려도
 					//	재시도가 안 되고 로비에 멈춘다.
 					GI->SetAutoStartNextPvEMatch(false);
-					UE_LOG(LogBGNet, Log, TEXT("[PvE] 조우 이어가기: 자동 시작"));
-					StartMatch();
+
+					const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+					if (GS && GS->GetPendingRewardCandidates().Num() > 0)
+					{
+						//	보상 후보가 있으면 여기서 StartMatch 를 안 부른다 - 보상 선택 위젯이
+						//	플레이어의 선택을 받으면 ABGGameState::ResolvePvERewardSelection 이
+						//	대신 불러준다.
+						UE_LOG(LogBGNet, Log, TEXT("[PvE] 보상 선택 대기"));
+					}
+					else
+					{
+						UE_LOG(LogBGNet, Log, TEXT("[PvE] 조우 이어가기: 자동 시작"));
+						StartMatch();
+					}
 				}
 				else
 				{

@@ -13,7 +13,8 @@ void UBGPvELobbyWidget::NativeConstruct()
 		StartButton->OnClicked.AddDynamic(this, &UBGPvELobbyWidget::HandleStartClicked);
 	}
 
-	TryBindTurnStateDelegate();
+	//	바인딩 + 지금 이미 판이 시작됐거나(늦게 생성) 보상 선택이 걸려 있으면 바로 숨긴다.
+	HandleTurnStateChanged();
 }
 
 void UBGPvELobbyWidget::NativeDestruct()
@@ -51,8 +52,9 @@ void UBGPvELobbyWidget::HandleTurnStateChanged()
 	TryBindTurnStateDelegate();
 
 	const ABGGameState* GS = BoundGameState.Get();
-	if (GS && GS->IsMatchRunning())
+	if (GS && (GS->IsMatchRunning() || GS->GetPendingRewardCandidates().Num() > 0))
 	{
-		RemoveFromParent();   // 판이 시작됐다. 로비 위젯은 더 필요 없다.
+		//	판이 시작됐거나, 보상 선택 화면이 대신 뜰 차례다 - 로비 버튼은 필요 없다.
+		RemoveFromParent();
 	}
 }
