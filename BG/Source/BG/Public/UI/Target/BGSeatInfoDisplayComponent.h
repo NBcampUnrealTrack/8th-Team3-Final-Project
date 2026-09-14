@@ -61,13 +61,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
 	TSubclassOf<UBGSeatDetailWidget> DetailWidgetClass;
 
-	// 상세가 그려질 픽셀 크기. 네 줄(직업·손패·역할·장비)이 들어갈 만큼만 잡는다.
+	// 상세가 그려질 픽셀 크기. 네 줄(직업·장비·손패·역할)이 들어갈 만큼만 잡는다.
+	// 한 줄 46px(아이콘 32 + 위아래 여백 7) + 줄 간격 2 → 4줄 192. 모자라면 아래가 잘린다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
-	FVector2D DetailDrawSize = FVector2D(300.f, 140.f);
+	FVector2D DetailDrawSize = FVector2D(180.f, 200.f);
 
-	/** 상세와 이름표 사이 틈(픽셀). 월드 거리가 아니라 화면 픽셀이라 거리와 무관하게 일정하다. */
+	/**
+	 * 상세와 이름표 사이 틈(픽셀). 음수면 그만큼 내려와 이름표와 겹친다.
+	 * 월드 거리가 아니라 화면 픽셀이라 거리와 무관하게 일정하다.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
-	float DetailGap = 8.f;
+	float DetailGap = -100.f;
+
+	/** 상세를 가로로 밀 픽셀. 양수면 오른쪽. DetailGap 과 같은 원리로 거리와 무관하다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
+	float DetailScreenOffsetX = 100.f;
 
 	/** 캡슐 꼭대기에서 이만큼 더 올린다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
@@ -76,6 +84,10 @@ protected:
 	// 이름표가 그려질 픽셀 크기. 배경은 내용 크기에 맞춰지므로 이 값은 "넘지 않을 상한" 이다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
 	FVector2D WidgetDrawSize = FVector2D(260.f, 56.f);
+
+	/** 이름표를 가로로 밀 픽셀. 음수면 왼쪽. DetailScreenOffsetX 와 같은 원리다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
+	float PlateScreenOffsetX = -80.f;
 
 	// 켜면 월드 평면에 붙어 원근을 받고, 끄면 항상 화면을 마주 본다.
 	// 기본은 화면 방향이다 — 원탁 반대편 이름표가 뒤집혀 보이는 것을 막으려는 것이다.

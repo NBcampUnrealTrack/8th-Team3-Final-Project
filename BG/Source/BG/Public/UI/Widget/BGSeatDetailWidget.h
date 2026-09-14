@@ -9,6 +9,9 @@
 #include "UI/View/BGSeatView.h"
 #include "BGSeatDetailWidget.generated.h"
 
+class UImage;
+class UTexture2D;
+
 /**
  * WBP 에서 OnSeatDetailChanged 를 구현해 자기 텍스트를 채운다.
  * 역할은 공개된 것만 들어온다 — 비어 있으면 "???" 처럼 숨겨져 있다는 표시를 남길 것.
@@ -45,7 +48,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|SeatDetail")
 	FText GetHandText() const;
 
-	/** 공개된 역할만 온다. 숨겨져 있으면 "역할 : ???". */
+	/** 공개된 역할만 온다. 숨겨져 있으면 "???". */
 	UFUNCTION(BlueprintPure, Category = "BG|SeatDetail")
 	FText GetRoleText() const;
 
@@ -70,11 +73,37 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<class UTextBlock> Text_Equipment;
 
+	/** 직업 아이콘. 태그가 없거나 아래 표에 없으면 접힌다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_JobIcon;
+
+	/** 역할 아이콘. Img_JobIcon 과 같은 규칙이다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_RoleIcon;
+
+	/** 직업 태그(Character.Job.*) → 아이콘. WBP 에서 채운다. 턴 패널의 같은 표와 내용을 맞출 것. */
+	UPROPERTY(EditAnywhere, Category = "BG|SeatDetail|Icon")
+	TMap<FGameplayTag, TObjectPtr<UTexture2D>> JobIcons;
+
+	/** 역할 태그(Role.*) → 아이콘. JobIcons 와 같은 규칙이다. */
+	UPROPERTY(EditAnywhere, Category = "BG|SeatDetail|Icon")
+	TMap<FGameplayTag, TObjectPtr<UTexture2D>> RoleIcons;
+
 	/** 값이 들어왔다. 색·애니메이션처럼 텍스트 말고 더 할 것이 있으면 여기서 한다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|SeatDetail")
 	void OnSeatDetailChanged(const FBGSeatView& InView);
 
 private:
+	/** 태그에 맞는 아이콘을 깐다. 못 찾으면 접는다. */
+	void RefreshIcons();
+
+	//	WBP 가 깔아 둔 범용 아이콘. 태그를 못 찾았을 때 되돌릴 곳이라 처음 한 번 기억해 둔다.
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> JobIconDefault;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> RoleIconDefault;
+
 	UPROPERTY()
 	FBGSeatView View;
 };
