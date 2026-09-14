@@ -27,6 +27,7 @@ class UCameraComponent;
 class UGameplayAbility;
 class UGameplayEffect;
 class UBGStatusFXComponent;
+class UStaticMeshComponent;
 
 /**
  * ABP 가 읽는 이 캐릭터의 연출 상태 (아트 기획서 "전투 연출").
@@ -65,6 +66,7 @@ enum class EBGCharacterAnimState : uint8
 	Dying UMETA(DisplayName = "쓰러짐"),
 
 	//	사망 연출 2단계 — 역할 공개. 이 상태에 들어온 시점에 PublicRoleTag 가 이미 채워져 있다.
+	//	진입과 동시에 RefreshRoleRevealVisual() 이 본체 메시를 숨기고 정체 공개 메시로 바꾼다.
 	RoleReveal UMETA(DisplayName = "역할 공개")
 };
 
@@ -117,6 +119,13 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG")
 	void SetJobTag(const FGameplayTag& NewTag);
+
+	/**
+	 * 서버 전용. 적 AI를 PvE 보스로 지정한다. 새 직업을 만들지 않고, 이미 적용된
+	 * 직업 스탯 위에 State.Boss 태그와 StatBoostGE(스탯 배율 GameplayEffect)를 얹는다.
+	 * 반드시 SetJobTag 이후에 불러야 한다(순서가 바뀌면 강화가 덮어써진다).
+	 */
+	void MarkAsBoss(TSubclassOf<UGameplayEffect> StatBoostGE);
 
 	/**
 	 * 서버 전용. Health 가 0 이 되었음을 AttributeSet 이 알려온다.
@@ -257,6 +266,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Anim")
 	void RefreshAnimState();
 
+	/**
+	 * 정체가 드러나야 하는 상태(RoleReveal 이후)인지 보고 본체 메시 ↔ 정체 공개 메시를 맞바꾼다.
+	 *
+	 * ⚠️ 타이밍의 주인은 **애님 노티파이**다 — 쓰러짐/역할공개 몽타주에 심어 둔
+	 *    `UBGAnimNotify_RoleReveal` 이 원하는 프레임에서 이 함수를 부른다(연기 이펙트 등과 같은
+	 *    프레임에 맞추기 위해서). RefreshAnimState 는 `Dead` 상태에 들어올 때만 안전망으로
+	 *    한 번 더 부른다 — 몽타주를 아예 보지 못한 늦은 접속자를 위해서다.
+	 *    죽었다가 되살아나는 경우는 없으므로 되돌리는 코드는 두지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Anim")
+	void RefreshRoleRevealVisual();
+
 protected:
 	/** 소유 클라에서 몸 방향을 맞춘다. 서버의 SetBodyFacing 이 호출한다. */
 	UFUNCTION(Client, Reliable)
@@ -299,6 +320,10 @@ protected:
 	/** 평상시 시점. 스폰 시 이쪽이 활성이다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|FX")
 	TObjectPtr<UBGStatusFXComponent> StatusFX;
+
+	/** 정체 공개 연출에서 본체 대신 보이는 시체 메시. 평소엔 숨겨져 있고 메시도 비어 있다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Anim")
+	TObjectPtr<UStaticMeshComponent> RevealMeshComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Camera")
 	TObjectPtr<UCameraComponent> PrimaryCamera;
@@ -343,6 +368,10 @@ protected:
 
 	// 서버 전용. 사망 1회 처리 보장.
 	bool bDead = false;
+
+	//	RefreshRoleRevealVisual 1회 처리 보장 겸, 몽타주 노티파이가 이미 처리했는지 판별하는 값.
+	//	이게 없으면 Dead 진입 시의 안전망 호출이 노티파이가 이미 끝낸 스왑을 다시 덮어쓴다.
+	bool bRoleRevealApplied = false;
 
 	// ── 직업 Row 적용 ──
 

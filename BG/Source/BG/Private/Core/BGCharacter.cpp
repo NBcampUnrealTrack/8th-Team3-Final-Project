@@ -15,10 +15,13 @@
 #include "Core/BGPlayerState.h"
 #include "Engine/World.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Net/UnrealNetwork.h"
 #include "FX/BGStatusFXComponent.h"
+#include "Card/BGDataSettings.h"
 
 ABGCharacter::ABGCharacter()
 {
@@ -34,6 +37,12 @@ ABGCharacter::ABGCharacter()
 
 	//	장비/버프의 복제 상태에서 지속 Niagara 집합을 유도한다.
 	StatusFX = CreateDefaultSubobject<UBGStatusFXComponent>(TEXT("StatusFX"));
+
+	//	정체 공개 연출 전까지는 메시도 없고 숨겨진 채다 — RefreshRoleRevealVisual 이 채운다.
+	RevealMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RevealMeshComponent"));
+	RevealMeshComponent->SetupAttachment(GetCapsuleComponent());
+	RevealMeshComponent->SetVisibility(false);
+	RevealMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	//	── 카메라 (구 ABGPlayerBase 에서 통합) ──
 	//	ACharacter 는 CapsuleComponent 를 루트로 하드코딩한다. 별도의 씬 루트를 둘 수 없으므로
@@ -315,12 +324,66 @@ void ABGCharacter::RefreshAnimState()
 
 	AnimState = NewState;
 
+	//	라이브로 지켜보는 클라는 몽타주에 심어 둔 UBGAnimNotify_RoleReveal 이 타이밍을 맞춰 부른다.
+	//	여기서는 Dead 진입 때만 안전망으로 부른다 — 그 몽타주를 아예 못 본(늦게 접속한) 클라 대비.
+	if (AnimState == EBGCharacterAnimState::Dead)
+	{
+		RefreshRoleRevealVisual();
+	}
+
 	UE_LOG(LogBGCard, Verbose, TEXT("[Anim] %s → 상태 %d (카드 %s, 단계 %d)"),
 		*GetName(), static_cast<int32>(AnimState),
 		CinematicCardId.IsValid() ? *CinematicCardId.ToString() : TEXT("없음"),
 		static_cast<int32>(CinematicStage));
 
 	OnAnimStateChanged.Broadcast(AnimState);
+}
+
+void ABGCharacter::RefreshRoleRevealVisual()
+{
+	if (bRoleRevealApplied || !RevealMeshComponent)
+	{
+		return;   // 이미 스왑됨(보통 노티파이가 먼저 처리) — Dead 진입 안전망의 중복 적용을 막는다.
+	}
+
+	//	RoleReveal 이후(Dead 포함)에만 정체가 드러난다. Dead 도 허용하는 이유는 늦게 접속한
+	//	클라가 곧바로 Dead 상태로 시작해 RoleReveal 전이(=몽타주 재생)를 못 보고 지나치기 때문이다.
+	const bool bShouldReveal = (AnimState == EBGCharacterAnimState::RoleReveal
+		|| AnimState == EBGCharacterAnimState::Dead);
+	if (!bShouldReveal)
+	{
+		return;
+	}
+
+	//	진짜 역할(RoleTag)이 아니라 공개된 역할을 봐야 한다 — RoleTag 는 COND_OwnerOnly 라
+	//	남의 화면에서는 항상 비어 있다.
+	const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
+	const FGameplayTag PublicRole = PS ? PS->GetPublicRole() : FGameplayTag();
+	if (!PublicRole.IsValid())
+	{
+		return;   // RevealDeadRole 이 아직 안 왔다 — 다음 호출(노티파이 또는 Dead 진입)에서 다시 시도된다.
+	}
+
+	const UBGDataSettings* Settings = GetDefault<UBGDataSettings>();
+	UStaticMesh* RevealMesh = Settings ? Settings->GetRevealMeshForRole(PublicRole).LoadSynchronous() : nullptr;
+	if (!RevealMesh)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BG] 정체 공개 메시 없음 — %s (BGDataSettings 의 Reveal 메시를 채울 것)"),
+			*PublicRole.ToString());
+		return;
+	}
+
+	RevealMeshComponent->SetStaticMesh(RevealMesh);
+	RevealMeshComponent->SetVisibility(true);
+	GetMesh()->SetVisibility(false, true);   // true = 붙어 있던 무기 등 자식까지 함께 숨긴다.
+	bRoleRevealApplied = true;
+
+	//	AnimState==Dead 에서 처리됐다면 몽타주 노티파이보다 안전망이 먼저(또는 대신) 처리한 것이다 —
+	//	늦은 접속자라면 정상이지만, 라이브로 보고 있었다면 노티파이 배치를 잊었다는 신호다.
+	if (AnimState == EBGCharacterAnimState::Dead)
+	{
+		UE_LOG(LogBGCard, Log, TEXT("[Anim] %s — 안전망이 정체 공개 스왑 처리 (몽타주 노티파이 미확인)"), *GetName());
+	}
 }
 
 void ABGCharacter::InitializeAbilityActorInfo()
@@ -373,6 +436,36 @@ void ABGCharacter::SetJobTag(const FGameplayTag& NewTag)
 	{
 		ApplyJobVisual();
 	}
+}
+
+void ABGCharacter::MarkAsBoss(TSubclassOf<UGameplayEffect> StatBoostGE)
+{
+	if (!HasAuthority() || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	// State.Dead 등과 같은 방식. 룰 상태는 루즈 게임플레이 태그로 얹는다.
+	AbilitySystemComponent->AddLooseGameplayTag(BG::State::Boss.GetTag());
+
+	if (!StatBoostGE)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[BG] 보스 강화 GE 없음. %s 는 태그만 붙고 스탯은 그대로."), *GetName());
+		return;
+	}
+
+	FGameplayEffectContextHandle Context = AbilitySystemComponent->MakeEffectContext();
+	Context.AddSourceObject(this);
+
+	const FGameplayEffectSpecHandle Spec = AbilitySystemComponent->MakeOutgoingSpec(StatBoostGE, 1.f, Context);
+	if (!Spec.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[BG] 보스 강화 GE 적용 실패. %s (Spec 무효)"), *GetName());
+		return;
+	}
+
+	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+	UE_LOG(LogTemp, Log, TEXT("[BG] 보스 지정: %s"), *GetName());
 }
 
 void ABGCharacter::OnRep_RoleTag()

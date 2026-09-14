@@ -73,8 +73,15 @@ public:
 	// ABGGameState 가 이겼을 때만 호출한다. 진행도를 1 올린다.
 	void AdvancePvEEncounter();
 
-	// ABGGameState 가 졌을 때(런 종료) 호출한다. 진행도를 0 으로 되돌린다.
+	// ABGGameState 가 졌을 때(런 종료) 호출한다. 진행도를 1(조우1)로 되돌린다.
 	void ResetPvERun();
+
+	// 직전 조우를 이겨서(런이 안 끝나고) 이어서 왔는가. true면 새 월드에서 로비를
+	// 거치지 않고 시작 버튼 없이 바로 StartMatch() 한다. 한 번 읽으면 스스로 false로 되돌린다.
+	UFUNCTION(BlueprintPure, Category = "BG|PvE")
+	bool ShouldAutoStartNextPvEMatch() const { return bAutoStartNextPvEMatch; }
+
+	void SetAutoStartNextPvEMatch(bool bAutoStart) { bAutoStartNextPvEMatch = bAutoStart; }
 
 	// ── 조회 ──
 
@@ -129,8 +136,12 @@ public:
 	//	덱 관련 exec 는 ABGGameMode 로
 
 private:
-	// PvE 런에서 이긴 조우 수. AdvancePvEEncounter 로만 바꾼다.
-	int32 PvEEncounterIndex = 0;
+	// 지금 플레이 중인(또는 다음에 시작할) 조우 번호. 1-base — 조우1이 런의 첫 조우다.
+	// AdvancePvEEncounter/ResetPvERun 로만 바꾼다.
+	int32 PvEEncounterIndex = 1;
+
+	// ShouldAutoStartNextPvEMatch/SetAutoStartNextPvEMatch 참고.
+	bool bAutoStartNextPvEMatch = false;
 
 	// 세션 인터페이스 핸들(없으면 유효하지 않은 포인터).
 	IOnlineSessionPtr GetSessionInterface() const;

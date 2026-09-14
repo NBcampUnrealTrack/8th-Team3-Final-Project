@@ -220,8 +220,7 @@ UNiagaraComponent* UBGStatusFXComponent::SpawnFXFor(FName Key)
 		return nullptr;
 	}
 
-	//	캐릭터면 메쉬에, 아니면 루트에 붙인다. 메쉬에 붙여야 소켓을 쓸 수 있고
-	//	직업 메쉬가 어떤 자세를 취하든 따라간다.
+	//	캐릭터면 메쉬에, 아니면 루트에 붙인다.
 	USceneComponent* AttachTo = nullptr;
 	if (const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
 	{
@@ -236,17 +235,42 @@ UNiagaraComponent* UBGStatusFXComponent::SpawnFXFor(FName Key)
 		return nullptr;
 	}
 
+	const AActor* OwnerActor = GetOwner();
+	const USceneComponent* OwnerRoot = OwnerActor ? OwnerActor->GetRootComponent() : nullptr;
+	const bool bUseSocketLocation = !Row->AttachSocket.IsNone();
+	const FTransform AttachWorldTransform = AttachTo->GetSocketTransform(Row->AttachSocket, RTS_World);
+
+	//	소켓 지정 시 소켓 위치, 미지정 시 Actor Root 위치를 기준으로 삼는다.
+	//	회전은 어느 경우든 메쉬/소켓을 사용해 이펙트의 전방 정렬을 보존한다.
+	const FVector BaseWorldLocation = bUseSocketLocation || !OwnerRoot
+		? AttachWorldTransform.GetLocation()
+		: OwnerRoot->GetComponentLocation();
+	const FVector SpawnWorldLocation = BaseWorldLocation
+		+ AttachWorldTransform.TransformVector(Row->LocationOffset);
+	const FRotator SpawnWorldRotation = AttachWorldTransform.Rotator();
+
 	//	bAutoDestroy=false — 이 컴포넌트가 수명을 쥔다. true 로 두면 루프가 아닌 이펙트가
 	//	제 스스로 사라져 ActiveFX 에 죽은 포인터가 남고, 그 키는 영영 다시 붙지 않는다.
 	UNiagaraComponent* FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
 		System, AttachTo, Row->AttachSocket,
-		Row->LocationOffset, FRotator::ZeroRotator,
-		EAttachLocation::SnapToTargetIncludingScale,
-		/*bAutoDestroy=*/false);
+		SpawnWorldLocation, SpawnWorldRotation,
+		EAttachLocation::KeepWorldPosition,
+		/*bAutoDestroy=*/false,
+		/*bAutoActivate=*/false);
+
+	if (FX)
+	{
+		// 전역 높이는 World +Z로 한 번만 적용한다.
+		FX->AddWorldOffset(FVector::UpVector * Data->GetGlobalFXSpawnZOffset());
+	}
 
 	if (FX && !FMath::IsNearlyEqual(Row->Scale, 1.f))
 	{
 		FX->SetRelativeScale3D(FVector(Row->Scale));
+	}
+	if (FX)
+	{
+		FX->Activate(true);
 	}
 
 	return FX;

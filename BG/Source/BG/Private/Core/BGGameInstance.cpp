@@ -640,7 +640,7 @@ void UBGGameInstance::AdvancePvEEncounter()
 
 void UBGGameInstance::ResetPvERun()
 {
-	PvEEncounterIndex = 0;
+	PvEEncounterIndex = 1;
 	UE_LOG(LogBGNet, Log, TEXT("[PvE] 런 종료. 진행도 초기화"));
 }
 

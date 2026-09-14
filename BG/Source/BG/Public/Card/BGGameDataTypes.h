@@ -6,6 +6,7 @@
 #include "Engine/DataTable.h"
 #include "GameplayTagContainer.h"
 #include "Templates/SubclassOf.h"
+#include "Card/BGCardPresentationTypes.h"
 #include "BGGameDataTypes.generated.h"
 
 class UGameplayAbility;
@@ -420,6 +421,10 @@ public:
 	//	카드 특성 ( Card.Trait.* )
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) 
 	FGameplayTagContainer TraitTags;
+
+	/** 대상 선택 중 표시할 선 연출 계열. 대상 선택이 없는 카드는 사용되지 않는다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Presentation")
+	EBGTargetSelectionStyle TargetSelectionStyle = EBGTargetSelectionStyle::Basic;
 
 	// 갈색 카드: 사용 시 이 이벤트 태그로 GA 를 트리거한다 (Ability.Bang 등).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly) 
