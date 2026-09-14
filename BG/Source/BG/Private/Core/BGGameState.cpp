@@ -17,6 +17,7 @@
 #include "Core/BGGameInstance.h"
 #include "Lobby/BGRopeComponent.h"
 #include "Lobby/BGSeatComponent.h"
+#include "Lobby/BGMatchStartComponent.h"
 #include "GAS/Effect/GE_BGDamage.h"
 #include "FX/BGCardNiagaraTypes.h"
 #include "FX/BGPresentationDataAsset.h"
@@ -51,6 +52,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, WinningRoleTag);
 	DOREPLIFETIME(ABGGameState, bMatchRunning);
 	DOREPLIFETIME(ABGGameState, MatchEndStage);
+	DOREPLIFETIME(ABGGameState, PendingRewardCandidates);
 	DOREPLIFETIME(ABGGameState, CameraShot);
 	DOREPLIFETIME(ABGGameState, CinematicStage);
 	DOREPLIFETIME(ABGGameState, CinematicInstigator);
@@ -741,20 +743,13 @@ void ABGGameState::InitializeDeck(int32 Seed, int32 EncounterIndex)
 		Subsystem->BuildPvEDeck(EnemyDeck, EBGDeckSide::Enemy, EncounterIndex);
 
 		//	조우 승리 보상. 직전 조우를 이겼으면(EncounterIndex 가 2 이상 — 1은 첫 조우라
-		//	이긴 적이 없다) 장비 카드 하나를 기억해 둔다. 지면 ResetPvERun 이 1로 되돌리므로
-		//	여기 안 온다.
+		//	이긴 적이 없다) 보상 후보를 준비해 둔다. 플레이어가 고르면 ResolvePvERewardSelection
+		//	이 PendingPvEReward 를 확정한다. 지면 ResetPvERun 이 1로 되돌리므로 여기 안 온다.
 		if (EncounterIndex >= 2)
 		{
-			FName RewardCardId;
-			if (Subsystem->GetRandomEquipCardId(RandomStream, RewardCardId))
-			{
-				PendingPvEReward.InstanceId = Deck.Num() + 1;
-				PendingPvEReward.CardId = RewardCardId;
-				PendingPvEReward.Side = EBGDeckSide::Player;
-
-				UE_LOG(LogBGCard, Log, TEXT("[PvE] 조우 %d 승리 보상. %s 장착 카드 초기 손패에 지급 예정"),
-					EncounterIndex, *RewardCardId.ToString());
-			}
+			Subsystem->GetAllEquipCardIds(PendingRewardCandidates);
+			UE_LOG(LogBGCard, Log, TEXT("[PvE] 조우 %d 승리 보상 후보 %d종 준비"),
+				EncounterIndex, PendingRewardCandidates.Num());
 		}
 
 		EnemyDiscard.Reset();
@@ -1082,6 +1077,34 @@ void ABGGameState::StartMatch()
 	}
 
 	BeginTurn(FirstSeat);
+}
+
+void ABGGameState::ResolvePvERewardSelection(FName CardId)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	//	클라가 보낸 값을 그대로 믿지 않는다 - 실제로 보여준 후보 중 하나인지 확인한다.
+	if (!PendingRewardCandidates.Contains(CardId))
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[PvE] 보상 선택 거부. %s 는 후보에 없음"), *CardId.ToString());
+		return;
+	}
+
+	PendingPvEReward.InstanceId = Deck.Num() + 1;
+	PendingPvEReward.CardId = CardId;
+	PendingPvEReward.Side = EBGDeckSide::Player;
+	PendingRewardCandidates.Reset();
+
+	UE_LOG(LogBGCard, Log, TEXT("[PvE] 보상 선택 확정: %s"), *CardId.ToString());
+
+	//	보상 고르느라 미뤄뒀던 판 시작을 이제 연다.
+	if (UBGMatchStartComponent* Match = UBGMatchStartComponent::Find(GetWorld()))
+	{
+		Match->StartMatch();
+	}
 }
 
 void ABGGameState::BeginTurn(int32 Seat)

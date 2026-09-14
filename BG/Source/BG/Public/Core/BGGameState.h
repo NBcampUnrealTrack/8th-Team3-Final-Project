@@ -218,6 +218,16 @@ public:
 	/** 판 시작 — 초기 손패를 나눠주고 첫 턴을 연다. 역할 배정이 끝난 뒤 호출할 것. */
 	void StartMatch();
 
+	/** 보안관이 고를 수 있는 PvE 보상 후보. 없으면 빈 배열. */
+	UFUNCTION(BlueprintPure, Category = "BG|PvE")
+	const TArray<FName>& GetPendingRewardCandidates() const { return PendingRewardCandidates; }
+
+	/**
+	 * PvE 보상 선택을 제출한다. CardId 가 실제 후보에 없으면 무시한다(클라를 안 믿는다).
+	 * 선택이 확정되면 보상 때문에 미뤄뒀던 StartMatch() 를 여기서 대신 부른다.
+	 */
+	void ResolvePvERewardSelection(FName CardId);
+
 	/** 현재 턴 좌석. 아직 시작 전이면 INDEX_NONE. */
 	UFUNCTION(BlueprintPure, Category = "BG|Turn")
 	int32 GetCurrentSeat() const { return CurrentSeat; }
@@ -588,6 +598,11 @@ protected:
 	// 서버 전용. PvE 조우 승리 보상 카드 — 보안관(사람)에게만 지급한다. InstanceId == INDEX_NONE 이면 없음.
 	UPROPERTY()
 	FBGCardInstance PendingPvEReward;
+
+	// 보안관이 고를 수 있는 보상 후보. 선택이 끝나면(또는 애초에 후보가 없으면) 비어 있다.
+	// 클라(보상 선택 위젯)가 읽어야 하므로 복제한다.
+	UPROPERTY(Replicated)
+	TArray<FName> PendingRewardCandidates;
 
 	// 공개 정보
 	UPROPERTY(Replicated)

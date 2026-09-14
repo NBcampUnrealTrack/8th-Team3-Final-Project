@@ -54,10 +54,10 @@ public:
 	void BuildPvEDeck(TArray<FBGCardInstance>& OutDeck, EBGDeckSide Side, int32 EncounterIndex = 1) const;
 
 	/**
-	 * PvE 조우 승리 보상용. DT_BGCard 에서 파란(장비) Row 중 하나를 무작위로 고른다.
-	 * 후보가 하나도 없으면 false.
+	 * PvE 조우 승리 보상 후보용. DT_BGCard 에서 파란(장비) Row 전부를 돌려준다.
+	 * 플레이어가 그중 하나를 고른다 - 여기서는 후보만 모으고 무작위 선택은 하지 않는다.
 	 */
-	bool GetRandomEquipCardId(FRandomStream& Stream, FName& OutCardId) const;
+	void GetAllEquipCardIds(TArray<FName>& OutCardIds) const;
 
 	/**
 	 * DT_BGCard 의 모든 Row 이름. 이름순으로 정렬해서 준다.

@@ -16,6 +16,7 @@
 #include "BGGameplayTags.h"           // BG::Status::*
 #include "Core/BGGameState.h"               // PushToDiscard
 #include "Core/BGGameMode.h"                // GetPlayMode
+#include "Core/BGGameInstance.h"            // ShouldAutoStartNextPvEMatch
 #include "Core/BGPlayerState.h"
 #include "Lobby/BGMatchStartComponent.h"    // RequestStartPvEMatch
 #include "UI/View/BGSeatViewLibrary.h"
@@ -26,6 +27,7 @@
 #include "UI/Widget/BGTurnPanelWidget.h"
 #include "UI/Widget/BGResolutionWidget.h"
 #include "UI/Widget/BGPvELobbyWidget.h"
+#include "UI/Widget/BGRewardSelectWidget.h"
 #include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
 #include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
 #include "Core/BGCharacter.h"                // 연출 주인공 캐스팅
@@ -742,14 +744,30 @@ void ABGPlayerController::BeginPlay()
 		}
 	}
 
-	//	세션 로비가 없는 PvE 전용 "게임 시작" 버튼. 판이 시작되면 위젯이 스스로 없앤다
-	//	(UBGPvELobbyWidget::HandleTurnStateChanged 참고).
-	if (GetLocalPlayer() && PvELobbyWidgetClass && ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
+	//	세션 로비가 없는 PvE 전용 "게임 시작" 버튼. 직전 조우를 이겨서 자동으로 이어지는
+	//	경우엔(사람 눈에 로비 스킵처럼 보여야 하므로) 애초에 보여주지 않는다.
+	const UBGGameInstance* GIForLobby = Cast<UBGGameInstance>(GetGameInstance());
+	const bool bWillAutoStartPvE = GIForLobby && GIForLobby->ShouldAutoStartNextPvEMatch();
+	if (GetLocalPlayer() && PvELobbyWidgetClass && ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE
+		&& !bWillAutoStartPvE)
 	{
 		PvELobbyWidgetInstance = CreateWidget<UBGPvELobbyWidget>(this, PvELobbyWidgetClass);
 		if (PvELobbyWidgetInstance)
 		{
 			PvELobbyWidgetInstance->AddToViewport();
+		}
+	}
+
+	//	PvE 보상 선택 화면. 보여줄 후보가 이미 있을 때만 화면에 붙인다.
+	//	고르고 나면 스스로 없앤다(UBGRewardSelectWidget::HandleTurnStateChanged 참고).
+	const ABGGameState* GSForReward = GetBGGameState();
+	if (GetLocalPlayer() && RewardSelectWidgetClass && ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE
+		&& GSForReward && GSForReward->GetPendingRewardCandidates().Num() > 0)
+	{
+		RewardSelectWidgetInstance = CreateWidget<UBGRewardSelectWidget>(this, RewardSelectWidgetClass);
+		if (RewardSelectWidgetInstance)
+		{
+			RewardSelectWidgetInstance->AddToViewport();
 		}
 	}
 
@@ -1991,6 +2009,19 @@ void ABGPlayerController::ServerRequestStartPvEMatch_Implementation()
 	if (UBGMatchStartComponent* Match = UBGMatchStartComponent::Find(GetWorld()))
 	{
 		Match->StartMatch();
+	}
+}
+
+void ABGPlayerController::RequestSelectPvEReward(FName CardId)
+{
+	ServerRequestSelectPvEReward(CardId);
+}
+
+void ABGPlayerController::ServerRequestSelectPvEReward_Implementation(FName CardId)
+{
+	if (ABGGameState* GS = GetBGGameState())
+	{
+		GS->ResolvePvERewardSelection(CardId);
 	}
 }
 
