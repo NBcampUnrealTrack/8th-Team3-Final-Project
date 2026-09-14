@@ -164,9 +164,9 @@ public:
 
 	//	서버에서 덱을 구성·셔플한다. 이미 초기화됐으면 아무것도 하지 않는다(시드 보존).
 	//	Seed == 0 이면 새 시드를 뽑아 쓰고, 사용한 값을 로그에 남긴다 — 재현에 필수.
-	//	EncounterIndex 는 PvE 전용이고 지금은 쓰지 않는다.
+	//	EncounterIndex 는 PvE 전용, 1-base(조우1부터). 지금은 보상 카드 여부만 본다.
 	//	TODO: 조우별 난이도 스케일링을 여기에 넣는다.
-	void InitializeDeck(int32 Seed = 0, int32 EncounterIndex = 0);
+	void InitializeDeck(int32 Seed = 0, int32 EncounterIndex = 1);
 
 	// Side 생략 시 Player 덱. 소진 시 그 진영의 Discard 를 리셔플한다.
 	bool DrawFromDeck(FBGCardInstance& OutCard, EBGDeckSide Side = EBGDeckSide::Player);
@@ -256,6 +256,9 @@ public:
 
 	/** 손패를 한 장 버렸다는 통지. 한도 이하가 되면 턴을 넘긴다. */
 	void NotifyCardDiscarded(int32 Seat);
+
+	/** 카드 사용이 확정됐다는 통지. 그 좌석의 밧줄을 전체 길이로 다시 채운다. */
+	void NotifyCardPlayed(int32 Seat);
 
 	/**
 	 * 손패 상한. 좌석과 무관하게 MaxHandSize 다.
@@ -407,12 +410,17 @@ public:
 	/**
 	 * 서버 전용. 카드 규칙 처리 성공 뒤의 공통 연출 입구.
 	 *
-	 * DT_BGCardFX가 없으면 아무 것도 하지 않는다. Card.Trait.Cinematic 카드는
-	 * BeginCardCinematic으로 넘기고, 나머지는 카메라 전환 없이 Primary Cue를 짧게
-	 * Add/Remove한다. PlayerController는 이 함수 호출만 담당한다.
+	 * 주사위 판정 카드면 먼저 Multicast_CardResolved로 UI를 시작하고
+	 * ResolutionPresentationSeconds 뒤에 월드 연출을 연다. BGCardWidget의 종료 신호에는
+	 * 의존하지 않는다. 그 뒤 DT_BGCardFX와 Card.Trait.Cinematic을 보고 시네마틱 또는
+	 * 단발 GameplayCue를 선택한다. PlayerController는 이 함수 호출만 담당한다.
 	 */
 	void PlayResolvedCardPresentation(class ABGCharacter* Caster, class ABGCharacter* Target,
 		const FBGCardResolution& Resolution);
+
+	/** 주사위/판정 UI가 끝나 월드 카드 연출을 시작하기 전까지의 서버 권위 대기 상태. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	bool IsResolutionPresentationPlaying() const { return bResolutionPresentationActive; }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
@@ -621,6 +629,14 @@ protected:
 	 */
 	void ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat);
 
+	// ── PvE 런 승패 처리 (CheckWinCondition 전용, 다른 곳에서 부르지 말 것) ──
+
+	//	PvE 에서 사람(Sheriff) 이 이겼을 때. 다음 조우로 진행한다.
+	void HandlePvERunWin();
+
+	//	PvE 에서 사람(Sheriff) 이 졌을 때. 런을 끝낸다.
+	void HandlePvERunLoss();
+
 	/**
 	 * 죽은 좌석을 **화면상으로도** 죽은 것으로 만든다. DeathPrimary 진입 직전에 불린다.
 	 *
@@ -688,6 +704,27 @@ protected:
 	TWeakObjectPtr<UAbilitySystemComponent> ActiveNonCinematicCardCueASC;
 	FGameplayTag ActiveNonCinematicCardCueTag;
 	FTimerHandle NonCinematicCardCueTimer;
+
+	/** 판정 UI 대기 없이 기존 시네마틱/단발 Cue 분기를 실행한다. 서버 전용. */
+	void PlayResolvedCardPresentationNow(class ABGCharacter* Caster, class ABGCharacter* Target,
+		const FBGCardResolution& Resolution);
+
+	/** 서버 판정 연출 타이머가 끝난 뒤 보관한 월드 연출을 시작한다. */
+	void FinishResolutionPresentation();
+
+	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
+	bool bResolutionPresentationActive = false;
+
+	UPROPERTY()
+	TObjectPtr<class ABGCharacter> PendingPresentationCaster;
+
+	UPROPERTY()
+	TObjectPtr<class ABGCharacter> PendingPresentationTarget;
+
+	UPROPERTY()
+	FBGCardResolution PendingPresentationResolution;
+
+	FTimerHandle ResolutionPresentationTimer;
 
 	//	서버·클라 공통. 현재 단계에 맞춰 델리게이트를 쏘고 카메라를 맞춘다.
 	void HandleCinematicStage();
@@ -842,13 +879,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "BG|Rope")
 	TObjectPtr<class UBGRopeComponent> Rope;
 
-	//	주사위(판정) 표시 동안 밧줄을 멈추는 시간. 판정 위젯의 DisplaySeconds 와 맞출 것.
-	//	0 이하면 멈추지 않는다.
-	UPROPERTY(EditDefaultsOnly, Category = "BG|Rope")
-	float ResolutionRopePauseSeconds = 2.5f;
-
-	//	판정 표시가 끝나는 시점에 밧줄을 놓는 타이머. 연속 판정이면 갱신된다.
-	FTimerHandle ResolutionPauseTimer;
+	/**
+	 * 주사위/판정 UI를 보여준 뒤 월드 GameplayCue를 시작하기까지의 시간.
+	 * WBP_BGCard의 Anim_Decision + 결과 애니메이션 전체 길이에 맞춘다.
+	 * 이 시간 동안 카드 사용과 턴 종료를 막고 밧줄도 멈춘다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0", Units = "s"))
+	float ResolutionPresentationSeconds = 2.5f;
 
 public:
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")

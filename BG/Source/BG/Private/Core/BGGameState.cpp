@@ -19,6 +19,7 @@
 #include "Lobby/BGSeatComponent.h"
 #include "GAS/Effect/GE_BGDamage.h"
 #include "FX/BGCardNiagaraTypes.h"
+#include "FX/BGPresentationDataAsset.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Net/UnrealNetwork.h"
@@ -55,6 +56,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, CinematicInstigator);
 	DOREPLIFETIME(ABGGameState, CinematicTarget);
 	DOREPLIFETIME(ABGGameState, CinematicResolution);
+	DOREPLIFETIME(ABGGameState, bResolutionPresentationActive);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -117,6 +119,55 @@ void ABGGameState::BeginCardCinematic(ABGCharacter* Caster, ABGCharacter* Victim
 void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharacter* Target,
 	const FBGCardResolution& Resolution)
 {
+	if (!HasAuthority() || !Resolution.CardId.IsValid())
+	{
+		return;
+	}
+
+	// 판정 UI 통지와 월드 연출 예약을 한 입구에서 시작한다. PlayerController 중간에서
+	// 먼저 Multicast하면 GA 발동 실패에도 결과 UI만 재생되며 두 시간축의 시작점도 갈라진다.
+	if (Resolution.Roll != INDEX_NONE)
+	{
+		if (bResolutionPresentationActive)
+		{
+			UE_LOG(LogBGCard, Warning,
+				TEXT("[CardPresentation] 이전 판정 연출 대기 중 — %s 요청을 무시합니다."),
+				*Resolution.CardId.ToString());
+			return;
+		}
+
+		if (ResolutionPresentationSeconds > 0.f)
+		{
+			bResolutionPresentationActive = true;
+			PendingPresentationCaster = Caster;
+			PendingPresentationTarget = Target;
+			PendingPresentationResolution = Resolution;
+			BroadcastTurnState();
+
+			if (Rope)
+			{
+				Rope->PauseRope(BGRopePause::Resolution);
+			}
+
+			// 호스트도 UI 콜백 시점에 이미 대기 상태를 보도록 서버 상태를 먼저 연다.
+			// 클라이언트는 이 통지를 받아 주사위/판정 UI 애니메이션을 시작한다.
+			Multicast_CardResolved(Resolution);
+
+			GetWorldTimerManager().SetTimer(ResolutionPresentationTimer, this,
+				&ABGGameState::FinishResolutionPresentation,
+				ResolutionPresentationSeconds, /*bLoop=*/false);
+			return;
+		}
+
+		Multicast_CardResolved(Resolution);
+	}
+
+	PlayResolvedCardPresentationNow(Caster, Target, Resolution);
+}
+
+void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGCharacter* Target,
+	const FBGCardResolution& Resolution)
+{
 	if (!HasAuthority() || !Caster || !Resolution.CardId.IsValid())
 	{
 		return;
@@ -126,9 +177,16 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
 	const FBGCardFXRow* FXRow = Data ? Data->GetCardFXRow(Resolution.CardId) : nullptr;
 	const FBGCardRow* CardRow = Data ? Data->GetCardRow(Resolution.CardId) : nullptr;
-	if (!FXRow || !CardRow)
+	const bool bFailed = Resolution.Roll != INDEX_NONE
+		&& (Resolution.Outcome == EBGDiceOutcome::Failure
+			|| Resolution.Outcome == EBGDiceOutcome::CriticalFailure);
+	const UBGPresentationDataAsset* Presentation = Data ? Data->GetPresentationData() : nullptr;
+	const bool bHasFailureEffect = Presentation && !(Resolution.Outcome == EBGDiceOutcome::CriticalFailure
+		? Presentation->CriticalFailureEffect
+		: Presentation->FailureEffect).IsNull();
+	if (!CardRow || (!FXRow && !(bFailed && bHasFailureEffect)))
 	{
-		return; // 연출 Row가 없는 카드는 규칙만 처리한다.
+		return; // 성공 계열은 카드 FX Row, 실패 계열은 Presentation 전역 FX가 있어야 한다.
 	}
 
 	// 같은 Cue 태그는 ASC에서 중첩 파라미터를 보존하지 않는다. 다음 카드가 오면 이전 단발
@@ -141,7 +199,44 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 		return;
 	}
 
-	AddNonCinematicCardGameplayCue(Caster, Target, Resolution, FXRow->NonCinematicCueSeconds);
+	const float ActiveSeconds = bFailed && Presentation
+		? Presentation->FailureCueSeconds
+		: FXRow->NonCinematicCueSeconds;
+	AddNonCinematicCardGameplayCue(Caster, Target, Resolution, ActiveSeconds);
+}
+
+void ABGGameState::FinishResolutionPresentation()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(ResolutionPresentationTimer);
+
+	ABGCharacter* Caster = PendingPresentationCaster.Get();
+	ABGCharacter* Target = PendingPresentationTarget.Get();
+	const FBGCardResolution Resolution = PendingPresentationResolution;
+
+	PendingPresentationCaster = nullptr;
+	PendingPresentationTarget = nullptr;
+	PendingPresentationResolution = FBGCardResolution();
+	bResolutionPresentationActive = false;
+	BroadcastTurnState();
+
+	// 먼저 월드 연출을 열어 Cinematic pause holder를 잡는다. 그 뒤 Resolution holder를
+	// 놓아야 두 단계 사이에 밧줄이 잠깐 재개되지 않는다.
+	PlayResolvedCardPresentationNow(Caster, Target, Resolution);
+	if (Rope)
+	{
+		Rope->ResumeRope(BGRopePause::Resolution);
+	}
+
+	// 비시네마틱 카드 또는 FX Row가 없는 카드로 발생한 사망도 지연 뒤 이어서 처리한다.
+	if (!IsCinematicPlaying())
+	{
+		TryBeginNextDeathCinematic();
+	}
 }
 
 void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
@@ -248,12 +343,21 @@ void ABGGameState::AddCardGameplayCueForStage(EBGCinematicStage Stage)
 	const UGameInstance* GI = GetGameInstance();
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
 	const FBGCardFXRow* FXRow = Data ? Data->GetCardFXRow(CinematicResolution.CardId) : nullptr;
-	if (!FXRow)
+	const bool bFailed = CinematicResolution.Roll != INDEX_NONE
+		&& (CinematicResolution.Outcome == EBGDiceOutcome::Failure
+			|| CinematicResolution.Outcome == EBGDiceOutcome::CriticalFailure);
+	if (!FXRow && !bFailed)
 	{
 		return;
 	}
+	if (bFailed && Stage == EBGCinematicStage::Secondary)
+	{
+		return; // 실패 전역 FX는 사용자 기준 Primary에서 한 번만 재생한다.
+	}
 
-	const EBGCardFXAnchor Anchor = Stage == EBGCinematicStage::Primary
+	const EBGCardFXAnchor Anchor = bFailed
+		? EBGCardFXAnchor::Instigator
+		: Stage == EBGCinematicStage::Primary
 		? FXRow->PrimaryAnchor
 		: FXRow->SecondaryAnchor;
 	ABGCharacter* CueTarget = Anchor == EBGCardFXAnchor::Target && CinematicTarget
@@ -321,12 +425,15 @@ void ABGGameState::AddNonCinematicCardGameplayCue(ABGCharacter* Caster, ABGChara
 	const UGameInstance* GI = GetGameInstance();
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
 	const FBGCardFXRow* FXRow = Data ? Data->GetCardFXRow(Resolution.CardId) : nullptr;
-	if (!FXRow)
+	const bool bFailed = Resolution.Roll != INDEX_NONE
+		&& (Resolution.Outcome == EBGDiceOutcome::Failure
+			|| Resolution.Outcome == EBGDiceOutcome::CriticalFailure);
+	if (!FXRow && !bFailed)
 	{
 		return;
 	}
-
-	ABGCharacter* CueTarget = FXRow->PrimaryAnchor == EBGCardFXAnchor::Target && Target
+	ABGCharacter* CueTarget = !bFailed
+		&& FXRow->PrimaryAnchor == EBGCardFXAnchor::Target && Target
 		? Target
 		: Caster;
 	UAbilitySystemComponent* ASC = UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(CueTarget);
@@ -352,9 +459,13 @@ void ABGGameState::AddNonCinematicCardGameplayCue(ABGCharacter* Caster, ABGChara
 	ActiveNonCinematicCardCueASC = ASC;
 	ActiveNonCinematicCardCueTag = CueTag;
 
+	const UBGPresentationDataAsset* Presentation = Data ? Data->GetPresentationData() : nullptr;
+	const float CueSeconds = bFailed && Presentation
+		? Presentation->FailureCueSeconds
+		: ActiveSeconds;
 	GetWorldTimerManager().SetTimer(NonCinematicCardCueTimer, this,
 		&ABGGameState::RemoveActiveNonCinematicCardGameplayCue,
-		FMath::Max(0.01f, ActiveSeconds), /*bLoop=*/false);
+		FMath::Max(0.01f, CueSeconds), /*bLoop=*/false);
 }
 
 //시네마틱 사용하지 않는 카드의 게임플레이 큐 태그 제거
@@ -476,16 +587,6 @@ void ABGGameState::HandleCameraShot()
 
 void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution& Resolution)
 {
-	//	주사위가 화면에 떠 있는 동안 밧줄을 멈춘다. 판정 표시는 클라 위젯의 일이라 서버에
-	//	"끝났다" 통지가 없다 — 같은 길이의 타이머로 놓는다. 연속 판정이면 타이머가 갱신된다.
-	if (HasAuthority() && Rope && ResolutionRopePauseSeconds > 0.f)
-	{
-		Rope->PauseRope(BGRopePause::Resolution);
-		GetWorldTimerManager().SetTimer(ResolutionPauseTimer,
-			[this]() { if (Rope) { Rope->ResumeRope(BGRopePause::Resolution); } },
-			ResolutionRopePauseSeconds, /*bLoop=*/false);
-	}
-
 	//	리슨서버에서는 호스트에서도 이 본문이 실행된다 — 호스트 UI 도 같은 경로로 갱신된다.
 	//	여기서 규칙을 처리하지 않는다. 판정과 효과 적용은 이미 서버에서 끝났고 이건 통지뿐이다.
 	OnCardResolved.Broadcast(Resolution);
@@ -517,7 +618,7 @@ void ABGGameState::BeginPlay()
 	{
 		//	PvE 런 진행도는 GameInstance 에 있다. ServerTravel 로 이 GameState 는 새로
 		//	만들어져도 GameInstance 는 살아있기 때문이다.
-		int32 EncounterIndex = 0;
+		int32 EncounterIndex = 1;
 		if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
 		{
 			if (const UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
@@ -533,7 +634,9 @@ void ABGGameState::BeginPlay()
 
 void ABGGameState::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	GetWorldTimerManager().ClearTimer(ResolutionPresentationTimer);
 	RemoveActiveCardGameplayCue();
+	RemoveActiveNonCinematicCardGameplayCue();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -637,9 +740,10 @@ void ABGGameState::InitializeDeck(int32 Seed, int32 EncounterIndex)
 		Subsystem->BuildPvEDeck(Deck, EBGDeckSide::Player, EncounterIndex);
 		Subsystem->BuildPvEDeck(EnemyDeck, EBGDeckSide::Enemy, EncounterIndex);
 
-		//	조우 승리 보상. 직전 조우를 이겼으면(EncounterIndex 가 1 이상) 장비 카드 하나를
-		//	기억해 둔다. 지면 AdvancePvEEncounter 가 0 으로 되돌리므로 여기 안 온다.
-		if (EncounterIndex >= 1)
+		//	조우 승리 보상. 직전 조우를 이겼으면(EncounterIndex 가 2 이상 — 1은 첫 조우라
+		//	이긴 적이 없다) 장비 카드 하나를 기억해 둔다. 지면 ResetPvERun 이 1로 되돌리므로
+		//	여기 안 온다.
+		if (EncounterIndex >= 2)
 		{
 			FName RewardCardId;
 			if (Subsystem->GetRandomEquipCardId(RandomStream, RewardCardId))
@@ -1183,7 +1287,8 @@ void ABGGameState::EnterPlayPhase()
 bool ABGGameState::CanSeatPlayCards(int32 Seat) const
 {
 	return bMatchRunning
-		&& !IsCinematicPlaying()   // 연출 중에는 전원 조작 불가
+		&& !bResolutionPresentationActive
+		&& !IsCinematicPlaying()   // 판정 UI 및 월드 연출 중에는 전원 조작 불가
 		&& Seat != INDEX_NONE
 		&& Seat == CurrentSeat
 		&& PhaseTag == BG::Phase::Play.GetTag();
@@ -1207,7 +1312,7 @@ void ABGGameState::RequestEndTurn(int32 RequestingSeat)
 
 	//	연출 중에는 턴을 넘기지 않는다. 이 함수는 CanSeatPlayCards 를 거치지 않고
 	//	직접 검사하므로 거기 넣은 연출 차단이 여기에는 적용되지 않는다 — 따로 막아야 한다.
-	if (IsCinematicPlaying())
+	if (bResolutionPresentationActive || IsCinematicPlaying())
 	{
 		UE_LOG(LogBGCard, Log, TEXT("[Turn] EndTurn 보류 — 연출 재생 중"));
 		return;
@@ -1325,6 +1430,16 @@ void ABGGameState::NotifyCardDiscarded(int32 Seat)
 	}
 }
 
+void ABGGameState::NotifyCardPlayed(int32 Seat)
+{
+	if (!HasAuthority() || !Rope)
+	{
+		return;
+	}
+
+	Rope->ResetRope(Seat);
+}
+
 // ══════════════════════════════════════════════════════════════════════════════════════
 //  사망 / 승패
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -1354,7 +1469,7 @@ void ABGGameState::HandleSeatDeath(int32 DeadSeat, int32 KillerSeat)
 	}
 
 	//	연출 중이면 그 연출이 끝나는 자리에서 이어서 재생된다(EndCardCinematic / FinishDeathCinematic).
-	if (IsCinematicPlaying())
+	if (bResolutionPresentationActive || IsCinematicPlaying())
 	{
 		return;
 	}
@@ -1373,7 +1488,7 @@ void ABGGameState::HandleSeatDeath(int32 DeadSeat, int32 KillerSeat)
 		World->GetTimerManager().SetTimerForNextTick(
 			FTimerDelegate::CreateWeakLambda(this, [this]()
 			{
-				if (!IsCinematicPlaying())
+				if (!bResolutionPresentationActive && !IsCinematicPlaying())
 				{
 					TryBeginNextDeathCinematic();
 				}
@@ -1585,6 +1700,39 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 	}
 }
 
+void ABGGameState::HandlePvERunWin()
+{
+	UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
+	if (!GI)
+	{
+		return;
+	}
+
+	const int32 ClearedEncounter = GI->GetPvEEncounterIndex();
+	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
+
+	if (GM && ClearedEncounter == GM->BossEncounterIndex)
+	{
+		// TODO: 게임 클리어 연출
+		GI->ResetPvERun();   // 런 종료. 로비에서 시작 버튼 기다림(자동 시작 안 함)
+	}
+	else
+	{
+		// TODO: PvE 조우 승리 연출
+		GI->SetAutoStartNextPvEMatch(true);
+		GI->AdvancePvEEncounter();
+	}
+}
+
+void ABGGameState::HandlePvERunLoss()
+{
+	// TODO: PvE 게임 오버 연출
+	if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+	{
+		GI->ResetPvERun();
+	}
+}
+
 bool ABGGameState::CheckWinCondition()
 {
 	if (!bMatchRunning)
@@ -1627,20 +1775,16 @@ bool ABGGameState::CheckWinCondition()
 
 	WinningRoleTag = Winner;
 
-	//	PvE 는 사람이 항상 Sheriff다. Sheriff 승리만 "이겼다"로 본다. 다음 조우로 넘어갈
-	//	때(InitializeDeck) 이 진행도를 보고 보상(장비 카드)을 얹을지 정한다.
+	//	PvE 는 사람이 항상 Sheriff다. Sheriff 승리만 "이겼다"로 본다.
 	if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
 	{
-		if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+		if (Winner == BG::Role::Sheriff.GetTag())
 		{
-			if (Winner == BG::Role::Sheriff.GetTag())
-			{
-				GI->AdvancePvEEncounter();
-			}
-			else
-			{
-				GI->ResetPvERun();
-			}
+			HandlePvERunWin();
+		}
+		else
+		{
+			HandlePvERunLoss();
 		}
 	}
 

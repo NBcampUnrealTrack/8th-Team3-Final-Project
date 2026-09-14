@@ -3,9 +3,14 @@
 #include "BGGameplayTags.h"
 #include "Card/BGDataSubsystem.h"
 #include "Card/BGGameDataTypes.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Core/BGCharacter.h"
+#include "UI/Presentation/BGPresentationDirector.h"
 #include "Debug/BGCardLog.h"
 #include "FX/BGCardNiagaraTypes.h"
+#include "FX/BGPresentationDataAsset.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -42,14 +47,6 @@ namespace
 		if (Tags.HasTagExact(BG::Resolution::Success.GetTag()))
 		{
 			return &Row.SuccessEffect;
-		}
-		if (Tags.HasTagExact(BG::Resolution::Failure.GetTag()))
-		{
-			return &Row.FailureEffect;
-		}
-		if (Tags.HasTagExact(BG::Resolution::CriticalFailure.GetTag()))
-		{
-			return &Row.CriticalFailureEffect;
 		}
 		return nullptr;
 	}
@@ -93,6 +90,11 @@ bool ABGCardGameplayCueNotify::OnActive_Implementation(AActor* MyTarget,
 		// Anim Montage 시작 위치. 구체 자산/분기는 GameplayCue Blueprint에서 구현한다.
 		K2_PlayCardAnimation(MyTarget, Parameters);
 
+		// ⚠️ 위 호출 **직후**여야 한다. BP 가 방금 건 몽타주가 지금은 "돌고 있는 몽타주" 다.
+		WatchCardAnimation(MyTarget);
+
+		BeginWorldFXTrack();
+
 		// Sound 시작 위치. one-shot 또는 loop 선택도 GameplayCue Blueprint에서 구현한다.
 		K2_PlayCardSound(MyTarget, Parameters);
 	}
@@ -135,6 +137,71 @@ bool ABGCardGameplayCueNotify::OnRemove_Implementation(AActor* MyTarget,
 	return true;
 }
 
+//	이 Cue 가 사는 동안 월드FX 트랙의 표를 쥔다.
+//	⚠️ 시네마틱 여부를 여기서 따지지 않는다. 시네마틱 카드는 단계마다 Cue 가 붙었다
+//	   떨어지지만, 그동안 시네마틱 트랙이 따로 표를 쥐고 있으므로 연출이 안 풀린다 —
+//	   트랙을 나눈 이득이 바로 이 조건문이 사라지는 것이다.
+void ABGCardGameplayCueNotify::BeginWorldFXTrack()
+{
+	WorldFXHold.Begin(UBGPresentationDirector::Get(this), EBGPresentationTrack::WorldFX);
+}
+
+void ABGCardGameplayCueNotify::EndWorldFXTrack()
+{
+	WorldFXHold.End(UBGPresentationDirector::Get(this));
+}
+
+void ABGCardGameplayCueNotify::WatchCardAnimation(AActor* MyTarget)
+{
+	//	⚠️ Cue 액터는 재사용된다(bAutoDestroyOnRemove = false). 앞 카드의 구독과 표가
+	//	   남으면 그 몽타주가 끝날 때 이번 연출이 풀린다.
+	StopWatchingCardAnimation();
+
+	const ABGCharacter* TargetCharacter = Cast<ABGCharacter>(MyTarget);
+	const USkeletalMeshComponent* Mesh = TargetCharacter ? TargetCharacter->GetMesh() : nullptr;
+	UAnimInstance* AnimInstance = Mesh ? Mesh->GetAnimInstance() : nullptr;
+	UAnimMontage* Montage = AnimInstance ? AnimInstance->GetCurrentActiveMontage() : nullptr;
+	if (!Montage)
+	{
+		return;   // 몽타주 없이 파티클·사운드만 쓰는 카드다. Cue 종료가 곧 끝이다.
+	}
+
+	WatchedAnimInstance = AnimInstance;
+	WatchedMontage      = Montage;
+	AnimInstance->OnMontageEnded.AddDynamic(this, &ABGCardGameplayCueNotify::HandleCardMontageEnded);
+
+	//	연출이 아직 시작 전이어도 된다 — 디렉터가 다음 연출로 물려받는다.
+	MontageHold.Begin(UBGPresentationDirector::Get(this), EBGPresentationTrack::Montage);
+
+	UE_LOG(LogBGCard, Verbose, TEXT("[CardCue] 몽타주 종료 대기 — %s / %s"),
+		*Montage->GetName(), *MyTarget->GetName());
+}
+
+void ABGCardGameplayCueNotify::HandleCardMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+	//	같은 메쉬의 다른 몽타주가 끝난 것일 수 있다.
+	if (Montage != WatchedMontage.Get())
+	{
+		return;
+	}
+
+	//	⚠️ 중단도 끝으로 친다. 무시하면 다음 카드가 덮어썼을 때 표가 영영 안 놓인다.
+	StopWatchingCardAnimation();
+}
+
+void ABGCardGameplayCueNotify::StopWatchingCardAnimation()
+{
+	if (UAnimInstance* AnimInstance = WatchedAnimInstance.Get())
+	{
+		AnimInstance->OnMontageEnded.RemoveDynamic(this, &ABGCardGameplayCueNotify::HandleCardMontageEnded);
+	}
+
+	MontageHold.End(UBGPresentationDirector::Get(this));
+
+	WatchedAnimInstance.Reset();
+	WatchedMontage.Reset();
+}
+
 //나이아가라 VFX 스폰
 void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 	const FGameplayCueParameters& Parameters, bool bAllowSpawnDelay)
@@ -146,18 +213,38 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 
 	const UGameInstance* GI = GetGameInstance();
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
-	const FGameplayTag CardId = FindCardId(Parameters.AggregatedSourceTags);
-	const FBGCardFXRow* Row = Data ? Data->GetCardFXRow(CardId) : nullptr;
-	if (!Row)
+	if (!Data)
 	{
 		return;
 	}
 
+	const FGameplayTag CardId = FindCardId(Parameters.AggregatedSourceTags);
 	const FGameplayTag CueTag = Parameters.OriginalTag.IsValid()
 		? Parameters.OriginalTag
 		: Parameters.MatchedTagName;
 	const bool bPrimary = CueTag.MatchesTagExact(BG::GameplayCue::Card::Primary.GetTag());
-	const float SpawnDelaySeconds = bPrimary
+	const bool bCriticalFailure = Parameters.AggregatedSourceTags.HasTagExact(
+		BG::Resolution::CriticalFailure.GetTag());
+	const bool bFailure = Parameters.AggregatedSourceTags.HasTagExact(
+		BG::Resolution::Failure.GetTag());
+	const bool bGlobalFailure = bPrimary && (bFailure || bCriticalFailure);
+	const UBGPresentationDataAsset* Presentation = Data->GetPresentationData();
+	const FBGCardFXRow* Row = Data->GetCardFXRow(CardId);
+	if (!Row && !bGlobalFailure)
+	{
+		return;
+	}
+
+	// 실패 계열은 Primary에서 전역 실패 연출 하나만 재생한다. 시네마틱 Secondary까지
+	// 통과시키면 카드/직업 피격 FX와 실패 FX가 함께 보일 수 있으므로 여기서 막는다.
+	if (!bPrimary && (bFailure || bCriticalFailure))
+	{
+		return;
+	}
+
+	const float SpawnDelaySeconds = bGlobalFailure && Presentation
+		? Presentation->FailureSpawnDelaySeconds
+		: bPrimary
 		? Row->PrimarySpawnDelaySeconds
 		: Row->SecondarySpawnDelaySeconds;
 
@@ -185,7 +272,15 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 	}
 
 	const TSoftObjectPtr<UNiagaraSystem>* Effect = nullptr;
-	if (Row->FXSource == EBGCardFXSource::CharacterAttack)
+	if (bPrimary && bCriticalFailure)
+	{
+		Effect = Presentation ? &Presentation->CriticalFailureEffect : nullptr;
+	}
+	else if (bPrimary && bFailure)
+	{
+		Effect = Presentation ? &Presentation->FailureEffect : nullptr;
+	}
+	else if (Row->FXSource == EBGCardFXSource::CharacterAttack)
 	{
 		const ABGCharacter* SourceCharacter = Cast<ABGCharacter>(Parameters.GetInstigator());
 		const FBGCharacterRow* CharacterRow = SourceCharacter
@@ -215,7 +310,7 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 	}
 
 	FName AttachPoint = NAME_None;
-	if (!Row->AttachSocket.IsNone())
+	if (!bGlobalFailure && !Row->AttachSocket.IsNone())
 	{
 		if (const ABGCharacter* TargetCharacter = Cast<ABGCharacter>(MyTarget))
 		{
@@ -233,16 +328,33 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 		return;
 	}
 
-	FVector SpawnOffset = Row->LocationOffset;
-	SpawnOffset.Z += Data->GetGlobalFXSpawnZOffset();
+	// Row/DataAsset 오프셋은 부착 대상 기준의 개별 로컬 보정으로 적용한다.
+	const FVector SpawnOffset = bGlobalFailure && Presentation
+		? Presentation->FailureLocationOffset
+		: Row->LocationOffset;
+	const FRotator SpawnRotation = bGlobalFailure && Presentation
+		? Presentation->FailureRotationOffset
+		: Row->RotationOffset;
+	const float SpawnScale = bGlobalFailure && Presentation
+		? Presentation->FailureScale
+		: Row->Scale;
 	SpawnedEffect = UNiagaraFunctionLibrary::SpawnSystemAttached(
-		System, AttachTo, AttachPoint, SpawnOffset, Row->RotationOffset,
-		EAttachLocation::KeepRelativeOffset, false);
+		System, AttachTo, AttachPoint, SpawnOffset, SpawnRotation,
+		EAttachLocation::KeepRelativeOffset,
+		/*bAutoDestroy=*/false,
+		/*bAutoActivate=*/false);
 	if (SpawnedEffect)
 	{
-		SpawnedEffect->SetRelativeScale3D(FVector(Row->Scale));
-		EndBoolParameter = Row->EndBoolParameter;
-		EndDelaySeconds = Row->EndDelaySeconds;
+		// 전역 높이 World Z를 적용한다.
+		SpawnedEffect->AddWorldOffset(FVector::UpVector * Data->GetGlobalFXSpawnZOffset());
+		SpawnedEffect->SetRelativeScale3D(FVector(SpawnScale));
+		EndBoolParameter = bGlobalFailure && Presentation
+			? Presentation->FailureEndBoolParameter
+			: Row->EndBoolParameter;
+		EndDelaySeconds = bGlobalFailure && Presentation
+			? Presentation->FailureEndDelaySeconds
+			: Row->EndDelaySeconds;
+		SpawnedEffect->Activate(true);
 		UE_LOG(LogBGCard, Verbose, TEXT("[CardCue] 재생 — %s / %s"),
 			*System->GetName(), *MyTarget->GetName());
 	}
@@ -251,6 +363,10 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 //이펙트 종료후 비활성화
 void ABGCardGameplayCueNotify::FinishCueRemoval()
 {
+	//	이 Cue 의 몫은 여기서 끝난다. 시네마틱 여부를 따질 필요가 없다 —
+	//	시네마틱이 아직 돌면 그쪽 트랙이 표를 쥐고 있다.
+	EndWorldFXTrack();
+
 	GetWorldTimerManager().ClearTimer(SpawnTimer);
 	GetWorldTimerManager().ClearTimer(EndTimer);
 	if (SpawnedEffect)
@@ -267,6 +383,10 @@ void ABGCardGameplayCueNotify::FinishCueRemoval()
 //종료시 타이머 초기화 및 이펙트 비활성화
 void ABGCardGameplayCueNotify::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	//	⚠️ 안전망. Cue 액터가 통째로 사라지면(레벨 전환) 표를 놓을 사람이 없어진다.
+	StopWatchingCardAnimation();
+	EndWorldFXTrack();
+
 	if (GetWorld())
 	{
 		GetWorldTimerManager().ClearTimer(SpawnTimer);

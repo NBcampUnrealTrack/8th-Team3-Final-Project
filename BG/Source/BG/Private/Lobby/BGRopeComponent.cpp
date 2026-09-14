@@ -106,6 +106,45 @@ void UBGRopeComponent::StopRope()
 	BroadcastRope();
 }
 
+void UBGRopeComponent::ResetRope(int32 Seat)
+{
+	UWorld* World = GetWorld();
+	const ABGGameState* GS = GetGameState();
+	if (!ensureMsgf(World && GS && GS->HasAuthority(), TEXT("ResetRope 는 서버에서만 부른다.")))
+	{
+		return;
+	}
+
+	//	붙은 밧줄이 없거나(AI 좌석) 다른 좌석의 밧줄이면 손대지 않는다.
+	if (Rope.Seat == INDEX_NONE || Rope.Seat != Seat)
+	{
+		return;
+	}
+
+	//	길이는 지금의 접속 상태로 다시 정한다. 턴 중에 돌아온 사람은 정상 길이를 받는다.
+	const ABGPlayerState* PS = GS->GetPlayerStateBySeat(Seat);
+	const bool bAbsent = (PS == nullptr) || PS->IsDisconnected();
+	Rope.Length = FMath::Max(0.1f, bAbsent ? AbsentTurnSeconds : TurnSeconds);
+
+	if (Rope.bPaused)
+	{
+		//	멈춰 있는 동안에는 타이머가 없다 — 다시 탈 때 쓸 남은 시간만 채워 둔다.
+		Rope.PausedRemaining = Rope.Length;
+	}
+	else
+	{
+		Rope.EndServerTime = GS->GetServerWorldTimeSeconds() + Rope.Length;
+
+		World->GetTimerManager().SetTimer(
+			RopeTimer, this, &UBGRopeComponent::HandleRopeBurnedOut, Rope.Length, /*bLoop=*/false);
+	}
+
+	UE_LOG(LogBGCard, Log, TEXT("[Rope] 좌석 %d 밧줄 초기화 — %.0f초%s"),
+		Rope.Seat, Rope.Length, Rope.bPaused ? TEXT(" (멈춤 중)") : TEXT(""));
+
+	BroadcastRope();
+}
+
 void UBGRopeComponent::PauseRope(FName Reason)
 {
 	const ABGGameState* GS = GetGameState();

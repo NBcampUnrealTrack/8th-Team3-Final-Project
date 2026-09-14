@@ -137,6 +137,10 @@ struct FBGCardPlayContext
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Card|FX")
 	EBGCardFXArchetype Archetype = EBGCardFXArchetype::None;
 
+	/** 카드 대분류(장비/공격/마법). HUD 가 전투 연출을 켤지 고를 때 읽는다. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Card|FX")
+	EBGCardCategory Category = EBGCardCategory::Magic;
+
 	/** 카드를 낸 좌석. */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Card|FX")
 	int32 SeatIndex = INDEX_NONE;

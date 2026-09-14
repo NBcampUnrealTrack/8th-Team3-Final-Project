@@ -31,8 +31,13 @@ void UBGResolutionWidget::ShowResolution(const FBGResolutionView& InResolutionVi
 	RefreshVisual();
 	SetVisibility(ESlateVisibility::HitTestInvisible);   // 판정 표시가 카드 클릭을 먹지 않도록
 
+	bShowing = true;
+
 	//	연출 훅은 값이 다 채워진 뒤에 부른다 — BP 가 GetResolutionView 로 최종값을 읽을 수 있다.
+	//	위젯 안(BP 훅) 먼저, 바깥(HUD) 나중이다. 순서를 뒤집으면 HUD 가 패널을 바꾸는 동안
+	//	이 위젯의 등장 연출이 아직 시작되지 않은 프레임이 생긴다.
 	OnResolutionShown(ResolutionView);
+	OnResolutionShownEvent.Broadcast(ResolutionView);
 
 	UWorld* World = GetWorld();
 	if (!World)
@@ -59,7 +64,19 @@ void UBGResolutionWidget::HideResolution()
 	}
 
 	SetVisibility(ESlateVisibility::Collapsed);
+
+	//	보여 준 적이 없으면 퇴장을 알리지 않는다. SetResolutionWidget 이 등록 직후
+	//	빈 패널을 감추려고 여기를 부르는데, 그때 통지가 나가면 HUD 가 게임 시작과 동시에
+	//	복귀 연출을 한 번 돌린다(평상시 패널이 한 번 깜빡인다).
+	//	⚠️ SetVisibility 는 이 가드보다 **위**여야 한다 — 감추는 것 자체는 그때도 해야 한다.
+	if (!bShowing)
+	{
+		return;
+	}
+	bShowing = false;
+
 	OnResolutionHidden();
+	OnResolutionHiddenEvent.Broadcast();
 }
 
 FLinearColor UBGResolutionWidget::GetTierColor(EBGResolutionTier Tier) const
