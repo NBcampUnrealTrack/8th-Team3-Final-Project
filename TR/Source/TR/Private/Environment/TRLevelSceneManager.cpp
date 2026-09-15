@@ -90,6 +90,7 @@ ATRLevelSceneManager::ATRLevelSceneManager()
 	RailSegmentClass = ATRLevelSceneRailSegment::StaticClass();
 	FloorClass = ATRLevelSceneFloor::StaticClass();
 
+	// 생성자(CDO) 시점 로드라 동기 유지. 인게임 스폰은 BeginPlay 에서 한 번 만든 액터를 재활용한다.
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> FloorMeshFinder(TEXT("/Engine/BasicShapes/Plane.Plane"));
 	FloorMesh = FloorMeshFinder.Object;
 }

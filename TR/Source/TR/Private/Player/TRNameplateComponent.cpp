@@ -19,7 +19,7 @@ UTRNameplateComponent::UTRNameplateComponent()
 	SetRelativeScale3D(FVector(0.1f));
 	SetCullDistance(1500.f);
 
-	// 기본 표시 위젯. 블루프린트에서 WidgetClass 를 덮어쓸 수 있다.
+	// 기본 표시 위젯. 블루프린트에서 WidgetClass 를 덮어쓸 수 있다. 생성자(CDO) 시점이라 동기 로드 유지.
 	static ConstructorHelpers::FClassFinder<UTRNameplateWidget> DefaultNameplate(TEXT("/Game/UI/WBP_TRNameplate"));
 	if (DefaultNameplate.Succeeded())
 	{
