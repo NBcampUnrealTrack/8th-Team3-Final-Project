@@ -734,15 +734,6 @@ void ABGPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	if (GetLocalPlayer() && ChatWidgetClass)
-	{
-		ChatWidgetInstance = CreateWidget<UBGChatingWidget>(this, ChatWidgetClass);
-		if (ChatWidgetInstance)
-		{
-			ChatWidgetInstance->AddToViewport(10);
-			UE_LOG(LogTemp, Warning, TEXT("[Chat] 위젯 생성 - Controller: %s"), *GetName());
-		}
-	}
 
 	//	세션 로비가 없는 PvE 전용 "게임 시작" 버튼. 직전 조우를 이겨서 자동으로 이어지는
 	//	경우엔(사람 눈에 로비 스킵처럼 보여야 하므로) 애초에 보여주지 않는다.

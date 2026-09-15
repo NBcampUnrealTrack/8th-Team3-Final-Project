@@ -3,6 +3,7 @@
 #include "Components/Button.h"
 #include "Components/WidgetSwitcher.h"
 #include "Core/BGGameInstance.h"
+#include "UI/Widget/BGSettingsWidget.h"
 #include "Debug/BGNetLog.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "UI/Session/BGSessionMenuController.h"
@@ -83,8 +84,29 @@ void UBGMainMenuWidget::HandleJoin()
 
 void UBGMainMenuWidget::HandleSettings()
 {
-	// TODO: 환경설정 미구현.
-	UE_LOG(LogBGNet, Warning, TEXT("[MainMenu] 환경설정은 아직 구현되지 않았습니다."));
+	if (!SettingsWidgetClass)
+	{
+		UE_LOG(LogBGNet, Warning,
+			TEXT("[MainMenu] SettingsWidgetClass 미지정 — WBP_BGMainMenu 의 BG|UI 에서 WBP_BGSettings 를 고를 것."));
+		return;
+	}
+
+	if (!SettingsWidgetInstance)
+	{
+		SettingsWidgetInstance = CreateWidget<UBGSettingsWidget>(GetOwningPlayer(), SettingsWidgetClass);
+		if (!SettingsWidgetInstance)
+		{
+			return;
+		}
+
+		// 메뉴 위에 떠야 한다. 메인메뉴 자체는 AddToViewport() 기본값(0)으로 올라간다.
+		SettingsWidgetInstance->AddToViewport(200);
+
+		// 여기엔 HUD 가 없다 — 오른쪽 위 토글 버튼과 메인메뉴 복귀 버튼은 감춘다.
+		SettingsWidgetInstance->SetStandaloneMode(true);
+	}
+
+	SettingsWidgetInstance->OpenSettings();
 }
 
 void UBGMainMenuWidget::HandleQuit()

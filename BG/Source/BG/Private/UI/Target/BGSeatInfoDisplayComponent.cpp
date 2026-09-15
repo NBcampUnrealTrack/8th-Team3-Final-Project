@@ -298,8 +298,11 @@ UWidgetComponent* UBGSeatInfoDisplayComponent::EnsureWidgetFor(ABGCharacter* Cha
 	//	둘 다 같은 월드 지점에 걸고 위아래는 픽셀로 나눈다. Pivot.Y=1 이면 아래 끝이 그 지점이다.
 	const float AnchorZ = CapsuleTop + HeightAboveCapsule;
 
+	//	이름표도 가로로 밀 수 있게 한다. Pivot.X 를 줄이면 오른쪽으로 간다.
+	const float PlateShift = WidgetDrawSize.X > 0.f ? PlateScreenOffsetX / WidgetDrawSize.X : 0.f;
+
 	UWidgetComponent* Widget = MakeWidgetOn(Character, InfoWidgetClass, WidgetDrawSize,
-		AnchorZ, FVector2D(0.5f, 1.f));
+		AnchorZ, FVector2D(0.5f - PlateShift, 1.f));
 	if (!Widget)
 	{
 		return nullptr;
@@ -312,8 +315,11 @@ UWidgetComponent* UBGSeatInfoDisplayComponent::EnsureWidgetFor(ABGCharacter* Cha
 		//	이름표 높이와 틈만큼 Pivot 을 더 밀어 올린다. 크기가 바뀌어도 간격이 따라온다.
 		const float LiftRatio = (WidgetDrawSize.Y + DetailGap) / DetailDrawSize.Y;
 
+		//	가로도 같은 원리다. Pivot.X 를 줄이면 위젯이 오른쪽으로 간다.
+		const float ShiftRatio = DetailDrawSize.X > 0.f ? DetailScreenOffsetX / DetailDrawSize.X : 0.f;
+
 		if (UWidgetComponent* Detail = MakeWidgetOn(Character, DetailWidgetClass, DetailDrawSize,
-				AnchorZ, FVector2D(0.5f, 1.f + LiftRatio)))
+				AnchorZ, FVector2D(0.5f - ShiftRatio, 1.f + LiftRatio)))
 		{
 			Detail->SetVisibility(false);
 			DetailsBySeat.Add(SeatIndex, Detail);
