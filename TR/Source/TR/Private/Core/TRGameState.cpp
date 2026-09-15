@@ -36,13 +36,10 @@ void ATRGameState::BeginPlay()
 	}
 
 	UWorld* World = GetWorld();
-	if (!IsValid(World))
-	{
-		return;
-	}
+	check(World);
 
 	UTRMassCombatSubsystem* Combat = World->GetSubsystem<UTRMassCombatSubsystem>();
-	if (!IsValid(Combat))
+	if (!ensureMsgf(IsValid(Combat), TEXT("[ATRGameState] TRMassCombatSubsystem 이 없다")))
 	{
 		return;
 	}
@@ -297,7 +294,7 @@ void ATRGameState::SetWavePhase(ETRWavePhase InPhase, float InRestEndServerTime)
 
 void ATRGameState::SetBiome(const ETRBiomeType InBiome)
 {
-	if (!HasAuthority())
+	if (!ensureMsgf(HasAuthority(), TEXT("풍경은 서버에서만 바꿀 수 있습니다.")))
 	{
 		return;
 	}
@@ -317,7 +314,7 @@ void ATRGameState::SetBiome(const ETRBiomeType InBiome)
 
 void ATRGameState::SetAliveEnemyCount(int32 InCount)
 {
-	if (!HasAuthority())
+	if (!ensureMsgf(HasAuthority(), TEXT("생존 적 수는 서버에서만 바꿀 수 있습니다.")))
 	{
 		return;
 	}

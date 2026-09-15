@@ -183,9 +183,8 @@ int32 UTRMassSpawnerSubsystem::SpawnChasersWithHandles(const FTRChaserSpawnParam
 
 	UWorld* World = GetWorld();
 	UMassSpawnerSubsystem* Spawner = World ? World->GetSubsystem<UMassSpawnerSubsystem>() : nullptr;
-	if (Spawner == nullptr)
+	if (!ensureMsgf(Spawner, TEXT("[UTRMassSpawnerSubsystem] MassSpawnerSubsystem 이 없다")))
 	{
-		UE_LOG(LogTRMass, Warning, TEXT("MassSpawnerSubsystem을 찾을 수 없어 스폰을 건너뜁니다."));
 		return 0;
 	}
 

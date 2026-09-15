@@ -42,7 +42,7 @@ void UTRMassTargetZoneComponent::RegisterZone()
 
 	UWorld* World = GetWorld();
 	UTRTargetDirectorSubsystem* Director = World ? World->GetSubsystem<UTRTargetDirectorSubsystem>() : nullptr;
-	if (Director == nullptr)
+	if (!ensureMsgf(Director, TEXT("[UTRMassTargetZoneComponent] TRTargetDirectorSubsystem 이 없다")))
 	{
 		return;
 	}

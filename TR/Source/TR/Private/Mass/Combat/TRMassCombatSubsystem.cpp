@@ -48,7 +48,7 @@ FTRMassHitResult UTRMassCombatSubsystem::FireHitscan(const FVector& Start, const
 	}
 
 	UMassNavigationSubsystem* Navigation = World->GetSubsystem<UMassNavigationSubsystem>();
-	if (Navigation == nullptr)
+	if (!ensureMsgf(Navigation, TEXT("[UTRMassCombatSubsystem] MassNavigationSubsystem 이 없다")))
 	{
 		return Result;
 	}
@@ -203,7 +203,7 @@ int32 UTRMassCombatSubsystem::ApplyRadialDamage(const FVector& Center, float Rad
 	}
 
 	UMassNavigationSubsystem* Navigation = World->GetSubsystem<UMassNavigationSubsystem>();
-	if (Navigation == nullptr)
+	if (!ensureMsgf(Navigation, TEXT("[UTRMassCombatSubsystem] MassNavigationSubsystem 이 없다")))
 	{
 		return 0;
 	}

@@ -325,7 +325,7 @@ void ATRPlayerCharacter::Landed(const FHitResult& Hit)
 void ATRPlayerCharacter::ServerPlayJumpLandEffect_Implementation()
 {
 	UCharacterMovementComponent* MovementComp = GetCharacterMovement();
-	if (!IsValid(WalkEffect) || !IsValid(MovementComp))
+	if (!ensureMsgf(IsValid(WalkEffect) && IsValid(MovementComp), TEXT("[ATRPlayerCharacter] WalkEffect 또는 CharacterMovement 가 없다")))
 	{
 		return;
 	}
@@ -416,7 +416,7 @@ void ATRPlayerCharacter::ServerUpgradeArmor_Implementation()
 	}
 
 	ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
-	if (!IsValid(GameState))
+	if (!ensureMsgf(IsValid(GameState), TEXT("[ATRPlayerCharacter] 서버에 ATRGameState 가 없다")))
 	{
 		return;
 	}
@@ -442,7 +442,7 @@ void ATRPlayerCharacter::ServerUpgradeTurret_Implementation()
 	}
 
 	ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
-	if (!IsValid(GameState))
+	if (!ensureMsgf(IsValid(GameState), TEXT("[ATRPlayerCharacter] 서버에 ATRGameState 가 없다")))
 	{
 		return;
 	}
@@ -467,7 +467,8 @@ void ATRPlayerCharacter::Interact_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	if (!IsValid(InteractionComp) || !IsValid(ActionComp) || !IsValid(TurretControlComp))
+	if (!ensureMsgf(IsValid(InteractionComp) && IsValid(ActionComp) && IsValid(TurretControlComp),
+		TEXT("[ATRPlayerCharacter] 상호작용·액션·포탑 조작 컴포넌트가 없다")))
 	{
 		return;
 	}
@@ -528,7 +529,7 @@ void ATRPlayerCharacter::Trigger_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	if (!IsValid(InteractionComp) || !IsValid(ActionComp))
+	if (!ensureMsgf(IsValid(InteractionComp) && IsValid(ActionComp), TEXT("[ATRPlayerCharacter] 상호작용·액션 컴포넌트가 없다")))
 	{
 		return;
 	}
@@ -563,7 +564,7 @@ void ATRPlayerCharacter::TriggerReleased_Implementation()
 		return;
 	}
 
-	if (!IsValid(ActionComp))
+	if (!ensureMsgf(IsValid(ActionComp), TEXT("[ATRPlayerCharacter] 액션 컴포넌트가 없다")))
 	{
 		return;
 	}
@@ -585,7 +586,7 @@ void ATRPlayerCharacter::Reload_Implementation(const FInputActionValue& Input)
 		return;
 	}
 
-	if (!IsValid(InteractionComp) || !IsValid(ActionComp))
+	if (!ensureMsgf(IsValid(InteractionComp) && IsValid(ActionComp), TEXT("[ATRPlayerCharacter] 상호작용·액션 컴포넌트가 없다")))
 	{
 		return;
 	}

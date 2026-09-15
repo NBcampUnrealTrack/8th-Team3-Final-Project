@@ -150,6 +150,7 @@ void UTRWaveDirectorSubsystem::StopWave()
 			TimerManager.ClearTimer(State.TimerHandle);
 			State.bFinished = true;
 		}
+		TimerManager.ClearTimer(WaveFinishedTimerHandle);
 	}
 
 	bWaveActive = false;
@@ -277,7 +278,7 @@ void UTRWaveDirectorSubsystem::SpawnGroupBatch(int32 GroupIndex)
 
 	const UWorld* World = GetWorld();
 	UTRMassSpawnerSubsystem* Spawner = World ? World->GetSubsystem<UTRMassSpawnerSubsystem>() : nullptr;
-	if (Spawner == nullptr)
+	if (!ensureMsgf(Spawner, TEXT("[UTRWaveDirectorSubsystem] TRMassSpawnerSubsystem 이 없다")))
 	{
 		StopWave();
 		return;
@@ -465,7 +466,7 @@ void UTRWaveDirectorSubsystem::FinishGroup(int32 GroupIndex)
 		return;
 	}
 
-	World->GetTimerManager().SetTimerForNextTick(
+	WaveFinishedTimerHandle = World->GetTimerManager().SetTimerForNextTick(
 		FTimerDelegate::CreateWeakLambda(this, [this]() { OnWaveFinished.Broadcast(); }));
 }
 

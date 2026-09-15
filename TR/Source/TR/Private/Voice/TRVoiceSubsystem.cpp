@@ -3,8 +3,10 @@
 #include "Voice/TRVoiceSubsystem.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Engine/AssetManager.h"
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/StreamableManager.h"
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
@@ -113,6 +115,8 @@ void UTRVoiceSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		VoiceAttenuationAsset = FSoftObjectPath(AttenuationPath);
 	}
 
+	PreloadAssets();
+
 	ApplyToRuntime();
 
 	// 로컬 플레이어가 생길 때 컴포넌트를 붙인다.
@@ -139,6 +143,13 @@ void UTRVoiceSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UTRVoiceSubsystem::Deinitialize()
 {
+	if (PreloadHandle.IsValid())
+	{
+		PreloadHandle->CancelHandle();
+		PreloadHandle.Reset();
+	}
+	bOpenSettingsUIWhenLoaded = false;
+
 	FTSTicker::GetCoreTicker().RemoveTicker(TalkerRefreshTicker);
 	TalkerRefreshTicker.Reset();
 
@@ -165,6 +176,44 @@ void UTRVoiceSubsystem::Deinitialize()
 	SetSettingsUIVisible(false);
 
 	Super::Deinitialize();
+}
+
+void UTRVoiceSubsystem::PreloadAssets()
+{
+	TArray<FSoftObjectPath> Paths;
+	if (SettingsWidgetClass.IsValid())
+	{
+		Paths.Add(SettingsWidgetClass);
+	}
+	if (VoiceAttenuationAsset.IsValid())
+	{
+		Paths.Add(VoiceAttenuationAsset);
+	}
+	const TSoftObjectPtr<USoundClass>& MasterClass = GetDefault<UTRSettingsProjectSettings>()->MasterSoundClass;
+	if (!MasterClass.IsNull())
+	{
+		Paths.Add(MasterClass.ToSoftObjectPath());
+	}
+	if (Paths.IsEmpty())
+	{
+		return;
+	}
+
+	PreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		Paths, FStreamableDelegate::CreateUObject(this, &UTRVoiceSubsystem::HandleAssetsPreloaded));
+}
+
+void UTRVoiceSubsystem::HandleAssetsPreloaded()
+{
+	GetVoiceSoundClass();
+	GetVoiceAttenuation();
+	ApplyAllPlayerVolumes();
+
+	if (bOpenSettingsUIWhenLoaded)
+	{
+		bOpenSettingsUIWhenLoaded = false;
+		SetSettingsUIVisible(true);
+	}
 }
 
 void UTRVoiceSubsystem::HandlePostLoadMap(UWorld* LoadedWorld)
@@ -373,10 +422,15 @@ USoundAttenuation* UTRVoiceSubsystem::GetVoiceAttenuation()
 
 	if (VoiceAttenuationAsset.IsValid())
 	{
-		VoiceAttenuation = Cast<USoundAttenuation>(VoiceAttenuationAsset.TryLoad());
+		VoiceAttenuation = Cast<USoundAttenuation>(VoiceAttenuationAsset.ResolveObject());
 		if (VoiceAttenuation != nullptr)
 		{
 			return VoiceAttenuation;
+		}
+		// 프리로드 중이면 완료 콜백에서 다시 적용한다. 폴백 객체를 먼저 캐시하지 않는다.
+		if (PreloadHandle.IsValid() && PreloadHandle->IsLoadingInProgress())
+		{
+			return nullptr;
 		}
 	}
 
@@ -452,7 +506,8 @@ USoundClass* UTRVoiceSubsystem::GetVoiceSoundClass()
 {
 	if (VoiceSoundClass == nullptr)
 	{
-		VoiceSoundClass = GetDefault<UTRSettingsProjectSettings>()->MasterSoundClass.LoadSynchronous();
+		// PreloadAssets 가 비동기로 읽는다. 완료 전에는 nullptr 이고 콜백에서 다시 채운다.
+		VoiceSoundClass = GetDefault<UTRSettingsProjectSettings>()->MasterSoundClass.Get();
 	}
 	return VoiceSoundClass;
 }
@@ -492,6 +547,7 @@ void UTRVoiceSubsystem::ApplyAllPlayerVolumes()
 		if (UTRVoiceTalker* Talker = EnsureTalker(PS))
 		{
 			Talker->ApplyVolume(GetEffectiveVolume((*PS->GetUniqueId()).ToString()));
+			Talker->SetSoundClass(GetVoiceSoundClass());
 			ApplySpatialToTalker(Talker);
 		}
 	}
@@ -670,6 +726,7 @@ void UTRVoiceSubsystem::SetSettingsUIVisible(bool bVisible)
 {
 	if (!bVisible)
 	{
+		bOpenSettingsUIWhenLoaded = false;
 		if (SettingsWidget != nullptr)
 		{
 			SettingsWidget->RemoveFromParent();
@@ -693,7 +750,13 @@ void UTRVoiceSubsystem::SetSettingsUIVisible(bool bVisible)
 		return;
 	}
 
-	UClass* WidgetClass = SettingsWidgetClass.IsValid() ? SettingsWidgetClass.TryLoadClass<UUserWidget>() : nullptr;
+	UClass* WidgetClass = SettingsWidgetClass.IsValid() ? SettingsWidgetClass.ResolveClass() : nullptr;
+	if (WidgetClass == nullptr && PreloadHandle.IsValid() && PreloadHandle->IsLoadingInProgress())
+	{
+		// 프리로드가 끝나면 다시 연다.
+		bOpenSettingsUIWhenLoaded = true;
+		return;
+	}
 	if (WidgetClass == nullptr)
 	{
 		UE_LOG(LogTRNet, Warning,

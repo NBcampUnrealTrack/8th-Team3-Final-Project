@@ -17,6 +17,7 @@ class USoundAttenuation;
 class USoundClass;
 class UTRVoiceComponent;
 class UUserWidget;
+struct FStreamableHandle;
 
 /** 값이 바뀌었다. 패널이 슬라이더를 다시 채우는 데 쓴다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FTRVoiceSettingsChanged);
@@ -213,6 +214,12 @@ private:
 
 	void ApplyAllPlayerVolumes();
 
+	/** 패널 WBP·감쇠 애셋·마스터 사운드 클래스를 비동기로 미리 읽는다. */
+	void PreloadAssets();
+
+	/** 프리로드 완료. 캐시를 채우고 이미 붙은 토커에 다시 적용한다. */
+	void HandleAssetsPreloaded();
+
 	/** 감쇠 설정 객체. 없으면 ini 값으로 만든다. */
 	USoundAttenuation* GetVoiceAttenuation();
 
@@ -276,6 +283,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USoundClass> VoiceSoundClass;
+
+	TSharedPtr<FStreamableHandle> PreloadHandle;
+
+	/** 프리로드 전에 패널을 열라고 하면 완료 뒤에 연다. */
+	bool bOpenSettingsUIWhenLoaded = false;
 
 	FTSTicker::FDelegateHandle TalkerRefreshTicker;
 

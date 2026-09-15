@@ -223,7 +223,7 @@ void ATRWaveSpawner::StartWaveNumber(int32 WaveNumber)
 {
 	UWorld* World = GetWorld();
 	UTRWaveDirectorSubsystem* Director = World ? World->GetSubsystem<UTRWaveDirectorSubsystem>() : nullptr;
-	if (Director == nullptr)
+	if (!ensureMsgf(Director, TEXT("[ATRWaveSpawner] TRWaveDirectorSubsystem 이 없다")))
 	{
 		return;
 	}
@@ -363,7 +363,7 @@ float ATRWaveSpawner::GetRestTimeRemaining() const
 
 const FTRWaveRow* ATRWaveSpawner::FindWaveRow(int32 WaveNumber, int32& OutSourceWaveNumber) const
 {
-	if (WaveTable == nullptr)
+	if (!ensureMsgf(WaveTable, TEXT("[ATRWaveSpawner] WaveTable 이 없다")))
 	{
 		return nullptr;
 	}

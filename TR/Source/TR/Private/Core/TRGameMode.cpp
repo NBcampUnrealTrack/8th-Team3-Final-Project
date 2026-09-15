@@ -26,7 +26,7 @@ void ATRGameMode::PostLogin(APlayerController* NewPlayer)
 bool ATRGameMode::StartMatch()
 {
 	ATRGameState* State = GetGameState<ATRGameState>();
-	if (State == nullptr || !State->CanStartMatch())
+	if (!ensureMsgf(State, TEXT("[ATRGameMode] ATRGameState 가 없다")) || !State->CanStartMatch())
 	{
 		return false;
 	}
@@ -50,7 +50,7 @@ bool ATRGameMode::StartMatch()
 bool ATRGameMode::EndMatch()
 {
 	ATRGameState* State = GetGameState<ATRGameState>();
-	if (State == nullptr || State->IsGameOver())
+	if (!ensureMsgf(State, TEXT("[ATRGameMode] ATRGameState 가 없다")) || State->IsGameOver())
 	{
 		return false;
 	}
