@@ -8,10 +8,18 @@
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 #include "Framework/Application/SlateApplication.h"
+#include "Core/BGPlayerController.h"
 
 void UBGChatingWidget::NativeConstruct()
 {
 		Super::NativeConstruct();
+
+		//	HUD 안에 배치되면 PlayerController 가 CreateWidget 으로 이 인스턴스를 잡을 기회가
+		//	없다. Enter 로 입력창 열기(HandleChatKeyPressed)가 이 참조를 쓰므로 스스로 등록한다.
+		if (ABGPlayerController* PC = Cast<ABGPlayerController>(GetOwningPlayer()))
+		{
+				PC->ChatWidgetInstance = this;
+		}
 
 		if (UGameInstance* GI = GetGameInstance())
 		{

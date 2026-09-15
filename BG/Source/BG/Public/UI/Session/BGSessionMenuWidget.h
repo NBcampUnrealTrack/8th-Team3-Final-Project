@@ -3,6 +3,7 @@
 //   HostButton RoomNameInput JoinCodeButton JoinCodeInput RefreshButton
 //   ReadyButton ReadyButtonText StartGameButton LeaveButton
 //   StatusText RoomCodeText LobbyText ResultList
+//   Image_Div1 Image_Div2 Image_Div3
 
 #pragma once
 
@@ -15,6 +16,7 @@ class IBGSessionInterface;
 class UBGSessionMenuWidget;
 class UButton;
 class UEditableTextBox;
+class UImage;
 class UScrollBox;
 class UTextBlock;
 class UVerticalBox;
@@ -49,9 +51,17 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
 	IBGSessionInterface* GetSession() const;
+
+	/**
+	 * 구분선 두께를 DPI 스케일로 역보정한다.
+	 * 얇은 선은 (레이아웃 높이 x 스케일)이 정수가 아니면 놓인 y 소수부에 따라 1px·2px 로
+	 * 갈려서 줄마다 두께가 달라 보인다. 두께를 스케일로 나눠 두면 항상 같게 떨어진다.
+	 */
+	void RefreshDividerThickness();
 
 	// 디자이너가 안 올린 위젯만 만들어 붙인다.
 	void BuildMissingWidgets();
@@ -144,6 +154,23 @@ private:
 
 	// 로비를 벗어난 페이즈를 본 뒤 한 번만 닫는다. 다시 F9 로 열면 그대로 둔다.
 	bool bClosedOnMatchStart = false;
+
+	// 구분선. 디자이너가 올린 것만 잡는다 — 폴백 트리는 구분선을 만들지 않는다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Div1;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Div2;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Div3;
+
+	// 위 셋을 한 번에 돌리기 위한 목록.
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UImage>> Dividers;
+
+	// 마지막으로 두께를 맞춘 DPI 스케일. 달라졌을 때만 다시 계산한다.
+	float LastViewportScale = -1.f;
 
 	// 목록 행 핸들러 — 목록을 다시 만들 때까지 살아 있어야 클릭이 동작한다.
 	UPROPERTY(Transient)

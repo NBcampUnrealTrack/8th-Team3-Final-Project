@@ -36,7 +36,6 @@
 #include "UI/Target/BGSeatInfoDisplayComponent.h"
 #include "UI/Target/BGWorldTargetingComponent.h"
 #include "UI/Target/BGTargetHighlight.h"
-#include "UI/Widget/BGSettingsWidget.h"
 #include "Components/InputComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -735,26 +734,6 @@ void ABGPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 	
-	if (GetLocalPlayer() && ChatWidgetClass)
-	{
-		ChatWidgetInstance = CreateWidget<UBGChatingWidget>(this, ChatWidgetClass);
-		if (ChatWidgetInstance)
-		{
-			ChatWidgetInstance->AddToViewport(10);
-			UE_LOG(LogTemp, Warning, TEXT("[Chat] 위젯 생성 - Controller: %s"), *GetName());
-		}
-	}
-
-	//	설정은 항상 맨 위여야 한다 — 채팅(10)과 HUD 위로 올린다. HUD 트리 안에 두면
-	//	HUD 전체의 뷰포트 ZOrder 에 묶여 채팅 밑으로 깔린다.
-	if (GetLocalPlayer() && SettingsWidgetClass)
-	{
-		SettingsWidgetInstance = CreateWidget<UBGSettingsWidget>(this, SettingsWidgetClass);
-		if (SettingsWidgetInstance)
-		{
-			SettingsWidgetInstance->AddToViewport(200);
-		}
-	}
 
 	//	세션 로비가 없는 PvE 전용 "게임 시작" 버튼. 직전 조우를 이겨서 자동으로 이어지는
 	//	경우엔(사람 눈에 로비 스킵처럼 보여야 하므로) 애초에 보여주지 않는다.

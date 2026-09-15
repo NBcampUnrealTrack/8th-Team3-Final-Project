@@ -2,7 +2,9 @@
 
 #include "AudioDevice.h"
 #include "Components/InputComponent.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/Button.h"
+#include "Components/Image.h"
 #include "Components/CheckBox.h"
 #include "Components/ComboBoxString.h"
 #include "Components/Slider.h"
@@ -62,6 +64,9 @@ namespace
 	const TArray<float> FrameLimitValues = { 0.f, 30.f, 60.f, 120.f, 144.f, 240.f };
 
 	const TCHAR* AudioSection = TEXT("BGAudio");
+
+	// 구분선이 화면에서 차지해야 할 픽셀 두께. DPI 스케일과 무관하게 이 값으로 떨어진다.
+	constexpr float DividerPixels = 2.f;
 
 	FString ResolutionLabel(const FIntPoint& Resolution)
 	{
@@ -164,6 +169,9 @@ void UBGSettingsWidget::NativeConstruct()
 
 	if (MasterVolumeSlider) { MasterVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleMasterVolumeChanged); }
 
+	Dividers = { Image_Div1, Image_Div2, Image_Div3, Image_Div4 };
+	RefreshDividerThickness();
+
 	LoadAudio();
 	ApplyAudioToDevice();
 
@@ -176,6 +184,41 @@ void UBGSettingsWidget::NativeConstruct()
 	if (SettingsPanel)
 	{
 		SettingsPanel->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UBGSettingsWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	// 창 크기·해상도가 바뀌면 DPI 스케일도 바뀐다. 값이 달라졌을 때만 다시 맞춘다.
+	const float Scale = UWidgetLayoutLibrary::GetViewportScale(this);
+	if (!FMath::IsNearlyEqual(Scale, LastViewportScale))
+	{
+		RefreshDividerThickness();
+	}
+}
+
+void UBGSettingsWidget::RefreshDividerThickness()
+{
+	const float Scale = UWidgetLayoutLibrary::GetViewportScale(this);
+	if (Scale <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+	LastViewportScale = Scale;
+
+	//	스케일이 곱해진 뒤 정확히 DividerPixels 가 되도록 미리 나눠 둔다.
+	const float Thickness = DividerPixels / Scale;
+	for (UImage* Divider : Dividers)
+	{
+		if (!Divider)
+		{
+			continue;
+		}
+		FSlateBrush Brush = Divider->GetBrush();
+		Brush.ImageSize.Y = Thickness;
+		Divider->SetBrush(Brush);
 	}
 }
 

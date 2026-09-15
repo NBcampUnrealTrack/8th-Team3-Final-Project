@@ -5,6 +5,7 @@
 //   WindowModeCombo ResolutionCombo QualityCombo FrameLimitCombo VSyncCheck
 //   ShadowCombo TextureCombo EffectsCombo AntiAliasingCombo PostProcessCombo GlobalIlluminationCombo
 //   MasterVolumeSlider MasterVolumeText
+//   Image_Div1 Image_Div2 Image_Div3 Image_Div4
 
 #pragma once
 
@@ -15,6 +16,7 @@
 class UButton;
 class UCheckBox;
 class UComboBoxString;
+class UImage;
 class USlider;
 class UTextBlock;
 class UWidget;
@@ -41,6 +43,7 @@ public:
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
 	// ESC 로 열고 닫는다. ESC 는 이미 대상 선택 취소에 물려 있어 두 핸들러가 같이 불린다.
@@ -51,6 +54,13 @@ private:
 	// 콤보 목록을 채우고 현재 설정값으로 선택을 맞춘다.
 	void PopulateOptions();
 	void RefreshFromSettings();
+
+	/**
+	 * 구분선 두께를 DPI 스케일로 역보정한다.
+	 * 얇은 선은 (레이아웃 높이 x 스케일)이 정수가 아니면 놓인 y 소수부에 따라 1px·2px 로
+	 * 갈린다. 두께를 스케일로 나눠 두면 화면에서는 항상 같은 정수 픽셀로 떨어진다.
+	 */
+	void RefreshDividerThickness();
 
 	// 지금 게임 창이 올라가 있는 모니터의 네이티브 해상도. 못 찾으면 (0,0).
 	static FIntPoint GetCurrentMonitorResolution();
@@ -166,6 +176,25 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> MasterVolumeText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Div1;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Div2;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Div3;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Div4;
+
+	// 위 넷을 한 번에 돌리기 위한 목록.
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UImage>> Dividers;
+
+	// 마지막으로 두께를 맞춘 DPI 스케일. 달라졌을 때만 다시 계산한다.
+	float LastViewportScale = -1.f;
 
 	// 콤보 목록에 넣은 순서 그대로의 해상도. 선택 인덱스로 바로 찾는다.
 	TArray<FIntPoint> ResolutionOptions;

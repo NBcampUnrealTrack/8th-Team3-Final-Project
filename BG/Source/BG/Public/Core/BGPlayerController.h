@@ -201,13 +201,6 @@ public:
 	UPROPERTY()
 	class UBGChatingWidget* ChatWidgetInstance;
 
-	// 설정 팝업. HUD 트리 안에 두면 채팅(뷰포트 10)에 가려지므로 여기서 따로 올린다.
-	UPROPERTY(EditDefaultsOnly, Category = "BG|UI")
-	TSubclassOf<class UBGSettingsWidget> SettingsWidgetClass;
-
-	UPROPERTY()
-	class UBGSettingsWidget* SettingsWidgetInstance;
-
 	// PvE 로비(세션 없음)에서 "게임 시작" 버튼 하나짜리 위젯. PvP는 세션 로비를 쓰므로 비워둔다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
 	TSubclassOf<class UBGPvELobbyWidget> PvELobbyWidgetClass;

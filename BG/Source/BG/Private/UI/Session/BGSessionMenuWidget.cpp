@@ -1,11 +1,13 @@
 ﻿#include "UI/Session/BGSessionMenuWidget.h"
 
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/EditableTextBox.h"
+#include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
@@ -26,6 +28,9 @@
 
 namespace
 {
+	// 구분선이 화면에서 차지해야 할 픽셀 두께. DPI 스케일과 무관하게 이 값으로 떨어진다.
+	constexpr float DividerPixels = 2.f;
+
 	FString PhaseToText(EBGSessionPhase Phase)
 	{
 		switch (Phase)
@@ -215,6 +220,9 @@ void UBGSessionMenuWidget::NativeConstruct()
 		PC->SetShowMouseCursor(true);
 	}
 
+	Dividers = { Image_Div1, Image_Div2, Image_Div3 };
+	RefreshDividerThickness();
+
 	BindButtonEvents();
 
 	if (IBGSessionInterface* Session = GetSession())
@@ -235,6 +243,41 @@ void UBGSessionMenuWidget::NativeConstruct()
 		this, &UBGSessionMenuWidget::RefreshLobbyStatus);
 
 	TryBindPhaseDelegate();
+}
+
+void UBGSessionMenuWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	// 창 크기·해상도가 바뀌면 DPI 스케일도 바뀐다. 값이 달라졌을 때만 다시 맞춘다.
+	const float Scale = UWidgetLayoutLibrary::GetViewportScale(this);
+	if (!FMath::IsNearlyEqual(Scale, LastViewportScale))
+	{
+		RefreshDividerThickness();
+	}
+}
+
+void UBGSessionMenuWidget::RefreshDividerThickness()
+{
+	const float Scale = UWidgetLayoutLibrary::GetViewportScale(this);
+	if (Scale <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+	LastViewportScale = Scale;
+
+	//	스케일이 곱해진 뒤 정확히 DividerPixels 가 되도록 미리 나눠 둔다.
+	const float Thickness = DividerPixels / Scale;
+	for (UImage* Divider : Dividers)
+	{
+		if (!Divider)
+		{
+			continue;
+		}
+		FSlateBrush Brush = Divider->GetBrush();
+		Brush.ImageSize.Y = Thickness;
+		Divider->SetBrush(Brush);
+	}
 }
 
 void UBGSessionMenuWidget::TryBindPhaseDelegate()
