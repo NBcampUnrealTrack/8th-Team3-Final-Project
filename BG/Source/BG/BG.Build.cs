@@ -27,7 +27,8 @@ public class BG : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"Slate", "SlateCore",
-			"OnlineSubsystemUtils"  // Online::GetSubsystem 헬퍼 (.cpp 전용)
+			"OnlineSubsystemUtils",  // Online::GetSubsystem 헬퍼 (.cpp 전용)
+			"ApplicationCore"
 		});
 
 		//	⚠️ PublicIncludePaths.Add(ModuleDirectory) 를 다시 넣지 말 것.

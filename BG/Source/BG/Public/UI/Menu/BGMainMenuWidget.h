@@ -10,6 +10,7 @@
 class UButton;
 class UWidgetSwitcher;
 class UBGGameInstance;
+class UBGSettingsWidget;
 
 UCLASS(Abstract)
 class BG_API UBGMainMenuWidget : public UUserWidget
@@ -40,6 +41,14 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Btn_Back;
+
+	// 설정 팝업. WBP_BGMainMenu 의 BG|UI 에서 WBP_BGSettings 를 골라 둬야 버튼이 동작한다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|UI")
+	TSubclassOf<UBGSettingsWidget> SettingsWidgetClass;
+
+	// 처음 누를 때 한 번 만들고 계속 재사용한다.
+	UPROPERTY(Transient)
+	TObjectPtr<UBGSettingsWidget> SettingsWidgetInstance;
 
 	// 0 = 메인 페이지, 1 = 멀티플레이 페이지.
 	UPROPERTY(meta = (BindWidgetOptional))
