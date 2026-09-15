@@ -73,6 +73,81 @@ static FAutoConsoleCommandWithWorld GDumpSceneCommand(
 static constexpr uint64 SceneDebugMessageKeyBase = 887100;
 
 //생성자
+namespace
+{
+	template <class TActor>
+	void MoveSceneActors(const TArray<TObjectPtr<TActor>>& Actors, const FVector& Delta)
+	{
+		for (TActor* Actor : Actors)
+		{
+			if (IsValid(Actor))
+			{
+				Actor->AddActorWorldOffset(Delta, false, nullptr, ETeleportType::TeleportPhysics);
+			}
+		}
+	}
+
+	// 열차 기준점(Origin)에서 열차가 가는 방향(Forward)으로 이 액터가 몇 cm 앞에 있는지 돌려준다. 음수면 열차 뒤.
+	// 사라진 액터는 -무한대로 취급해 "가장 뒤"에 놓는다 → 재활용 대상으로 먼저 잡힌다.
+	float SceneTravelDistance(const AActor* Actor, const FVector& Origin, const FVector& Forward)
+	{
+		if (!IsValid(Actor))
+		{
+			return -TNumericLimits<float>::Max();
+		}
+
+		return FVector::DotProduct(Actor->GetActorLocation() - Origin, Forward);
+	}
+
+	template <class TActor, class FDistance>
+	float FrontmostSceneDistance(const TArray<TObjectPtr<TActor>>& Actors, const TActor* Ignored, FDistance Distance)
+	{
+		float FrontmostDistance = 0.f;
+		bool bFound = false;
+		for (const TActor* Actor : Actors)
+		{
+			if (!IsValid(Actor) || Actor == Ignored)
+			{
+				continue;
+			}
+
+			FrontmostDistance = bFound ? FMath::Max(FrontmostDistance, Distance(Actor)) : Distance(Actor);
+			bFound = true;
+		}
+
+		return bFound ? FrontmostDistance : 0.f;
+	}
+
+	// 열차 뒤로 Threshold(cm) 이상 처진 청크·레일을 찾아 하나씩 앞으로 옮겨 붙인다.
+	// 한 번에 옮기는 개수는 배열 길이까지만 — 전부 뒤처진 경우에도 무한 루프가 안 된다.
+	template <class TActor, class FDistance, class FRecycle>
+	void RecyclePassedSceneActors(const TArray<TObjectPtr<TActor>>& Actors, float Threshold,
+		FDistance Distance, FRecycle Recycle)
+	{
+		int32 RecycledCount = 0;
+		while (RecycledCount < Actors.Num())
+		{
+			TActor* Passed = nullptr;
+			for (TActor* Actor : Actors)
+			{
+				if (IsValid(Actor) && Distance(Actor) < Threshold)
+				{
+					Passed = Actor;
+					break;
+				}
+			}
+
+			if (!Passed)
+			{
+				break;
+			}
+
+			Recycle(Passed);
+			++RecycledCount;
+		}
+	}
+}
+
 ATRLevelSceneManager::ATRLevelSceneManager()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -934,14 +1009,7 @@ void ATRLevelSceneManager::SetRouteSeed(const int32 NewRouteSeed, const bool bRe
 //레일 조각 액터 속도만큼 이동
 void ATRLevelSceneManager::MoveRailSegments(const float DeltaSeconds)
 {
-	const FVector MovementDelta = -GetActorForwardVector() * VisualSpeed * DeltaSeconds;
-	for (ATRLevelSceneRailSegment* RailSegment : ActiveRailSegments)
-	{
-		if (IsValid(RailSegment))
-		{
-			RailSegment->AddActorWorldOffset(MovementDelta, false, nullptr, ETeleportType::TeleportPhysics);
-		}
-	}
+	MoveSceneActors(ActiveRailSegments, -GetActorForwardVector() * VisualSpeed * DeltaSeconds);
 }
 
 //활성화된 청크들의 ISM 인스턴스 리셋, 청크 위치는 변경하지 않음.
@@ -961,28 +1029,10 @@ void ATRLevelSceneManager::RecyclePassedRailSegments()
 {
 	const float SafeSegmentLength = FMath::Max(1.f, RailSegmentLength);
 	const float RecycleThreshold = -FMath::Max(0.f, RailRecycleBehindDistance) - SafeSegmentLength * 0.5f;
-	int32 RecycledSegmentCount = 0;
 
-	while (RecycledSegmentCount < ActiveRailSegments.Num())
-	{
-		ATRLevelSceneRailSegment* PassedSegment = nullptr;
-		for (ATRLevelSceneRailSegment* RailSegment : ActiveRailSegments)
-		{
-			if (IsValid(RailSegment) && GetRailTravelDistance(RailSegment) < RecycleThreshold)
-			{
-				PassedSegment = RailSegment;
-				break;
-			}
-		}
-
-		if (!PassedSegment)
-		{
-			break;
-		}
-
-		RecycleRailSegment(PassedSegment);
-		++RecycledSegmentCount;
-	}
+	RecyclePassedSceneActors(ActiveRailSegments, RecycleThreshold,
+		[this](const ATRLevelSceneRailSegment* RailSegment) { return GetRailTravelDistance(RailSegment); },
+		[this](ATRLevelSceneRailSegment* RailSegment) { RecycleRailSegment(RailSegment); });
 }
 
 //청크 초기 세팅
@@ -1089,75 +1139,31 @@ void ATRLevelSceneManager::PublishGroundVelocity() const
 //청크 속도만큼 이동
 void ATRLevelSceneManager::MoveChunks(const float DeltaSeconds)
 {
-	const FVector MovementDelta = -GetActorForwardVector() * VisualSpeed * DeltaSeconds;
-	for (ATRLevelSceneChunk* Chunk : ActiveChunks)
-	{
-		if (IsValid(Chunk))
-		{
-			Chunk->AddActorWorldOffset(MovementDelta, false, nullptr, ETeleportType::TeleportPhysics);
-		}
-	}
+	MoveSceneActors(ActiveChunks, -GetActorForwardVector() * VisualSpeed * DeltaSeconds);
 }
 
 //매니저 액터 기준 레일 액터의 위치, 앞인지 뒤인지 계산
 float ATRLevelSceneManager::GetRailTravelDistance(const ATRLevelSceneRailSegment* RailSegment) const
 {
-	if (!IsValid(RailSegment))
-	{
-		return -TNumericLimits<float>::Max();
-	}
-
 	const FVector WorldRailOffset = GetActorTransform().TransformVectorNoScale(RailOffset);
-	return FVector::DotProduct(RailSegment->GetActorLocation() - GetActorLocation() - WorldRailOffset, GetActorForwardVector());
+	return SceneTravelDistance(RailSegment, GetActorLocation() + WorldRailOffset, GetActorForwardVector());
 }
 
 //지나간 청크 액터 확인
 void ATRLevelSceneManager::RecyclePassedChunks()
 {
 	const float RecycleThreshold = -FMath::Max(0.f, RecycleBehindDistance) - FMath::Max(1.f, ChunkSize.X) * 0.5f;
-	int32 RecycledChunkCount = 0;
 
-	while (RecycledChunkCount < ActiveChunks.Num())
-	{
-		ATRLevelSceneChunk* PassedChunk = nullptr;
-		for (ATRLevelSceneChunk* Chunk : ActiveChunks)
-		{
-			if (IsValid(Chunk) && GetTravelDistance(Chunk) < RecycleThreshold)
-			{
-				PassedChunk = Chunk;
-				break;
-			}
-		}
-
-		if (!PassedChunk)
-		{
-			break;
-		}
-
-		RecycleChunk(PassedChunk);
-		++RecycledChunkCount;
-	}
+	RecyclePassedSceneActors(ActiveChunks, RecycleThreshold,
+		[this](const ATRLevelSceneChunk* Chunk) { return GetTravelDistance(Chunk); },
+		[this](ATRLevelSceneChunk* Chunk) { RecycleChunk(Chunk); });
 }
 
 //가장 앞에 있는 레일 액터까지의 거리 확인
 float ATRLevelSceneManager::GetFrontmostRailTravelDistance(const ATRLevelSceneRailSegment* IgnoredRailSegment) const
 {
-	float FrontmostDistance = 0.f;
-	bool bFoundSegment = false;
-	for (const ATRLevelSceneRailSegment* RailSegment : ActiveRailSegments)
-	{
-		if (!IsValid(RailSegment) || RailSegment == IgnoredRailSegment)
-		{
-			continue;
-		}
-
-		FrontmostDistance = bFoundSegment
-			? FMath::Max(FrontmostDistance, GetRailTravelDistance(RailSegment))
-			: GetRailTravelDistance(RailSegment);
-		bFoundSegment = true;
-	}
-
-	return bFoundSegment ? FrontmostDistance : 0.f;
+	return FrontmostSceneDistance(ActiveRailSegments, IgnoredRailSegment,
+		[this](const ATRLevelSceneRailSegment* RailSegment) { return GetRailTravelDistance(RailSegment); });
 }
 
 //청크 액터 재활용해 앞에 다시 배치
@@ -1187,33 +1193,14 @@ void ATRLevelSceneManager::RecycleChunk(ATRLevelSceneChunk* Chunk)
 //매니저 위치 기준 청크의 상대 위치, 앞인지 뒤인지 확인
 float ATRLevelSceneManager::GetTravelDistance(const ATRLevelSceneChunk* Chunk) const
 {
-	if (!IsValid(Chunk))
-	{
-		return -TNumericLimits<float>::Max();
-	}
-
-	return FVector::DotProduct(Chunk->GetActorLocation() - GetActorLocation(), GetActorForwardVector());
+	return SceneTravelDistance(Chunk, GetActorLocation(), GetActorForwardVector());
 }
 
 //가장 앞에 있는 청크까지의 거리 확인
 float ATRLevelSceneManager::GetFrontmostTravelDistance(const ATRLevelSceneChunk* IgnoredChunk) const
 {
-	float FrontmostDistance = 0.f;
-	bool bFoundChunk = false;
-	for (const ATRLevelSceneChunk* Chunk : ActiveChunks)
-	{
-		if (!IsValid(Chunk) || Chunk == IgnoredChunk)
-		{
-			continue;
-		}
-
-		FrontmostDistance = bFoundChunk
-			? FMath::Max(FrontmostDistance, GetTravelDistance(Chunk))
-			: GetTravelDistance(Chunk);
-		bFoundChunk = true;
-	}
-
-	return bFoundChunk ? FrontmostDistance : 0.f;
+	return FrontmostSceneDistance(ActiveChunks, IgnoredChunk,
+		[this](const ATRLevelSceneChunk* Chunk) { return GetTravelDistance(Chunk); });
 }
 
 //기본 시드값 기반하여 청크 액터마다 가지는 개별 시드값 생성
