@@ -434,5 +434,8 @@ private:
 	/** 다음으로 방위를 다시 뽑을 월드 시각(초). 주기가 0이면 쓰이지 않는다. */
 	float NextDirectionRollTime = 0.f;
 
+	/** 웨이브 종료 알림을 다음 틱으로 미룬 타이머. StopWave 에서 지운다. */
+	FTimerHandle WaveFinishedTimerHandle;
+
 	bool bWaveActive = false;
 };

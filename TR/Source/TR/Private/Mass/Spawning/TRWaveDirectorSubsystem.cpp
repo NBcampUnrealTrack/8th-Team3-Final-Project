@@ -150,6 +150,7 @@ void UTRWaveDirectorSubsystem::StopWave()
 			TimerManager.ClearTimer(State.TimerHandle);
 			State.bFinished = true;
 		}
+		TimerManager.ClearTimer(WaveFinishedTimerHandle);
 	}
 
 	bWaveActive = false;
@@ -465,7 +466,7 @@ void UTRWaveDirectorSubsystem::FinishGroup(int32 GroupIndex)
 		return;
 	}
 
-	World->GetTimerManager().SetTimerForNextTick(
+	WaveFinishedTimerHandle = World->GetTimerManager().SetTimerForNextTick(
 		FTimerDelegate::CreateWeakLambda(this, [this]() { OnWaveFinished.Broadcast(); }));
 }
 

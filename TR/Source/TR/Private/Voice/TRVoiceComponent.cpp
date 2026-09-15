@@ -35,6 +35,16 @@ void UTRVoiceComponent::BeginPlay()
 	}
 }
 
+void UTRVoiceComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReapplyTimer);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void UTRVoiceComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
