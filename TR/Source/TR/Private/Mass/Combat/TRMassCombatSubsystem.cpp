@@ -18,6 +18,37 @@
 #include "Mass/Targeting/TRTargetDirectorSubsystem.h"
 #include "Train/TRTrain.h"
 
+namespace
+{
+	// 적 한 마리의 몸통을 "발 위치에서 머리까지 세로 선분 + 몸 반지름"으로 단순화해 돌려준다.
+	// 총알 직격과 폭발 범위가 같은 형상을 쓰게 하는 것이 목적.
+	bool ResolveEnemyBody(FMassEntityManager& EntityManager, FMassEntityHandle Entity,
+		FVector& OutFeet, FVector& OutTop, float& OutAgentRadius)
+	{
+		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Entity);
+		const FTREnemyCombatFragment* Combat = EntityManager.GetFragmentDataPtr<FTREnemyCombatFragment>(Entity);
+		if (Transform == nullptr || Combat == nullptr)
+		{
+			return false;
+		}
+
+		// 죽었지만 아직 제거되지 않은 개체는 맞지 않는 것으로 본다.
+		if (Combat->Health <= 0.f)
+		{
+			return false;
+		}
+
+		OutFeet = Transform->GetTransform().GetLocation();
+
+		const FTREnemyCombatParams* Params = EntityManager.GetConstSharedFragmentDataPtr<FTREnemyCombatParams>(Entity);
+		OutTop = OutFeet + FVector(0.f, 0.f, Params ? Params->HitHeight : 0.f);
+
+		const FAgentRadiusFragment* Radius = EntityManager.GetFragmentDataPtr<FAgentRadiusFragment>(Entity);
+		OutAgentRadius = Radius ? Radius->Radius : 0.f;
+		return true;
+	}
+}
+
 void UTRMassCombatSubsystem::Deinitialize()
 {
 	PendingImpacts.Empty();
@@ -76,35 +107,22 @@ FTRMassHitResult UTRMassCombatSubsystem::FireHitscan(const FVector& Start, const
 
 	for (const FMassNavigationObstacleItem& Candidate : Candidates)
 	{
-		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Candidate.Entity);
-		const FTREnemyCombatFragment* Combat = EntityManager.GetFragmentDataPtr<FTREnemyCombatFragment>(Candidate.Entity);
-		if (Transform == nullptr || Combat == nullptr)
-		{
-			continue;
-		}
-
-		// 이미 죽었지만 아직 안 지워진 개체는 건너뛴다.
-		if (Combat->Health <= 0.f)
+		FVector Feet = FVector::ZeroVector;
+		FVector Top = FVector::ZeroVector;
+		float AgentRadius = 0.f;
+		if (!ResolveEnemyBody(EntityManager, Candidate.Entity, Feet, Top, AgentRadius))
 		{
 			continue;
 		}
 
 		// 엔티티 트랜스폼은 발밑이다. 그 점 하나로 판정하면 몸통을 조준한 사격이 빗나간다 —
 		// 포탑은 기차 위에 있어 광선이 몸통 높이를 지나가지 발밑을 지나지 않기 때문이다.
-		// 그래서 적을 발밑에서 위로 뻗은 세로 선분으로 보고, 두 선분의 최단 거리를 잰다.
-		const FVector Feet = Transform->GetTransform().GetLocation();
-
-		const FTREnemyCombatParams* CandidateParams =
-			EntityManager.GetConstSharedFragmentDataPtr<FTREnemyCombatParams>(Candidate.Entity);
-		const float BodyHeight = CandidateParams ? CandidateParams->HitHeight : 0.f;
-
+		// 총알 경로(선분)와 적 몸통(세로 선분) 사이 최단 거리가 몸 반지름 이하면 직격.
 		FVector ClosestOnRay = FVector::ZeroVector;
 		FVector ClosestOnBody = FVector::ZeroVector;
-		FMath::SegmentDistToSegmentSafe(Start, End, Feet, Feet + FVector(0.f, 0.f, BodyHeight),
-			ClosestOnRay, ClosestOnBody);
+		FMath::SegmentDistToSegmentSafe(Start, End, Feet, Top, ClosestOnRay, ClosestOnBody);
 
-		const FAgentRadiusFragment* Radius = EntityManager.GetFragmentDataPtr<FAgentRadiusFragment>(Candidate.Entity);
-		const float HitRadius = TraceRadius + (Radius ? Radius->Radius : 0.f);
+		const float HitRadius = TraceRadius + AgentRadius;
 
 		if (FVector::DistSquared(ClosestOnRay, ClosestOnBody) > FMath::Square(HitRadius))
 		{
@@ -229,33 +247,17 @@ int32 UTRMassCombatSubsystem::ApplyRadialDamage(const FVector& Center, float Rad
 			continue;
 		}
 
-		const FTransformFragment* Transform = EntityManager.GetFragmentDataPtr<FTransformFragment>(Candidate.Entity);
-		const FTREnemyCombatFragment* Combat = EntityManager.GetFragmentDataPtr<FTREnemyCombatFragment>(Candidate.Entity);
-		if (Transform == nullptr || Combat == nullptr)
+		// 직격 판정과 같은 몸통 형상을 쓰므로 직격 위치는 폭발에도 맞는다.
+		FVector Feet = FVector::ZeroVector;
+		FVector Top = FVector::ZeroVector;
+		float AgentRadius = 0.f;
+		if (!ResolveEnemyBody(EntityManager, Candidate.Entity, Feet, Top, AgentRadius))
 		{
 			continue;
 		}
 
-		// 이미 죽었지만 아직 안 지워진 개체는 건너뛴다.
-		if (Combat->Health <= 0.f)
-		{
-			continue;
-		}
-
-		// 적을 발밑에서 위로 뻗은 세로 선분으로 본다. FireHitscan 과 같은 형상이라
-		// 직격에 맞는 위치면 폭발에도 맞는다.
-		const FVector Feet = Transform->GetTransform().GetLocation();
-
-		const FTREnemyCombatParams* CandidateParams =
-			EntityManager.GetConstSharedFragmentDataPtr<FTREnemyCombatParams>(Candidate.Entity);
-		const float BodyHeight = CandidateParams ? CandidateParams->HitHeight : 0.f;
-
-		const FVector ClosestOnBody =
-			FMath::ClosestPointOnSegment(Center, Feet, Feet + FVector(0.f, 0.f, BodyHeight));
-
-		const FAgentRadiusFragment* AgentRadius =
-			EntityManager.GetFragmentDataPtr<FAgentRadiusFragment>(Candidate.Entity);
-		const float HitRadius = Radius + (AgentRadius ? AgentRadius->Radius : 0.f);
+		const FVector ClosestOnBody = FMath::ClosestPointOnSegment(Center, Feet, Top);
+		const float HitRadius = Radius + AgentRadius;
 
 		if (FVector::DistSquared(Center, ClosestOnBody) > FMath::Square(HitRadius))
 		{
