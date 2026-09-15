@@ -116,33 +116,26 @@ void UBGDataSubsystem::BuildPvEDeck(TArray<FBGCardInstance>& OutDeck, EBGDeckSid
 	UE_LOG(LogBGCard, Log, TEXT("BuildPvEDeck(Side=%d):%d 종류 →%d 장"), (int32)Side, NumKinds, OutDeck.Num());
 }
 
-bool UBGDataSubsystem::GetRandomEquipCardId(FRandomStream& Stream, FName& OutCardId) const
+void UBGDataSubsystem::GetAllEquipCardIds(TArray<FName>& OutCardIds) const
 {
+	OutCardIds.Reset();
+
 	if (!CardTable)
 	{
-		return false;
+		return;
 	}
 
 	TArray<FName> RowNames = CardTable->GetRowNames();
 	RowNames.Sort([](const FName& A, const FName& B) { return A.Compare(B) < 0; });
 
-	TArray<FName> Candidates;
 	for (const FName& RowName : RowNames)
 	{
-		const FBGCardRow* Row = CardTable->FindRow<FBGCardRow>(RowName, TEXT("GetRandomEquipCardId"));
+		const FBGCardRow* Row = CardTable->FindRow<FBGCardRow>(RowName, TEXT("GetAllEquipCardIds"));
 		if (Row && Row->TypeTag == BG::Card::Type::Blue.GetTag())
 		{
-			Candidates.Add(RowName);
+			OutCardIds.Add(RowName);
 		}
 	}
-
-	if (Candidates.IsEmpty())
-	{
-		return false;
-	}
-
-	OutCardId = Candidates[Stream.RandRange(0, Candidates.Num() - 1)];
-	return true;
 }
 
 void UBGDataSubsystem::GetAllCardRowNames(TArray<FName>& OutNames) const
