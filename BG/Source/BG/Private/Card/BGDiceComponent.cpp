@@ -132,7 +132,7 @@ FText UBGDiceComponent::GetOutcomeText(EBGDiceOutcome Outcome)
 // ══════════════════════════════════════════════════════════════════════════════════════
 //  카드 데이터 기반 판정 (GDD §4.2)
 //
-//  카드 비율 + 보정 → 정규화 → 누적 구간(대성공 → 성공 → 실패 → 대실패) → 0~99 난수 1회.
+//  카드 비율 + 보정 → 정규화 → 누적 구간(대실패 → 실패 → 성공 → 대성공) → 0~99 난수 1회.
 //  판정을 여기 한곳에 모아두면 GA 10 개가 각자 굴리는 중복이 사라지고,
 //  "같은 판정을 한 번만 적용" (GDD §9.2) 을 구조적으로 보장할 수 있다.
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -229,16 +229,16 @@ EBGDiceOutcome UBGDiceComponent::RollOutcome(const FBGOutcomeWeights& Weights, i
 	const int32 Pick = RandomStream.RandRange(0, Total - 1);
 	OutRoll = (Total == 100) ? Pick : FMath::FloorToInt(Pick * 100.f / Total);   // 표시용 0~99 환산
 
-	int32 Cumulative = Weights.CriticalSuccess;
-	if (Pick < Cumulative) { return EBGDiceOutcome::CriticalSuccess; }
-
-	Cumulative += Weights.Success;
-	if (Pick < Cumulative) { return EBGDiceOutcome::Success; }
+	int32 Cumulative = Weights.CriticalFailure;
+	if (Pick < Cumulative) { return EBGDiceOutcome::CriticalFailure; }
 
 	Cumulative += Weights.Failure;
 	if (Pick < Cumulative) { return EBGDiceOutcome::Failure; }
 
-	return EBGDiceOutcome::CriticalFailure;
+	Cumulative += Weights.Success;
+	if (Pick < Cumulative) { return EBGDiceOutcome::Success; }
+
+	return EBGDiceOutcome::CriticalSuccess;
 }
 
 int32 UBGDiceComponent::RandomIndex(int32 Max)

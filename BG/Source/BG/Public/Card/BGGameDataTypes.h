@@ -22,9 +22,8 @@ class UTexture2D;
  * 각 단계의 폭은 카드마다 다르다 — DT_BGCard 의 OutcomeWeights 가 정하고
  * UBGDiceComponent::RollOutcome 이 굴린다.
  *
- * ⚠️ 눈(Roll)의 방향은 **낮은 눈 = 대성공**이다 (§4.2 의 누적 순서가
- *    대성공 → 성공 → 실패 → 대실패 라서). 구형 ClassifyRoll 만 반대 방향인데
- *    그쪽은 비활성이다 — BGDiceComponent.h 의 "판정 (구형 경로)" 경고 참고.
+ * 눈(Roll)의 방향은 **높은 눈 = 대성공**이다 (§4.2 의 누적 순서가
+ * 대실패 → 실패 → 성공 → 대성공 이라서). 구형 ClassifyRoll 과 같은 방향이다.
  */
 UENUM(BlueprintType)
 enum class EBGDiceOutcome : uint8

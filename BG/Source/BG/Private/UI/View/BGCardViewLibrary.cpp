@@ -350,7 +350,7 @@ FBGCardView UBGCardViewLibrary::MakeCardView(const UObject* WorldContextObject, 
 }
 
 void UBGCardViewLibrary::GetRollBands(const FBGCardChanceView& Chance,
-	int32& OutCriticalSuccessMax, int32& OutSuccessMax, int32& OutFailureMax)
+	int32& OutCriticalFailureMax, int32& OutFailureMax, int32& OutSuccessMax)
 {
 	//	누적 확률이 곧 경계다. Roll 은 0~99 라 % 가 그대로 눈금이 된다.
 	//	-1 을 빼는 이유: 확률이 0 인 등급은 구간이 없어야 한다(0 이면 Roll 0 이 걸린다).
@@ -359,13 +359,13 @@ void UBGCardViewLibrary::GetRollBands(const FBGCardChanceView& Chance,
 		return FMath::Clamp(FMath::RoundToInt(CumulativePercent) - 1, -1, 99);
 	};
 
-	const float ToCriticalSuccess = Chance.CriticalSuccess;
-	const float ToSuccess         = ToCriticalSuccess + Chance.Success;
-	const float ToFailure         = ToSuccess + Chance.Failure;
+	const float ToCriticalFailure = Chance.CriticalFailure;
+	const float ToFailure         = ToCriticalFailure + Chance.Failure;
+	const float ToSuccess         = ToFailure + Chance.Success;
 
-	OutCriticalSuccessMax = Band(ToCriticalSuccess);
-	OutSuccessMax         = Band(ToSuccess);
+	OutCriticalFailureMax = Band(ToCriticalFailure);
 	OutFailureMax         = Band(ToFailure);
+	OutSuccessMax         = Band(ToSuccess);
 }
 
 TArray<FBGCardView> UBGCardViewLibrary::MakeHandViews(const ABGPlayerState* PlayerState)
