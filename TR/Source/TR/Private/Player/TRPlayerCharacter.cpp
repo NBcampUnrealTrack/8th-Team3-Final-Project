@@ -409,35 +409,21 @@ bool ATRPlayerCharacter::IsOccupyingControlConsole() const
 
 void ATRPlayerCharacter::ServerUpgradeArmor_Implementation()
 {
-	if (!IsOccupyingControlConsole())
-	{
-		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeArmor rejected: control console not occupied by this player"));
-		return;
-	}
-
-	ATRGameState* GameState = GetWorld()->GetGameState<ATRGameState>();
-	if (!ensureMsgf(IsValid(GameState), TEXT("[ATRPlayerCharacter] 서버에 ATRGameState 가 없다")))
-	{
-		return;
-	}
-
-	if (!GameState->TryUpgradeArmorLevel())
-	{
-		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeArmor rejected: level %d/%d, cost %d, resource %d"),
-			GameState->GetArmorLevel(), ATRGameState::MaxArmorLevel,
-			GameState->GetArmorUpgradeCost(), GameState->GetMonsterResource());
-		return;
-	}
-
-	UE_LOG(LogTRGameplay, Verbose, TEXT("UpgradeArmor: level %d (resource left %d)"),
-		GameState->GetArmorLevel(), GameState->GetMonsterResource());
+	UpgradeFromConsole(/*bArmor=*/true);
 }
 
 void ATRPlayerCharacter::ServerUpgradeTurret_Implementation()
 {
+	UpgradeFromConsole(/*bArmor=*/false);
+}
+
+void ATRPlayerCharacter::UpgradeFromConsole(bool bArmor)
+{
+	const TCHAR* Name = bArmor ? TEXT("UpgradeArmor") : TEXT("UpgradeTurret");
+
 	if (!IsOccupyingControlConsole())
 	{
-		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeTurret rejected: control console not occupied by this player"));
+		UE_LOG(LogTRGameplay, Log, TEXT("%s rejected: control console not occupied by this player"), Name);
 		return;
 	}
 
@@ -447,16 +433,19 @@ void ATRPlayerCharacter::ServerUpgradeTurret_Implementation()
 		return;
 	}
 
-	if (!GameState->TryUpgradeTurretLevel())
+	const bool bUpgraded = bArmor ? GameState->TryUpgradeArmorLevel() : GameState->TryUpgradeTurretLevel();
+	const int32 Level = bArmor ? GameState->GetArmorLevel() : GameState->GetTurretLevel();
+
+	if (!bUpgraded)
 	{
-		UE_LOG(LogTRGameplay, Log, TEXT("UpgradeTurret rejected: level %d/%d, cost %d, resource %d"),
-			GameState->GetTurretLevel(), ATRGameState::MaxTurretLevel,
-			GameState->GetTurretUpgradeCost(), GameState->GetMonsterResource());
+		UE_LOG(LogTRGameplay, Log, TEXT("%s rejected: level %d/%d, cost %d, resource %d"), Name, Level,
+			bArmor ? ATRGameState::MaxArmorLevel : ATRGameState::MaxTurretLevel,
+			bArmor ? GameState->GetArmorUpgradeCost() : GameState->GetTurretUpgradeCost(),
+			GameState->GetMonsterResource());
 		return;
 	}
 
-	UE_LOG(LogTRGameplay, Verbose, TEXT("UpgradeTurret: level %d (resource left %d)"),
-		GameState->GetTurretLevel(), GameState->GetMonsterResource());
+	UE_LOG(LogTRGameplay, Verbose, TEXT("%s: level %d (resource left %d)"), Name, Level, GameState->GetMonsterResource());
 }
 
 // 상호작용 RPC 함수, E키 - 포탑 탑승/하차 vs 물자실 자원 획득

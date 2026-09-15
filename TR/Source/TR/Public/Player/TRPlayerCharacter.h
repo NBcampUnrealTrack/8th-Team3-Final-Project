@@ -120,6 +120,9 @@ protected:
 	// 지금 조준 중인 관제석. 조준은 순간값이라 점유를 시작할 때만 본다.
 	ATRControlConsole* GetLookedAtControlConsole() const;
 
+	/** 관제석 업그레이드 서버 RPC 공용 본문. 장갑/포탑은 bArmor 로 가른다. */
+	void UpgradeFromConsole(bool bArmor);
+
 	// 점유 중인 관제석. 조준과 달리 계속 유지되는 상태라 따로 들고 있는다.
 	// 서버가 정하고 복제되므로 소유 클라이언트도 같은 답을 본다.
 	UPROPERTY(Replicated)

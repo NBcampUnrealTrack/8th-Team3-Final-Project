@@ -10,6 +10,24 @@
 #include "Core/TRPlayerState.h"
 #include "Mass/Combat/TRMassCombatSubsystem.h"
 
+namespace
+{
+	// 레벨 테이블에서 현재 레벨 행을 찾는다. 테이블이나 행이 없으면 ensure 로 알리고 nullptr.
+	template <class TRow>
+	const TRow* FindLevelRow(const UDataTable* Table, int32 Level, const TCHAR* TableName,
+		const FString& OwnerName, const TCHAR* ContextName)
+	{
+		if (!ensureMsgf(Table, TEXT("%s: %s not assigned"), *OwnerName, TableName))
+		{
+			return nullptr;
+		}
+
+		const TRow* Row = Table->FindRow<TRow>(FName(*FString::FromInt(Level)), ContextName);
+		ensureMsgf(Row, TEXT("%s: level row %d not found in %s"), *OwnerName, Level, TableName);
+		return Row;
+	}
+}
+
 void ATRGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -95,26 +113,12 @@ void ATRGameState::AddMonsterResource(int32 Amount)
 
 const FTRArmorLevelRow* ATRGameState::GetArmorLevelRow(const TCHAR* ContextName) const
 {
-	if (!ensureMsgf(ArmorLevelTable, TEXT("%s: ArmorLevelTable not assigned"), *GetName()))
-	{
-		return nullptr;
-	}
-
-	const FTRArmorLevelRow* Row = ArmorLevelTable->FindRow<FTRArmorLevelRow>(FName(*FString::FromInt(ArmorLevel)), ContextName);
-	ensureMsgf(Row, TEXT("%s: armor level row %d not found in ArmorLevelTable"), *GetName(), ArmorLevel);
-	return Row;
+	return FindLevelRow<FTRArmorLevelRow>(ArmorLevelTable, ArmorLevel, TEXT("ArmorLevelTable"), GetName(), ContextName);
 }
 
 const FTRTurretLevelRow* ATRGameState::GetTurretLevelRow(const TCHAR* ContextName) const
 {
-	if (!ensureMsgf(TurretLevelTable, TEXT("%s: TurretLevelTable not assigned"), *GetName()))
-	{
-		return nullptr;
-	}
-
-	const FTRTurretLevelRow* Row = TurretLevelTable->FindRow<FTRTurretLevelRow>(FName(*FString::FromInt(TurretLevel)), ContextName);
-	ensureMsgf(Row, TEXT("%s: turret level row %d not found in TurretLevelTable"), *GetName(), TurretLevel);
-	return Row;
+	return FindLevelRow<FTRTurretLevelRow>(TurretLevelTable, TurretLevel, TEXT("TurretLevelTable"), GetName(), ContextName);
 }
 
 int32 ATRGameState::GetArmorUpgradeCost() const
@@ -156,16 +160,7 @@ bool ATRGameState::TryUpgradeArmorLevel()
 
 	// 올리기 전 최대 HP. 파츠가 현재 HP 비율을 유지하는 데 쓴다.
 	const FTRArmorLevelRow* PrevRow = GetArmorLevelRow(ANSI_TO_TCHAR(__FUNCTION__));
-	const float PrevMaxHP = PrevRow ? PrevRow->MaxHP : 0.f;
-
-	if (!TryConsumeMonsterResource(Cost))
-	{
-		return false;
-	}
-
-	++ArmorLevel;
-	OnArmorLevelUpgraded.Broadcast(PrevMaxHP);
-	return true;
+	return ConsumeAndUpgradePart(Cost, PrevRow ? PrevRow->MaxHP : 0.f, ArmorLevel, OnArmorLevelUpgraded);
 }
 
 bool ATRGameState::TryUpgradeTurretLevel()
@@ -182,15 +177,18 @@ bool ATRGameState::TryUpgradeTurretLevel()
 	}
 
 	const FTRTurretLevelRow* PrevRow = GetTurretLevelRow(ANSI_TO_TCHAR(__FUNCTION__));
-	const float PrevMaxHP = PrevRow ? PrevRow->MaxHP : 0.f;
+	return ConsumeAndUpgradePart(Cost, PrevRow ? PrevRow->MaxHP : 0.f, TurretLevel, OnTurretLevelUpgraded);
+}
 
+bool ATRGameState::ConsumeAndUpgradePart(int32 Cost, float PrevMaxHP, int32& Level, FTRPartLevelUpgraded& OnUpgraded)
+{
 	if (!TryConsumeMonsterResource(Cost))
 	{
 		return false;
 	}
 
-	++TurretLevel;
-	OnTurretLevelUpgraded.Broadcast(PrevMaxHP);
+	++Level;
+	OnUpgraded.Broadcast(PrevMaxHP);
 	return true;
 }
 

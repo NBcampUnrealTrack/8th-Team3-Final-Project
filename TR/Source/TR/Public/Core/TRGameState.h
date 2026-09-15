@@ -161,6 +161,9 @@ private:
 
 	UFUNCTION()
 	void OnRep_MatchStarted();
+
+	/** 자원을 차감하고 레벨을 올린 뒤 알린다. 장갑·포탑 공용. */
+	bool ConsumeAndUpgradePart(int32 Cost, float PrevMaxHP, int32& Level, FTRPartLevelUpgraded& OnUpgraded);
 	
 	UPROPERTY(Replicated)
 	int32 MonsterResource = 0;

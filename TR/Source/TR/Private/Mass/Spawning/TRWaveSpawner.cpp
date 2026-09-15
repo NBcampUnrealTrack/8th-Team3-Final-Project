@@ -42,7 +42,7 @@ void ATRWaveSpawner::BeginPlay()
 		// 추적 목표도 여기서 함께 등록한다.
 		// 이게 없으면 "누가 목표인가"를 블루프린트에서 한 번 더 지정해야 하고,
 		// 둘이 어긋나면 적이 엉뚱한 곳으로 가거나 아예 안 움직인다.
-		if (UTRTargetDirectorSubsystem* Director = GetWorld()->GetSubsystem<UTRTargetDirectorSubsystem>())
+		if (UTRTargetDirectorSubsystem* Director = GetTargetDirector())
 		{
 			// 추적 영역은 이 시점에 대상 액터에서 잰다. 기차의 TargetVolume 컴포넌트가
 			// 있으면 그것을, 없으면 메시 전체 바운드를 쓴다.
@@ -64,7 +64,7 @@ void ATRWaveSpawner::BeginPlay()
 		return;
 	}
 
-	if (UTRWaveDirectorSubsystem* Director = GetWorld()->GetSubsystem<UTRWaveDirectorSubsystem>())
+	if (UTRWaveDirectorSubsystem* Director = GetWaveDirector())
 	{
 		Director->OnWaveFinished.AddDynamic(this, &ATRWaveSpawner::HandleWaveFinished);
 	}
@@ -79,12 +79,9 @@ void ATRWaveSpawner::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopWaves();
 
-	if (UWorld* World = GetWorld())
+	if (UTRWaveDirectorSubsystem* Director = GetWaveDirector())
 	{
-		if (UTRWaveDirectorSubsystem* Director = World->GetSubsystem<UTRWaveDirectorSubsystem>())
-		{
-			Director->OnWaveFinished.RemoveDynamic(this, &ATRWaveSpawner::HandleWaveFinished);
-		}
+		Director->OnWaveFinished.RemoveDynamic(this, &ATRWaveSpawner::HandleWaveFinished);
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -114,7 +111,7 @@ void ATRWaveSpawner::StopWaves()
 		World->GetTimerManager().ClearTimer(RestTimerHandle);
 		World->GetTimerManager().ClearTimer(AliveCountTimerHandle);
 
-		if (UTRWaveDirectorSubsystem* Director = World->GetSubsystem<UTRWaveDirectorSubsystem>())
+		if (UTRWaveDirectorSubsystem* Director = GetWaveDirector())
 		{
 			Director->StopWave();
 		}
@@ -154,6 +151,18 @@ ATRGameState* ATRWaveSpawner::GetTRGameState() const
 {
 	const UWorld* World = GetWorld();
 	return World ? World->GetGameState<ATRGameState>() : nullptr;
+}
+
+UTRWaveDirectorSubsystem* ATRWaveSpawner::GetWaveDirector() const
+{
+	const UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<UTRWaveDirectorSubsystem>() : nullptr;
+}
+
+UTRTargetDirectorSubsystem* ATRWaveSpawner::GetTargetDirector() const
+{
+	const UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<UTRTargetDirectorSubsystem>() : nullptr;
 }
 
 void ATRWaveSpawner::PushWavePhase(ETRWavePhase Phase, float RestDuration)
@@ -207,8 +216,7 @@ void ATRWaveSpawner::PushAliveCount()
 		return;
 	}
 
-	const UWorld* World = GetWorld();
-	UTRWaveDirectorSubsystem* Director = World ? World->GetSubsystem<UTRWaveDirectorSubsystem>() : nullptr;
+	UTRWaveDirectorSubsystem* Director = GetWaveDirector();
 
 	// 디렉터가 없으면 셀 방법이 없다. 0으로 덮으면 UI 가 "전멸"로 오해하므로 그대로 둔다.
 	if (Director == nullptr)
@@ -222,7 +230,7 @@ void ATRWaveSpawner::PushAliveCount()
 void ATRWaveSpawner::StartWaveNumber(int32 WaveNumber)
 {
 	UWorld* World = GetWorld();
-	UTRWaveDirectorSubsystem* Director = World ? World->GetSubsystem<UTRWaveDirectorSubsystem>() : nullptr;
+	UTRWaveDirectorSubsystem* Director = GetWaveDirector();
 	if (!ensureMsgf(Director, TEXT("[ATRWaveSpawner] TRWaveDirectorSubsystem 이 없다")))
 	{
 		return;
@@ -326,9 +334,7 @@ void ATRWaveSpawner::LogWaveStatScales(const FTRWaveDefinition& Definition, int3
 
 void ATRWaveSpawner::VerifyWaveTarget(const FTRWaveDefinition& Definition, int32 WaveNumber) const
 {
-	const UWorld* World = GetWorld();
-	const UTRTargetDirectorSubsystem* TargetDirector =
-		World ? World->GetSubsystem<UTRTargetDirectorSubsystem>() : nullptr;
+	const UTRTargetDirectorSubsystem* TargetDirector = GetTargetDirector();
 
 	if (TargetDirector == nullptr || TargetDirector->HasTarget(Definition.Channel))
 	{
