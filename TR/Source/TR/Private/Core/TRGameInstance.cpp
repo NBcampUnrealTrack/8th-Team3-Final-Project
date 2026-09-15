@@ -588,7 +588,7 @@ void UTRGameInstance::HandleSessionUserInviteAccepted(bool bWasSuccessful, int32
 void UTRGameInstance::DestroyCurrentSession()
 {
 	IOnlineSessionPtr Sessions = GetSessionInterface();
-	if (!Sessions.IsValid())
+	if (!ensureMsgf(Sessions.IsValid(), TEXT("[UTRGameInstance] SessionInterface 가 없다")))
 	{
 		return;
 	}
@@ -680,7 +680,8 @@ void UTRGameInstance::HandleNetworkFailure(UWorld* World, UNetDriver* NetDriver,
 
 void UTRGameInstance::TR_JoinCode(const FString& RoomCode)
 {
-	if (UTRSessionFlow* Flow = GetSubsystem<UTRSessionFlow>())
+	UTRSessionFlow* Flow = GetSubsystem<UTRSessionFlow>();
+	if (ensureMsgf(Flow, TEXT("[UTRGameInstance] TRSessionFlow 가 없다")))
 	{
 		Flow->JoinRoomByCode(RoomCode);
 	}

@@ -278,7 +278,7 @@ void UTRWaveDirectorSubsystem::SpawnGroupBatch(int32 GroupIndex)
 
 	const UWorld* World = GetWorld();
 	UTRMassSpawnerSubsystem* Spawner = World ? World->GetSubsystem<UTRMassSpawnerSubsystem>() : nullptr;
-	if (Spawner == nullptr)
+	if (!ensureMsgf(Spawner, TEXT("[UTRWaveDirectorSubsystem] TRMassSpawnerSubsystem 이 없다")))
 	{
 		StopWave();
 		return;

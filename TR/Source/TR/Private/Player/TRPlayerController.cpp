@@ -107,8 +107,10 @@ void ATRPlayerController::ServerStartMatch_Implementation()
 		return;
 	}
 
-	if (ATRGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATRGameMode>() : nullptr)
+	ATRGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ATRGameMode>() : nullptr;
+	if (!ensureMsgf(GameMode, TEXT("[ATRPlayerController] 서버에 ATRGameMode 가 없다")))
 	{
-		GameMode->StartMatch();
+		return;
 	}
+	GameMode->StartMatch();
 }

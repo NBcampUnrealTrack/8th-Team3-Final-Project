@@ -560,7 +560,7 @@ void ATRLevelSceneManager::UpdateFloorBiome(const float DeltaSeconds)
 //환경(안개/해/하늘빛/PP)을 지면 전환에 맞춰 따라가게 한다
 void ATRLevelSceneManager::UpdateEnvironment(const float DeltaSeconds)
 {
-	if (EnvironmentBlender == nullptr)
+	if (!ensureMsgf(EnvironmentBlender, TEXT("[ATRLevelSceneManager] EnvironmentBlender 컴포넌트가 없다")))
 	{
 		return;
 	}
@@ -837,7 +837,11 @@ void ATRLevelSceneManager::SetVisualSpeed(const float NewVisualSpeed)
 //레일 조각 액터 생성
 void ATRLevelSceneManager::CreateInitialRailSegments()
 {
-	if (!bGenerateRail || !GetWorld() || !RailSegmentClass || !RailMesh)
+	if (!bGenerateRail || !GetWorld() || !RailMesh)
+	{
+		return;
+	}
+	if (!ensureMsgf(RailSegmentClass, TEXT("[ATRLevelSceneManager] RailSegmentClass 가 없다")))
 	{
 		return;
 	}
@@ -872,7 +876,11 @@ void ATRLevelSceneManager::CreateInitialRailSegments()
 //지면 액터 생성
 void ATRLevelSceneManager::CreateFloor()
 {
-	if (!bGenerateFloor || !GetWorld() || !FloorClass)
+	if (!bGenerateFloor || !GetWorld())
+	{
+		return;
+	}
+	if (!ensureMsgf(FloorClass, TEXT("[ATRLevelSceneManager] FloorClass 가 없다")))
 	{
 		return;
 	}
@@ -980,7 +988,7 @@ void ATRLevelSceneManager::RecyclePassedRailSegments()
 //청크 초기 세팅
 void ATRLevelSceneManager::CreateInitialChunks()
 {
-	if (!GetWorld() || !ChunkClass)
+	if (!ensureMsgf(ChunkClass, TEXT("[ATRLevelSceneManager] ChunkClass 가 없다")) || !GetWorld())
 	{
 		return;
 	}
