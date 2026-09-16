@@ -365,29 +365,32 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 
 	const EBGResolutionTier Tier = ToResolutionTier(Resolution.Outcome);
 	
-	if (UBGChatingSubsystem* Chat = GetGameInstance()
-		? GetGameInstance()->GetSubsystem<UBGChatingSubsystem>()
-		: nullptr)
+	if (GetLocalPlayer())
 	{
-		const FString CardName = Row
-			? Row->DisplayName.ToString()
-			: Resolution.CardId.GetTagName().ToString();
-
-		FString SeatName = FString::Printf(TEXT("좌석 %d"), Resolution.SeatIndex);
-		if (const ABGGameState* GS = GetBGGameState())
+		if (UBGChatingSubsystem* Chat = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UBGChatingSubsystem>()
+			: nullptr)
 		{
-			if (const ABGPlayerState* SeatPS = GS->GetPlayerStateBySeat(Resolution.SeatIndex))
+			const FString CardName = Row
+				? Row->DisplayName.ToString()
+				: Resolution.CardId.GetTagName().ToString();
+
+			FString SeatName = FString::Printf(TEXT("좌석 %d"), Resolution.SeatIndex);
+			if (const ABGGameState* GS = GetBGGameState())
 			{
-				SeatName = SeatPS->GetPlayerName();
+				if (const ABGPlayerState* SeatPS = GS->GetPlayerStateBySeat(Resolution.SeatIndex))
+				{
+					SeatName = SeatPS->GetPlayerName();
+				}
 			}
+
+			const FString TierText = UBGResolutionWidget::GetTierText(Tier).ToString();
+
+			Chat->AddSystemMessage(Resolution.bForced
+				? FString::Printf(TEXT("%s → %s (%s, 강제)"), *SeatName, *CardName, *TierText)
+				: FString::Printf(TEXT("%s → %s (%s)"),
+					*SeatName, *CardName, *TierText));
 		}
-
-		const FString TierText = UBGResolutionWidget::GetTierText(Tier).ToString();
-
-		Chat->AddSystemMessage(Resolution.bForced
-			? FString::Printf(TEXT("%s → %s (%s, 강제)"), *SeatName, *CardName, *TierText)
-			: FString::Printf(TEXT("%s → %s (%s)"),
-				*SeatName, *CardName, *TierText));
 	}
 
 	//	── 손패 연출 통지 ──
