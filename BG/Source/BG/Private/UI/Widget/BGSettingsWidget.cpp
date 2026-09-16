@@ -66,7 +66,7 @@ namespace
 	const TCHAR* AudioSection = TEXT("BGAudio");
 
 	// 구분선이 화면에서 차지해야 할 픽셀 두께. DPI 스케일과 무관하게 이 값으로 떨어진다.
-	constexpr float DividerPixels = 2.f;
+	constexpr float SettingsDividerPixels = 2.f;
 
 	FString ResolutionLabel(const FIntPoint& Resolution)
 	{
@@ -208,8 +208,8 @@ void UBGSettingsWidget::RefreshDividerThickness()
 	}
 	LastViewportScale = Scale;
 
-	//	스케일이 곱해진 뒤 정확히 DividerPixels 가 되도록 미리 나눠 둔다.
-	const float Thickness = DividerPixels / Scale;
+	//	스케일이 곱해진 뒤 정확히 SettingsDividerPixels 가 되도록 미리 나눠 둔다.
+	const float Thickness = SettingsDividerPixels / Scale;
 	for (UImage* Divider : Dividers)
 	{
 		if (!Divider)
