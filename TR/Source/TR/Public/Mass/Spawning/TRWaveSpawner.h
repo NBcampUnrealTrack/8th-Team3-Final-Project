@@ -207,6 +207,10 @@ private:
 	 */
 	ATRGameState* GetTRGameState() const;
 
+	UTRWaveDirectorSubsystem* GetWaveDirector() const;
+
+	class UTRTargetDirectorSubsystem* GetTargetDirector() const;
+
 	/** @param RestDuration Rest 단계일 때만 쓴다. 끝나는 시각으로 환산해 복제한다. */
 	void PushWavePhase(ETRWavePhase Phase, float RestDuration = 0.f);
 
