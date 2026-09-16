@@ -84,6 +84,14 @@ public:
 	 */
 	int32 CardInFlightInstanceId = INDEX_NONE;
 
+	/**
+	 * 방금 발동한 카드 효과의 실제 결과 요약("피해 3", "방어 성공 — 피해 3 무효" 등).
+	 * 서버 전용 · 비복제. GA_BGCardEffects 가 쓰고 HandlePlayCard 가 판정 통지에 실어 보낸다.
+	 *
+	 * 카드 수치가 아니라 **최종 결과**다 — 약점 포착 · 추가 피해 · 방어는 GA 안에서만 알 수 있다.
+	 */
+	FString LastCardEffectSummary;
+
 	//	전원에게 복제되는 공개 장수. 남의 손패 크기는 이 값으로만 알 수 있다.
 	UFUNCTION(BlueprintPure, Category = "BG|Player")
 	int32 GetHandCount() const { return HandCount; }

@@ -432,6 +432,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	bool IsResolutionPresentationPlaying() const { return bResolutionPresentationActive; }
 
+	/** 판정 UI 에 주어진 시간. 클래스 기본값이라 클라에서도 서버와 같은 값이 나온다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	float GetResolutionPresentationSeconds() const { return ResolutionPresentationSeconds; }
+
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
 
@@ -896,7 +900,8 @@ protected:
 
 	/**
 	 * 주사위/판정 UI를 보여준 뒤 월드 GameplayCue를 시작하기까지의 시간.
-	 * WBP_BGCard의 Anim_Decision + 결과 애니메이션 전체 길이에 맞춘다.
+	 * 판정 게이지를 쓰면 카드 대기·퇴장 + 게이지 전체 길이에 맞춘다
+	 * (UBGRollGaugeWidget 이 넘치면 경고를 남긴다).
 	 * 이 시간 동안 카드 사용과 턴 종료를 막고 밧줄도 멈춘다.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0", Units = "s"))

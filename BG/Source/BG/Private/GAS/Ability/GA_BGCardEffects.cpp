@@ -90,6 +90,12 @@ void UGA_BGCardEffects::ActivateAbility(
 	TArray<FString> Summary;
 	ExecuteEffects(Effects, Avatar, TargetActor, SourceASC, Summary);
 
+	//	판정 통지에 실을 결과. 비어 있으면 "아무 효과 없음" 이라 UI 가 문구를 비운다.
+	if (ABGPlayerState* CasterPS = GetBGPlayerState(Avatar))
+	{
+		CasterPS->LastCardEffectSummary = FString::Join(Summary, TEXT(" · "));
+	}
+
 	const FString SummaryText = Summary.IsEmpty() ? TEXT("효과 없음") : FString::Join(Summary, TEXT(" + "));
 
 	BGDebug::Screen(
@@ -476,7 +482,30 @@ FString UGA_BGCardEffects::ApplyStatusEffect(const FBGCardEffect& Effect,
 		return FString();
 	}
 
-	return FString::Printf(TEXT("%s%s 부여"),
-		Effect.bToTarget ? TEXT("상대에게 ") : TEXT(""),
-		*Effect.StatusTag.GetTagName().ToString());
+	//	⚠️ 태그 이름을 그대로 쓰지 않는다 — 화면에 "Status.NextCard.ForceFailure 부여" 가 뜬다.
+	//	   모르는 상태는 빈 문자열이다. 읽을 수 없는 문구를 띄우느니 아무것도 안 띄우는 편이 낫다
+	//	   (효과 자체는 이미 적용됐고, 로그로는 남는다).
+	const FString Label = DescribeStatus(Effect.StatusTag, Effect.Amount);
+	if (Label.IsEmpty())
+	{
+		UE_LOG(LogBGCard, Log, TEXT("[상태] 표시 문구가 없는 상태다 — %s (화면에는 띄우지 않는다)."),
+			*Effect.StatusTag.GetTagName().ToString());
+		return FString();
+	}
+
+	return Effect.bToTarget ? FString::Printf(TEXT("상대 %s"), *Label) : Label;
+}
+
+FString UGA_BGCardEffects::DescribeStatus(const FGameplayTag& StatusTag, int32 Amount)
+{
+	using namespace BG::Status;
+
+	if (StatusTag == NextCard::ForceSuccess.GetTag())         { return TEXT("다음 카드 성공"); }
+	if (StatusTag == NextCard::ForceCriticalSuccess.GetTag()) { return TEXT("다음 카드 대성공"); }
+	if (StatusTag == NextCard::ForceFailure.GetTag())         { return TEXT("다음 카드 실패"); }
+	if (StatusTag == NextCard::ForceCriticalFailure.GetTag()) { return TEXT("다음 카드 대실패"); }
+	if (StatusTag == NextCard::KeepCardUse.GetTag())          { return TEXT("사용한도 유지"); }
+	if (StatusTag == NextAttack::DamageBonus.GetTag())        { return FString::Printf(TEXT("다음 공격 피해 +%d"), Amount); }
+
+	return FString();
 }

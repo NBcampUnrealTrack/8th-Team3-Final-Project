@@ -50,11 +50,17 @@ public:
 	 * 첫 결과가 남아 두 번째를 가리지 않는다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Resolution")
-	void ShowResolution(const FBGResolutionView& InResolutionView);
+	virtual void ShowResolution(const FBGResolutionView& InResolutionView);
 
 	/** 즉시 숨긴다. 턴이 넘어가거나 판이 끝날 때 호출한다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Resolution")
-	void HideResolution();
+	virtual void HideResolution();
+
+	/**
+	 * 사용한 카드가 퇴장을 시작했다. PlayerController 가 손패 신호를 받아 전달한다.
+	 * 기본 위젯은 결과를 곧바로 띄우므로 무시한다 — 게이지처럼 카드 뒤에 이어 가는 위젯이 쓴다.
+	 */
+	virtual void NotifyCardExitStarted() {}
 
 	UFUNCTION(BlueprintPure, Category = "BG|Resolution")
 	const FBGResolutionView& GetResolutionView() const { return ResolutionView; }
@@ -143,8 +149,18 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBorder> Border_Root;
 
-private:
+	/** ResolutionView 를 텍스트·색에 반영한다. */
 	void RefreshVisual();
+
+	/** 화면에 올리고 등장 통지(BP 훅 → 바깥)를 보낸다. 값은 미리 채워 둘 것. */
+	void BeginShowing();
+
+	/** DisplaySeconds 뒤 자동 숨김을 (다시) 건다. */
+	void StartAutoHideTimer();
+
+	bool IsShowing() const { return bShowing; }
+
+private:
 
 	/**
 	 * 지금 판정이 떠 있는가. 퇴장 통지를 한 번만 쏘기 위한 것이다.

@@ -36,7 +36,7 @@ void UGA_Heal::ActivateAbility(
 
 	// ── 판정 결과 수신 (GDD §9.1) ──
 	//	판정은 서버(HandlePlayCard)가 카드 DT 로 끝냈다. 비율은 DT_BGCard 의 OutcomeWeights,
-	//	등급별 회복량은 OutcomeMagnitudes 다. 이 GA 는 결과 실행만 한다.
+	//	등급별 회복량은 OutcomeEffects 의 Amount 다. 이 GA 는 결과 실행만 한다.
 	//	회복 확률·회복량에 붙는 스탯 보정은 두지 않는다 — §7.1 의 "회복 보정" 은 확정 스탯이지만
 	//	그 자리를 채울 어트리뷰트가 아직 없고, 이 GA 자체가 비활성이다(GDD §13.1).
 	//
@@ -60,7 +60,7 @@ void UGA_Heal::ActivateAbility(
 	{
 		UE_LOG(LogTemp, Warning,
 			TEXT("[BG] GA_Heal: 서버 판정 결과(Resolution.*)가 없습니다 — "
-			     "DT_BGCard 의 OutcomeWeights/OutcomeMagnitudes 와 AbilityByCardId 매핑을 확인하세요. 회복 없이 종료합니다."));
+			     "DT_BGCard 의 OutcomeWeights/OutcomeEffects 와 AbilityByCardId 매핑을 확인하세요. 회복 없이 종료합니다."));
 	}
 
 	if (SourceASC && FinalHeal > 0)

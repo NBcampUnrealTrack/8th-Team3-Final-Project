@@ -29,6 +29,12 @@ void UBGResolutionWidget::ShowResolution(const FBGResolutionView& InResolutionVi
 	ResolutionView = InResolutionView;
 
 	RefreshVisual();
+	BeginShowing();
+	StartAutoHideTimer();
+}
+
+void UBGResolutionWidget::BeginShowing()
+{
 	SetVisibility(ESlateVisibility::HitTestInvisible);   // 판정 표시가 카드 클릭을 먹지 않도록
 
 	bShowing = true;
@@ -38,7 +44,10 @@ void UBGResolutionWidget::ShowResolution(const FBGResolutionView& InResolutionVi
 	//	이 위젯의 등장 연출이 아직 시작되지 않은 프레임이 생긴다.
 	OnResolutionShown(ResolutionView);
 	OnResolutionShownEvent.Broadcast(ResolutionView);
+}
 
+void UBGResolutionWidget::StartAutoHideTimer()
+{
 	UWorld* World = GetWorld();
 	if (!World)
 	{
