@@ -3,8 +3,10 @@
 //
 // 태그가 둘이고 역할이 완전히 다르다:
 //   JobTag (Character.Job.*) — 스탯·능력·외형의 **유일한** 출처. DT Row 를 읽어 GAS 를 부여한다. 공개.
-//   RoleTag (Role.*)    — 승리 조건 판정 전용. DT 를 조회하지 않고 GAS 도 부여하지 않는다.
+//   RoleTag (Role.*)    — 승리 조건 판정 전용. DT 를 조회하지 않는다.
 //                              ASC 루즈 태그로만 올라가 승패/어빌리티 조건 검사에 쓰인다. 숨김.
+//                              예외: 보안관은 규칙상 고정 보너스(MaxHealth/Health +1)를 받는다
+//                              (SetRoleTag 참고).
 //
 // ⚠️ 설계 메모: Prototype-Workflow.md §1~2 는 "폰 없이 PlayerState 에 ASC" 를 권장한다
 //    (손패 은닉 정보 복제 때문). 이 클래스는 유저 요청대로 Team4 방식(Character 소유 ASC)을
@@ -99,10 +101,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG")
 	FGameplayTag GetRoleTag() const { return RoleTag; }
 
-	// 서버에서 역할을 배정할 때 호출. 태그를 저장하고 ASC 루즈 태그에 반영할 뿐,
-	// 스탯/능력은 건드리지 않는다 — 그건 직업(SetJobTag)의 몫이다. 소유 클라에만 복제된다.
+	// 서버에서 역할을 배정할 때 호출. 태그를 저장하고 ASC 루즈 태그에 반영한다.
+	// 스탯/능력은 원칙적으로 직업(SetJobTag)의 몫이지만, 보안관 역할만 예외로
+	// 고정 보너스(ApplySheriffBonusIfNeeded)를 함께 적용한다. 소유 클라에만 복제된다.
 	UFUNCTION(BlueprintCallable, Category = "BG")
 	void SetRoleTag(const FGameplayTag& NewTag);
+
+	// 보안관 전용 고정 보너스(MaxHealth/Health +1, GE_BGSheriffBonus)를 적용한다.
+	// SetRoleTag 가 내부에서 자동으로 부른다. 지금 RoleTag 가 보안관이 아니면 아무 일도 안 한다.
+	UFUNCTION(BlueprintCallable, Category = "BG")
+	void ApplySheriffBonusIfNeeded();
 
 	// 이 캐릭터의 직업 태그 (Character.Job.*). 공개 정보라 전원에게 복제된다.
 	UFUNCTION(BlueprintPure, Category = "BG")
