@@ -65,6 +65,14 @@ void UBGResolutionWidget::StartAutoHideTimer()
 	}
 }
 
+void UBGResolutionWidget::ClearAutoHideTimer()
+{
+	if (const UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(HideTimerHandle);
+	}
+}
+
 void UBGResolutionWidget::HideResolution()
 {
 	if (const UWorld* World = GetWorld())

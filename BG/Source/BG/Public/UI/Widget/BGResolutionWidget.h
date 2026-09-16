@@ -158,6 +158,13 @@ protected:
 	/** DisplaySeconds 뒤 자동 숨김을 (다시) 건다. */
 	void StartAutoHideTimer();
 
+	/**
+	 * 걸려 있던 자동 숨김을 취소한다.
+	 * ⚠️ ShowResolution 을 재정의해 표시를 늦추는 자식은 새 판정을 받을 때 반드시 부를 것 —
+	 *    안 부르면 앞 판정의 타이머가 뒤 판정 연출 도중에 발동해 화면을 통째로 끈다.
+	 */
+	void ClearAutoHideTimer();
+
 	bool IsShowing() const { return bShowing; }
 
 private:

@@ -40,6 +40,9 @@ void UBGRollGaugeWidget::NativeOnInitialized()
 		UE_LOG(LogBGCard, Warning,
 			TEXT("[RollGauge] Border_Root 가 바인딩됐다 — 결과 색이 착지 전에 칠해진다. 게이지 WBP 에서는 이름을 바꿀 것."));
 	}
+
+	//	공개 연출이 폭을 바꾸기 전에, 디자이너가 잡은 원래 폭을 붙잡아 둔다.
+	CaptureDesignerWeights();
 }
 
 void UBGRollGaugeWidget::NativeDestruct()
@@ -63,11 +66,15 @@ void UBGRollGaugeWidget::ShowResolution(const FBGResolutionView& InResolutionVie
 	if (Phase != EBGRollGaugePhase::Idle)
 	{
 		UE_LOG(LogBGCard, Warning, TEXT("[RollGauge] 진행 중(%s)에 새 판정이 왔다 — 앞 연출을 끊는다."),
-			*StaticEnum<EBGRollGaugePhase>()->GetNameStringByValue(static_cast<int64>(Phase)));
+			*GetPhaseName());
 		ResetGauge();
 	}
 
 	ResolutionView = InResolutionView;
+
+	UE_LOG(LogBGCard, Log, TEXT("[RollGauge] 판정 수신 — %s · %s · 눈 %d%s"),
+		*ResolutionView.CardName.ToString(), *GetTierText(ResolutionView.Tier).ToString(),
+		ResolutionView.Roll, ResolutionView.bForced ? TEXT(" (강제)") : TEXT(""));
 
 	//	카드 이름 · 확률은 스포일러가 아니라 미리 채운다. 결과 텍스트만 착지까지 숨긴다.
 	RefreshVisual();
@@ -75,7 +82,7 @@ void UBGRollGaugeWidget::ShowResolution(const FBGResolutionView& InResolutionVie
 	ApplyResultImage();
 	SetOutcomeWidgetsVisible(false);
 
-	//	칸 폭은 돌기 전부터 보여야 한다 — "대성공 칸이 좁다" 를 보면서 기다리는 것이 긴장감이다.
+	//	지난 판정의 공개 연출이 좁혀 둔 칸을 원래 폭으로 돌린다.
 	ApplySlotWidths();
 
 	const UWorld* World = GetWorld();
@@ -105,12 +112,16 @@ void UBGRollGaugeWidget::NotifyCardExitStarted()
 	//	대기 중이 아닐 때 오는 퇴장(장비 등 판정 없는 카드)은 게이지와 무관하다.
 	if (Phase == EBGRollGaugePhase::WaitingForCard)
 	{
+		UE_LOG(LogBGCard, Log, TEXT("[RollGauge] 카드 퇴장 신호 → 굴림 시작"));
 		StartRoll();
 	}
 }
 
 void UBGRollGaugeWidget::HideResolution()
 {
+	//	"연출이 가끔 안 보인다" 를 추적할 때 누가 언제 껐는지가 핵심 단서다.
+	UE_LOG(LogBGCard, Log, TEXT("[RollGauge] 숨김 요청 — 단계 %s"), *GetPhaseName());
+
 	//	표시가 끝났다 — 결과창을 역재생으로 접는다. 등장한 길로 되돌아가야 퇴장이 따로 논다는 느낌이 없다.
 	//	⚠️ 이 단계에서만 한다. 판이 끝나거나 턴이 넘어가 끊긴 경우(Holding 이 아님)에는 즉시 감춘다.
 	if (Phase == EBGRollGaugePhase::Holding && Anim_ResultIn)
@@ -238,7 +249,7 @@ void UBGRollGaugeWidget::BeginReveal()
 {
 	Phase = EBGRollGaugePhase::Revealing;
 
-	//	여기서부터 칸 폭을 "확률대로 나뉜 상태" → "결과 칸 하나" 로 좁혀 간다.
+	//	여기서부터 칸 폭을 "네 칸" → "결과 칸 하나" 로 좁혀 간다.
 	//	선택 칸을 옮기지 않고 폭만 바꾸는 이유: 레이아웃이 알아서 가운데로 밀어 주고,
 	//	사라지는 칸이 자리째 없어져 선택 칸을 가리지 않는다.
 	for (int32 Index = 0; Index < SlotCount; ++Index)
@@ -259,9 +270,17 @@ void UBGRollGaugeWidget::BeginReveal()
 		RevealSeconds - ResultInOverlapSeconds);
 }
 
+FString UBGRollGaugeWidget::GetPhaseName() const
+{
+	return StaticEnum<EBGRollGaugePhase>()->GetNameStringByValue(static_cast<int64>(Phase));
+}
+
 void UBGRollGaugeWidget::BeginResultIn()
 {
 	Phase = EBGRollGaugePhase::ResultIn;
+
+	UE_LOG(LogBGCard, Log, TEXT("[RollGauge] 결과창 등장 — 문구 \"%s\" · 애니메이션 %s"),
+		*ResolutionView.DescriptionText.ToString(), Anim_ResultIn ? TEXT("있음") : TEXT("없음"));
 
 	UpdateResultTexts();
 	SetOutcomeWidgetsVisible(true);
@@ -363,6 +382,10 @@ void UBGRollGaugeWidget::ResetGauge()
 		World->GetTimerManager().ClearTimer(OutroTimer);
 	}
 
+	//	⚠️ 부모의 자동 숨김도 지운다. 남겨 두면 앞 판정의 타이머가 다음 판정의 굴림 도중에 발동해
+	//	   연출을 통째로 끈다 — 카드를 연달아 낼 때만 가끔 연출이 안 뜨던 원인이었다.
+	ClearAutoHideTimer();
+
 	//	퇴장 중에 끊겼다(새 판정 · 판 종료). 역재생을 멈추지 않으면 다음 판정의 등장과 겹쳐 돈다.
 	if (Phase == EBGRollGaugePhase::Outro && Anim_ResultIn)
 	{
@@ -450,16 +473,50 @@ float UBGRollGaugeWidget::ComputeLandingRatio() const
 
 // ── 칸 ────────────────────────────────────────────────────────────────────────
 
-void UBGRollGaugeWidget::ApplySlotWidths()
+void UBGRollGaugeWidget::CaptureDesignerWeights()
 {
-	const FBGCardChanceView& Chance = ResolutionView.Chance;
-	const float Percents[SlotCount] = { Chance.CriticalFailure, Chance.Failure, Chance.Success, Chance.CriticalSuccess };
-	const bool bHasChance = Chance.IsSet();
-
+	//	WBP 에서 잡아 둔 칸 폭(Fill 값)을 기억한다. 칸 폭은 확률과 무관하게 이 값으로 고정이다.
+	//	Fill 이 아니면(Auto 등) 폭을 비율로 알 수 없으므로 똑같이 나눈 것으로 본다.
 	for (int32 Index = 0; Index < SlotCount; ++Index)
 	{
-		const float Ratio = bHasChance ? Percents[Index] / 100.f : 1.f / SlotCount;
-		SlotWeights[Index] = FMath::Max(Ratio, MinSlotFillRatio);
+		DesignerWeights[Index] = 1.f;
+
+		const UWidget* TrackChild = GetTrackChild(Index);
+		if (!TrackChild)
+		{
+			continue;   // 이 칸을 WBP 에 두지 않았다. 선택 사항이다.
+		}
+
+		const UHorizontalBoxSlot* BoxSlot = Cast<UHorizontalBoxSlot>(TrackChild->Slot);
+		if (!BoxSlot)
+		{
+			UE_LOG(LogBGCard, Warning,
+				TEXT("[RollGauge] %s 가 Panel_Track(HorizontalBox) 아래에 없다 — 칸 폭 · 화살표 위치가 어긋난다."),
+				*TrackChild->GetName());
+			continue;
+		}
+
+		const FSlateChildSize Size = BoxSlot->GetSize();
+		if (Size.SizeRule == ESlateSizeRule::Fill && Size.Value > KINDA_SMALL_NUMBER)
+		{
+			DesignerWeights[Index] = Size.Value;
+		}
+		else
+		{
+			//	Auto 면 실제 폭은 내용물이 정하는데 화살표는 4등분으로 계산한다 — 둘이 어긋난다.
+			UE_LOG(LogBGCard, Warning,
+				TEXT("[RollGauge] %s 의 Size 가 Fill 이 아니다 — 화살표가 칸과 어긋난다. WBP 에서 Fill 로 둘 것."),
+				*TrackChild->GetName());
+		}
+	}
+}
+
+void UBGRollGaugeWidget::ApplySlotWidths()
+{
+	//	⚠️ 매 판정 되돌려 놓는다. 지난 공개 연출이 결과 칸 하나로 좁혀 둔 채 끝났기 때문이다.
+	for (int32 Index = 0; Index < SlotCount; ++Index)
+	{
+		SlotWeights[Index] = DesignerWeights[Index];
 	}
 
 	PushSlotWidths();
@@ -475,12 +532,10 @@ void UBGRollGaugeWidget::PushSlotWidths()
 			continue;
 		}
 
+		//	경고는 CaptureDesignerWeights 에서 한 번만 한다. 여기는 좁히기 동안 매 프레임 불린다.
 		UHorizontalBoxSlot* BoxSlot = Cast<UHorizontalBoxSlot>(TrackChild->Slot);
 		if (!BoxSlot)
 		{
-			UE_LOG(LogBGCard, Warning,
-				TEXT("[RollGauge] %s 가 Panel_Track(HorizontalBox) 아래에 없다 — 칸 폭을 확률에 맞출 수 없다."),
-				*TrackChild->GetName());
 			continue;
 		}
 
