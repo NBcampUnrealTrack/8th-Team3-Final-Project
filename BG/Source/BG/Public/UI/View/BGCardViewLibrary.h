@@ -44,9 +44,9 @@ public:
 	/**
 	 * 확률(%)에서 0~99 굴림 값의 등급 경계를 뽑는다. 주사위 눈금·게이지를 그릴 때 쓴다.
 	 *
-	 * ⚠️ **낮을수록 좋다** — RollOutcome 이 대성공부터 누적 비교한다.
-	 *   Roll <= OutCriticalSuccessMax → 대성공 / <= OutSuccessMax → 성공
-	 *   / <= OutFailureMax → 실패 / 그 위 → 대실패
+	 * 높을수록 좋다 — RollOutcome 이 대실패부터 누적 비교한다.
+	 *   Roll <= OutCriticalFailureMax → 대실패 / <= OutFailureMax → 실패
+	 *   / <= OutSuccessMax → 성공 / 그 위 → 대성공
 	 * 확률이 0 인 등급은 앞 경계와 같아진다(구간 없음).
 	 *
 	 * ⚠️ 표시용 근사값이다. 서버는 정규화 전 가중치로 판정하므로 경계에 딱 걸린 눈이
@@ -54,7 +54,7 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "BG|Card")
 	static void GetRollBands(const FBGCardChanceView& Chance,
-		int32& OutCriticalSuccessMax, int32& OutSuccessMax, int32& OutFailureMax);
+		int32& OutCriticalFailureMax, int32& OutFailureMax, int32& OutSuccessMax);
 
 	/**
 	 * 손패 전체를 변환한다.

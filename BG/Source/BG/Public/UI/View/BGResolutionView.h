@@ -89,5 +89,16 @@ struct FBGResolutionView
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution")
 	FBGCardChanceView Chance;
 
+	/** 효과의 실제 결과 — "피해 3", "방어 성공 — 피해 3 무효" 등. 효과가 없었으면 비어 있다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution")
+	FText EffectText;
+
+	/**
+	 * 카드가 DT 에 적어 둔 등급별 추가 설명("급소를 맞혔다!"). 안 적은 카드는 비어 있다.
+	 * ⚠️ EffectText 와 다른 축이다 — 저쪽은 실제 수치, 이쪽은 읽을거리다. 규칙에는 영향이 없다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Resolution")
+	FText DescriptionText;
+
 	bool IsSet() const { return Tier != EBGResolutionTier::None; }
 };

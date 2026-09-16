@@ -381,6 +381,10 @@ protected:
 	UFUNCTION()
 	void HandleCardPlayRequested(const FBGCardView& Card);
 
+	/** 사용한 카드가 퇴장을 시작했다 — 판정 위젯에 전달한다(게이지의 시작 신호). */
+	UFUNCTION()
+	void HandleCardPlayExitStarted(int32 InstanceId);
+
 	/** 좌석 보드가 좌석 확정을 알려온다. */
 	UFUNCTION()
 	void HandleSeatSelected(int32 SeatIndex, int32 ContextId);

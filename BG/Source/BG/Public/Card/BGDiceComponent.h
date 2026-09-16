@@ -79,12 +79,7 @@ public:
 	//    **컴포넌트 기본 비율**로 판정하는 구형 경로다. 유일한 호출처가 비활성 GA_Missed 하나뿐이라
 	//    실제 게임에서는 한 번도 돌지 않는다. 정식 경로는 아래 RollOutcome(카드 비율 기반)이다.
 	//
-	// ⚠️⚠️ **눈의 방향이 정식 경로와 반대다.** 되살리기 전에 반드시 볼 것:
-	//        · ClassifyRoll  : 낮은 눈 = 대실패 … 높은 눈 = 대성공
-	//        · RollOutcome   : 낮은 눈 = 대성공 … 높은 눈 = 대실패  (GDD §4.2 누적 순서)
-	//      새 카드가 실수로 이 경로를 타면 판정이 **뒤집힌 채로 조용히 동작한다** —
-	//      확률 표시(§10)와 실측(§11)이 어긋나는데 크래시도 경고도 없어서 찾기 어렵다.
-	//      되살릴 때는 ClassifyRoll 의 누적 순서를 RollOutcome 에 맞춰 뒤집는 것이 먼저다.
+	//    눈의 방향은 정식 경로와 같다(낮은 눈 = 대실패 … 높은 눈 = 대성공, GDD §4.2 누적 순서).
 	//
 	// 삭제하지 않는 이유는 §13.1 비활성 정책과 같다. GA_Missed 를 되살리는 선택지를 남긴다.
 
@@ -92,7 +87,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Dice|Deprecated")
 	int32 RollDice(int32 Faces = 0);
 
-	// [비활성] 주어진 눈을 비율 구간으로 판정한다 (순수 계산). 위 방향 경고 참고.
+	// [비활성] 주어진 눈을 비율 구간으로 판정한다 (순수 계산).
 	UFUNCTION(BlueprintPure, Category = "BG|Dice|Deprecated")
 	EBGDiceOutcome ClassifyRoll(int32 Roll, int32 Faces = 0) const;
 
@@ -101,7 +96,7 @@ public:
 	 *   RollBonus: 판정에만 더해지는 보정치(행운·민첩 등). OutRoll(원본 눈)은 그대로 두고,
 	 *              (OutRoll + RollBonus) 로 구간을 판정한다. 값이 커지면 상위 등급이 잘 뜬다.
 	 *
-	 * 호출처는 비활성 GA_Missed 뿐이다. 새 코드에서 부르지 말 것 — 위 방향 경고 참고.
+	 * 호출처는 비활성 GA_Missed 뿐이다. 새 코드에서 부르지 말 것 — 카드 비율을 무시한다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Dice|Deprecated")
 	EBGDiceOutcome RollForOutcome(int32& OutRoll, int32 Faces = 0, int32 RollBonus = 0);

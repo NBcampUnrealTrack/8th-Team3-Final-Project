@@ -122,8 +122,8 @@ void ABGGameMode::BG_DumpDeck()
 		//	효과 데이터가 비어 있는지 검사한다.
 		//	이게 없으면 "판정도 정상, GA 발동도 정상, 카드 소비도 정상인데 효과만 0" 인
 		//	조용한 실패가 된다 — 뱅의 피해가 안 들어가는 문제로 실제로 한 번 겪었다.
-		//	⚠️ OutcomeMagnitudes 는 보지 않는다. 비활성 필드라(GDD §13.2) 값이 남아 있으면
-		//	   이 검사가 통째로 무력화된다 — 정확히 그 이유로 한 번 놓쳤다.
+		//	⚠️ 효과 목록(OutcomeEffects)만 본다. 예전에는 등급별 수치 필드도 함께 봐서
+		//	   거기 값이 남아 있으면 이 검사가 통째로 무력화됐다 — 그 필드는 지웠다.
 		const bool bNoEffectData = (Row != nullptr) && !bIsEquip && Row->OutcomeEffects.IsEmpty();
 		if (bNoEffectData)
 		{

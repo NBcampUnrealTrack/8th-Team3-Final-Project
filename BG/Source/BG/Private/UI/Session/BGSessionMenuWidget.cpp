@@ -29,7 +29,8 @@
 namespace
 {
 	// 구분선이 화면에서 차지해야 할 픽셀 두께. DPI 스케일과 무관하게 이 값으로 떨어진다.
-	constexpr float DividerPixels = 2.f;
+	//	⚠️ BGSettingsWidget.cpp 에도 같은 익명 상수가 있어 unity 빌드에서 충돌한다. 이름을 나눠 둔다.
+	constexpr float SessionMenuDividerPixels = 2.f;
 
 	FString PhaseToText(EBGSessionPhase Phase)
 	{
@@ -266,8 +267,8 @@ void UBGSessionMenuWidget::RefreshDividerThickness()
 	}
 	LastViewportScale = Scale;
 
-	//	스케일이 곱해진 뒤 정확히 DividerPixels 가 되도록 미리 나눠 둔다.
-	const float Thickness = DividerPixels / Scale;
+	//	스케일이 곱해진 뒤 정확히 SessionMenuDividerPixels 가 되도록 미리 나눠 둔다.
+	const float Thickness = SessionMenuDividerPixels / Scale;
 	for (UImage* Divider : Dividers)
 	{
 		if (!Divider)

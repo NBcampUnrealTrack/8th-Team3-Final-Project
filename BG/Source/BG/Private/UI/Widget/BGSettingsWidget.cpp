@@ -66,8 +66,6 @@ namespace
 	const TCHAR* AudioSection = TEXT("BGAudio");
 
 	// 구분선이 화면에서 차지해야 할 픽셀 두께. DPI 스케일과 무관하게 이 값으로 떨어진다.
-	//	이름 앞에 Settings 를 붙인 이유: Unity 빌드가 BGSessionMenuWidget.cpp 와 이 파일을
-	//	같은 번역 단위로 묶는데, 둘 다 익명 네임스페이스에 DividerPixels 를 두면 재정의 에러가 난다.
 	constexpr float SettingsDividerPixels = 2.f;
 
 	FString ResolutionLabel(const FIntPoint& Resolution)

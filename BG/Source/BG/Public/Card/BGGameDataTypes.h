@@ -22,9 +22,8 @@ class UTexture2D;
  * 각 단계의 폭은 카드마다 다르다 — DT_BGCard 의 OutcomeWeights 가 정하고
  * UBGDiceComponent::RollOutcome 이 굴린다.
  *
- * ⚠️ 눈(Roll)의 방향은 **낮은 눈 = 대성공**이다 (§4.2 의 누적 순서가
- *    대성공 → 성공 → 실패 → 대실패 라서). 구형 ClassifyRoll 만 반대 방향인데
- *    그쪽은 비활성이다 — BGDiceComponent.h 의 "판정 (구형 경로)" 경고 참고.
+ * 눈(Roll)의 방향은 **높은 눈 = 대성공**이다 (§4.2 의 누적 순서가
+ * 대실패 → 실패 → 성공 → 대성공 이라서). 구형 ClassifyRoll 과 같은 방향이다.
  */
 UENUM(BlueprintType)
 enum class EBGDiceOutcome : uint8
@@ -127,57 +126,10 @@ struct FBGCardResolution
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
 	FBGOutcomeWeights Weights;
-};
 
-/**
- * [비활성] 판정 등급별 효과 수치 — 등급당 정수 하나.
- *
- * FBGOutcomeEffects(효과 목록)로 대체됐다. 카드 데이터를 채울 필드가 둘이면
- * "어느 쪽을 채워야 하는지" 가 카드마다 달라지고, 잘못 채워도 조용히 효과 0 이 된다
- * (실제로 뱅의 피해가 안 들어가는 문제로 한 번 겪었다).
- *
- * ⚠️ 현재 이 값을 읽는 코드는 하나도 없다. HandlePlayCard 가 EventMagnitude 에 실어 보내지만
- *    받는 쪽(GA_Bang / GA_Heal / GA_StealOrDiscard)이 전부 비활성이라 소비되지 않는다.
- *    전용 GA 를 되살릴 때를 위해 경로만 남겨 둔 상태다.
- *
- * 새 카드는 반드시 OutcomeEffects 를 쓸 것 (GDD §13.1 비활성 처리).
- * DT 에서는 전부 0 으로 비워 둔다 — 값이 남아 있으면 BG_DumpDeck 의 "효과 데이터 없음"
- * 검사를 무력화시킨다(실제로 한 번 그렇게 놓쳤다).
- */
-USTRUCT(BlueprintType)
-struct FBGOutcomeMagnitudes
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	int32 CriticalFailure = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	int32 Failure = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	int32 Success = 1;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	int32 CriticalSuccess = 2;
-
-	int32 ForOutcome(EBGDiceOutcome Outcome) const
-	{
-		switch (Outcome)
-		{
-		case EBGDiceOutcome::CriticalSuccess: return CriticalSuccess;
-		case EBGDiceOutcome::Success:         return Success;
-		case EBGDiceOutcome::Failure:         return Failure;
-		case EBGDiceOutcome::CriticalFailure: return CriticalFailure;
-		default:                                return 0;
-		}
-	}
-
-	/** 전부 0 이면 이 카드는 수치 방식을 쓰지 않는다(또는 채우는 것을 잊었다). */
-	bool IsAllZero() const
-	{
-		return CriticalFailure == 0 && Failure == 0 && Success == 0 && CriticalSuccess == 0;
-	}
+	/** 효과의 실제 결과("피해 3" 등). 보너스 · 방어까지 반영된 값이다. 효과가 없었으면 빈 문자열. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	FString EffectSummary;
 };
 
 /**
@@ -185,7 +137,7 @@ struct FBGOutcomeMagnitudes
  *
  * 한 등급이 여러 효과를 가질 수 있어야 한다 — 예) 속공 대성공은
  * "카드 1장 뽑기 + 피해 1 + 카드 사용한도 1 회복" 세 개다.
- * 그래서 등급별 수치 하나(FBGOutcomeMagnitudes)로는 표현할 수 없다.
+ * 그래서 등급마다 수치 하나만 두는 방식으로는 표현할 수 없다(그 방식은 없앴다).
  */
 UENUM(BlueprintType)
 enum class EBGCardEffectOp : uint8
@@ -271,6 +223,45 @@ struct FBGOutcomeEffects
 	{
 		return CriticalFailure.IsEmpty() && Failure.IsEmpty()
 			&& Success.IsEmpty() && CriticalSuccess.IsEmpty();
+	}
+};
+
+/**
+ * 판정 등급별 결과 문구 (선택). 판정 게이지의 결과창이 띄운다.
+ *
+ * 비워 두면 효과에서 자동으로 만든 문구("피해 3")가 그대로 나온다 — 기존 카드는 채울 필요가 없다.
+ * 자리표시자: {Amount} = 이 등급 효과의 수치, {Effect} = 자동 생성 문구.
+ *   예) "급소를 맞혔다! 피해 {Amount}"
+ *
+ * ⚠️ 문구를 적어도 규칙은 달라지지 않는다. 실제로 일어나는 일은 OutcomeEffects 가 정한다 —
+ *    둘이 어긋나면 화면만 거짓말을 한다.
+ */
+USTRUCT(BlueprintType)
+struct FBGOutcomeTexts
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FText CriticalFailure;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FText Failure;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FText Success;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FText CriticalSuccess;
+
+	const FText& ForOutcome(EBGDiceOutcome Outcome) const
+	{
+		switch (Outcome)
+		{
+		case EBGDiceOutcome::CriticalSuccess: return CriticalSuccess;
+		case EBGDiceOutcome::Success:         return Success;
+		case EBGDiceOutcome::Failure:         return Failure;
+		default:                              return CriticalFailure;
+		}
 	}
 };
 
@@ -460,11 +451,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Outcome")
 	FBGOutcomeWeights OutcomeWeights;
 
-	//	[비활성] 등급별 단일 수치. OutcomeEffects 로 대체됐다 — 전용 GA 폴백 전용이다.
-	//	  새 카드는 채우지 말 것. 아래 OutcomeEffects 가 정식 경로다.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Outcome|Deprecated")
-	FBGOutcomeMagnitudes OutcomeMagnitudes;
-
 	//	[미구현] 이 카드가 받을 수 있는 보정의 종류 (GDD §4.3 "보정 허용 태그").
 	//	  ⚠️ 아직 아무도 읽지 않는다 — 채워도 보정이 걸러지지 않고 전부 적용된다.
 	//	     거르려면 UBGDiceComponent::ApplyModifiers 에서 이 컨테이너를 보게 해야 한다.
@@ -482,4 +468,8 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Outcome")
 	FBGOutcomeEffects OutcomeEffects;
+
+	/** 등급별 결과 문구(선택). 비워 두면 효과에서 자동으로 만든 문구를 쓴다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Outcome")
+	FBGOutcomeTexts OutcomeTexts;
 };

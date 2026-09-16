@@ -76,13 +76,15 @@ void ABGPlayerController::SetHandWidget(UBGHandWidget* InHandWidget)
 	if (HandWidget && HandWidget != InHandWidget)
 	{
 		HandWidget->OnCardPlayRequested.RemoveDynamic(this, &ABGPlayerController::HandleCardPlayRequested);
+		HandWidget->OnCardPlayExitStarted.RemoveDynamic(this, &ABGPlayerController::HandleCardPlayExitStarted);
 	}
 
 	HandWidget = InHandWidget;
 
 	if (HandWidget)
 	{
-		HandWidget->OnCardPlayRequested.AddDynamic(this, &ABGPlayerController::HandleCardPlayRequested);
+		HandWidget->OnCardPlayRequested.AddUniqueDynamic(this, &ABGPlayerController::HandleCardPlayRequested);
+		HandWidget->OnCardPlayExitStarted.AddUniqueDynamic(this, &ABGPlayerController::HandleCardPlayExitStarted);
 	}
 
 	TryBindHandDelegate();
@@ -300,6 +302,14 @@ void ABGPlayerController::SetResolutionWidget(UBGResolutionWidget* InResolutionW
 	TryBindGameStateDelegates();
 }
 
+void ABGPlayerController::HandleCardPlayExitStarted(int32 InstanceId)
+{
+	if (ResolutionWidget)
+	{
+		ResolutionWidget->NotifyCardExitStarted();
+	}
+}
+
 EBGResolutionTier ABGPlayerController::ToResolutionTier(EBGDiceOutcome Outcome)
 {
 	switch (Outcome)
@@ -355,29 +365,32 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 
 	const EBGResolutionTier Tier = ToResolutionTier(Resolution.Outcome);
 	
-	if (UBGChatingSubsystem* Chat = GetGameInstance()
-		? GetGameInstance()->GetSubsystem<UBGChatingSubsystem>()
-		: nullptr)
+	if (GetLocalPlayer())
 	{
-		const FString CardName = Row
-			? Row->DisplayName.ToString()
-			: Resolution.CardId.GetTagName().ToString();
-
-		FString SeatName = FString::Printf(TEXT("좌석 %d"), Resolution.SeatIndex);
-		if (const ABGGameState* GS = GetBGGameState())
+		if (UBGChatingSubsystem* Chat = GetGameInstance()
+			? GetGameInstance()->GetSubsystem<UBGChatingSubsystem>()
+			: nullptr)
 		{
-			if (const ABGPlayerState* SeatPS = GS->GetPlayerStateBySeat(Resolution.SeatIndex))
+			const FString CardName = Row
+				? Row->DisplayName.ToString()
+				: Resolution.CardId.GetTagName().ToString();
+
+			FString SeatName = FString::Printf(TEXT("좌석 %d"), Resolution.SeatIndex);
+			if (const ABGGameState* GS = GetBGGameState())
 			{
-				SeatName = SeatPS->GetPlayerName();
+				if (const ABGPlayerState* SeatPS = GS->GetPlayerStateBySeat(Resolution.SeatIndex))
+				{
+					SeatName = SeatPS->GetPlayerName();
+				}
 			}
+
+			const FString TierText = UBGResolutionWidget::GetTierText(Tier).ToString();
+
+			Chat->AddSystemMessage(Resolution.bForced
+				? FString::Printf(TEXT("%s → %s (%s, 강제)"), *SeatName, *CardName, *TierText)
+				: FString::Printf(TEXT("%s → %s (%s)"),
+					*SeatName, *CardName, *TierText));
 		}
-
-		const FString TierText = UBGResolutionWidget::GetTierText(Tier).ToString();
-
-		Chat->AddSystemMessage(Resolution.bForced
-			? FString::Printf(TEXT("%s → %s (%s, 강제)"), *SeatName, *CardName, *TierText)
-			: FString::Printf(TEXT("%s → %s (%s)"),
-				*SeatName, *CardName, *TierText));
 	}
 
 	//	── 손패 연출 통지 ──
@@ -472,6 +485,27 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 
 	//	위에서 뽑아 둔 값을 그대로 쓴다. 두 번 계산하면 한쪽만 고쳐질 자리가 생긴다.
 	View.Chance = PlayContext.Chance;
+
+	//	기본은 서버가 만든 자동 문구("피해 3")다 — 보너스 · 방어까지 반영된 실제 결과다.
+	View.EffectText = FText::FromString(Resolution.EffectSummary);
+
+	//	카드가 적어 둔 추가 설명. 수치(EffectText)를 덮지 않고 따로 싣는다 — 둘은 다른 칸에 뜬다.
+	if (Row)
+	{
+		const FText& CardText = Row->OutcomeTexts.ForOutcome(Resolution.Outcome);
+		if (!CardText.IsEmpty())
+		{
+			//	수치는 이 등급에서 실제로 발동한 효과의 합이다(피해 2 + 뽑기 1 이면 3 이 아니라 각각이지만,
+			//	문구에 쓰는 것은 대표 수치 하나뿐이라 첫 효과의 값을 쓴다).
+			const int32 Amount = PlayContext.Steps.IsEmpty() ? 0 : PlayContext.Steps[0].Amount;
+
+			FFormatNamedArguments Args;
+			Args.Add(TEXT("Amount"), FText::AsNumber(Amount));
+			Args.Add(TEXT("Effect"), View.EffectText);
+
+			View.DescriptionText = FText::Format(CardText, Args);
+		}
+	}
 
 	ResolutionWidget->ShowResolution(View);
 }
@@ -1409,7 +1443,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	//              RemoveCardFromHand 로 그 인스턴스를 빼는 처리가 남았다.
 	FGameplayTag CardId;    // 맵 조회 키 (Card.Id.*)
 	FGameplayTag EventTag;  // 페이로드/로그용 메커니즘 태그 (Ability.*)
-	const FBGCardRow* CardRow = nullptr;   // 판정 데이터 (OutcomeWeights / OutcomeMagnitudes)
+	const FBGCardRow* CardRow = nullptr;   // 판정 데이터 (OutcomeWeights / OutcomeEffects)
 	FName CardCardId = NAME_None;            // DT Row 이름 (장비 중복 검사용)
 	//	bEphemeralCard 는 함수 앞에서 이미 구했다 — 사용 한도 게이트가 그 값을 먼저 봐야 하기 때문이다.
 	if (const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
@@ -1696,14 +1730,9 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 			Payload.InstigatorTags.AddTag(UBGDiceComponent::OutcomeToTag(Outcome));
 
-			//	[비활성] EventMagnitude 는 전용 GA(GA_Bang/GA_Heal/GA_StealOrDiscard)의 폴백 경로다.
-			//	  그 GA 들이 전부 비활성이라(GDD §13.1) 지금은 아무도 읽지 않는다.
-			//	  실어 보내는 것 자체는 무해하고, 전용 GA 를 되살릴 때 이 줄이 있어야 하므로 남긴다.
-			//	  주의: 다만 로그에는 찍지 않는다 — OutcomeMagnitudes 는 비활성 필드라 실제 효과와
-			// 어긋난다(뱅 성공이 "수치 0" 으로, 함정이 "수치 1" 로 보였다).
-			// 실제 효과는 바로 다음 줄에서 GA 가 요약을 출력한다.
-			Payload.EventMagnitude = static_cast<float>(CardRow->OutcomeMagnitudes.ForOutcome(Outcome));
-
+			//	EventMagnitude 는 싣지 않는다. 등급별 수치를 담던 OutcomeMagnitudes 를 없앴고,
+			//	읽던 전용 GA(GA_Bang / GA_Heal / GA_StealOrDiscard)도 전부 비활성이다.
+			//	수치는 카드 효과 목록(OutcomeEffects)이 들고 있고 UGA_BGCardEffects 가 실행한다.
 			ResolvedOutcome = Outcome;
 			bResolved = true;
 
@@ -1769,6 +1798,7 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	if (MyPS)
 	{
 		MyPS->CardInFlightInstanceId = InstanceId;
+		MyPS->LastCardEffectSummary.Reset();   // 앞 카드의 결과가 이 카드 통지에 섞이지 않게
 	}
 
 	const FGameplayAbilitySpecHandle ActivatedHandle = ASC->GiveAbilityAndActivateOnce(Spec, &Payload);
@@ -1776,6 +1806,9 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	if (MyPS)
 	{
 		MyPS->CardInFlightInstanceId = INDEX_NONE;
+
+		//	발동은 동기라 여기서 효과가 이미 끝났다. 최종 피해는 GA 만 알므로 거기서 받아 싣는다.
+		Resolution.EffectSummary = MyPS->LastCardEffectSummary;
 	}
 
 	// GiveAbilityAndActivateOnce 는 발동에 실패하면 ClearAbility 후 무효 핸들을 돌려준다

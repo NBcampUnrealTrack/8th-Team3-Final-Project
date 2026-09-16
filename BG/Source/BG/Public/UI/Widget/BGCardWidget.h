@@ -27,6 +27,9 @@ class UBGCardWidget;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardPlayFXStarted,
 	UBGCardWidget*, Card, const FBGCardPlayContext&, Context);
 
+/** 사용한 카드가 퇴장(디졸브)을 시작한 순간. 판정 게이지가 이 신호로 굴러가기 시작한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGCardPlayExitStarted, UBGCardWidget*, Card);
+
 /** 판정 등급 하나의 글로우 값. ⚠️ 색만으로 가르지 말 것(색각이상) — Intensity·Seconds 로도 구분되게. */
 USTRUCT(BlueprintType)
 struct FBGCardTierFX
@@ -318,6 +321,10 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "BG|Card|Motion")
 	FOnBGCardPlayFXStarted OnPlayFXStarted;
+
+	/** ⚠️ 사용한 카드만 쏜다. 버려지는 카드까지 쏘면 게이지가 엉뚱한 퇴장에 굴러간다. */
+	UPROPERTY(BlueprintAssignable, Category = "BG|Card|Motion")
+	FOnBGCardPlayExitStarted OnPlayExitStarted;
 
 protected:
 	virtual void NativePreConstruct() override;

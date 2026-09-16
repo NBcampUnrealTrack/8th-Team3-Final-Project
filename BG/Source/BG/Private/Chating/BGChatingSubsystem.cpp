@@ -101,6 +101,8 @@ void UBGChatingSubsystem::HandleChatFromGameState(const FString& SenderName, con
 	History.Add(Entry);
 
 	OnMessageReceived.Broadcast(Entry);
+	
+	UE_LOG(LogTemp, Warning, TEXT("[Chat] GameState 로부터 수신: %s"), *Message);
 }
 
 void UBGChatingSubsystem::SendMessage(const FString& Message)
@@ -134,4 +136,6 @@ void UBGChatingSubsystem::AddSystemMessage(const FString& Message)
 	History.Add(Entry);
 	
 	OnMessageReceived.Broadcast(Entry);
+	
+	UE_LOG(LogTemp, Warning, TEXT("[Chat] AddSystemMessage 호출: %s"), *Message);
 }

@@ -74,6 +74,12 @@ protected:
 	FString ApplyRestoreCardUse(int32 Amount, ABGPlayerState* SelfPS);
 	FString ApplyStatusEffect(const FBGCardEffect& Effect, ABGPlayerState* SelfPS, ABGPlayerState* TargetPS);
 
+	/**
+	 * 상태 태그 → 화면에 띄울 문구("다음 카드 실패"). 모르는 태그는 빈 문자열이다.
+	 * ⚠️ 태그 이름을 그대로 쓰면 결과창에 "Status.NextCard.ForceFailure" 가 나온다.
+	 */
+	static FString DescribeStatus(const FGameplayTag& StatusTag, int32 Amount);
+
 	/** 판정 결과와 실행된 효과 요약을 알린다(연출·UI용). 서버에서 호출. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG")
 	void OnCardEffectsResolved(EBGDiceOutcome Outcome, const FString& Summary, AActor* Target);

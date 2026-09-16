@@ -9,6 +9,7 @@
 #include "Card/BGCardType.h"
 #include "Card/BGDiceComponent.h"
 #include "GAS/Effect/GE_BGDamage.h"
+#include "GAS/Effect/GE_BGSheriffBonus.h"
 #include "AbilitySystemGlobals.h"
 #include "BGGameplayTags.h"
 #include "Core/BGGameState.h"
@@ -415,9 +416,32 @@ void ABGCharacter::SetRoleTag(const FGameplayTag& NewTag)
 {
 	RoleTag = NewTag;
 
-	// 역할은 GAS 를 건드리지 않는다. 루즈 태그만 맞춰주면 된다 —
-	// 승패 판정과 어빌리티의 역할 조건 검사가 그 태그를 본다.
+	// 역할은 원칙적으로 GAS 를 건드리지 않는다. 루즈 태그만 맞추면 승패 판정과
+	// 어빌리티의 역할 조건 검사가 이 태그를 본다. 보안관 고정 보너스만 예외로
+	// 여기서 같이 적용한다(ApplySheriffBonusIfNeeded 참고).
 	RefreshLooseTags();
+	ApplySheriffBonusIfNeeded();
+}
+
+void ABGCharacter::ApplySheriffBonusIfNeeded()
+{
+	if (!HasAuthority() || !AbilitySystemComponent || RoleTag != BG::Role::Sheriff.GetTag())
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle Context = AbilitySystemComponent->MakeEffectContext();
+	Context.AddSourceObject(this);
+
+	const FGameplayEffectSpecHandle Spec =
+		AbilitySystemComponent->MakeOutgoingSpec(UGE_BGSheriffBonus::StaticClass(), 1.f, Context);
+	if (!Spec.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[BG] 보안관 보너스 GE 적용 실패. %s (Spec 무효)"), *GetName());
+		return;
+	}
+
+	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
 }
 
 void ABGCharacter::SetJobTag(const FGameplayTag& NewTag)
