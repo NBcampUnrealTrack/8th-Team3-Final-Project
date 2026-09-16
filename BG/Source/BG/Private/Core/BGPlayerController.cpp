@@ -896,12 +896,9 @@ void ABGPlayerController::RefreshTurnHighlight()
 
 	//	내 차례에는 찍지 않는다 — 조준 하이라이트(Selectable/Aimed)도 항상 내 차례에만 켜지므로
 	//	같은 스텐실 슬롯을 두고 겹칠 일이 이걸로 사라진다.
-	ABGCharacter* NextCharacter = nullptr;
-	if (CurrentSeat != INDEX_NONE && CurrentSeat != ViewerSeat)
-	{
-		const ABGPlayerState* ActingPS = UBGSeatViewLibrary::FindPlayerStateBySeat(this, CurrentSeat);
-		NextCharacter = ActingPS ? Cast<ABGCharacter>(ActingPS->GetPawn()) : nullptr;
-	}
+	ABGCharacter* NextCharacter = (CurrentSeat != INDEX_NONE && CurrentSeat != ViewerSeat)
+		? UBGSeatViewLibrary::FindCharacterBySeat(this, CurrentSeat)
+		: nullptr;
 
 	ABGCharacter* PrevCharacter = HighlightedTurnCharacter.Get();
 	if (PrevCharacter == NextCharacter)

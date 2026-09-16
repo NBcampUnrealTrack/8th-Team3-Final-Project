@@ -341,9 +341,11 @@ void ABGCharacter::RefreshAnimState()
 
 void ABGCharacter::RefreshRoleRevealVisual()
 {
-	if (bRoleRevealApplied || !RevealMeshComponent)
+	//	이미 스왑됐으면 그 사실 자체(메시가 이미 꽂혀 있음)로 판단한다 — 별도 bool 을 손으로
+	//	맞춰야 하는 상태로 두면 나중에 메시만 바꾸고 플래그를 깜빡하는 식으로 어긋날 수 있다.
+	if (!RevealMeshComponent || RevealMeshComponent->GetStaticMesh() != nullptr)
 	{
-		return;   // 이미 스왑됨(보통 노티파이가 먼저 처리) — Dead 진입 안전망의 중복 적용을 막는다.
+		return;
 	}
 
 	//	RoleReveal 이후(Dead 포함)에만 정체가 드러난다. Dead 도 허용하는 이유는 늦게 접속한
@@ -361,7 +363,7 @@ void ABGCharacter::RefreshRoleRevealVisual()
 	const FGameplayTag PublicRole = PS ? PS->GetPublicRole() : FGameplayTag();
 	if (!PublicRole.IsValid())
 	{
-		return;   // RevealDeadRole 이 아직 안 왔다 — 다음 호출(노티파이 또는 Dead 진입)에서 다시 시도된다.
+		return;   // RevealDeadRole 이 아직 안 왔다 — ABGPlayerState::OnRep_PublicRole 이 도착 즉시 다시 부른다.
 	}
 
 	const UBGDataSettings* Settings = GetDefault<UBGDataSettings>();
@@ -376,7 +378,6 @@ void ABGCharacter::RefreshRoleRevealVisual()
 	RevealMeshComponent->SetStaticMesh(RevealMesh);
 	RevealMeshComponent->SetVisibility(true);
 	GetMesh()->SetVisibility(false, true);   // true = 붙어 있던 무기 등 자식까지 함께 숨긴다.
-	bRoleRevealApplied = true;
 
 	//	AnimState==Dead 에서 처리됐다면 몽타주 노티파이보다 안전망이 먼저(또는 대신) 처리한 것이다 —
 	//	늦은 접속자라면 정상이지만, 라이브로 보고 있었다면 노티파이 배치를 잊었다는 신호다.
