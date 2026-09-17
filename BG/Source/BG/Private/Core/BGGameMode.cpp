@@ -582,9 +582,11 @@ void ABGGameMode::AssignRolesPvE()
 		FGameplayTag RoleTag = BG::Role::Sheriff.GetTag();
 		if (PC->IsA<ABGAIPlayerController>())
 		{
-			if (!BotPool.IsValidIndex(NextBot))
+			//	BotPool 은 봇 수(NumBots)만큼 만들어졌어야 한다. 모자라다는 건
+			//	BuildBotRolePoolPvE 가 인원수를 잘못 셌다는 뜻이다.
+			if (!ensureMsgf(BotPool.IsValidIndex(NextBot),
+				TEXT("[PvE] 봇 역할 풀 부족. %s 배정 실패."), *PC->GetName()))
 			{
-				UE_LOG(LogBGNet, Error, TEXT("[PvE] 봇 역할 풀 부족 - %s 배정 실패."), *PC->GetName());
 				continue;
 			}
 			RoleTag = BotPool[NextBot++];

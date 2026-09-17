@@ -1101,7 +1101,8 @@ void ABGGameState::ResolvePvERewardSelection(FName CardId)
 	UE_LOG(LogBGCard, Log, TEXT("[PvE] 보상 선택 확정: %s"), *CardId.ToString());
 
 	//	보상 고르느라 미뤄뒀던 판 시작을 이제 연다.
-	if (UBGMatchStartComponent* Match = UBGMatchStartComponent::Find(GetWorld()))
+	UBGMatchStartComponent* Match = UBGMatchStartComponent::Find(GetWorld());
+	if (ensureMsgf(Match, TEXT("[PvE] UBGMatchStartComponent 를 찾지 못해 판을 시작하지 못했습니다.")))
 	{
 		Match->StartMatch();
 	}
@@ -1726,7 +1727,7 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 void ABGGameState::HandlePvERunWin()
 {
 	UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
-	if (!GI)
+	if (!ensureMsgf(GI, TEXT("[PvE] GameInstance 가 UBGGameInstance 가 아닙니다.")))
 	{
 		return;
 	}
@@ -1750,7 +1751,8 @@ void ABGGameState::HandlePvERunWin()
 void ABGGameState::HandlePvERunLoss()
 {
 	// TODO: PvE 게임 오버 연출
-	if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
+	UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
+	if (ensureMsgf(GI, TEXT("[PvE] GameInstance 가 UBGGameInstance 가 아닙니다.")))
 	{
 		GI->ResetPvERun();
 	}

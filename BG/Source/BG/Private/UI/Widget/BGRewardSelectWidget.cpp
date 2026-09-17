@@ -93,7 +93,8 @@ void UBGRewardSelectWidget::RefreshCandidates()
 
 	for (int32 i = 0; i < 3; ++i)
 	{
-		if (!Buttons[i] || !Widgets[i])
+		if (!ensureMsgf(Buttons[i] && Widgets[i],
+			TEXT("[BG] 보상 선택 위젯 슬롯 %d 의 BindWidget 이 비어있습니다. WBP 를 확인하세요."), i))
 		{
 			continue;
 		}

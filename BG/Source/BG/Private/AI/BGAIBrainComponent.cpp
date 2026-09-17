@@ -50,9 +50,16 @@ void UBGAIBrainComponent::EndPlay(const EEndPlayReason::Type Reason)
 
 void UBGAIBrainComponent::HandleTurnStateChanged()
 {
+	//	이 컴포넌트는 항상 ABGAIPlayerController 에만 붙는다는 전제로 짜여 있다.
 	const ABGAIPlayerController* AIPC = GetOwnerAIController();
+	if (!ensureMsgf(AIPC, TEXT("[PvE] AI 브레인이 AI 컨트롤러가 아닌 액터(%s)에 붙어있습니다."), *GetOwner()->GetName()))
+	{
+		return;
+	}
+
+	//	GS 는 월드 정리(ServerTravel) 타이밍에 정상적으로 비어있을 수 있다.
 	const ABGGameState* GS = GetBGGameState();
-	if (!AIPC || !GS)
+	if (!GS)
 	{
 		return;
 	}
@@ -202,7 +209,10 @@ void UBGAIBrainComponent::ClassifyCard(const UBGDataSubsystem* DataSys, const FB
 {
 	const FBGCardRow* Row = DataSys ? DataSys->GetCardRow(Card.CardId) : nullptr;
 	bOutHeal = bOutAttack = bOutNeedsTarget = false;
-	if (!Row)
+
+	//	손패에 있는 카드는 이미 BuildDeck 이 검증한 CardId 라 원래 Row 가 항상 있어야 한다.
+	//	없으면 이번 카드는 특수 효과 없는 카드로 취급한다(bOut* 기본값 false 유지).
+	if (!ensureMsgf(Row, TEXT("[PvE] AI 손패에 있는 %s 의 DT Row 를 찾지 못했습니다."), *Card.CardId.ToString()))
 	{
 		return;
 	}
