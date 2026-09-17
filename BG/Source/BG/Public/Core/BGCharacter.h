@@ -276,11 +276,17 @@ public:
 
 	/**
 	 * 정체가 드러나야 하는 상태(RoleReveal 이후)인지 보고 본체 메시 ↔ 정체 공개 메시를 맞바꾼다.
+	 * 이미 스왑된 뒤(RevealMeshComponent 에 메시가 꽂혀 있음)면 조용히 아무 일도 하지 않는다.
 	 *
-	 * ⚠️ 타이밍의 주인은 **애님 노티파이**다 — 쓰러짐/역할공개 몽타주에 심어 둔
-	 *    `UBGAnimNotify_RoleReveal` 이 원하는 프레임에서 이 함수를 부른다(연기 이펙트 등과 같은
-	 *    프레임에 맞추기 위해서). RefreshAnimState 는 `Dead` 상태에 들어올 때만 안전망으로
-	 *    한 번 더 부른다 — 몽타주를 아예 보지 못한 늦은 접속자를 위해서다.
+	 * ⚠️ 이 함수는 세 곳에서 재시도된다 — 셋 다 정상 흐름이고, 어느 하나만으로는 늦게
+	 *    도착하는 값(PublicRoleTag)이나 놓친 순간을 못 잡을 수 있어 서로를 보완한다.
+	 *    1. **애님 노티파이** — 쓰러짐/역할공개 몽타주에 심어 둔 `UBGAnimNotify_RoleReveal` 이
+	 *       원하는 프레임에서 부른다(연기 이펙트 등과 타이밍을 맞추는 주 경로).
+	 *    2. **`Dead` 상태 진입** — RefreshAnimState 의 안전망. 몽타주를 아예 보지 못한
+	 *       늦은 접속자를 위한 것이다.
+	 *    3. **`ABGPlayerState::OnRep_PublicRole`** — CinematicStage(GameState)와 PublicRoleTag
+	 *       (PlayerState)는 액터가 달라 복제 도착 순서가 보장되지 않는다. 위 두 재시도가
+	 *       이미 지나간 뒤에 값이 도착해도 이 OnRep 이 다시 불러 준다.
 	 *    죽었다가 되살아나는 경우는 없으므로 되돌리는 코드는 두지 않는다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Anim")
@@ -376,10 +382,6 @@ protected:
 
 	// 서버 전용. 사망 1회 처리 보장.
 	bool bDead = false;
-
-	//	RefreshRoleRevealVisual 1회 처리 보장 겸, 몽타주 노티파이가 이미 처리했는지 판별하는 값.
-	//	이게 없으면 Dead 진입 시의 안전망 호출이 노티파이가 이미 끝낸 스왑을 다시 덮어쓴다.
-	bool bRoleRevealApplied = false;
 
 	// ── 직업 Row 적용 ──
 

@@ -1,6 +1,8 @@
 #include "Core/BGCinematicCamera.h"
 
+#include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Core/BGCharacter.h"
 
 ABGCinematicCamera::ABGCinematicCamera()
@@ -53,7 +55,10 @@ void ABGCinematicCamera::BeginShot(const FBGCameraShot& Shot, float ElapsedSecon
 	TargetFov       = NewFov;
 
 	//	출발점은 "목표" 가 아니라 "지금 화면" 이다. 이동 중에 다시 불려도 여기서 이어진다.
+	//	단, 지금 화면에는 직전 프레임의 카메라 푸시가 이미 얹혀 있을 수 있다 — 그대로 출발점으로
+	//	쓰면 새 샷의 보간이 밀린 위치에서 시작해 반지름/위치가 어긋난다. 얹힌 만큼 도로 뺀다.
 	StartTransform = GetActorTransform();
+	StartTransform.AddToTranslation(-StartTransform.GetRotation().GetForwardVector() * LastAppliedPush);
 	StartFov       = GetCameraComponent() ? GetCameraComponent()->FieldOfView : NewFov;
 
 	//	늦게 접속한 클라는 이미 지난 만큼을 건너뛰고 시작한다.
@@ -76,7 +81,7 @@ void ABGCinematicCamera::SnapToShot(const FBGCameraShot& Shot)
 	}
 
 	CurrentShot = Shot;
-	SetActorTransform(NewTarget);
+	SetActorTransform(ApplyCameraPush(NewTarget));
 
 	if (UCameraComponent* Cam = GetCameraComponent())
 	{
@@ -90,6 +95,27 @@ void ABGCinematicCamera::SnapToShot(const FBGCameraShot& Shot)
 	StartFov        = NewFov;
 	TargetTransform = NewTarget;
 	TargetFov       = NewFov;
+}
+
+float ABGCinematicCamera::SampleCameraPushOffset() const
+{
+	const USkeletalMeshComponent* Mesh = CurrentShot.Target ? CurrentShot.Target->GetMesh() : nullptr;
+	const UAnimInstance* Anim = Mesh ? Mesh->GetAnimInstance() : nullptr;
+
+	//	커브가 없는 몽타주(또는 대상 없음)에서는 GetCurveValue 가 안전하게 0 을 돌려준다 —
+	//	커브를 안 넣은 기존 연출은 손대지 않아도 그대로 동작한다.
+	return Anim ? Anim->GetCurveValue(CameraPushCurveName) : 0.f;
+}
+
+FTransform ABGCinematicCamera::ApplyCameraPush(FTransform BaseTransform)
+{
+	const float Push = SampleCameraPushOffset();
+	LastAppliedPush = Push;
+	if (!FMath::IsNearlyZero(Push))
+	{
+		BaseTransform.AddToTranslation(BaseTransform.GetRotation().GetForwardVector() * Push);
+	}
+	return BaseTransform;
 }
 
 FVector ABGCinematicCamera::OrbitLerp(const FVector& Start, const FVector& End, float Alpha) const
@@ -144,7 +170,7 @@ void ABGCinematicCamera::Tick(float DeltaSeconds)
 	if (!bShotActive)
 	{
 		//	도착 상태 — 목표에 붙어서 따라다닌다.
-		SetActorTransform(TargetTransform);
+		SetActorTransform(ApplyCameraPush(TargetTransform));
 		if (UCameraComponent* Cam = GetCameraComponent())
 		{
 			Cam->SetFieldOfView(TargetFov);
@@ -169,7 +195,8 @@ void ABGCinematicCamera::Tick(float DeltaSeconds)
 	const FQuat NewRotation = FQuat::Slerp(
 		StartTransform.GetRotation(), TargetTransform.GetRotation(), Alpha).GetNormalized();
 
-	SetActorLocationAndRotation(NewLocation, NewRotation);
+	const FTransform Pushed = ApplyCameraPush(FTransform(NewRotation, NewLocation));
+	SetActorLocationAndRotation(Pushed.GetLocation(), Pushed.GetRotation());
 
 	if (UCameraComponent* Cam = GetCameraComponent())
 	{

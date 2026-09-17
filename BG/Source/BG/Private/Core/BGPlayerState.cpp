@@ -318,6 +318,19 @@ void ABGPlayerState::SetPublicRole(const FGameplayTag& InRole)
 	if (HasAuthority())
 	{
 		PublicRoleTag = InRole;
+
+		//	리슨서버 호스트는 자기 OnRep 을 받지 못한다 — 값을 바꾼 자리에서 직접 부른다.
+		OnRep_PublicRole();
+	}
+}
+
+void ABGPlayerState::OnRep_PublicRole()
+{
+	//	정체 공개 메시 스왑의 재시도 지점(RefreshRoleRevealVisual 주석 참고). 아직 RoleReveal/
+	//	Dead 가 아니면(예: 판 시작 시 보안관 공개) 함수 안에서 조용히 아무 일도 하지 않는다.
+	if (ABGCharacter* Char = Cast<ABGCharacter>(GetPawn()))
+	{
+		Char->RefreshRoleRevealVisual();
 	}
 }
 

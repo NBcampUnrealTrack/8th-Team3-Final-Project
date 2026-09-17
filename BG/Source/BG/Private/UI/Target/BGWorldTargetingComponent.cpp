@@ -247,8 +247,7 @@ bool UBGWorldTargetingComponent::IsSelectableSeat(int32 SeatIndex) const
 
 ABGCharacter* UBGWorldTargetingComponent::FindCharacterBySeat(int32 SeatIndex) const
 {
-	const ABGPlayerState* PS = UBGSeatViewLibrary::FindPlayerStateBySeat(GetOwningController(), SeatIndex);
-	return PS ? Cast<ABGCharacter>(PS->GetPawn()) : nullptr;
+	return UBGSeatViewLibrary::FindCharacterBySeat(GetOwningController(), SeatIndex);
 }
 
 void UBGWorldTargetingComponent::RefreshHighlights()

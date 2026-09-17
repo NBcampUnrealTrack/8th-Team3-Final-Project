@@ -253,6 +253,12 @@ TArray<FBGSeatView> UBGSeatViewLibrary::MakeSeatViews(const APlayerController* V
 	return Views;
 }
 
+ABGCharacter* UBGSeatViewLibrary::FindCharacterBySeat(const APlayerController* Viewer, int32 SeatIndex)
+{
+	const ABGPlayerState* PS = FindPlayerStateBySeat(Viewer, SeatIndex);
+	return PS ? Cast<ABGCharacter>(PS->GetPawn()) : nullptr;
+}
+
 TArray<int32> UBGSeatViewLibrary::GetSelectableSeats(const APlayerController* Viewer, bool bExcludeSelf)
 {
 	TArray<int32> Seats;

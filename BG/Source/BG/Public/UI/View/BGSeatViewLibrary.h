@@ -11,6 +11,7 @@
 #include "BGSeatViewLibrary.generated.h"
 
 class ABGPlayerState;
+class ABGCharacter;
 class APlayerController;
 
 UCLASS()
@@ -47,4 +48,12 @@ public:
 	/** 좌석 번호로 PlayerState 를 찾는다. 없으면 nullptr. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seat")
 	static ABGPlayerState* FindPlayerStateBySeat(const APlayerController* Viewer, int32 SeatIndex);
+
+	/**
+	 * 좌석 번호로 그 좌석의 캐릭터(폰)를 찾는다. 없거나 폰이 ABGCharacter 가 아니면 nullptr.
+	 * 조준(UBGWorldTargetingComponent)과 턴 강조(ABGPlayerController) 양쪽이 같은 로직을
+	 * 각자 들고 있던 것을 여기 하나로 모았다 — 나중에 대상 해석 방식이 바뀌면 여기만 고치면 된다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "BG|Seat")
+	static ABGCharacter* FindCharacterBySeat(const APlayerController* Viewer, int32 SeatIndex);
 };

@@ -8,7 +8,7 @@ void UBGPvELobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	if (StartButton)
+	if (ensureMsgf(StartButton, TEXT("[BG] PvE 로비 위젯의 StartButton 이 비어있습니다. WBP 를 확인하세요.")))
 	{
 		StartButton->OnClicked.AddDynamic(this, &UBGPvELobbyWidget::HandleStartClicked);
 	}

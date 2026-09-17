@@ -48,37 +48,40 @@ void UBGMatchStartComponent::NotifyPlayerJoined()
 	//	패배·런클리어로 돌아왔거나 처음 들어왔으면 PvP처럼 시작 버튼을 기다린다.
 	if (GM->IsPvE())
 	{
-		if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetWorld()->GetGameInstance()))
+		UBGGameInstance* GI = Cast<UBGGameInstance>(GetWorld()->GetGameInstance());
+		if (!ensureMsgf(GI, TEXT("[PvE] GameInstance 가 UBGGameInstance 가 아닙니다.")))
 		{
-			if (GI->ShouldAutoStartNextPvEMatch())
-			{
-				FString Error;
-				if (CanStartMatch(Error))
-				{
-					//	조건을 채웠을 때만 소비한다. 여기서 바로 끄면, 아직 준비(Ready)가
-					//	안 갖춰진 시점에 이 함수가 먼저 불렸을 때 플래그만 꺼지고 시작은
-					//	안 되는 상태로 끝나 버린다 - 이후 준비 상태가 바뀌어 다시 불려도
-					//	재시도가 안 되고 로비에 멈춘다.
-					GI->SetAutoStartNextPvEMatch(false);
+			return;
+		}
 
-					const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
-					if (GS && GS->GetPendingRewardCandidates().Num() > 0)
-					{
-						//	보상 후보가 있으면 여기서 StartMatch 를 안 부른다 - 보상 선택 위젯이
-						//	플레이어의 선택을 받으면 ABGGameState::ResolvePvERewardSelection 이
-						//	대신 불러준다.
-						UE_LOG(LogBGNet, Log, TEXT("[PvE] 보상 선택 대기"));
-					}
-					else
-					{
-						UE_LOG(LogBGNet, Log, TEXT("[PvE] 조우 이어가기: 자동 시작"));
-						StartMatch();
-					}
+		if (GI->ShouldAutoStartNextPvEMatch())
+		{
+			FString Error;
+			if (CanStartMatch(Error))
+			{
+				//	조건을 채웠을 때만 소비한다. 여기서 바로 끄면, 아직 준비(Ready)가
+				//	안 갖춰진 시점에 이 함수가 먼저 불렸을 때 플래그만 꺼지고 시작은
+				//	안 되는 상태로 끝나 버린다 - 이후 준비 상태가 바뀌어 다시 불려도
+				//	재시도가 안 되고 로비에 멈춘다.
+				GI->SetAutoStartNextPvEMatch(false);
+
+				const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+				if (GS && GS->GetPendingRewardCandidates().Num() > 0)
+				{
+					//	보상 후보가 있으면 여기서 StartMatch 를 안 부른다 - 보상 선택 위젯이
+					//	플레이어의 선택을 받으면 ABGGameState::ResolvePvERewardSelection 이
+					//	대신 불러준다.
+					UE_LOG(LogBGNet, Log, TEXT("[PvE] 보상 선택 대기"));
 				}
 				else
 				{
-					UE_LOG(LogBGNet, Verbose, TEXT("[PvE] 조우 이어가기 대기: %s"), *Error);
+					UE_LOG(LogBGNet, Log, TEXT("[PvE] 조우 이어가기: 자동 시작"));
+					StartMatch();
 				}
+			}
+			else
+			{
+				UE_LOG(LogBGNet, Verbose, TEXT("[PvE] 조우 이어가기 대기: %s"), *Error);
 			}
 		}
 	}

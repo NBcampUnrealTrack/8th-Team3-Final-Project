@@ -347,8 +347,14 @@ private:
 	//	두고 간 폰. PS->GetPawn() 은 UnPossess 와 함께 비므로 따로 들고 있어야 한다.
 	TWeakObjectPtr<APawn> AbandonedPawn;
 
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_PublicRole)
 	FGameplayTag PublicRoleTag;            // 전원 공개 (공개된 역할만)
+
+	//	CinematicStage(GameState) 와 이 값(PlayerState)은 액터가 달라 도착 순서가 보장되지
+	//	않는다 — 늦게 도착하면 RoleReveal 노티파이도 Dead 안전망도 이미 지나간 뒤일 수 있다.
+	//	그래서 값이 실제로 도착하는 이 순간 자체를 재시도 지점으로 삼는다.
+	UFUNCTION()
+	void OnRep_PublicRole();
 
 	UPROPERTY(Replicated)
 	int32 CardsUsedThisTurn = 0;           // 전원 공개 (턴 UI 표시용)
