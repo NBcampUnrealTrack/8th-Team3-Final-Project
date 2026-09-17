@@ -267,6 +267,11 @@ void UBGCardWidget::EnterExitPhase(const FVector2D& ToPosition)
 
 	OnExitStarted();
 
+	if (bPlayExit)
+	{
+		OnPlayExitStarted.Broadcast(this);
+	}
+
 	//	카드가 자리를 뜨면 화면 연출도 같이 내린다.
 	//	⚠️ 바깥이 끝을 정하기로 했으면 여기서 끄지 않는다 — 몽타주가 아직 돌고 있다.
 	if (!bWaitForExternalPlayFXFinish)

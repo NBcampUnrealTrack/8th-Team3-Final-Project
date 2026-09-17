@@ -84,6 +84,14 @@ public:
 	 */
 	int32 CardInFlightInstanceId = INDEX_NONE;
 
+	/**
+	 * 방금 발동한 카드 효과의 실제 결과 요약("피해 3", "방어 성공 — 피해 3 무효" 등).
+	 * 서버 전용 · 비복제. GA_BGCardEffects 가 쓰고 HandlePlayCard 가 판정 통지에 실어 보낸다.
+	 *
+	 * 카드 수치가 아니라 **최종 결과**다 — 약점 포착 · 추가 피해 · 방어는 GA 안에서만 알 수 있다.
+	 */
+	FString LastCardEffectSummary;
+
 	//	전원에게 복제되는 공개 장수. 남의 손패 크기는 이 값으로만 알 수 있다.
 	UFUNCTION(BlueprintPure, Category = "BG|Player")
 	int32 GetHandCount() const { return HandCount; }
@@ -339,8 +347,14 @@ private:
 	//	두고 간 폰. PS->GetPawn() 은 UnPossess 와 함께 비므로 따로 들고 있어야 한다.
 	TWeakObjectPtr<APawn> AbandonedPawn;
 
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_PublicRole)
 	FGameplayTag PublicRoleTag;            // 전원 공개 (공개된 역할만)
+
+	//	CinematicStage(GameState) 와 이 값(PlayerState)은 액터가 달라 도착 순서가 보장되지
+	//	않는다 — 늦게 도착하면 RoleReveal 노티파이도 Dead 안전망도 이미 지나간 뒤일 수 있다.
+	//	그래서 값이 실제로 도착하는 이 순간 자체를 재시도 지점으로 삼는다.
+	UFUNCTION()
+	void OnRep_PublicRole();
 
 	UPROPERTY(Replicated)
 	int32 CardsUsedThisTurn = 0;           // 전원 공개 (턴 UI 표시용)

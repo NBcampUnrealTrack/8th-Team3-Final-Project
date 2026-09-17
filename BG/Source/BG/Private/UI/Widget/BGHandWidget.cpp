@@ -270,6 +270,7 @@ UBGCardWidget* UBGHandWidget::CreateCardWidget(const FBGCardView& Card)
 
 	//	연출 신호를 밖으로 중계한다. 해제는 카드가 파괴되면서 함께 사라진다.
 	CardWidget->OnPlayFXStarted.AddDynamic(this, &UBGHandWidget::HandleCardPlayFXStarted);
+	CardWidget->OnPlayExitStarted.AddDynamic(this, &UBGHandWidget::HandleCardPlayExitStarted);
 
 	//	잠긴 동안 손패가 갱신될 수 있다(서버 복제와 대상 선택은 동시에 일어난다).
 	//	새 위젯에도 잠금을 그대로 물려주지 않으면 갱신 한 번에 잠금이 풀린다.

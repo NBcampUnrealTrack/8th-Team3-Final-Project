@@ -301,6 +301,11 @@ void UBGHandWidget::HandleCardPlayFXStarted(UBGCardWidget* Card, const FBGCardPl
 	}
 }
 
+void UBGHandWidget::HandleCardPlayExitStarted(UBGCardWidget* Card)
+{
+	OnCardPlayExitStarted.Broadcast(Card ? Card->GetInstanceId() : INDEX_NONE);
+}
+
 UBGPresentationDirector* UBGHandWidget::EnsureDirectorBound()
 {
 	UBGPresentationDirector* Director = UBGPresentationDirector::Get(this);

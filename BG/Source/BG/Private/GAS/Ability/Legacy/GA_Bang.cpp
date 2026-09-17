@@ -16,7 +16,7 @@ UGA_Bang::UGA_Bang()
 }
 
 // [비활성] 자체 판정 폴백용 등급 피해표 (GDD §13.1) — 호출처 없음.
-//   지금 등급별 수치는 카드 DT(OutcomeMagnitudes)에서 온다. 사유·복구는 ActivateAbility 주석 참고.
+//   지금 등급별 수치는 카드 DT 의 OutcomeEffects 에서 와야 한다(예전 OutcomeMagnitudes 필드는 삭제됨). 사유·복구는 ActivateAbility 주석 참고.
 int32 UGA_Bang::TierBaseDamage(EBGDiceOutcome Outcome) const
 {
 	switch (Outcome)
@@ -54,7 +54,7 @@ void UGA_Bang::ActivateAbility(
 
 	// ── 판정 결과 수신 (GDD §9.1) ──
 	//	판정은 서버(ABGPlayerController::HandlePlayCard)가 카드 DT 로 이미 끝냈다.
-	//	비율은 DT_BGCard 의 OutcomeWeights, 등급별 수치는 OutcomeMagnitudes 다.
+	//	비율은 DT_BGCard 의 OutcomeWeights, 등급별 수치는 OutcomeEffects 의 Amount 다.
 	//	여기서 다시 굴리지 않는다 — GA 는 "결과 실행" 만 한다(§9.2 같은 판정 한 번만 적용).
 	//
 	//	굴림 보정(행운)은 두지 않는다. 행운은 §7.1 의 확정 스탯 목록에 없는 RPG 능력치이고,
@@ -81,7 +81,7 @@ void UGA_Bang::ActivateAbility(
 		//	현재 처리: 실패(수치 0)로 두고 경고만 남긴다 — §4.1 "실패는 추가 불이익 없음".
 		UE_LOG(LogTemp, Warning,
 			TEXT("[BG] GA_Bang: 서버 판정 결과(Resolution.*)가 없습니다 — "
-			     "DT_BGCard 의 OutcomeWeights/OutcomeMagnitudes 와 AbilityByCardId 매핑을 확인하세요. 피해 없이 종료합니다."));
+			     "DT_BGCard 의 OutcomeWeights/OutcomeEffects 와 AbilityByCardId 매핑을 확인하세요. 피해 없이 종료합니다."));
 	}
 
 	// ── 피해 계산: 등급 기본 피해 × 힘 배율 − 대상 지능 경감 ──

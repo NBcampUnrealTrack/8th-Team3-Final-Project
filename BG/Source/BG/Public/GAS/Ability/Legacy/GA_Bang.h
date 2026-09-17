@@ -1,5 +1,5 @@
 ﻿// BANG! — 대상 1명에게 피해. 판정은 서버가 카드 DT(DT_BGCard)로 끝내고, 이 GA 는 결과만 실행한다.
-//   등급별 기본 피해는 카드 DT 의 OutcomeMagnitudes 에서 온다(GDD §4.3).
+//   등급별 기본 피해는 카드 DT 의 OutcomeEffects 에서 와야 한다(GDD §4.3).
 //   여기서 붙는 보정은 피해 계산뿐이다: 힘 → 피해 배율, 대상의 지능 → 받는 피해 경감.
 //   판정 확률에 붙는 보정(행운 등)은 없다 — 행운은 §7.1 확정 스탯 목록에 없는 RPG 능력치이고,
 //   확률 보정은 WeightBonus*/WeightMult* 축이 담당한다.
@@ -29,7 +29,7 @@ public:
 		const FGameplayEventData* TriggerEventData) override;
 
 protected:
-	// [비활성] 자체 판정 폴백용 등급 피해(스탯 보정 전). 실제 수치는 카드 DT 의 OutcomeMagnitudes 다.
+	// [비활성] 자체 판정 폴백용 등급 피해(스탯 보정 전). 실제 수치는 카드 DT 의 OutcomeEffects 다.
 	//   선언만 유지하고 참조하지 않는다 (GDD §13.1). 되살리려면 TierBaseDamage 호출을 복구한다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Damage")
 	int32 CriticalSuccessDamage = 2;   // 크리티컬

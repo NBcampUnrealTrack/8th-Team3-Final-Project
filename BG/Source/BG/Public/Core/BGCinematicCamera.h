@@ -114,6 +114,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Camera", meta = (ClampMin = "1.0"))
 	float EaseExponent = 2.f;
 
+	/**
+	 * 연출 주인공이 지금 재생 중인 몽타주에서 이 이름의 float 커브를 읽어, 그 값(cm)만큼
+	 * 카메라를 자기 정면 방향으로 민다 — 양수면 줌인, 음수면 줌아웃.
+	 *
+	 * 몽타주에 이 커브가 없으면 UAnimInstance::GetCurveValue 가 0 을 돌려주므로 평소처럼
+	 * 움직인다 — 기존 연출은 아무것도 바꾸지 않아도 그대로 동작한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Camera")
+	FName CameraPushCurveName = TEXT("CameraPush");
+
 protected:
 	virtual void Tick(float DeltaSeconds) override;
 
@@ -124,12 +134,29 @@ private:
 	/** 선회 경로 — LookAtLocation 을 축으로 방향을 slerp 하고 반지름·높이는 lerp 한다. */
 	FVector OrbitLerp(const FVector& Start, const FVector& End, float Alpha) const;
 
+	/** 연출 주인공의 AnimInstance 에서 CameraPushCurveName 커브 값을 읽는다. 대상/커브가 없으면 0. */
+	float SampleCameraPushOffset() const;
+
+	/**
+	 * BaseTransform 의 정면 방향으로 SampleCameraPushOffset() 만큼 민 트랜스폼을 돌려준다.
+	 * StartTransform/TargetTransform 자체는 순수 샷 보간용으로 남겨 두고(다음 샷의 기준점이
+	 * 밀린 채로 오염되면 안 된다), 실제로 액터에 적용하는 마지막 순간에만 이 함수를 거친다.
+	 *
+	 * 적용한 값을 LastAppliedPush 에 남긴다 — BeginShot 이 "지금 화면" 을 다음 샷의 출발점으로
+	 * 잡을 때, 방금 이 함수가 얹은 푸시를 도로 빼서 순수 보간 위치를 복원하는 데 쓴다.
+	 */
+	FTransform ApplyCameraPush(FTransform BaseTransform);
+
 	FBGCameraShot CurrentShot;
 
 	//	출발점 — BeginShot 시점의 실제 카메라 상태다. 목표가 아니라 "지금 화면" 이라
 	//	이동 중 재호출해도 이어진다.
 	FTransform StartTransform = FTransform::Identity;
 	float StartFov = 90.f;
+
+	//	가장 최근 ApplyCameraPush 호출이 얹은 푸시 값(cm). BeginShot 이 "지금 화면" 을 출발점으로
+	//	잡을 때 이만큼을 도로 빼서, 다음 샷의 보간 기준점이 밀린 채로 오염되지 않게 한다.
+	float LastAppliedPush = 0.f;
 
 	FTransform TargetTransform = FTransform::Identity;
 	float TargetFov = 90.f;

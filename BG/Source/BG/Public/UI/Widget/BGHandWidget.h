@@ -25,6 +25,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardDealtDelegate, int32, Inst
 /** 사용한 카드의 효과가 확정됐다. 화면 전체 연출(흔들림·플래시)이 여기 붙는다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardPlayResolvedDelegate, int32, InstanceId, const FBGCardPlayContext&, Context);
 
+/** 사용한 카드(내 카드·관전 카드 모두)가 퇴장을 시작했다. 판정 게이지의 시작 신호. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGCardPlayExitStartedDelegate, int32, InstanceId);
+
 
 /** 카드 한 장이 있어야 할 자리. ComputeCardSlot 이 계산한다. */
 USTRUCT(BlueprintType)
@@ -107,6 +110,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "BG|Hand|FX")
 	FOnBGCardPlayResolvedDelegate OnCardPlayResolved;
+
+	UPROPERTY(BlueprintAssignable, Category = "BG|Hand|FX")
+	FOnBGCardPlayExitStartedDelegate OnCardPlayExitStarted;
 
 	//	⚠️ 카드 사용 연출은 여기서 나가지 않는다. 구독은 연출 큐에 직접 할 것 —
 	//	   UBGPresentationDirector::Get → OnPresentationStarted / OnPresentationFinished.
@@ -557,6 +563,9 @@ private:
 
 	UFUNCTION()
 	void HandleCardPlayFXStarted(UBGCardWidget* Card, const FBGCardPlayContext& Context);
+
+	UFUNCTION()
+	void HandleCardPlayExitStarted(UBGCardWidget* Card);
 
 	/**
 	 * 연출 큐를 찾고, 아직이면 종료 통지를 구독한다. 없으면 nullptr(PC 가 아직 없음).

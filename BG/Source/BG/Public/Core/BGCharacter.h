@@ -3,8 +3,10 @@
 //
 // 태그가 둘이고 역할이 완전히 다르다:
 //   JobTag (Character.Job.*) — 스탯·능력·외형의 **유일한** 출처. DT Row 를 읽어 GAS 를 부여한다. 공개.
-//   RoleTag (Role.*)    — 승리 조건 판정 전용. DT 를 조회하지 않고 GAS 도 부여하지 않는다.
+//   RoleTag (Role.*)    — 승리 조건 판정 전용. DT 를 조회하지 않는다.
 //                              ASC 루즈 태그로만 올라가 승패/어빌리티 조건 검사에 쓰인다. 숨김.
+//                              예외: 보안관은 규칙상 고정 보너스(MaxHealth/Health +1)를 받는다
+//                              (SetRoleTag 참고).
 //
 // ⚠️ 설계 메모: Prototype-Workflow.md §1~2 는 "폰 없이 PlayerState 에 ASC" 를 권장한다
 //    (손패 은닉 정보 복제 때문). 이 클래스는 유저 요청대로 Team4 방식(Character 소유 ASC)을
@@ -99,10 +101,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG")
 	FGameplayTag GetRoleTag() const { return RoleTag; }
 
-	// 서버에서 역할을 배정할 때 호출. 태그를 저장하고 ASC 루즈 태그에 반영할 뿐,
-	// 스탯/능력은 건드리지 않는다 — 그건 직업(SetJobTag)의 몫이다. 소유 클라에만 복제된다.
+	// 서버에서 역할을 배정할 때 호출. 태그를 저장하고 ASC 루즈 태그에 반영한다.
+	// 스탯/능력은 원칙적으로 직업(SetJobTag)의 몫이지만, 보안관 역할만 예외로
+	// 고정 보너스(ApplySheriffBonusIfNeeded)를 함께 적용한다. 소유 클라에만 복제된다.
 	UFUNCTION(BlueprintCallable, Category = "BG")
 	void SetRoleTag(const FGameplayTag& NewTag);
+
+	// 보안관 전용 고정 보너스(MaxHealth/Health +1, GE_BGSheriffBonus)를 적용한다.
+	// SetRoleTag 가 내부에서 자동으로 부른다. 지금 RoleTag 가 보안관이 아니면 아무 일도 안 한다.
+	UFUNCTION(BlueprintCallable, Category = "BG")
+	void ApplySheriffBonusIfNeeded();
 
 	// 이 캐릭터의 직업 태그 (Character.Job.*). 공개 정보라 전원에게 복제된다.
 	UFUNCTION(BlueprintPure, Category = "BG")
@@ -268,11 +276,17 @@ public:
 
 	/**
 	 * 정체가 드러나야 하는 상태(RoleReveal 이후)인지 보고 본체 메시 ↔ 정체 공개 메시를 맞바꾼다.
+	 * 이미 스왑된 뒤(RevealMeshComponent 에 메시가 꽂혀 있음)면 조용히 아무 일도 하지 않는다.
 	 *
-	 * ⚠️ 타이밍의 주인은 **애님 노티파이**다 — 쓰러짐/역할공개 몽타주에 심어 둔
-	 *    `UBGAnimNotify_RoleReveal` 이 원하는 프레임에서 이 함수를 부른다(연기 이펙트 등과 같은
-	 *    프레임에 맞추기 위해서). RefreshAnimState 는 `Dead` 상태에 들어올 때만 안전망으로
-	 *    한 번 더 부른다 — 몽타주를 아예 보지 못한 늦은 접속자를 위해서다.
+	 * ⚠️ 이 함수는 세 곳에서 재시도된다 — 셋 다 정상 흐름이고, 어느 하나만으로는 늦게
+	 *    도착하는 값(PublicRoleTag)이나 놓친 순간을 못 잡을 수 있어 서로를 보완한다.
+	 *    1. **애님 노티파이** — 쓰러짐/역할공개 몽타주에 심어 둔 `UBGAnimNotify_RoleReveal` 이
+	 *       원하는 프레임에서 부른다(연기 이펙트 등과 타이밍을 맞추는 주 경로).
+	 *    2. **`Dead` 상태 진입** — RefreshAnimState 의 안전망. 몽타주를 아예 보지 못한
+	 *       늦은 접속자를 위한 것이다.
+	 *    3. **`ABGPlayerState::OnRep_PublicRole`** — CinematicStage(GameState)와 PublicRoleTag
+	 *       (PlayerState)는 액터가 달라 복제 도착 순서가 보장되지 않는다. 위 두 재시도가
+	 *       이미 지나간 뒤에 값이 도착해도 이 OnRep 이 다시 불러 준다.
 	 *    죽었다가 되살아나는 경우는 없으므로 되돌리는 코드는 두지 않는다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Anim")
@@ -368,10 +382,6 @@ protected:
 
 	// 서버 전용. 사망 1회 처리 보장.
 	bool bDead = false;
-
-	//	RefreshRoleRevealVisual 1회 처리 보장 겸, 몽타주 노티파이가 이미 처리했는지 판별하는 값.
-	//	이게 없으면 Dead 진입 시의 안전망 호출이 노티파이가 이미 끝낸 스왑을 다시 덮어쓴다.
-	bool bRoleRevealApplied = false;
 
 	// ── 직업 Row 적용 ──
 

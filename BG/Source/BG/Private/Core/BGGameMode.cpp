@@ -501,13 +501,13 @@ void ABGGameMode::AssignRoles()
 
 	// 직업을 먼저 배정한다 — 스탯(Health 등)이 직업에서 나오고, 판이 열릴 때
 	// StartMatch 가 그 Health 를 보고 초기 손패를 나눠주기 때문이다.
-	// 역할은 스탯에 관여하지 않으므로 둘 사이에 다른 순서 제약은 없다.
+	// SetRoleTag 가 보안관 고정 보너스를 얹긴 하지만 가산(Additive) GE라 순서 무관하다.
 	AssignJobs();
 
 	ShuffleTags(Pool);
 
 	// 셔플된 풀에서 한 명씩 태그를 빼서 배정.
-	// SetRoleTag 는 태그를 ASC 루즈 태그로 올릴 뿐이다 — 스탯은 위의 AssignJobs 가 이미 넣었다.
+	// SetRoleTag 는 태그를 ASC 루즈 태그로 올리고, 보안관이면 고정 보너스도 함께 적용한다.
 	for (int32 i = 0; i < Num; ++i)
 	{
 		APlayerController* PC = Players[i];
@@ -582,9 +582,11 @@ void ABGGameMode::AssignRolesPvE()
 		FGameplayTag RoleTag = BG::Role::Sheriff.GetTag();
 		if (PC->IsA<ABGAIPlayerController>())
 		{
-			if (!BotPool.IsValidIndex(NextBot))
+			//	BotPool 은 봇 수(NumBots)만큼 만들어졌어야 한다. 모자라다는 건
+			//	BuildBotRolePoolPvE 가 인원수를 잘못 셌다는 뜻이다.
+			if (!ensureMsgf(BotPool.IsValidIndex(NextBot),
+				TEXT("[PvE] 봇 역할 풀 부족. %s 배정 실패."), *PC->GetName()))
 			{
-				UE_LOG(LogBGNet, Error, TEXT("[PvE] 봇 역할 풀 부족 - %s 배정 실패."), *PC->GetName());
 				continue;
 			}
 			RoleTag = BotPool[NextBot++];
