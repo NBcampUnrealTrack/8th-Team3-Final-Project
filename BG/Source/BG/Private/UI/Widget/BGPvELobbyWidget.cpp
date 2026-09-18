@@ -1,5 +1,6 @@
 #include "UI/Widget/BGPvELobbyWidget.h"
 
+#include "Audio/BGAudioSubsystem.h"
 #include "Components/Button.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerController.h"
@@ -7,6 +8,10 @@
 void UBGPvELobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->BindDefaultButtonsInWidget(this);
+	}
 
 	if (ensureMsgf(StartButton, TEXT("[BG] PvE 로비 위젯의 StartButton 이 비어있습니다. WBP 를 확인하세요.")))
 	{

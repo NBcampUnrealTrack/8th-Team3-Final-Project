@@ -1,5 +1,6 @@
 ﻿#include "UI/Session/BGSessionMenuWidget.h"
 
+#include "Audio/BGAudioSubsystem.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
@@ -211,6 +212,10 @@ UEditableTextBox* UBGSessionMenuWidget::AddInput(UVerticalBox* Parent, const FSt
 void UBGSessionMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->BindDefaultButtonsInWidget(this);
+	}
 
 	// 어느 경로로 띄우든 버튼을 누를 수 있도록 입력 모드를 직접 잡는다.
 	if (APlayerController* PC = GetOwningPlayer())
