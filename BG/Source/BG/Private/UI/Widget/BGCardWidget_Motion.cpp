@@ -621,6 +621,15 @@ void UBGCardWidget::TickSecondaryMotion(float DeltaTime, const FVector2D& Positi
 	{
 		bWasHoverActive = bHoverAllowed;
 		RefreshChanceModifiedBanner();   // 문구는 호버가 켜지고 꺼질 때만 바뀐다
+		if (bHoverAllowed)
+		{
+			StartHoverAudio();
+		}
+		else if (!bBeingDragged)
+		{
+			// 실제 이탈·잠금·퇴장만 종료한다. 드래그 때문에 시각 Hover가 꺼진 경우는 유지한다.
+			StopHoverAudio();
+		}
 		OnHoverChanged(bHoverAllowed);
 	}
 

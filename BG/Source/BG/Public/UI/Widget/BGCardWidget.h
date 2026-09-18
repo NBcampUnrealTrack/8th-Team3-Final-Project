@@ -731,6 +731,10 @@ protected:
 private:
 	void RefreshVisual();
 
+	/** 시각 Hover와 독립된 루프 사운드 세션. 드래그 중에는 시각 Hover만 꺼지고 사운드는 유지한다. */
+	void StartHoverAudio();
+	void StopHoverAudio(bool bPlayEndSound = true);
+
 	/** 켜기 신호를 이미 쐈는가. 끄기가 한 번만 먹게 하는 짝 표시다. */
 	bool bPlayFXStarted = false;
 
@@ -859,6 +863,9 @@ private:
 
 	//	직전 프레임의 호버 상태. 바뀌는 순간에만 BP 훅을 쏜다 — 매 프레임이면 애니메이션이 계속 되감긴다.
 	bool bWasHoverActive = false;
+
+	//	Hover.Begin 루프를 이 카드가 시작했는가. 드래그 중 MouseLeave와 실제 종료를 구분한다.
+	bool bHoverAudioActive = false;
 
 	//	Border_Root 브러시에 머테리얼이 없다고 이미 알렸는가. RefreshVisual 은 자주 불리므로 한 번만.
 	bool bWarnedFrameBrushNotMaterial = false;

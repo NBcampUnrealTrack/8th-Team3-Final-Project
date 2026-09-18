@@ -1,4 +1,5 @@
 #include "Core/BGPlayerController.h"
+#include "Audio/BGAudioSubsystem.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
 #include "AbilitySystemGlobals.h"
@@ -733,6 +734,13 @@ void ABGPlayerController::SetSeatBoardWidget(UBGSeatBoardWidget* InSeatBoard)
 void ABGPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
+	if (IsLocalController())
+	{
+		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+		{
+			Audio->PlayMusic(BG::Audio::Music::Gameplay.GetTag());
+		}
+	}
 	
 
 	//	세션 로비가 없는 PvE 전용 "게임 시작" 버튼. 직전 조우를 이겨서 자동으로 이어지는

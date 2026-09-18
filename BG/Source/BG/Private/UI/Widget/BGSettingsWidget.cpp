@@ -1,5 +1,6 @@
 ﻿#include "UI/Widget/BGSettingsWidget.h"
 
+#include "Audio/BGAudioSubsystem.h"
 #include "AudioDevice.h"
 #include "Components/InputComponent.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
@@ -144,6 +145,10 @@ int32 UBGSettingsWidget::FindClosestResolutionIndex(const FIntPoint& Target) con
 void UBGSettingsWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->BindDefaultButtonsInWidget(this);
+	}
 
 	if (SettingsButton) { SettingsButton->OnClicked.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSettingsClicked); }
 	if (CloseButton)    { CloseButton->OnClicked.AddUniqueDynamic(this, &UBGSettingsWidget::HandleCloseClicked); }

@@ -1,5 +1,6 @@
 #include "UI/Widget/BGRewardSelectWidget.h"
 
+#include "Audio/BGAudioSubsystem.h"
 #include "Components/Button.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerController.h"
@@ -10,6 +11,10 @@
 void UBGRewardSelectWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->BindDefaultButtonsInWidget(this);
+	}
 
 	if (CardButton0)
 	{

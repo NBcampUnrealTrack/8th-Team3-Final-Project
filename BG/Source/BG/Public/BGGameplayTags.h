@@ -17,6 +17,46 @@
 namespace BG
 {
 	// ---------------------------------------------------------------------------------
+	//  Audio.* — UI/시스템 2D 사운드 카탈로그. Row 이름도 이 문자열과 동일하다.
+	//  Niagara와 Montage에 붙는 공간/동작 사운드는 이 분류에 넣지 않는다.
+	// ---------------------------------------------------------------------------------
+	namespace Audio
+	{
+		namespace UI
+		{
+			namespace Button
+			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverEnd)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(PressBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(PressEnd)
+			}
+
+			namespace Card
+			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverEnd)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(DragBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(DragEnd)
+			}
+		}
+
+		namespace System
+		{
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(TurnStart)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(RoleReveal)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Victory)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Defeat)
+		}
+
+		namespace Music
+		{
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(MainMenu)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Gameplay)
+		}
+	}
+
+	// ---------------------------------------------------------------------------------
 	//  GameplayCue.* — ASC AddGameplayCue / RemoveGameplayCue 로 유지되는 카드 연출.
 	// ---------------------------------------------------------------------------------
 	namespace GameplayCue

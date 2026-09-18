@@ -3,6 +3,7 @@
 
 #include "BG/Public/UI/Widget/BGChatingWidget.h"
 #include "BG/Public/Chating/BGChatingSubsystem.h"
+#include "Audio/BGAudioSubsystem.h"
 #include "Components/ScrollBox.h"
 #include "Components/EditableTextBox.h"
 #include "Components/TextBlock.h"
@@ -13,6 +14,10 @@
 void UBGChatingWidget::NativeConstruct()
 {
 		Super::NativeConstruct();
+		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+		{
+			Audio->BindDefaultButtonsInWidget(this);
+		}
 
 		//	HUD 안에 배치되면 PlayerController 가 CreateWidget 으로 이 인스턴스를 잡을 기회가
 		//	없다. Enter 로 입력창 열기(HandleChatKeyPressed)가 이 참조를 쓰므로 스스로 등록한다.
