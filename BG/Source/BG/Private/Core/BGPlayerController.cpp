@@ -16,7 +16,6 @@
 #include "BGGameplayTags.h"           // BG::Status::*
 #include "Core/BGGameState.h"               // PushToDiscard
 #include "Core/BGGameMode.h"                // GetPlayMode
-#include "Core/BGGameInstance.h"            // ShouldAutoStartNextPvEMatch
 #include "Core/BGPlayerState.h"
 #include "Lobby/BGMatchStartComponent.h"    // RequestStartPvEMatch
 #include "UI/View/BGSeatViewLibrary.h"
@@ -26,7 +25,6 @@
 #include "UI/Widget/BGSeatBoardWidget.h"
 #include "UI/Widget/BGTurnPanelWidget.h"
 #include "UI/Widget/BGResolutionWidget.h"
-#include "UI/Widget/BGPvELobbyWidget.h"
 #include "UI/Widget/BGRewardSelectWidget.h"
 #include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
 #include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
@@ -769,19 +767,9 @@ void ABGPlayerController::BeginPlay()
 	Super::BeginPlay();
 	
 
-	//	세션 로비가 없는 PvE 전용 "게임 시작" 버튼. 직전 조우를 이겨서 자동으로 이어지는
-	//	경우엔(사람 눈에 로비 스킵처럼 보여야 하므로) 애초에 보여주지 않는다.
-	const UBGGameInstance* GIForLobby = Cast<UBGGameInstance>(GetGameInstance());
-	const bool bWillAutoStartPvE = GIForLobby && GIForLobby->ShouldAutoStartNextPvEMatch();
-	if (GetLocalPlayer() && PvELobbyWidgetClass && ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE
-		&& !bWillAutoStartPvE)
-	{
-		PvELobbyWidgetInstance = CreateWidget<UBGPvELobbyWidget>(this, PvELobbyWidgetClass);
-		if (PvELobbyWidgetInstance)
-		{
-			PvELobbyWidgetInstance->AddToViewport();
-		}
-	}
+	//	PvE 전용 "게임 시작" 버튼은 여기서 띄우지 않는다 — WBP_BGHUD 안에 얹혀 있고,
+	//	PvE 인지·로비를 건너뛸 차례인지는 UBGPvELobbyWidget 이 스스로 본다.
+	//	따로 AddToViewport 하면 도움말·설정 패널 위로 버튼이 튀어나온다.
 
 	//	PvE 보상 선택 화면. 보여줄 후보가 이미 있을 때만 화면에 붙인다.
 	//	고르고 나면 스스로 없앤다(UBGRewardSelectWidget::HandleTurnStateChanged 참고).

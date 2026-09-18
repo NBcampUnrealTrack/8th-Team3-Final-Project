@@ -379,12 +379,19 @@ void UBGTurnPanelWidget::RefreshHealthHearts()
 
 void UBGTurnPanelWidget::RefreshIcons()
 {
-	//	태그가 없거나(배정 전) 표에 없는 태그면 접는다. 브러시를 비우기만 하면
-	//	이미지가 흰 사각형으로 남아 자리를 차지한다.
-	struct FIconSlot { UImage* Image; const TMap<FGameplayTag, TObjectPtr<UTexture2D>>& Table; FGameplayTag Tag; };
+	//	태그를 못 찾으면(배정 전이거나 역할이 숨겨져 있으면) WBP 가 깔아 둔 범용 아이콘으로
+	//	되돌린다. 접으면 아이콘 자리가 통째로 빠져 그 줄만 쪼그라들고, 아이콘이 있는 장비·손패
+	//	줄과 높이가 어긋난다. (UBGSeatDetailWidget::RefreshIcons 와 같은 규칙이다.)
+	struct FIconSlot
+	{
+		UImage* Image;
+		const TMap<FGameplayTag, TObjectPtr<UTexture2D>>& Table;
+		FGameplayTag Tag;
+		TObjectPtr<UTexture2D>& Fallback;
+	};
 	const FIconSlot Slots[] = {
-		{ Img_JobIcon,  JobIcons,  LocalSeatView.JobTag  },
-		{ Img_RoleIcon, RoleIcons, LocalSeatView.RoleTag },
+		{ Img_JobIcon,  JobIcons,  LocalSeatView.JobTag,  JobIconDefault  },
+		{ Img_RoleIcon, RoleIcons, LocalSeatView.RoleTag, RoleIconDefault },
 	};
 
 	for (const FIconSlot& IconSlot : Slots)
@@ -394,10 +401,18 @@ void UBGTurnPanelWidget::RefreshIcons()
 			continue;
 		}
 
-		const TObjectPtr<UTexture2D>* Found = IconSlot.Tag.IsValid() ? IconSlot.Table.Find(IconSlot.Tag) : nullptr;
-		UTexture2D* Icon = Found ? Found->Get() : nullptr;
+		//	WBP 가 깔아 둔 것은 처음 한 번만 기억한다 — 한 번 갈아끼우고 나면 읽을 수 없다.
+		if (!IconSlot.Fallback)
+		{
+			IconSlot.Fallback = Cast<UTexture2D>(IconSlot.Image->GetBrush().GetResourceObject());
+		}
 
-		IconSlot.Image->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		const TObjectPtr<UTexture2D>* Found = IconSlot.Tag.IsValid() ? IconSlot.Table.Find(IconSlot.Tag) : nullptr;
+		UTexture2D* Icon = Found ? Found->Get() : IconSlot.Fallback.Get();
+
+		//	범용 아이콘조차 없으면 흰 사각형이 남으므로 그때만 감춘다. 접지 않고 감추는 것은
+		//	자리를 남겨 줄 높이를 유지하기 위해서다.
+		IconSlot.Image->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 		if (Icon)
 		{
 			//	bMatchSize=false — 크기는 WBP 의 슬롯이 정한다. 텍스처 해상도를 따라가면
