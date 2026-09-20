@@ -1,5 +1,6 @@
 #include "UI/Widget/BGPvELobbyWidget.h"
 
+#include "Audio/BGAudioSubsystem.h"
 #include "Components/Button.h"
 #include "Core/BGGameInstance.h"
 #include "Core/BGGameMode.h"
@@ -9,6 +10,10 @@
 void UBGPvELobbyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->BindDefaultButtonsInWidget(this);
+	}
 
 	//	HUD 는 모드를 가리지 않고 뜨므로 여기서 걸러낸다 — PvP 에 "게임 시작" 버튼이
 	//	나오면 안 된다.

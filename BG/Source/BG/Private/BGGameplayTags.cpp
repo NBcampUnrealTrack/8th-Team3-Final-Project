@@ -7,6 +7,42 @@
 
 namespace BG
 {
+	namespace Audio
+	{
+		namespace UI
+		{
+			namespace Button
+			{
+				UE_DEFINE_GAMEPLAY_TAG(HoverBegin,    "Audio.UI.Button.Hover.Begin")
+				UE_DEFINE_GAMEPLAY_TAG(HoverEnd,      "Audio.UI.Button.Hover.End")
+				UE_DEFINE_GAMEPLAY_TAG(PressBegin,    "Audio.UI.Button.Press.Begin")
+				UE_DEFINE_GAMEPLAY_TAG(PressEnd,      "Audio.UI.Button.Press.End")
+			}
+
+			namespace Card
+			{
+				UE_DEFINE_GAMEPLAY_TAG(HoverBegin, "Audio.UI.Card.Hover.Begin")
+				UE_DEFINE_GAMEPLAY_TAG(HoverEnd,   "Audio.UI.Card.Hover.End")
+				UE_DEFINE_GAMEPLAY_TAG(DragBegin,  "Audio.UI.Card.Drag.Begin")
+				UE_DEFINE_GAMEPLAY_TAG(DragEnd,    "Audio.UI.Card.Drag.End")
+			}
+		}
+
+		namespace System
+		{
+			UE_DEFINE_GAMEPLAY_TAG(TurnStart,   "Audio.System.Turn.Start")
+			UE_DEFINE_GAMEPLAY_TAG(RoleReveal,  "Audio.System.RoleReveal")
+			UE_DEFINE_GAMEPLAY_TAG(Victory,     "Audio.System.Victory")
+			UE_DEFINE_GAMEPLAY_TAG(Defeat,      "Audio.System.Defeat")
+		}
+
+		namespace Music
+		{
+			UE_DEFINE_GAMEPLAY_TAG(MainMenu, "Audio.Music.MainMenu")
+			UE_DEFINE_GAMEPLAY_TAG(Gameplay, "Audio.Music.Gameplay")
+		}
+	}
+
 	// 나이아가라 시스템 및 효과/연출용 게임플레이 큐
 	namespace GameplayCue
 	{

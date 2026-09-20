@@ -16,6 +16,8 @@
 
 #include "UI/Widget/BGCardWidget.h"
 #include "UI/Widget/BGHandWidget.h"   // SetOwningHand 의 TWeakObjectPtr 대입에 완전한 타입이 필요하다
+#include "Audio/BGAudioSubsystem.h"
+#include "BGGameplayTags.h"
 
 #include "Components/Border.h"
 #include "Components/Image.h"
@@ -36,8 +38,43 @@ void UBGCardWidget::NativeDestruct()
 	//	⚠️ 안전망이다. 퇴장 없이 걷어내진 카드(판 종료·손패 초기화)를 여기서 잡지 않으면
 	//	   HUD 가 켜진 채로 남고 아무 에러도 나지 않는다.
 	NotifyPlayFXFinished();
+	StopHoverAudio(/*bPlayEndSound=*/false);
 
 	Super::NativeDestruct();
+}
+
+void UBGCardWidget::StartHoverAudio()
+{
+	if (bHoverAudioActive)
+	{
+		return;
+	}
+
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		if (Audio->Play(BG::Audio::UI::Card::HoverBegin.GetTag()))
+		{
+			bHoverAudioActive = true;
+		}
+	}
+}
+
+void UBGCardWidget::StopHoverAudio(bool bPlayEndSound)
+{
+	if (!bHoverAudioActive)
+	{
+		return;
+	}
+
+	bHoverAudioActive = false;
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->StopByTag(BG::Audio::UI::Card::HoverBegin.GetTag());
+		if (bPlayEndSound)
+		{
+			Audio->Play(BG::Audio::UI::Card::HoverEnd.GetTag());
+		}
+	}
 }
 
 void UBGCardWidget::SetOwningHand(UBGHandWidget* InHand)
@@ -58,6 +95,12 @@ void UBGCardWidget::SetBeingDragged(bool bInBeingDragged)
 		return;
 	}
 	bBeingDragged = bInBeingDragged;
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->Play(bBeingDragged
+			? BG::Audio::UI::Card::DragBegin.GetTag()
+			: BG::Audio::UI::Card::DragEnd.GetTag());
+	}
 
 	if (bBeingDragged)
 	{
@@ -71,6 +114,10 @@ void UBGCardWidget::SetBeingDragged(bool bInBeingDragged)
 	}
 	else
 	{
+		// 드래그가 끝날 때까지 유지한 Hover 루프를 여기서 닫는다.
+		// 취소 후 커서가 다시 카드 위로 잡히면 다음 Hover 전환에서 새로 시작한다.
+		StopHoverAudio();
+
 		//	퇴장 중이어도 불투명도는 되돌린다. 퇴장 페이드는 TickExiting 이 다시 정한다.
 		SetRenderOpacity(PreDragOpacity);
 
