@@ -1,7 +1,6 @@
 ﻿#include "UI/Widget/BGSettingsWidget.h"
 
 #include "Audio/BGAudioSubsystem.h"
-#include "AudioDevice.h"
 #include "Components/InputComponent.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/Button.h"
@@ -16,7 +15,6 @@
 #include "Engine/GameViewportClient.h"
 #include "GenericPlatform/GenericApplication.h"
 #include "Kismet/KismetSystemLibrary.h"
-#include "Misc/ConfigCacheIni.h"
 #include "Session/BGSessionFlow.h"
 #include "Session/BGSessionInterface.h"
 #include "Widgets/SWindow.h"
@@ -63,8 +61,6 @@ namespace
 
 	// 0 = 무제한.
 	const TArray<float> FrameLimitValues = { 0.f, 30.f, 60.f, 120.f, 144.f, 240.f };
-
-	const TCHAR* AudioSection = TEXT("BGAudio");
 
 	// 구분선이 화면에서 차지해야 할 픽셀 두께. DPI 스케일과 무관하게 이 값으로 떨어진다.
 	constexpr float SettingsDividerPixels = 2.f;
@@ -177,8 +173,7 @@ void UBGSettingsWidget::NativeConstruct()
 	Dividers = { Image_Div1, Image_Div2, Image_Div3, Image_Div4 };
 	RefreshDividerThickness();
 
-	LoadAudio();
-	ApplyAudioToDevice();
+	RefreshMasterVolumeFromAudioSubsystem();
 
 	PopulateOptions();
 	RefreshFromSettings();
@@ -472,24 +467,12 @@ void UBGSettingsWidget::ApplyAndSaveGraphics()
 	}
 }
 
-void UBGSettingsWidget::LoadAudio()
+void UBGSettingsWidget::RefreshMasterVolumeFromAudioSubsystem()
 {
-	// 없으면 기본값 그대로 둔다 — GetFloat/GetBool 은 실패하면 인자를 건드리지 않는다.
-	GConfig->GetFloat(AudioSection, TEXT("MasterVolume"), MasterVolume, GGameUserSettingsIni);
-	MasterVolume = FMath::Clamp(MasterVolume, 0.f, 1.f);
-}
-
-void UBGSettingsWidget::SaveAudio() const
-{
-	GConfig->SetFloat(AudioSection, TEXT("MasterVolume"), MasterVolume, GGameUserSettingsIni);
-	GConfig->Flush(false, GGameUserSettingsIni);
-}
-
-void UBGSettingsWidget::ApplyAudioToDevice() const
-{
-	if (FAudioDevice* Device = GEngine ? GEngine->GetMainAudioDeviceRaw() : nullptr)
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
-		Device->SetTransientPrimaryVolume(MasterVolume);
+		MasterVolume = Audio->GetMasterVolume();
+		Audio->ApplyMasterVolume();
 	}
 }
 
@@ -574,8 +557,10 @@ void UBGSettingsWidget::HandleResetClicked()
 	}
 
 	MasterVolume = 1.f;
-	SaveAudio();
-	ApplyAudioToDevice();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->SetMasterVolume(MasterVolume);
+	}
 
 	// 기본 해상도 목록이 바뀔 수 있다 — 목록부터 다시 만든다.
 	PopulateOptions();
@@ -739,7 +724,9 @@ void UBGSettingsWidget::HandleMasterVolumeChanged(float Value)
 
 	MasterVolume = FMath::Clamp(Value, 0.f, 1.f);
 	RefreshVolumeText();
-	ApplyAudioToDevice();
-	SaveAudio();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->SetMasterVolume(MasterVolume);
+	}
 }
 

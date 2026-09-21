@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
@@ -7,6 +7,7 @@
 #include "Card/BGGameDataTypes.h"   // FBGCardResolution — 멀티캐스트 인자라 완전한 타입이 필요하다
 #include "Core/BGCinematicCamera.h" // FBGCameraShot — 복제 프로퍼티라 완전한 타입이 필요하다
 #include "GameplayTagContainer.h"
+#include "Ping/BGPingTypes.h"   // FBGPingEvent — 멀티캐스트 인자라 완전한 타입이 필요하다
 #include "GameFramework/GameStateBase.h"
 #include "BGGameState.generated.h"
 
@@ -134,6 +135,13 @@ public:
 	void Multicast_ChatMessage(const FString& SenderName, const FString& Message);
 	
 	FOnBGChatMessageReceived OnChatMessageReceived;
+
+	/** 핑 1건을 전원에게 알린다 (서버 검증 통과 후에만 호출). */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_Ping(const FBGPingEvent& Event);
+
+	/** 위 멀티캐스트가 도착하면 발사된다. 표시 컴포넌트가 구독한다. */
+	FOnBGPingReceived OnPingReceived;
 
 	/**
 	 * 장비를 착용했다고 전원에게 알린다 (서버에서만 호출).

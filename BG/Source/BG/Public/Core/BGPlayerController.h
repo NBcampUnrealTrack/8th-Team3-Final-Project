@@ -1,4 +1,4 @@
-// BANG! 플레이어 컨트롤러 — 클라 입력을 서버로 중계한다 (md §1.2).
+﻿// BANG! 플레이어 컨트롤러 — 클라 입력을 서버로 중계한다 (md §1.2).
 // HUD 는 GAS 인풋 바인딩을 쓰지 않고, 카드 사용 의도를 이 커스텀 RPC 로 보낸다.
 
 #pragma once
@@ -194,6 +194,14 @@ public:
 	// ─────────────── 채팅 ───────────────────── //
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerSendChatMessage(const FString& Message);
+
+	// ─────────────── 핑 ───────────────────── //
+	//	검증과 전파는 UBGPingComponent 가 맡는다. 여기는 RPC 경계만 제공한다.
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerSendPing(FGameplayTag PingTag, int32 TargetSeat);
+
+	UFUNCTION(BlueprintPure, Category = "BG|Ping")
+	class UBGPingComponent* GetPingComponent() const { return Ping; }
 	
 	UPROPERTY(EditDefaultsOnly, Category = "BG|UI")
 	TSubclassOf<class UBGChatingWidget> ChatWidgetClass;
@@ -514,6 +522,13 @@ private:
 	//	카드 위젯이 대신 들면 카드가 죽을 때 연출도 함께 끊긴다.
 	UPROPERTY(VisibleAnywhere, Category = "BG|Presentation")
 	TObjectPtr<class UBGPresentationDirector> PresentationDirector;
+
+	//	핑 발신·표시. 보는 사람 화면의 일이라 복제하지 않는다.
+	UPROPERTY(VisibleAnywhere, Category = "BG|Ping")
+	TObjectPtr<class UBGPingComponent> Ping;
+
+	UPROPERTY(VisibleAnywhere, Category = "BG|Ping")
+	TObjectPtr<class UBGPingDisplayComponent> PingDisplay;
 
 	//	로컬 연출 카메라. 복제하지 않는다 — 각 클라가 자기 것을 스폰한다.
 	UPROPERTY()

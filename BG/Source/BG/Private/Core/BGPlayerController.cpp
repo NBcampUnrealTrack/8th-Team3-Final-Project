@@ -1,4 +1,6 @@
-#include "Core/BGPlayerController.h"
+﻿#include "Core/BGPlayerController.h"
+#include "Ping/BGPingComponent.h"
+#include "Ping/BGPingDisplayComponent.h"
 #include "Audio/BGAudioSubsystem.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemInterface.h"
@@ -48,6 +50,9 @@
 
 ABGPlayerController::ABGPlayerController()
 {
+	Ping = CreateDefaultSubobject<UBGPingComponent>(TEXT("Ping"));
+	PingDisplay = CreateDefaultSubobject<UBGPingDisplayComponent>(TEXT("PingDisplay"));
+
 	//	전부 마우스로 하는 게임이다. 지금까지는 세션 메뉴가 켜 준 커서에 얹혀 있었는데,
 	//	호버 판정이 커서에 걸리므로 남의 상태에 기대지 않고 여기서 정한다.
 	bShowMouseCursor = true;
@@ -196,6 +201,14 @@ void ABGPlayerController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
 	InputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &ABGPlayerController::HandleChatKeyPressed);
+
+	//	핑 입력(휠 버튼)은 발신 컴포넌트가 직접 건다. 취소는 위 우클릭·ESC 와 함께 간다.
+	if (Ping)
+	{
+		Ping->BindInput(InputComponent);
+		InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, Ping.Get(), &UBGPingComponent::CancelWheel);
+		InputComponent->BindKey(EKeys::Escape, IE_Pressed, Ping.Get(), &UBGPingComponent::CancelWheel);
+	}
 
 	//	좌클릭(대상 확정)은 조준 컴포넌트가 직접 건다.
 }
@@ -2061,6 +2074,19 @@ void ABGPlayerController::ServerRequestDiscardCard_Implementation(int32 Instance
 
 	ConsumeCard(InstanceId);
 	GS->NotifyCardDiscarded(MySeat);
+}
+
+void ABGPlayerController::ServerSendPing_Implementation(FGameplayTag PingTag, int32 TargetSeat)
+{
+	if (ensureMsgf(Ping, TEXT("[BGPing] PingComponent 가 없다")))
+	{
+		Ping->HandleServerSendPing(PingTag, TargetSeat);
+	}
+}
+
+bool ABGPlayerController::ServerSendPing_Validate(FGameplayTag PingTag, int32 TargetSeat)
+{
+	return TargetSeat >= INDEX_NONE;
 }
 
 void ABGPlayerController::ServerSendChatMessage_Implementation(const FString& Message)
