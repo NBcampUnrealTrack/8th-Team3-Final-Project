@@ -108,7 +108,9 @@ void UBGAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, fl
 	// 스탯은 음수가 되지 않는다. 거리 보정치도 0 미만은 무의미.
 	if (Attribute == GetHealthAttribute())
 	{
-		NewValue = FMath::Clamp(NewValue, 0.f, GetMaxHealth());
+		//	⚠️ 여기서 자르지 않는다. 이 함수는 **현재값만** 잘라서, 기본값이 범위를 넘은 것(가득 찬 채 회복,
+		//	   0 아래로의 피해)이 가려진다. 그러면 PostGameplayEffectExecute 가 넘친 만큼을 못 보고
+		//	   다음 피해가 그 초과분에 흡수된다. 범위는 PostGameplayEffectExecute 가 기본값 기준으로 맞춘다.
 	}
 	else if (Attribute == GetMaxHealthAttribute())
 	{
@@ -137,13 +139,26 @@ void UBGAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallback
 {
 	Super::PostGameplayEffectExecute(Data);
 
-	// GE(피해/회복) 적용 후 Health 를 [0, MaxHealth] 로 최종 클램프.
+	// GE(피해/회복) 적용 후 Health 를 [0, MaxHealth] 로 최종 클램프. Health 범위를 맞추는 곳은 여기 하나다.
 	if (Data.EvaluatedData.Attribute != GetHealthAttribute())
 	{
 		return;
 	}
 
-	SetHealth(FMath::Clamp(GetHealth(), 0.f, GetMaxHealth()));
+	//	⚠️ SetHealth(Clamp(GetHealth())) 로 쓰면 안 된다. GetHealth 는 **현재값**(기본값 + 무한 GE 보정)이고
+	//	   SetHealth 는 **기본값**을 바꾼다. 보안관(GE_BGSheriffBonus, Health +1)처럼 보정이 붙어 있으면
+	//	   현재값을 기본값에 넣는 순간 보정이 한 번 더 얹혀 피해 1 이 통째로 사라진다.
+	//	   범위를 벗어났을 때만, 벗어난 만큼만 기본값에서 덜어낸다.
+	const float Current = GetHealth();
+	const float Clamped = FMath::Clamp(Current, 0.f, GetMaxHealth());
+	if (!FMath::IsNearlyEqual(Current, Clamped))
+	{
+		if (UAbilitySystemComponent* ASC = GetOwningAbilitySystemComponent())
+		{
+			const FGameplayAttribute HealthAttr = GetHealthAttribute();
+			ASC->SetNumericAttributeBase(HealthAttr, ASC->GetNumericAttributeBase(HealthAttr) + (Clamped - Current));
+		}
+	}
 
 	//	피격 반응(수도사 반사 · 도둑 강탈)은 죽든 살든 일어난다 — 아래 사망 조기 반환보다 먼저 본다.
 	//	여기서도 "값이 줄었다" 까지만 알고, 무엇을 할지는 캐릭터 계층이 정한다.

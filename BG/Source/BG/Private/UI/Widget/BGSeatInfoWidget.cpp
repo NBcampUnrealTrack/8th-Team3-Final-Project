@@ -1,5 +1,4 @@
 #include "UI/Widget/BGSeatInfoWidget.h"
-#include "Components/Image.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Components/Overlay.h"
@@ -47,31 +46,11 @@ TSharedRef<SWidget> UBGSeatInfoWidget::RebuildWidget()
 
 void UBGSeatInfoWidget::RefreshHealthHearts()
 {
-	UImage* const Hearts[] = { Img_Heart_1, Img_Heart_2, Img_Heart_3, Img_Heart_4, Img_Heart_5, Img_Heart_6 };
-	const int32 NumHearts = UE_ARRAY_COUNT(Hearts);
+	UBGHeartSlotWidget* const Hearts[] = { Heart_1, Heart_2, Heart_3, Heart_4, Heart_5, Heart_6 };
 
 	//	판 전에는 최대 체력이 0 이다 — 줄째로 접힌다.
-	const int32 MaxHealth = ShouldShowStats() ? FMath::Min(View.MaxHealth, NumHearts) : 0;
-	const int32 Health = FMath::Clamp(View.Health, 0, MaxHealth);
-
-	for (int32 Index = 0; Index < NumHearts; ++Index)
-	{
-		UImage* Heart = Hearts[Index];
-		if (!Heart)
-		{
-			continue;
-		}
-
-		//	최대 체력을 넘는 칸은 자리까지 접는다. 숨기기만 하면 줄이 가운데로 모이지 않는다.
-		if (Index >= MaxHealth)
-		{
-			Heart->SetVisibility(ESlateVisibility::Collapsed);
-			continue;
-		}
-
-		Heart->SetVisibility(ESlateVisibility::HitTestInvisible);
-		Heart->SetColorAndOpacity(Index < Health ? HeartFullTint : HeartEmptyTint);
-	}
+	UBGHeartSlotWidget::RefreshRow(Hearts, View.Health, ShouldShowStats() ? View.MaxHealth : 0,
+		HeartRow);
 }
 
 void UBGSeatInfoWidget::BuildFallbackLayout()
