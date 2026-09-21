@@ -41,6 +41,15 @@ namespace BG
 			UE_DEFINE_GAMEPLAY_TAG(MainMenu, "Audio.Music.MainMenu")
 			UE_DEFINE_GAMEPLAY_TAG(Gameplay, "Audio.Music.Gameplay")
 		}
+
+		namespace Ping
+		{
+			UE_DEFINE_GAMEPLAY_TAG(Attack,  "Audio.Ping.Attack")
+			UE_DEFINE_GAMEPLAY_TAG(Warning, "Audio.Ping.Warning")
+			UE_DEFINE_GAMEPLAY_TAG(Suspect, "Audio.Ping.Suspect")
+			UE_DEFINE_GAMEPLAY_TAG(Protect, "Audio.Ping.Protect")
+			UE_DEFINE_GAMEPLAY_TAG(Heal,    "Audio.Ping.Heal")
+		}
 	}
 
 	// 나이아가라 시스템 및 효과/연출용 게임플레이 큐
@@ -222,5 +231,14 @@ namespace BG
 	{
 		UE_DEFINE_GAMEPLAY_TAG(Damage, "SetByCaller.Damage")
 		UE_DEFINE_GAMEPLAY_TAG(Heal,   "SetByCaller.Heal")
+	}
+
+	namespace Ping
+	{
+		UE_DEFINE_GAMEPLAY_TAG(Attack,  "Ping.Attack")
+		UE_DEFINE_GAMEPLAY_TAG(Warning, "Ping.Warning")
+		UE_DEFINE_GAMEPLAY_TAG(Suspect, "Ping.Suspect")
+		UE_DEFINE_GAMEPLAY_TAG(Protect, "Ping.Protect")
+		UE_DEFINE_GAMEPLAY_TAG(Heal,    "Ping.Heal")
 	}
 }

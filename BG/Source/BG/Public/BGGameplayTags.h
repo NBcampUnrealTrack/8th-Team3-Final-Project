@@ -54,6 +54,28 @@ namespace BG
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(MainMenu)
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Gameplay)
 		}
+
+		// Audio.Ping.* — 핑 종류별 알림음. DT_BGSystemAudio 의 Row 이름과 같다.
+		namespace Ping
+		{
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Attack)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Warning)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Suspect)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Protect)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Heal)
+		}
+	}
+
+	// ---------------------------------------------------------------------------------
+	//  Ping.* — 플레이어가 서로에게 보내는 신호 5종. 전원 공개, 사망자 발신 불가.
+	// ---------------------------------------------------------------------------------
+	namespace Ping
+	{
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Attack)   // 저 사람 공격하자 (좌석 필수)
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Warning)  // 주의·경고
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Suspect)  // 의심된다 (좌석 필수)
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Protect)  // 저 사람 지켜라 (좌석 필수)
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Heal)     // 치유해 줘
 	}
 
 	// ---------------------------------------------------------------------------------
