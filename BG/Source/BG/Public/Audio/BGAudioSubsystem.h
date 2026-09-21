@@ -8,6 +8,8 @@
 class UAudioComponent;
 class UButton;
 class UDataTable;
+class USoundClass;
+class USoundMix;
 class UUserWidget;
 struct FBGSystemAudioRow;
 
@@ -53,7 +55,22 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Audio")
 	bool HasAudioRow(FGameplayTag AudioTag) const;
 
+	/** SC_Basic에 적용되는 사용자 마스터 볼륨. */
+	UFUNCTION(BlueprintPure, Category = "BG|Audio")
+	float GetMasterVolume() const { return MasterVolume; }
+
+	/** 값을 저장하고 SC_Basic Sound Mix 오버라이드에 즉시 반영한다. */
+	UFUNCTION(BlueprintCallable, Category = "BG|Audio")
+	void SetMasterVolume(float InVolume);
+
+	/** 저장값을 바꾸지 않고 현재 World의 오디오 장치에 다시 적용한다. */
+	void ApplyMasterVolume();
+
 private:
+	void LoadMasterVolume();
+	void SaveMasterVolume() const;
+	void EnsureMasterVolumeApplied();
+
 	const FBGSystemAudioRow* FindRow(FGameplayTag AudioTag) const;
 	UAudioComponent* CreateComponent(FGameplayTag AudioTag, const FBGSystemAudioRow& Row);
 	float ResolveFadeOut(const FBGSystemAudioRow* Row, float Override) const;
@@ -82,10 +99,19 @@ private:
 	TObjectPtr<UDataTable> AudioTable;
 
 	UPROPERTY(Transient)
+	TObjectPtr<USoundClass> MasterSoundClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundMix> UserSettingsSoundMix;
+
+	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UAudioComponent>> ActiveSounds;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> CurrentMusic;
 
 	FGameplayTag CurrentMusicTag;
+
+	float MasterVolume = 1.f;
+	bool bUserSettingsSoundMixPushed = false;
 };

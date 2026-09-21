@@ -10,6 +10,8 @@
 
 class UDataTable;
 class UBGPresentationDataAsset;
+class USoundClass;
+class USoundMix;
 class UStaticMesh;
 /**
  *
@@ -48,6 +50,14 @@ public:
 	/** UI·시스템·BGM 태그를 USoundBase 에 연결하는 표 (FBGSystemAudioRow). */
 	UPROPERTY(EditAnywhere, Config, Category = "Audio", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGSystemAudioRow"))
 	TSoftObjectPtr<UDataTable> AudioTable;
+
+	/** 사용자 설정의 마스터 볼륨이 적용되는 최상위 Sound Class. */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio")
+	TSoftObjectPtr<USoundClass> MasterSoundClass;
+
+	/** 사용자 볼륨 오버라이드를 담는 Sound Mix. */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio")
+	TSoftObjectPtr<USoundMix> UserSettingsSoundMix;
 
 	/**
 	 * 암살자가 대성공 시 받는 카드 (Card.Id.*). 기본값은 그림자 일격.
