@@ -1,5 +1,6 @@
 #include "UI/Menu/BGMainMenuWidget.h"
 
+#include "Audio/BGAudioSubsystem.h"
 #include "Components/Button.h"
 #include "Components/WidgetSwitcher.h"
 #include "Core/BGGameInstance.h"
@@ -11,6 +12,10 @@
 void UBGMainMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->BindDefaultButtonsInWidget(this);
+	}
 
 	if (Btn_PvE)      { Btn_PvE->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandlePvE); }
 	if (Btn_PvP)      { Btn_PvP->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandlePvP); }

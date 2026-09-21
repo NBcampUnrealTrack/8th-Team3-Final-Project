@@ -1,5 +1,6 @@
 #include "UI/Widget/BGTurnPanelWidget.h"
 
+#include "Audio/BGAudioSubsystem.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
@@ -43,6 +44,10 @@ void UBGTurnPanelWidget::NativePreConstruct()
 void UBGTurnPanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->BindDefaultButtonsInWidget(this);
+	}
 
 	if (Button_EndTurn)
 	{

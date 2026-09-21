@@ -45,6 +45,10 @@ public:
 	UPROPERTY(EditAnywhere, Config, Category = "Presentation")
 	TSoftObjectPtr<UBGPresentationDataAsset> PresentationData;
 
+	/** UI·시스템·BGM 태그를 USoundBase 에 연결하는 표 (FBGSystemAudioRow). */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGSystemAudioRow"))
+	TSoftObjectPtr<UDataTable> AudioTable;
+
 	/**
 	 * 암살자가 대성공 시 받는 카드 (Card.Id.*). 기본값은 그림자 일격.
 	 *
