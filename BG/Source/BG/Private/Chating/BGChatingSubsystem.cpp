@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "BG/Public/Chating/BGChatingSubsystem.h"
@@ -138,4 +138,25 @@ void UBGChatingSubsystem::AddSystemMessage(const FString& Message)
 	OnMessageReceived.Broadcast(Entry);
 	
 	UE_LOG(LogTemp, Warning, TEXT("[Chat] AddSystemMessage 호출: %s"), *Message);
+}
+
+void UBGChatingSubsystem::AddPingEntry(const FString& Message, FGameplayTag PingTag, int32 SenderSeat, int32 TargetSeat)
+{
+	if (Message.IsEmpty())
+	{
+		return;
+	}
+
+	FBGChatEntry Entry;
+	Entry.Message = Message;
+	Entry.Timestamp = FDateTime::Now();
+	Entry.bSystem = true;
+	Entry.bPing = true;
+	Entry.PingTag = PingTag;
+	Entry.SenderSeat = SenderSeat;
+	Entry.TargetSeat = TargetSeat;
+
+	History.Add(Entry);
+
+	OnMessageReceived.Broadcast(Entry);
 }
