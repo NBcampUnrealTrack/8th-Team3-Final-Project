@@ -23,6 +23,7 @@
 #include "Session/BGSessionFlow.h"
 #include "Session/BGSessionInterface.h"
 #include "UI/Session/BGSessionMenuController.h"
+#include "UObject/SoftObjectPath.h"
 #include "Lobby/BGReadyComponent.h"
 #include "Core/BGGameState.h"
 #include "BGGameplayTags.h"
@@ -32,6 +33,23 @@ namespace
 	// 구분선이 화면에서 차지해야 할 픽셀 두께. DPI 스케일과 무관하게 이 값으로 떨어진다.
 	//	⚠️ BGSettingsWidget.cpp 에도 같은 익명 상수가 있어 unity 빌드에서 충돌한다. 이름을 나눠 둔다.
 	constexpr float SessionMenuDividerPixels = 2.f;
+
+	//	코드로 만든 텍스트 위젯은 엔진 기본 폰트(Roboto)를 물고 나온다 — WBP 쪽과 같은 폰트로 맞춘다.
+	void ApplySessionMenuFont(FSlateFontInfo& Font)
+	{
+		if (UObject* Loaded = FSoftObjectPath(TEXT("/Game/UI/Font/HeirofLightRegular_Font.HeirofLightRegular_Font")).TryLoad())
+		{
+			Font.FontObject = Loaded;
+			Font.TypefaceFontName = TEXT("Default");
+		}
+	}
+
+	void ApplySessionMenuFont(UTextBlock* Block)
+	{
+		FSlateFontInfo Font = Block->GetFont();
+		ApplySessionMenuFont(Font);
+		Block->SetFont(Font);
+	}
 
 	FString PhaseToText(EBGSessionPhase Phase)
 	{
@@ -172,6 +190,7 @@ UTextBlock* UBGSessionMenuWidget::AddLabel(UVerticalBox* Parent, const FString& 
 
 	FSlateFontInfo Font = Block->GetFont();
 	Font.Size = FontSize;
+	ApplySessionMenuFont(Font);
 	Block->SetFont(Font);
 
 	if (UVerticalBoxSlot* BoxSlot = Parent->AddChildToVerticalBox(Block))
@@ -188,6 +207,7 @@ UButton* UBGSessionMenuWidget::AddButton(UVerticalBox* Parent, const FString& La
 	UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
 	Text->SetText(FText::FromString(Label));
 	Text->SetJustification(ETextJustify::Center);
+	ApplySessionMenuFont(Text);
 	Button->AddChild(Text);
 
 	if (UVerticalBoxSlot* BoxSlot = Parent->AddChildToVerticalBox(Button))
@@ -201,6 +221,10 @@ UEditableTextBox* UBGSessionMenuWidget::AddInput(UVerticalBox* Parent, const FSt
 {
 	UEditableTextBox* Input = WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), WidgetName);
 	Input->SetHintText(FText::FromString(HintText));
+
+	FEditableTextBoxStyle Style = Input->GetWidgetStyle();
+	ApplySessionMenuFont(Style.TextStyle.Font);
+	Input->SetWidgetStyle(Style);
 
 	if (UVerticalBoxSlot* BoxSlot = Parent->AddChildToVerticalBox(Input))
 	{
@@ -488,6 +512,7 @@ void UBGSessionMenuWidget::HandleSessionListReady(const TArray<FBGSessionSearchR
 	{
 		UTextBlock* Empty = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
 		Empty->SetText(FText::FromString(TEXT("검색된 방 없음")));
+		ApplySessionMenuFont(Empty);
 		ResultList->AddChild(Empty);
 		return;
 	}
@@ -507,6 +532,7 @@ void UBGSessionMenuWidget::HandleSessionListReady(const TArray<FBGSessionSearchR
 			*Item.RoomName, Item.CurrentPlayers, Item.MaxPlayers, Item.PingMs,
 			Item.bCanJoin ? TEXT("[참여]") : TEXT("[입장 불가]"))));
 		Text->SetJustification(ETextJustify::Center);
+		ApplySessionMenuFont(Text);
 		Row->AddChild(Text);
 
 		ResultList->AddChild(Row);
