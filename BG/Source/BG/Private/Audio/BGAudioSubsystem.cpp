@@ -10,11 +10,20 @@
 #include "Blueprint/WidgetTree.h"
 #include "Engine/DataTable.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Sound/SoundBase.h"
+#include "Sound/SoundClass.h"
 #include "Sound/SoundConcurrency.h"
+#include "Sound/SoundMix.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogBGAudio, Log, All);
+
+namespace
+{
+	const TCHAR* AudioSection = TEXT("BGAudio");
+}
 
 UBGAudioSubsystem* UBGAudioSubsystem::Get(const UObject* WorldContextObject)
 {
@@ -27,7 +36,19 @@ void UBGAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
 
+	LoadMasterVolume();
 	const UBGDataSettings* Settings = GetDefault<UBGDataSettings>();
+	MasterSoundClass = Settings ? Settings->MasterSoundClass.LoadSynchronous() : nullptr;
+	UserSettingsSoundMix = Settings ? Settings->UserSettingsSoundMix.LoadSynchronous() : nullptr;
+	if (!MasterSoundClass || !UserSettingsSoundMix)
+	{
+		UE_LOG(LogBGAudio, Warning,
+			TEXT("마스터 볼륨 설정 에셋 로드 실패 — SoundClass=%s SoundMix=%s"),
+			Settings ? *Settings->MasterSoundClass.ToString() : TEXT("BGDataSettings 없음"),
+			Settings ? *Settings->UserSettingsSoundMix.ToString() : TEXT("BGDataSettings 없음"));
+	}
+	EnsureMasterVolumeApplied();
+
 	AudioTable = Settings ? Settings->AudioTable.LoadSynchronous() : nullptr;
 	if (!AudioTable)
 	{
@@ -50,6 +71,14 @@ void UBGAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UBGAudioSubsystem::Deinitialize()
 {
+	if (bUserSettingsSoundMixPushed && UserSettingsSoundMix && GetWorld())
+	{
+		UGameplayStatics::PopSoundMixModifier(this, UserSettingsSoundMix);
+	}
+	bUserSettingsSoundMixPushed = false;
+	UserSettingsSoundMix = nullptr;
+	MasterSoundClass = nullptr;
+
 	for (const TPair<FGameplayTag, TObjectPtr<UAudioComponent>>& Pair : ActiveSounds)
 	{
 		if (IsValid(Pair.Value))
@@ -74,6 +103,63 @@ void UBGAudioSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
+//설정에서 마스터 볼륨값 불러오기 함수
+void UBGAudioSubsystem::LoadMasterVolume()
+{
+	GConfig->GetFloat(AudioSection, TEXT("MasterVolume"), MasterVolume, GGameUserSettingsIni);
+	MasterVolume = FMath::Clamp(MasterVolume, 0.f, 1.f);
+}
+
+//설정값에 마스터 볼륨값 저장 함수
+void UBGAudioSubsystem::SaveMasterVolume() const
+{
+	GConfig->SetFloat(AudioSection, TEXT("MasterVolume"), MasterVolume, GGameUserSettingsIni);
+	GConfig->Flush(false, GGameUserSettingsIni);
+}
+
+//마스터 볼륨 적용 여부 확인 함수
+void UBGAudioSubsystem::EnsureMasterVolumeApplied()
+{
+	UWorld* World = GetWorld();
+	if (!World || !World->bAllowAudioPlayback || !World->GetAudioDeviceRaw()
+		|| !MasterSoundClass || !UserSettingsSoundMix)
+	{
+		return;
+	}
+
+	// GameInstanceSubsystem 초기화 시점에는 PIE 오디오 장치가 아직 없을 수 있다.
+	// 오버라이드를 먼저 등록하고, 실제 장치가 준비된 뒤에만 Mix를 푸시 완료로 기록한다.
+	UGameplayStatics::SetSoundMixClassOverride(
+		World,
+		UserSettingsSoundMix,
+		MasterSoundClass,
+		MasterVolume,
+		/*Pitch=*/1.f,
+		/*FadeInTime=*/0.05f,
+		/*bApplyToChildren=*/true);
+
+	if (!bUserSettingsSoundMixPushed)
+	{
+		UGameplayStatics::PushSoundMixModifier(World, UserSettingsSoundMix);
+		bUserSettingsSoundMixPushed = true;
+		UE_LOG(LogBGAudio, Log,
+			TEXT("SC_Basic 마스터 Sound Mix 활성화 (Volume=%.2f)"), MasterVolume);
+	}
+}
+
+void UBGAudioSubsystem::ApplyMasterVolume()
+{
+	EnsureMasterVolumeApplied();
+}
+
+//마스터 볼륨 설정 함수
+void UBGAudioSubsystem::SetMasterVolume(float InVolume)
+{
+	MasterVolume = FMath::Clamp(InVolume, 0.f, 1.f);
+	ApplyMasterVolume();
+	SaveMasterVolume();
+}
+
 const FBGSystemAudioRow* UBGAudioSubsystem::FindRow(FGameplayTag AudioTag) const
 {
 	if (!AudioTable || !AudioTag.IsValid())
@@ -93,6 +179,8 @@ bool UBGAudioSubsystem::HasAudioRow(FGameplayTag AudioTag) const
 UAudioComponent* UBGAudioSubsystem::CreateComponent(
 	FGameplayTag AudioTag, const FBGSystemAudioRow& Row)
 {
+	EnsureMasterVolumeApplied();
+
 	if (Row.Sound.IsNull())
 	{
 		return nullptr; // Row만 미리 만들어 두고 아트 작업자가 나중에 채우는 것은 정상이다.

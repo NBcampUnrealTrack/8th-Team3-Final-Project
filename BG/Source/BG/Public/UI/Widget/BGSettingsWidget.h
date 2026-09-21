@@ -71,10 +71,8 @@ private:
 	// 그래픽 설정은 즉시 적용하고 그대로 저장한다.
 	void ApplyAndSaveGraphics();
 
-	// 음량은 GameUserSettings 에 자리가 없어 GameUserSettings.ini 에 직접 넣는다.
-	void LoadAudio();
-	void SaveAudio() const;
-	void ApplyAudioToDevice() const;
+	// 음량 저장과 Sound Mix 적용은 GameInstance 수명의 BGAudioSubsystem이 담당한다.
+	void RefreshMasterVolumeFromAudioSubsystem();
 	void RefreshVolumeText() const;
 
 	UFUNCTION()
