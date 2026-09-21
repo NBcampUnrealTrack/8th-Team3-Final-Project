@@ -3,11 +3,14 @@
 #include "BGGameplayTags.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerController.h"
+#include "CollisionQueryParams.h"
+#include "Core/BGCharacter.h"
 #include "Core/BGPlayerState.h"
 #include "Engine/AssetManager.h"
 #include "Engine/DataTable.h"
 #include "Engine/StreamableManager.h"
 #include "Engine/World.h"
+#include "UI/Target/BGTargetHighlight.h"
 #include "UI/Target/BGSeatInfoDisplayComponent.h"
 #include "UI/Widget/BGPingWheelWidget.h"
 #include "Blueprint/UserWidget.h"
@@ -34,6 +37,9 @@ void UBGPingComponent::BeginPlay()
 
 void UBGPingComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	SetLookInputBlocked(false);
+	SetTargetHighlight(INDEX_NONE, false);
+
 	if (IconPreloadHandle.IsValid())
 	{
 		IconPreloadHandle->ReleaseHandle();
@@ -131,7 +137,7 @@ bool UBGPingComponent::ServerValidate(FGameplayTag PingTag, int32 SenderSeat, in
 	const FGameplayTag Phase = GS->GetPhaseTag();
 	if (!Phase.IsValid() || Phase == BG::Phase::Lobby.GetTag() || Phase == BG::Phase::GameOver.GetTag())
 	{
-		UE_LOG(LogBGPing, Verbose, TEXT("[BGPing] 거부: 판 진행 중이 아님(%s)"), *Phase.ToString());
+		UE_LOG(LogBGPing, Log, TEXT("[BGPing] 거부: 판 진행 중이 아님(%s)"), *Phase.ToString());
 		return false;
 	}
 
@@ -150,7 +156,7 @@ bool UBGPingComponent::ServerValidate(FGameplayTag PingTag, int32 SenderSeat, in
 
 	if (Def->bNeedsTarget && (TargetSeat == INDEX_NONE || !GS->IsSeatAlive(TargetSeat)))
 	{
-		UE_LOG(LogBGPing, Verbose, TEXT("[BGPing] 거부: 대상 좌석 %d 무효·사망"), TargetSeat);
+		UE_LOG(LogBGPing, Log, TEXT("[BGPing] 거부: 대상 좌석 %d 무효·사망"), TargetSeat);
 		return false;
 	}
 
@@ -163,7 +169,7 @@ bool UBGPingComponent::ServerValidate(FGameplayTag PingTag, int32 SenderSeat, in
 	const double Now = World ? World->GetTimeSeconds() : 0.0;
 	if (Now - LastServerSendTime < ServerCooldownSec)
 	{
-		UE_LOG(LogBGPing, Verbose, TEXT("[BGPing] 거부: 서버 쿨다운(좌석 %d)"), SenderSeat);
+		UE_LOG(LogBGPing, Log, TEXT("[BGPing] 거부: 서버 쿨다운(좌석 %d)"), SenderSeat);
 		return false;
 	}
 
@@ -203,6 +209,9 @@ void UBGPingComponent::HandleServerSendPing(FGameplayTag PingTag, int32 TargetSe
 }
 
 // ── 입력·휠 ─────────────────────────────────────────────────────
+//
+//	클릭으로 켜고 끈다. 휠 버튼을 한 번 누르면 커서 아래 캐릭터를 대상으로 휠이 열리고,
+//	마우스를 움직여 칸을 고른 뒤 한 번 더 누르면 그 칸으로 나간다.
 
 void UBGPingComponent::BindInput(UInputComponent* InInputComponent)
 {
@@ -212,7 +221,6 @@ void UBGPingComponent::BindInput(UInputComponent* InInputComponent)
 	}
 
 	InInputComponent->BindKey(PingKey, IE_Pressed, this, &UBGPingComponent::HandlePingPressed);
-	InInputComponent->BindKey(PingKey, IE_Released, this, &UBGPingComponent::HandlePingReleased);
 }
 
 bool UBGPingComponent::GetMouseScreenPos(FVector2D& OutPos) const
@@ -236,19 +244,33 @@ void UBGPingComponent::HandlePingPressed()
 		return;
 	}
 
+	//	이미 열려 있으면 이번 클릭은 확정이다.
+	if (bWheelOpen)
+	{
+		ConfirmWheelSelection();
+		return;
+	}
+
 	FVector2D MousePos;
 	if (!GetMouseScreenPos(MousePos))
 	{
 		return;
 	}
 
-	const UBGSeatInfoDisplayComponent* SeatInfo = PC->FindComponentByClass<UBGSeatInfoDisplayComponent>();
-	PressTargetSeat = SeatInfo ? SeatInfo->GetHoveredSeat() : INDEX_NONE;
-	PressScreenPos = MousePos;
-	PressTime = FPlatformTime::Seconds();
-	bPressed = true;
-	bWheelOpen = false;
+	PressTargetSeat = FindSeatUnderCursor();
+	UE_LOG(LogBGPing, Log, TEXT("[BGPing] 클릭 — 커서 아래 좌석 %d"), PressTargetSeat);
 
+	//	핑은 캐릭터 위에서만 연다 — 빈 곳을 누르면 아무 일도 없다.
+	if (PressTargetSeat == INDEX_NONE)
+	{
+		return;
+	}
+
+	PressScreenPos = MousePos;
+
+	SetLookInputBlocked(true);
+	SetTargetHighlight(PressTargetSeat, true);
+	OpenWheel();
 	SetComponentTickEnabled(true);
 }
 
@@ -257,33 +279,20 @@ void UBGPingComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (!bPressed)
+	if (!bWheelOpen)
 	{
 		SetComponentTickEnabled(false);
 		return;
 	}
 
 	FVector2D MousePos;
-	if (!GetMouseScreenPos(MousePos))
+	if (!GetMouseScreenPos(MousePos) || !WheelWidget)
 	{
 		return;
 	}
 
-	const FVector2D Delta = MousePos - PressScreenPos;
-	if (!bWheelOpen)
-	{
-		const bool bFarEnough = Delta.Size() >= WheelOpenPx;
-		const bool bHeldLongEnough = (FPlatformTime::Seconds() - PressTime) >= WheelOpenDelaySec;
-		if (bFarEnough || bHeldLongEnough)
-		{
-			OpenWheel();
-		}
-	}
-
-	if (bWheelOpen && WheelWidget)
-	{
-		WheelWidget->SetHighlighted(DirectionFromDrag(Delta));
-	}
+	//	커서가 중심에서 어느 쪽으로 벗어났는지가 곧 선택이다.
+	WheelWidget->SetHighlighted(DirectionFromDrag(MousePos - PressScreenPos));
 }
 
 void UBGPingComponent::OpenWheel()
@@ -325,29 +334,115 @@ void UBGPingComponent::OpenWheel()
 	WheelWidget->Open(PressScreenPos, PressTargetSeat != INDEX_NONE);
 }
 
-void UBGPingComponent::DebugOpenWheel(int32 TargetSeat)
+int32 UBGPingComponent::FindSeatUnderCursor() const
 {
-	PressTargetSeat = TargetSeat;
-	PressScreenPos = FVector2D(640.f, 360.f);
-	GetMouseScreenPos(PressScreenPos);
-	OpenWheel();
+	const ABGPlayerController* PC = GetOwningPC();
+	if (!PC)
+	{
+		return INDEX_NONE;
+	}
+
+	//	이름표 쪽 판정을 먼저 믿는다 — 같은 화면을 보고 있으므로 결과가 일치해야 한다.
+	if (const UBGSeatInfoDisplayComponent* SeatInfo = PC->FindComponentByClass<UBGSeatInfoDisplayComponent>())
+	{
+		const int32 Hovered = SeatInfo->GetHoveredSeat();
+		if (Hovered != INDEX_NONE)
+		{
+			return Hovered;
+		}
+	}
+
+	//	멀리 앉은 사람은 화면에서 작아 얇은 선 판정이 자주 빗나간다. 굵게 한 번 더 쓸어 본다.
+	FVector Origin;
+	FVector Direction;
+	if (!PC->DeprojectMousePositionToWorld(Origin, Direction))
+	{
+		return INDEX_NONE;
+	}
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BGPingSweep), /*bTraceComplex=*/false);
+	Params.AddIgnoredActor(PC->GetPawn());
+
+	FHitResult Hit;
+	const UWorld* World = GetWorld();
+	if (!World || !World->SweepSingleByChannel(Hit, Origin, Origin + Direction * CursorTraceDistance,
+			FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(CursorSweepRadius), Params))
+	{
+		return INDEX_NONE;
+	}
+
+	const ABGCharacter* Character = Cast<ABGCharacter>(Hit.GetActor());
+	const ABGPlayerState* PS = Character ? Character->GetPlayerState<ABGPlayerState>() : nullptr;
+	return PS ? PS->GetSeatIndex() : INDEX_NONE;
 }
 
-void UBGPingComponent::CancelWheel()
+void UBGPingComponent::SetTargetHighlight(int32 Seat, bool bOn)
 {
-	if (!bPressed && !bWheelOpen)
+	if (!bOn)
+	{
+		Seat = HighlightedSeat;
+	}
+
+	const ABGGameState* GS = GetBGGameState();
+	if (!GS || Seat == INDEX_NONE)
+	{
+		HighlightedSeat = INDEX_NONE;
+		return;
+	}
+
+	ABGPlayerState* PS = const_cast<ABGGameState*>(GS)->GetPlayerStateBySeat(Seat);
+	ABGCharacter* Character = PS ? Cast<ABGCharacter>(PS->GetPawn()) : nullptr;
+	if (!Character)
+	{
+		HighlightedSeat = INDEX_NONE;
+		return;
+	}
+
+	BGTargetHighlight::Apply(Character,
+		bOn ? BGTargetHighlight::EState::Aimed : BGTargetHighlight::EState::None);
+	HighlightedSeat = bOn ? Seat : INDEX_NONE;
+}
+
+void UBGPingComponent::SetLookInputBlocked(bool bBlocked)
+{
+	if (bLookInputBlocked == bBlocked)
 	{
 		return;
 	}
 
-	bPressed = false;
+	ABGPlayerController* PC = GetOwningPC();
+	if (!PC)
+	{
+		return;
+	}
+
+	//	SetIgnoreLookInput 은 누적 카운터다 — 켠 만큼만 정확히 끈다.
+	PC->SetIgnoreLookInput(bBlocked);
+	bLookInputBlocked = bBlocked;
+}
+
+void UBGPingComponent::CloseWheel()
+{
 	bWheelOpen = false;
 	SetComponentTickEnabled(false);
+	SetLookInputBlocked(false);
+	SetTargetHighlight(INDEX_NONE, false);
 
 	if (WheelWidget)
 	{
 		WheelWidget->Close();
 	}
+}
+
+void UBGPingComponent::CancelWheel()
+{
+	if (!bWheelOpen)
+	{
+		return;
+	}
+
+	UE_LOG(LogBGPing, Log, TEXT("[BGPing] 휠 취소"));
+	CloseWheel();
 }
 
 EBGPingWheelDirection UBGPingComponent::DirectionFromDrag(const FVector2D& Delta) const
@@ -385,14 +480,14 @@ bool UBGPingComponent::PassesClientFilters(FGameplayTag PingTag, int32 TargetSea
 
 	if (Now - LastClientSendTime < ClientCooldownSec)
 	{
-		UE_LOG(LogBGPing, Verbose, TEXT("[BGPing] 클라 쿨다운 — 무시"));
+		UE_LOG(LogBGPing, Log, TEXT("[BGPing] 무시: 클라 쿨다운"));
 		return false;
 	}
 
 	RecentSendTimes.RemoveAll([this, Now](double Time) { return Now - Time > RateWindowSec; });
 	if (RecentSendTimes.Num() >= MaxPingsPerWindow)
 	{
-		UE_LOG(LogBGPing, Verbose, TEXT("[BGPing] %.0f초 %d회 상한 — 무시"), RateWindowSec, MaxPingsPerWindow);
+		UE_LOG(LogBGPing, Log, TEXT("[BGPing] 무시: %.0f초 %d회 상한"), RateWindowSec, MaxPingsPerWindow);
 		return false;
 	}
 
@@ -402,7 +497,7 @@ bool UBGPingComponent::PassesClientFilters(FGameplayTag PingTag, int32 TargetSea
 	{
 		if (Now - *Last < DuplicateIgnoreSec)
 		{
-			UE_LOG(LogBGPing, Verbose, TEXT("[BGPing] 같은 대상·같은 종류 중복 — 무시"));
+			UE_LOG(LogBGPing, Log, TEXT("[BGPing] 무시: 같은 대상·같은 종류 중복"));
 			return false;
 		}
 	}
@@ -413,26 +508,15 @@ bool UBGPingComponent::PassesClientFilters(FGameplayTag PingTag, int32 TargetSea
 	return true;
 }
 
-void UBGPingComponent::HandlePingReleased()
+void UBGPingComponent::ConfirmWheelSelection()
 {
-	if (!bPressed)
-	{
-		return;
-	}
-
-	bPressed = false;
-	SetComponentTickEnabled(false);
-
 	FVector2D MousePos = PressScreenPos;
 	GetMouseScreenPos(MousePos);
 
 	const EBGPingWheelDirection Direction = DirectionFromDrag(MousePos - PressScreenPos);
+	const int32 TargetSeat = PressTargetSeat;
 
-	if (WheelWidget)
-	{
-		WheelWidget->Close();
-	}
-	bWheelOpen = false;
+	CloseWheel();
 
 	const FGameplayTag PingTag = TagFromDirection(Direction);
 	if (!PingTag.IsValid())
@@ -440,18 +524,20 @@ void UBGPingComponent::HandlePingReleased()
 		return;
 	}
 
-	const FBGPingDef* Def = FindDef(PingTag);
-	if (Def && Def->bNeedsTarget && PressTargetSeat == INDEX_NONE)
-	{
-		UE_LOG(LogBGPing, Verbose, TEXT("[BGPing] %s 는 대상이 필요하다 — 발신 안 함"), *PingTag.ToString());
-		return;
-	}
-
-	const int32 TargetSeat = PressTargetSeat;
 	if (!PassesClientFilters(PingTag, TargetSeat))
 	{
 		return;
 	}
 
 	SendPing(PingTag, TargetSeat);
+}
+
+void UBGPingComponent::DebugOpenWheel(int32 TargetSeat)
+{
+	PressTargetSeat = TargetSeat;
+	PressScreenPos = FVector2D(640.f, 360.f);
+	GetMouseScreenPos(PressScreenPos);
+	SetTargetHighlight(TargetSeat, true);
+	OpenWheel();
+	SetComponentTickEnabled(true);
 }

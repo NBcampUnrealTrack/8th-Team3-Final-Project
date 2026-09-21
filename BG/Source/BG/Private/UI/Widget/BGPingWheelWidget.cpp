@@ -31,6 +31,16 @@ void UBGPingWheelWidget::EnsureFallbackVisuals()
 		return;
 	}
 
+	//	디자인 시안용으로 들어 있던 자식은 접는다 — 칸만 보이게 한다.
+	TArray<UWidget*> Existing = Canvas->GetAllChildren();
+	for (UWidget* Child : Existing)
+	{
+		if (Child)
+		{
+			Child->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+
 	for (const FBGPingDef& Def : BGPing::GetDefaultDefs())
 	{
 		FVector2D Offset = FVector2D::ZeroVector;
@@ -122,7 +132,11 @@ void UBGPingWheelWidget::Open(FVector2D ScreenPos, bool bInHasTarget)
 	bHasTarget = bInHasTarget;
 	Highlighted = EBGPingWheelDirection::Center;
 
-	SetPositionInViewport(ScreenPos, false);
+	//	누른 지점이 휠의 한가운데가 되도록 크기와 정렬을 먼저 정한다.
+	const float Extent = SlotRadius * 2.f + 96.f;
+	SetDesiredSizeInViewport(FVector2D(Extent, Extent));
+	SetAlignmentInViewport(FVector2D(0.5f, 0.5f));
+	SetPositionInViewport(ScreenPos, true);
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 
 	RefreshSlots();

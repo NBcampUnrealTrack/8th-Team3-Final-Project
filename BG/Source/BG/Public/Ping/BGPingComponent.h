@@ -51,7 +51,7 @@ protected:
 
 	/** 서버 쿨다운(초). 클라 쿨다운과 별개로 서버가 다시 막는다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping", meta = (ClampMin = "0.0"))
-	float ServerCooldownSec = 1.0f;
+	float ServerCooldownSec = 0.3f;
 
 	// ── 입력·휠 튜닝 ────────────────────────────────────────────
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input")
@@ -65,33 +65,39 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "0.0"))
 	float DeadZonePx = 40.f;
 
-	/** 휠을 띄우기 시작하는 조건 — 이만큼 끌거나 이만큼 누르고 있으면. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "0.0"))
-	float WheelOpenPx = 12.f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "0.0"))
-	float WheelOpenDelaySec = 0.15f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "0.0"))
-	float ClientCooldownSec = 1.5f;
+	float ClientCooldownSec = 0.4f;
 
 	/** 최근 RateWindowSec 동안 이 횟수까지만. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "1"))
-	int32 MaxPingsPerWindow = 4;
+	int32 MaxPingsPerWindow = 10;
 
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "0.0"))
 	float RateWindowSec = 10.f;
 
 	/** 같은 대상·같은 종류를 이 시간 안에 다시 보내면 무시한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "0.0"))
-	float DuplicateIgnoreSec = 2.f;
+	float DuplicateIgnoreSec = 0.8f;
+
+	/** 커서 판정 사거리(cm). */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "0.0"))
+	float CursorTraceDistance = 20000.f;
+
+	/** 보조 스윕 반경(cm). 멀리 앉은 사람도 집히게 굵게 쓴다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "0.0"))
+	float CursorSweepRadius = 45.f;
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 		FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
 	void HandlePingPressed();
-	void HandlePingReleased();
+
+	/** 열린 휠에서 지금 가리키는 칸으로 발신하고 닫는다. */
+	void ConfirmWheelSelection();
+
+	/** 휠을 닫고 카메라·외곽선을 되돌린다. */
+	void CloseWheel();
 
 	/** 끈 방향 → 휠 칸. 데드존 안이면 Center. */
 	EBGPingWheelDirection DirectionFromDrag(const FVector2D& Delta) const;
@@ -100,6 +106,15 @@ private:
 	FGameplayTag TagFromDirection(EBGPingWheelDirection Direction) const;
 
 	void OpenWheel();
+
+	/** 휠을 잡고 있는 동안 카메라 회전을 막는다. 켠 만큼만 되돌린다. */
+	void SetLookInputBlocked(bool bBlocked);
+
+	/** 고정한 대상에 조준 외곽선을 켜고 끈다. */
+	void SetTargetHighlight(int32 Seat, bool bOn);
+
+	/** 커서 아래 좌석. 이름표 판정이 비면 굵은 스윕으로 한 번 더 찾는다. */
+	int32 FindSeatUnderCursor() const;
 
 	/** 클라 쪽 연타·중복 필터. 통과하면 보낸 것으로 기록한다. */
 	bool PassesClientFilters(FGameplayTag PingTag, int32 TargetSeat);
@@ -125,13 +140,17 @@ private:
 	UPROPERTY()
 	TObjectPtr<UBGPingWheelWidget> WheelWidget;
 
-	bool bPressed = false;
 	bool bWheelOpen = false;
+	bool bLookInputBlocked = false;
 
-	//	대상은 Press 시점에 고정한다 — 끄는 동안 커서가 캐릭터를 벗어나기 때문이다.
+	//	외곽선을 켜 둔 좌석. 뗄 때 정확히 이 좌석만 끈다.
+	int32 HighlightedSeat = INDEX_NONE;
+
+	//	대상은 휠을 연 순간 고정한다 — 고르는 동안 커서가 캐릭터를 벗어나기 때문이다.
 	int32 PressTargetSeat = INDEX_NONE;
+
+	//	휠의 중심. 여기서 커서까지의 방향이 곧 선택이다.
 	FVector2D PressScreenPos = FVector2D::ZeroVector;
-	double PressTime = 0.0;
 
 	double LastClientSendTime = -1000.0;
 	TArray<double> RecentSendTimes;
