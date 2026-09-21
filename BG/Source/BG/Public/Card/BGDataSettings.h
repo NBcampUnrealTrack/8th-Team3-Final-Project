@@ -51,11 +51,18 @@ public:
 	UPROPERTY(EditAnywhere, Config, Category = "Audio", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGSystemAudioRow"))
 	TSoftObjectPtr<UDataTable> AudioTable;
 
-	/** 사용자 설정의 마스터 볼륨이 적용되는 최상위 Sound Class. */
-	UPROPERTY(EditAnywhere, Config, Category = "Audio")
-	TSoftObjectPtr<USoundClass> MasterSoundClass;
+	//	버스는 둘뿐이다 — 마스터는 클래스가 아니라 두 볼륨에 곱해지는 값이라 에셋이 필요 없다.
+	//	독립 제어에 필요한 최소 구성이다. 하나 더 두면 아무 사운드도 안 실린 빈 클래스가 남는다.
 
-	/** 사용자 볼륨 오버라이드를 담는 Sound Mix. */
+	/** BGM 볼륨이 적용되는 Sound Class. */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio")
+	TSoftObjectPtr<USoundClass> MusicSoundClass;
+
+	/** 효과음 볼륨이 적용되는 Sound Class. BGM 이 아닌 사운드는 전부 여기로 간다. */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio")
+	TSoftObjectPtr<USoundClass> SFXSoundClass;
+
+	/** 사용자 볼륨 오버라이드를 담는 Sound Mix. 세 볼륨이 모두 이 Mix 에 얹힌다. */
 	UPROPERTY(EditAnywhere, Config, Category = "Audio")
 	TSoftObjectPtr<USoundMix> UserSettingsSoundMix;
 

@@ -5,6 +5,7 @@
 //   WindowModeCombo ResolutionCombo QualityCombo FrameLimitCombo VSyncCheck
 //   ShadowCombo TextureCombo EffectsCombo AntiAliasingCombo PostProcessCombo GlobalIlluminationCombo
 //   MasterVolumeSlider MasterVolumeText
+//   MusicVolumeSlider MusicVolumeText  SFXVolumeSlider SFXVolumeText
 //   Image_Div1 Image_Div2 Image_Div3 Image_Div4
 
 #pragma once
@@ -72,8 +73,8 @@ private:
 	void ApplyAndSaveGraphics();
 
 	// 음량 저장과 Sound Mix 적용은 GameInstance 수명의 BGAudioSubsystem이 담당한다.
-	void RefreshMasterVolumeFromAudioSubsystem();
-	void RefreshVolumeText() const;
+	void RefreshVolumesFromAudioSubsystem();
+	void RefreshVolumeTexts() const;
 
 	UFUNCTION()
 	void HandleSettingsClicked();
@@ -114,6 +115,12 @@ private:
 
 	UFUNCTION()
 	void HandleMasterVolumeChanged(float Value);
+
+	UFUNCTION()
+	void HandleMusicVolumeChanged(float Value);
+
+	UFUNCTION()
+	void HandleSFXVolumeChanged(float Value);
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> SettingsButton;
@@ -175,6 +182,19 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> MasterVolumeText;
 
+	// ─ BGM · 효과음 ─ 마스터에 곱해지는 갈래별 음량. 실제 분리는 SoundClass 가 한다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USlider> MusicVolumeSlider;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> MusicVolumeText;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<USlider> SFXVolumeSlider;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> SFXVolumeText;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Image_Div1;
 
@@ -198,6 +218,8 @@ private:
 	TArray<FIntPoint> ResolutionOptions;
 
 	float MasterVolume = 1.f;
+	float MusicVolume  = 1.f;
+	float SFXVolume    = 1.f;
 
 	// 현재 값을 위젯에 되돌려 쓰는 중. 그 선택 통지로 다시 적용이 돌지 않게 막는다.
 	bool bRefreshing = false;

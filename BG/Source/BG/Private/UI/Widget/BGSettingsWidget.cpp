@@ -30,7 +30,7 @@ namespace
 
 	const TCHAR* WindowModeLabels[] = { TEXT("전체 화면"), TEXT("전체 창 모드"), TEXT("창 모드") };
 
-	const TCHAR* QualityLabels[] = { TEXT("낮음"), TEXT("중간"), TEXT("높음"), TEXT("에픽") };
+	const TCHAR* QualityLabels[] = { TEXT("낮음"), TEXT("중간"), TEXT("높음"), TEXT("매우 높음") };
 
 	// 항목마다 품질이 제각각이면 GetOverallScalabilityLevel 이 -1 을 준다. 기본값 복원 뒤에도
 	// 그렇게 되는 경우가 있어, 고를 수 없는 마지막 칸을 하나 두고 거기에 세운다.
@@ -169,11 +169,13 @@ void UBGSettingsWidget::NativeConstruct()
 	if (GlobalIlluminationCombo) { GlobalIlluminationCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleGlobalIlluminationChanged); }
 
 	if (MasterVolumeSlider) { MasterVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleMasterVolumeChanged); }
+	if (MusicVolumeSlider)  { MusicVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleMusicVolumeChanged); }
+	if (SFXVolumeSlider)    { SFXVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSFXVolumeChanged); }
 
 	Dividers = { Image_Div1, Image_Div2, Image_Div3, Image_Div4 };
 	RefreshDividerThickness();
 
-	RefreshMasterVolumeFromAudioSubsystem();
+	RefreshVolumesFromAudioSubsystem();
 
 	PopulateOptions();
 	RefreshFromSettings();
@@ -455,7 +457,15 @@ void UBGSettingsWidget::RefreshFromSettings()
 	{
 		MasterVolumeSlider->SetValue(MasterVolume);
 	}
-	RefreshVolumeText();
+	if (MusicVolumeSlider)
+	{
+		MusicVolumeSlider->SetValue(MusicVolume);
+	}
+	if (SFXVolumeSlider)
+	{
+		SFXVolumeSlider->SetValue(SFXVolume);
+	}
+	RefreshVolumeTexts();
 }
 
 void UBGSettingsWidget::ApplyAndSaveGraphics()
@@ -467,22 +477,31 @@ void UBGSettingsWidget::ApplyAndSaveGraphics()
 	}
 }
 
-void UBGSettingsWidget::RefreshMasterVolumeFromAudioSubsystem()
+void UBGSettingsWidget::RefreshVolumesFromAudioSubsystem()
 {
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
 		MasterVolume = Audio->GetMasterVolume();
-		Audio->ApplyMasterVolume();
+		MusicVolume  = Audio->GetMusicVolume();
+		SFXVolume    = Audio->GetSFXVolume();
+		Audio->ApplyVolumes();
 	}
 }
 
-void UBGSettingsWidget::RefreshVolumeText() const
+void UBGSettingsWidget::RefreshVolumeTexts() const
 {
-	if (MasterVolumeText)
+	auto Write = [](UTextBlock* Label, float Volume)
 	{
-		MasterVolumeText->SetText(FText::FromString(
-			FString::Printf(TEXT("%d%%"), FMath::RoundToInt(MasterVolume * 100.f))));
-	}
+		if (Label)
+		{
+			Label->SetText(FText::FromString(
+				FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Volume * 100.f))));
+		}
+	};
+
+	Write(MasterVolumeText, MasterVolume);
+	Write(MusicVolumeText, MusicVolume);
+	Write(SFXVolumeText, SFXVolume);
 }
 
 void UBGSettingsWidget::OpenSettings()
@@ -557,9 +576,13 @@ void UBGSettingsWidget::HandleResetClicked()
 	}
 
 	MasterVolume = 1.f;
+	MusicVolume  = 1.f;
+	SFXVolume    = 1.f;
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
 		Audio->SetMasterVolume(MasterVolume);
+		Audio->SetMusicVolume(MusicVolume);
+		Audio->SetSFXVolume(SFXVolume);
 	}
 
 	// 기본 해상도 목록이 바뀔 수 있다 — 목록부터 다시 만든다.
@@ -723,10 +746,40 @@ void UBGSettingsWidget::HandleMasterVolumeChanged(float Value)
 	}
 
 	MasterVolume = FMath::Clamp(Value, 0.f, 1.f);
-	RefreshVolumeText();
+	RefreshVolumeTexts();
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
 		Audio->SetMasterVolume(MasterVolume);
+	}
+}
+
+void UBGSettingsWidget::HandleMusicVolumeChanged(float Value)
+{
+	if (bRefreshing)
+	{
+		return;
+	}
+
+	MusicVolume = FMath::Clamp(Value, 0.f, 1.f);
+	RefreshVolumeTexts();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->SetMusicVolume(MusicVolume);
+	}
+}
+
+void UBGSettingsWidget::HandleSFXVolumeChanged(float Value)
+{
+	if (bRefreshing)
+	{
+		return;
+	}
+
+	SFXVolume = FMath::Clamp(Value, 0.f, 1.f);
+	RefreshVolumeTexts();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->SetSFXVolume(SFXVolume);
 	}
 }
 
