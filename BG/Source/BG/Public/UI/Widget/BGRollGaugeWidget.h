@@ -1,17 +1,22 @@
-// 판정 게이지 — 대실패 · 실패 · 성공 · 대성공 4칸 위를 화살표가 오가다 굴린 눈(Roll) 자리에 멈춘다.
+// 판정 게이지 — 대실패 · 실패 · 성공 · 대성공 4칸에 신호등처럼 불이 차례로 들어오다
+// 굴린 눈(Roll) 이 가리키는 칸에서 멈춘다.
 //
 // 결과는 서버가 이미 정했다. 이 위젯은 그 자리로 가는 척만 한다 — 클라에서 다시 굴리지 않는다.
-// 칸 폭은 WBP 에서 잡은 대로 고정이다. 화살표는 결과 칸 안에서 굴린 눈의 상대 위치에 멈춘다.
+//
+// 그림은 "꺼진 스트립 한 장(Image_GaugeOff) + 칸별 발광 한 장(Light_*)" 을 겹쳐 둔 것이다.
+// 다섯 장 모두 같은 캔버스라 Overlay 에 쌓기만 하면 자리가 맞는다 — 점등은 Light_* 의
+// RenderOpacity 를 0/1 로 바꾸는 것이 전부다.
 //
 // 움직임은 룰렛 방식이다. 도착점을 먼저 정하고 "왕복 N번 + 도착점까지" 의 총 이동량을 하나의
 // 감속 곡선으로 소화한다. 왕복 → 착지를 따로 굴리면 둘 사이에서 속도가 꺾여 연출이 들킨다.
+// 커서는 연속값이고, 그 값이 들어온 칸에 불을 켠다. 칸은 똑같이 4등분이다.
 //
-// 흐름: ShowResolution(결과 보관 · 칸 폭) → 카드 퇴장 신호 → Rolling → Landing(히트스톱)
-//       → Revealing(칸이 결과 칸 하나로 좁혀짐) → ResultIn(결과창 등장) → Holding → Outro(역재생) → Hide
+// 흐름: ShowResolution(결과 보관) → 카드 퇴장 신호 → Rolling(불이 오감) → Landing(히트스톱)
+//       → Revealing(당첨 칸만 켠 채 유지) → ResultIn(결과창 등장) → Holding → Outro(역재생) → Hide
 //
 // ── 누가 무엇을 소유하는가 ────────────────────────────────────────────────────
-//   코드 : 화살표 위치, 칸 폭(Fill), 결과창 그림 · 문구, 단계 전환
-//   WBP  : Slot_* 와 그 자식 · 결과창의 RenderTransform · Opacity (Anim_Reveal / Anim_ResultIn)
+//   코드 : Light_* 의 RenderOpacity, 결과창 그림 · 문구, 단계 전환
+//   WBP  : 결과창의 RenderTransform · Opacity (Anim_Reveal / Anim_ResultIn)
 //   ⚠️ 겹치면 프레임마다 서로 덮어써 애니메이션 키가 안 먹는다. 코드는 위 목록 밖을 건드리지 않는다.
 
 #pragma once
@@ -69,15 +74,15 @@ protected:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 	virtual void NativeDestruct() override;
 
-	/** 화살표가 다른 칸으로 넘어갔다. 틱 사운드 · 지나가는 칸 하이라이트용. */
+	/** 불이 다른 칸으로 넘어갔다. 틱 사운드 · 추가 연출용. 점등 자체는 코드가 한다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|RollGauge")
-	void OnArrowSlotChanged(int32 SlotIndex);
+	void OnLitSlotChanged(int32 SlotIndex);
 
-	/** 멈췄다. 착지음 · 화살표 펀치를 여기에. 이 뒤 LandingPauseSeconds 만큼 정지하고 공개한다. */
+	/** 멈췄다. 착지음 · 당첨 칸 펀치를 여기에. 이 뒤 LandingPauseSeconds 만큼 정지하고 공개한다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|RollGauge")
 	void OnRollLanded(const FBGResolutionView& Landed);
 
-	/** 칸 연출이 시작됐다. Reveal 애니메이션과 중앙 이동은 이미 시작했다. */
+	/** 칸 연출이 시작됐다. Reveal 애니메이션은 이미 시작했고, 당첨 칸은 켜진 채로 남아 있다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|RollGauge")
 	void OnRevealStarted(const FBGResolutionView& Revealed);
 
@@ -144,11 +149,11 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|RollGauge|Roll")
 	TObjectPtr<UCurveFloat> RollEaseCurve;
 
-	// ── 칸 폭 ────────────────────────────────────────────────────────
+	// ── 칸 ───────────────────────────────────────────────────────────
 
-	//	칸 폭은 확률과 무관하다 — WBP 에서 Panel_Track 자식들에 잡아 둔 Fill 값 그대로다.
-	//	화살표는 결과 칸 안에서 "그 등급 구간 속 눈의 상대 위치" 에 멈춘다.
-	//	예) 성공 구간 25~89 에서 눈 72 → 성공 칸의 약 73% 지점.
+	//	칸은 똑같이 4등분이다 — 스트립 그림에 네 자리가 균등하게 박혀 있기 때문이다.
+	//	커서는 결과 칸 안에서 "그 등급 구간 속 눈의 상대 위치" 에 멈춘다. 멈추는 자리가
+	//	칸 안 어디든 켜지는 그림은 같지만, 경계에 바싹 붙으면 한 칸 옆이 켜질 수 있어 여백을 둔다.
 
 	/**
 	 * 칸 가장자리에서 이만큼(칸 폭 대비) 안쪽으로만 멈춘다.
@@ -159,18 +164,8 @@ protected:
 
 	// ── 결과 공개 ────────────────────────────────────────────────────
 
-	//	칸 폭만 코드가 줄인다("네 칸 게이지" → "결과 칸 하나"). 폭은 레이아웃 값이라
-	//	UMG 애니메이션으로는 키를 잡을 수 없기 때문이다.
-	//	⚠️ Slot_* 의 RenderTransform · Opacity 는 코드가 건드리지 않는다 — Anim_Reveal 에서
-	//	   마음껏 키를 잡을 것. 양쪽이 같은 값을 쓰면 키가 매 프레임 덮여 안 먹는다.
-
-	/** 결과 칸 하나로 좁혀지는 데 걸리는 시간. */
-	UPROPERTY(EditAnywhere, Category = "BG|RollGauge|Reveal", meta = (ClampMin = "0.0", Units = "s"))
-	float RevealCollapseSeconds = 0.35f;
-
-	/** 좁혀지는 모양(입력 0~1 → 출력 0~1). 커브 에셋이라 커브 에디터에서 키로 조절한다. 없으면 EaseOut. */
-	UPROPERTY(EditAnywhere, Category = "BG|RollGauge|Reveal")
-	TObjectPtr<UCurveFloat> RevealCollapseCurve;
+	//	공개는 "당첨 칸만 켠 채 그대로 둔다" 가 전부다 — 착지 때 이미 그 칸이 켜져 있으므로
+	//	코드가 더 할 일이 없다. 화면 플래시 · 칸 펀치 같은 덧칠은 Anim_Reveal 의 몫이다.
 
 	//	Text_Outcome 문구. 비워 두면 GetTierText 의 기본값("대성공" 등)을 쓴다 —
 	//	여기서만 덮어쓰는 이유는 채팅 로그가 같은 GetTierText 를 쓰기 때문이다(로그까지 "대성공!" 이 되면 어색하다).
@@ -204,23 +199,20 @@ protected:
 
 	// ── 바인딩 ───────────────────────────────────────────────────────
 
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> Panel_Track;
+	//	칸별 발광 그림. 평소 RenderOpacity 0 이고, 불이 들어온 칸만 1 이 된다.
+	//	다섯 장(꺼진 스트립 + 발광 넷)이 같은 캔버스라 Overlay 에 겹쳐 두기만 하면 된다.
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> Image_Arrow;
+	TObjectPtr<UWidget> Light_CriticalFailure;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> Slot_CriticalFailure;
+	TObjectPtr<UWidget> Light_Failure;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> Slot_Failure;
+	TObjectPtr<UWidget> Light_Success;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> Slot_Success;
-
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> Slot_CriticalSuccess;
+	TObjectPtr<UWidget> Light_CriticalSuccess;
 
 	/** 결과창 묶음. 결과창 등장 때 켜진다(평소 Collapsed). Anim_ResultIn 은 이것을 움직인다. */
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -235,8 +227,8 @@ protected:
 	TObjectPtr<UTextBlock> Text_Effect;
 
 	/**
-	 * 칸 연출(등급 공통). 칸의 이동 · 확대 · 페이드는 코드가 하므로 여기서는
-	 * 화살표 · 프레임 · 화면 전체처럼 등급과 무관한 것만 다룬다.
+	 * 칸 연출(등급 공통). 점등은 코드가 하므로 여기서는 프레임 · 화면 전체처럼
+	 * 등급과 무관한 것만 다룬다.
 	 * 길이가 곧 칸 연출 시간이다 — 없으면 RevealFallbackSeconds 를 쓴다.
 	 */
 	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
@@ -255,7 +247,6 @@ private:
 	void TickRolling(float DeltaTime);
 	void TickLanding(float DeltaTime);
 	void BeginReveal();
-	void TickCollapse(float DeltaTime);
 	void BeginResultIn();
 	void FinishResultIn();
 	void FinishOutro();
@@ -276,22 +267,16 @@ private:
 	/** Seconds 뒤에 Callback 을 부른다. 월드가 없거나 시간이 0 이면 그 자리에서 부른다. */
 	void ScheduleStep(FTimerHandle& Timer, void (UBGRollGaugeWidget::*Callback)(), float Seconds);
 
-	// ── 칸 ───────────────────────────────────────────────────────────
+	// ── 점등 ─────────────────────────────────────────────────────────
 
-	/** WBP 에 잡아 둔 칸 폭(Fill 값)을 읽어 둔다. 위젯 초기화 때 한 번. */
-	void CaptureDesignerWeights();
-
-	/** 칸 폭을 WBP 원래 값으로 되돌린다. 지난 공개 연출이 좁혀 둔 것을 복구한다. */
-	void ApplySlotWidths();
-
-	/** SlotWeights 를 HorizontalBox 의 Fill 값에 밀어 넣는다. */
-	void PushSlotWidths();
+	/** SlotIndex 칸만 켜고 나머지는 끈다. INDEX_NONE 이면 전부 끈다. */
+	void SetLitSlot(int32 SlotIndex);
 
 	// ── 결과 표시 ────────────────────────────────────────────────────
 
 	void UpdateResultTexts();
 
-	/** 칸의 트랙 비율 경계(0~1). SlotWeights 로 계산하므로 레이아웃을 기다리지 않는다. */
+	/** 칸의 트랙 비율 경계(0~1). 균등 4등분이라 레이아웃을 기다리지 않는다. */
 	void GetSlotRange(int32 SlotIndex, float& OutStart, float& OutEnd) const;
 
 	int32 TrackRatioToSlotIndex(float Ratio) const;
@@ -305,8 +290,8 @@ private:
 	/** 출발점에서 RollPasses 이상 오간 뒤 LandingRatio 에 닿는 가장 가까운 총 진행량. */
 	static float PlanCursorEnd(float MinPasses, float LandingRatio);
 
-	/** 트랙 비율에 화살표를 세운다. 트랙 폭을 모르면(첫 프레임) false. */
-	bool ApplyArrow(float Ratio);
+	/** 트랙 비율이 가리키는 칸에 불을 옮긴다. 칸이 바뀐 프레임에만 실제로 손댄다. */
+	void ApplyLights(float Ratio);
 
 	void SetOutcomeWidgetsVisible(bool bVisible);
 
@@ -314,10 +299,7 @@ private:
 	void ApplyResultImage();
 
 	//	등급이 아니라 **칸 번호**로 찾는다 — 등급 → 칸 변환을 TierToSlotIndex 한 곳으로 모으기 위함이다.
-	UWidget* GetSlotWidget(int32 SlotIndex) const;
-
-	/** Slot_* 에서 Panel_Track 의 직계 자식까지 거슬러 올라간다. 폭(Fill)을 바꿀 대상이다. */
-	UWidget* GetTrackChild(int32 SlotIndex) const;
+	UWidget* GetLightWidget(int32 SlotIndex) const;
 	UTexture2D* GetResultImage(int32 SlotIndex) const;
 	const FText& GetOutcomeTextOverride(int32 SlotIndex) const;
 
@@ -335,22 +317,8 @@ private:
 	/** 이번 굴림의 총 진행량. 감속 곡선이 0 → 이 값을 소화한다. */
 	float CursorEnd = 0.f;
 
-	bool  bArrowPlaced  = false;
-	int32 LastArrowSlot = INDEX_NONE;
-
-	/** 칸별 Fill 값(최소 폭 반영). 화살표 · 중앙 이동 좌표가 모두 이 값에서 나온다. */
-	float SlotWeights[SlotCount] = { 1.f, 1.f, 1.f, 1.f };
-
-	/** WBP 에서 잡아 둔 원래 칸 폭. 판정마다 여기로 되돌린다. */
-	float DesignerWeights[SlotCount] = { 1.f, 1.f, 1.f, 1.f };
-
-	/** 공개가 시작될 때의 칸 폭. 여기서 "선택 칸 1, 나머지 0" 으로 보간한다. */
-	float RevealStartWeights[SlotCount] = {};
-	float CollapseElapsed = 0.f;
-	bool  bCollapsing     = false;
-
-	/** 이번 판정에서 남을 칸. 나머지는 폭 0 으로 사라진다. */
-	int32 SelectedSlot = INDEX_NONE;
+	/** 지금 켜져 있는 칸. 칸이 바뀐 프레임에만 위젯을 건드리기 위한 것이다. */
+	int32 LitSlot = INDEX_NONE;
 
 	/** 판정을 받은 시각(월드 초). 서버 시간 초과 경고용. */
 	double ShowTimeSeconds = 0.;
@@ -363,7 +331,7 @@ private:
 	FTimerHandle ResultInFinishTimer;
 	FTimerHandle OutroTimer;
 
-	/** 지난 판정에 재생한 Reveal. 다음 시작 때 되감아 칸 확대 · 발광을 원래대로 돌린다. */
+	/** 지난 판정에 재생한 Reveal. 다음 시작 때 되감아 원래대로 돌린다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetAnimation> LastRevealAnimation;
 

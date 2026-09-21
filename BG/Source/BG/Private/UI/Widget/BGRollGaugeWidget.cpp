@@ -1,8 +1,6 @@
 #include "UI/Widget/BGRollGaugeWidget.h"
 
 #include "Animation/WidgetAnimation.h"
-#include "Components/HorizontalBoxSlot.h"
-#include "Components/PanelWidget.h"
 #include "Components/Image.h"
 #include "Engine/Texture2D.h"
 #include "Components/TextBlock.h"
@@ -40,9 +38,6 @@ void UBGRollGaugeWidget::NativeOnInitialized()
 		UE_LOG(LogBGCard, Warning,
 			TEXT("[RollGauge] Border_Root 가 바인딩됐다 — 결과 색이 착지 전에 칠해진다. 게이지 WBP 에서는 이름을 바꿀 것."));
 	}
-
-	//	공개 연출이 폭을 바꾸기 전에, 디자이너가 잡은 원래 폭을 붙잡아 둔다.
-	CaptureDesignerWeights();
 }
 
 void UBGRollGaugeWidget::NativeDestruct()
@@ -82,8 +77,8 @@ void UBGRollGaugeWidget::ShowResolution(const FBGResolutionView& InResolutionVie
 	ApplyResultImage();
 	SetOutcomeWidgetsVisible(false);
 
-	//	지난 판정의 공개 연출이 좁혀 둔 칸을 원래 폭으로 돌린다.
-	ApplySlotWidths();
+	//	지난 판정에서 켜 둔 칸을 끈다. 굴림이 시작되면 첫 칸부터 다시 들어온다.
+	SetLitSlot(INDEX_NONE);
 
 	const UWorld* World = GetWorld();
 	ShowTimeSeconds = World ? World->GetTimeSeconds() : 0.;
@@ -163,12 +158,11 @@ void UBGRollGaugeWidget::StartRoll()
 		World->GetTimerManager().ClearTimer(CardExitTimeoutTimer);
 	}
 
-	//	⚠️ 둘 중 하나라도 없으면 화살표 좌표를 못 구해 게이지가 멈춘 채로 보인다. 이름 오타가 흔하다.
-	if (!Panel_Track || !Image_Arrow)
+	//	⚠️ 하나도 없으면 불이 들어올 곳이 없어 게이지가 꺼진 채로 보인다. 이름 오타가 흔하다.
+	if (!Light_CriticalFailure && !Light_Failure && !Light_Success && !Light_CriticalSuccess)
 	{
 		UE_LOG(LogBGCard, Warning,
-			TEXT("[RollGauge] %s 바인딩이 비었다 — 화살표가 움직이지 않는다. WBP 에서 이름과 Is Variable 을 확인할 것."),
-			!Panel_Track ? TEXT("Panel_Track") : TEXT("Image_Arrow"));
+			TEXT("[RollGauge] Light_* 바인딩이 하나도 없다 — 불이 들어오지 않는다. WBP 에서 이름을 확인할 것."));
 	}
 
 	BeginShowing();
@@ -180,15 +174,7 @@ void UBGRollGaugeWidget::StartRoll()
 	Phase         = EBGRollGaugePhase::Rolling;
 	PhaseElapsed  = 0.f;
 	PhaseDuration = bForced ? ForcedRollSeconds : RollSeconds;
-	LastArrowSlot = INDEX_NONE;
-	bArrowPlaced  = false;
-
-	//	트랙 폭을 모르는 첫 프레임에는 화살표가 레이아웃 원점에 서 있다. 첫 배치 때 드러낸다.
-	//	트랙이 없으면 첫 배치가 영영 오지 않으므로 숨기지 않는다.
-	if (Image_Arrow && Panel_Track)
-	{
-		Image_Arrow->SetRenderOpacity(0.f);
-	}
+	SetLitSlot(INDEX_NONE);
 }
 
 void UBGRollGaugeWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -201,12 +187,6 @@ void UBGRollGaugeWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 	case EBGRollGaugePhase::Landing: TickLanding(InDeltaTime); break;
 	default: break;
 	}
-
-	//	단계와 따로 돈다 — 칸 연출이 좁히기보다 짧으면 다음 단계에 들어가서도 좁히기가 남아 있다.
-	if (bCollapsing)
-	{
-		TickCollapse(InDeltaTime);
-	}
 }
 
 void UBGRollGaugeWidget::TickRolling(float DeltaTime)
@@ -218,12 +198,12 @@ void UBGRollGaugeWidget::TickRolling(float DeltaTime)
 		? RollEaseCurve->GetFloatValue(Alpha)
 		: 1.f - FMath::Pow(1.f - Alpha, RollEaseExponent);
 
-	ApplyArrow(CursorToRatio(CursorEnd * Progress));
+	ApplyLights(CursorToRatio(CursorEnd * Progress));
 
 	if (Alpha >= 1.f)
 	{
-		//	곡선 끝값이 1 이 아니어도 도착점에는 정확히 세운다. 결과 칸을 벗어나면 안 된다.
-		ApplyArrow(CursorToRatio(CursorEnd));
+		//	곡선 끝값이 1 이 아니어도 도착점에는 정확히 맞춘다. 결과 칸을 벗어나면 안 된다.
+		ApplyLights(CursorToRatio(CursorEnd));
 
 		WarnIfOverServerBudget();
 
@@ -249,18 +229,8 @@ void UBGRollGaugeWidget::BeginReveal()
 {
 	Phase = EBGRollGaugePhase::Revealing;
 
-	//	여기서부터 칸 폭을 "네 칸" → "결과 칸 하나" 로 좁혀 간다.
-	//	선택 칸을 옮기지 않고 폭만 바꾸는 이유: 레이아웃이 알아서 가운데로 밀어 주고,
-	//	사라지는 칸이 자리째 없어져 선택 칸을 가리지 않는다.
-	for (int32 Index = 0; Index < SlotCount; ++Index)
-	{
-		RevealStartWeights[Index] = SlotWeights[Index];
-	}
-	SelectedSlot     = TierToSlotIndex(ResolutionView.Tier);
-	CollapseElapsed  = 0.f;
-	bCollapsing      = true;
-
-	//	C++ 이 애니메이션을 먼저 건다. BP 가 무엇을 얹든 칸은 이미 좁혀지기 시작해야 한다.
+	//	착지 때 이미 결과 칸이 켜져 있다 — 그대로 둔다. 코드가 여기서 더 할 일은 없다.
+	//	칸 펀치 · 화면 플래시 같은 덧칠은 Anim_Reveal 과 OnRevealStarted 의 몫이다.
 	const float RevealSeconds = PlayPhaseAnimation(Anim_Reveal, RevealFallbackSeconds, LastRevealAnimation);
 
 	OnRevealStarted(ResolutionView);
@@ -335,33 +305,6 @@ void UBGRollGaugeWidget::ScheduleStep(FTimerHandle& Timer, void (UBGRollGaugeWid
 	(this->*Callback)();
 }
 
-void UBGRollGaugeWidget::TickCollapse(float DeltaTime)
-{
-	CollapseElapsed += DeltaTime;
-	const float Alpha = RevealCollapseSeconds > 0.f
-		? FMath::Clamp(CollapseElapsed / RevealCollapseSeconds, 0.f, 1.f)
-		: 1.f;
-
-	const float Shape = RevealCollapseCurve
-		? RevealCollapseCurve->GetFloatValue(Alpha)
-		: FMath::InterpEaseOut(0.f, 1.f, Alpha, 3.f);
-
-	//	⚠️ 여기서 RenderTransform · Opacity 를 건드리지 않는다. 그쪽은 Anim_Reveal 의 몫이다 —
-	//	   양쪽이 같은 값을 쓰면 프레임마다 서로 덮어써서 애니메이션 키가 안 먹는다.
-	for (int32 Index = 0; Index < SlotCount; ++Index)
-	{
-		const float Target = Index == SelectedSlot ? 1.f : 0.f;
-		SlotWeights[Index] = FMath::Lerp(RevealStartWeights[Index], Target, Shape);
-	}
-
-	PushSlotWidths();
-
-	if (Alpha >= 1.f)
-	{
-		bCollapsing = false;
-	}
-}
-
 void UBGRollGaugeWidget::FinishResultIn()
 {
 	Phase = EBGRollGaugePhase::Holding;
@@ -395,11 +338,10 @@ void UBGRollGaugeWidget::ResetGauge()
 	//	⚠️ 어느 단계에서 끊겨도 표를 놓는다. 쥔 채 두면 연출 큐가 상한(8초)까지 멈춘다.
 	UIHold.End(UBGPresentationDirector::Get(this));
 
-	Phase         = EBGRollGaugePhase::Idle;
-	PhaseElapsed  = 0.f;
-	LastArrowSlot = INDEX_NONE;
-	bCollapsing   = false;
+	Phase        = EBGRollGaugePhase::Idle;
+	PhaseElapsed = 0.f;
 
+	SetLitSlot(INDEX_NONE);
 	SetOutcomeWidgetsVisible(false);
 }
 
@@ -473,130 +415,20 @@ float UBGRollGaugeWidget::ComputeLandingRatio() const
 
 // ── 칸 ────────────────────────────────────────────────────────────────────────
 
-void UBGRollGaugeWidget::CaptureDesignerWeights()
-{
-	//	WBP 에서 잡아 둔 칸 폭(Fill 값)을 기억한다. 칸 폭은 확률과 무관하게 이 값으로 고정이다.
-	//	Fill 이 아니면(Auto 등) 폭을 비율로 알 수 없으므로 똑같이 나눈 것으로 본다.
-	for (int32 Index = 0; Index < SlotCount; ++Index)
-	{
-		DesignerWeights[Index] = 1.f;
-
-		const UWidget* TrackChild = GetTrackChild(Index);
-		if (!TrackChild)
-		{
-			continue;   // 이 칸을 WBP 에 두지 않았다. 선택 사항이다.
-		}
-
-		const UHorizontalBoxSlot* BoxSlot = Cast<UHorizontalBoxSlot>(TrackChild->Slot);
-		if (!BoxSlot)
-		{
-			UE_LOG(LogBGCard, Warning,
-				TEXT("[RollGauge] %s 가 Panel_Track(HorizontalBox) 아래에 없다 — 칸 폭 · 화살표 위치가 어긋난다."),
-				*TrackChild->GetName());
-			continue;
-		}
-
-		const FSlateChildSize Size = BoxSlot->GetSize();
-		if (Size.SizeRule == ESlateSizeRule::Fill && Size.Value > KINDA_SMALL_NUMBER)
-		{
-			DesignerWeights[Index] = Size.Value;
-		}
-		else
-		{
-			//	Auto 면 실제 폭은 내용물이 정하는데 화살표는 4등분으로 계산한다 — 둘이 어긋난다.
-			UE_LOG(LogBGCard, Warning,
-				TEXT("[RollGauge] %s 의 Size 가 Fill 이 아니다 — 화살표가 칸과 어긋난다. WBP 에서 Fill 로 둘 것."),
-				*TrackChild->GetName());
-		}
-	}
-}
-
-void UBGRollGaugeWidget::ApplySlotWidths()
-{
-	//	⚠️ 매 판정 되돌려 놓는다. 지난 공개 연출이 결과 칸 하나로 좁혀 둔 채 끝났기 때문이다.
-	for (int32 Index = 0; Index < SlotCount; ++Index)
-	{
-		SlotWeights[Index] = DesignerWeights[Index];
-	}
-
-	PushSlotWidths();
-}
-
-void UBGRollGaugeWidget::PushSlotWidths()
-{
-	for (int32 Index = 0; Index < SlotCount; ++Index)
-	{
-		UWidget* TrackChild = GetTrackChild(Index);
-		if (!TrackChild)
-		{
-			continue;
-		}
-
-		//	경고는 CaptureDesignerWeights 에서 한 번만 한다. 여기는 좁히기 동안 매 프레임 불린다.
-		UHorizontalBoxSlot* BoxSlot = Cast<UHorizontalBoxSlot>(TrackChild->Slot);
-		if (!BoxSlot)
-		{
-			continue;
-		}
-
-		//	⚠️ 화살표 좌표도 SlotWeights 로 계산한다. 다른 값을 넣으면 화살표가 칸과 어긋난다.
-		FSlateChildSize Size(ESlateSizeRule::Fill);
-		Size.Value = SlotWeights[Index];
-		BoxSlot->SetSize(Size);
-	}
-}
-
-UWidget* UBGRollGaugeWidget::GetTrackChild(int32 SlotIndex) const
-{
-	//	폭을 바꿀 대상은 Panel_Track 의 **직계 자식**이다. Slot_* 을 Overlay 로 감싸 두는 구성이
-	//	흔하므로(배경 + 아이콘 + 발광), 바인딩된 위젯에서 트랙까지 거슬러 올라가 그 자식을 찾는다.
-	UWidget* Widget = GetSlotWidget(SlotIndex);
-	UPanelWidget* Track = Cast<UPanelWidget>(Panel_Track);
-	if (!Widget || !Track)
-	{
-		return Widget;
-	}
-
-	while (Widget && Widget->GetParent() != Track)
-	{
-		Widget = Widget->GetParent();
-	}
-
-	//	트랙 아래에 없다(이름을 엉뚱한 위젯에 붙였다). 원래 위젯을 돌려주고 위에서 경고하게 둔다.
-	return Widget ? Widget : GetSlotWidget(SlotIndex);
-}
-
 void UBGRollGaugeWidget::GetSlotRange(int32 SlotIndex, float& OutStart, float& OutEnd) const
 {
-	float Total = 0.f;
-	float Before = 0.f;
-	for (int32 Index = 0; Index < SlotCount; ++Index)
-	{
-		if (Index < SlotIndex)
-		{
-			Before += SlotWeights[Index];
-		}
-		Total += SlotWeights[Index];
-	}
+	//	칸은 균등 4등분이다 — 스트립 그림에 네 자리가 균등하게 박혀 있기 때문이다.
+	//	확률과는 무관하다. 어느 칸에 서는지는 Tier 가, 칸 안 어디에 서는지는 Roll 이 정한다.
+	const float Width = 1.f / SlotCount;
 
-	const float Inv = Total > KINDA_SMALL_NUMBER ? 1.f / Total : 0.f;
-	OutStart = Before * Inv;
-	OutEnd   = (SlotIndex >= 0 && SlotIndex < SlotCount) ? (Before + SlotWeights[SlotIndex]) * Inv : OutStart;
+	OutStart = FMath::Clamp(SlotIndex, 0, SlotCount - 1) * Width;
+	OutEnd   = OutStart + Width;
 }
 
 int32 UBGRollGaugeWidget::TrackRatioToSlotIndex(float Ratio) const
 {
-	for (int32 Index = 0; Index < SlotCount - 1; ++Index)
-	{
-		float Start = 0.f;
-		float End = 0.f;
-		GetSlotRange(Index, Start, End);
-		if (Ratio < End)
-		{
-			return Index;
-		}
-	}
-	return SlotCount - 1;
+	//	비율 1.0(오른쪽 끝)은 마지막 칸에 넣는다 — 안 그러면 칸 밖 번호가 나온다.
+	return FMath::Clamp(FMath::FloorToInt(Ratio * SlotCount), 0, SlotCount - 1);
 }
 
 void UBGRollGaugeWidget::UpdateResultTexts()
@@ -620,41 +452,37 @@ void UBGRollGaugeWidget::UpdateResultTexts()
 	}
 }
 
-// ── 화살표 ────────────────────────────────────────────────────────────────────
+// ── 점등 ──────────────────────────────────────────────────────────────────────
 
-bool UBGRollGaugeWidget::ApplyArrow(float Ratio)
+void UBGRollGaugeWidget::ApplyLights(float Ratio)
 {
-	const int32 SlotIndex = TrackRatioToSlotIndex(Ratio);
-	if (SlotIndex != LastArrowSlot)
+	SetLitSlot(TrackRatioToSlotIndex(Ratio));
+}
+
+void UBGRollGaugeWidget::SetLitSlot(int32 SlotIndex)
+{
+	//	굴림 중에는 매 프레임 불리지만 칸이 바뀌는 건 몇 번뿐이다. 같은 칸이면 그냥 나간다 —
+	//	안 그러면 BP 이벤트가 프레임마다 터져 틱 사운드가 굉음이 된다.
+	if (SlotIndex == LitSlot)
 	{
-		LastArrowSlot = SlotIndex;
-		OnArrowSlotChanged(SlotIndex);
+		return;
 	}
 
-	if (!Image_Arrow || !Panel_Track)
+	LitSlot = SlotIndex;
+
+	for (int32 Index = 0; Index < SlotCount; ++Index)
 	{
-		return false;
+		if (UWidget* Light = GetLightWidget(Index))
+		{
+			Light->SetRenderOpacity(Index == SlotIndex ? 1.f : 0.f);
+		}
 	}
 
-	const float TrackWidth = Panel_Track->GetCachedGeometry().GetLocalSize().X;
-	if (TrackWidth <= KINDA_SMALL_NUMBER)
+	//	전부 끄는 경우(판정 사이)는 연출이 아니다. BP 에 알리지 않는다.
+	if (SlotIndex != INDEX_NONE)
 	{
-		return false;   // 이번 프레임에 막 화면에 올라왔다. 다음 틱에 세운다.
+		OnLitSlotChanged(SlotIndex);
 	}
-
-	//	화살표의 레이아웃 원점이 트랙 왼쪽 끝이라는 전제다(헤더의 배치 조건).
-	//	DesiredSize 는 RenderTransform 의 영향을 받지 않아 펀치 연출 중에도 흔들리지 않는다.
-	const float HalfArrowWidth = Image_Arrow->GetDesiredSize().X * 0.5f;
-	const FVector2D Translation = Image_Arrow->GetRenderTransform().Translation;
-
-	Image_Arrow->SetRenderTranslation(FVector2D(Ratio * TrackWidth - HalfArrowWidth, Translation.Y));
-
-	if (!bArrowPlaced)
-	{
-		bArrowPlaced = true;
-		Image_Arrow->SetRenderOpacity(1.f);
-	}
-	return true;
 }
 
 void UBGRollGaugeWidget::SetOutcomeWidgetsVisible(bool bVisible)
@@ -703,14 +531,14 @@ void UBGRollGaugeWidget::ApplyResultImage()
 	}
 }
 
-UWidget* UBGRollGaugeWidget::GetSlotWidget(int32 SlotIndex) const
+UWidget* UBGRollGaugeWidget::GetLightWidget(int32 SlotIndex) const
 {
 	switch (SlotIndex)
 	{
-	case 0:  return Slot_CriticalFailure;
-	case 1:  return Slot_Failure;
-	case 2:  return Slot_Success;
-	case 3:  return Slot_CriticalSuccess;
+	case 0:  return Light_CriticalFailure;
+	case 1:  return Light_Failure;
+	case 2:  return Light_Success;
+	case 3:  return Light_CriticalSuccess;
 	default: return nullptr;
 	}
 }
