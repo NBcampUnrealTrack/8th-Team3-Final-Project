@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Core/BGGameState.h"
@@ -597,6 +597,12 @@ void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution
 void ABGGameState::Multicast_ChatMessage_Implementation(const FString& SenderName, const FString& Message)
 {
 	OnChatMessageReceived.Broadcast(SenderName, Message);
+}
+
+void ABGGameState::Multicast_Ping_Implementation(const FBGPingEvent& Event)
+{
+	UE_LOG(LogBGPing, Log, TEXT("[BGPing] 멀티캐스트 도착 (NetMode %d)"), GetWorld() ? static_cast<int32>(GetWorld()->GetNetMode()) : -1);
+	OnPingReceived.Broadcast(Event);
 }
 
 void ABGGameState::Multicast_CardEquipped_Implementation(int32 SeatIndex, FGameplayTag CardId)
