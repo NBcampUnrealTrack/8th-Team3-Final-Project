@@ -55,17 +55,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Audio")
 	bool HasAudioRow(FGameplayTag AudioTag) const;
 
-	//	볼륨은 마스터 · BGM · 효과음 셋이지만 Sound Class 는 둘뿐이다(SC_Music · SC_Basic).
-	//	마스터는 클래스가 아니라 두 값에 곱해지는 배수이고, 곱셈은 EnsureVolumesApplied 가 직접 한다.
-	//
-	//	⚠️ 둘은 서로 부모·자식이 아니다. 계층에 기대면 부모의 ChildClasses 가 저장되지 않았을 때
-	//	   자식이 계층 순회에서 빠져 마스터가 조용히 안 먹는다.
-	//
-	//	분류는 사운드 에셋의 SoundClassObject 가 정한다 — Niagara 처럼 서브시스템을 안 거치는
-	//	재생 경로도 그 값을 따르기 때문이다. 서브시스템으로 낸 소리는 CreateComponent 가
-	//	Row.Category 로 한 번 더 덮어써서 DT 쪽 분류가 이기게 한다.
+	//	SC_Basic 아래에 SC_Music · SC_SFX를 두므로 마스터와 카테고리 볼륨이 엔진에서 곱해진다.
+	//	분류는 사운드 에셋의 SoundClassObject가 정하며, 서브시스템 재생은 Row.Category로 보정한다.
 
-	/** 사용자 마스터 볼륨. 아래 둘에 곱해져서 적용된다. */
+	/** SC_Basic과 모든 자식 클래스에 적용되는 사용자 마스터 볼륨. */
 	UFUNCTION(BlueprintPure, Category = "BG|Audio")
 	float GetMasterVolume() const { return MasterVolume; }
 
@@ -126,13 +119,22 @@ private:
 	TObjectPtr<UDataTable> AudioTable;
 
 	UPROPERTY(Transient)
+	TObjectPtr<USoundClass> MasterSoundClass;
+
+	UPROPERTY(Transient)
 	TObjectPtr<USoundClass> MusicSoundClass;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USoundClass> SFXSoundClass;
 
 	UPROPERTY(Transient)
-	TObjectPtr<USoundMix> UserSettingsSoundMix;
+	TObjectPtr<USoundMix> MasterSoundMix;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundMix> MusicSoundMix;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundMix> SFXSoundMix;
 
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UAudioComponent>> ActiveSounds;
@@ -145,5 +147,7 @@ private:
 	float MasterVolume = 1.f;
 	float MusicVolume  = 1.f;
 	float SFXVolume    = 1.f;
-	bool bUserSettingsSoundMixPushed = false;
+	bool bMasterSoundMixPushed = false;
+	bool bMusicSoundMixPushed = false;
+	bool bSFXSoundMixPushed = false;
 };

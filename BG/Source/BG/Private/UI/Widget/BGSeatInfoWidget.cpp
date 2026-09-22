@@ -1,27 +1,11 @@
 #include "UI/Widget/BGSeatInfoWidget.h"
-#include "Components/Image.h"
 
 #include "Blueprint/WidgetTree.h"
 #include "Components/Overlay.h"
 #include "Components/OverlaySlot.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
-#include "UObject/SoftObjectPath.h"
-
-namespace
-{
-	//	코드로 만든 텍스트 위젯은 엔진 기본 폰트(Roboto)를 물고 나온다 — WBP 쪽과 같은 폰트로 맞춘다.
-	void ApplySeatInfoFont(UTextBlock* Block)
-	{
-		FSlateFontInfo Font = Block->GetFont();
-		if (UObject* Loaded = FSoftObjectPath(TEXT("/Game/UI/Font/HeirofLightRegular_Font.HeirofLightRegular_Font")).TryLoad())
-		{
-			Font.FontObject = Loaded;
-			Font.TypefaceFontName = TEXT("Default");
-		}
-		Block->SetFont(Font);
-	}
-}
+#include "UI/BGUIStyleSubsystem.h"
 
 void UBGSeatInfoWidget::SetSeatInfo(const FBGSeatView& InView)
 {
@@ -63,31 +47,11 @@ TSharedRef<SWidget> UBGSeatInfoWidget::RebuildWidget()
 
 void UBGSeatInfoWidget::RefreshHealthHearts()
 {
-	UImage* const Hearts[] = { Img_Heart_1, Img_Heart_2, Img_Heart_3, Img_Heart_4, Img_Heart_5, Img_Heart_6 };
-	const int32 NumHearts = UE_ARRAY_COUNT(Hearts);
+	UBGHeartSlotWidget* const Hearts[] = { Heart_1, Heart_2, Heart_3, Heart_4, Heart_5, Heart_6 };
 
 	//	판 전에는 최대 체력이 0 이다 — 줄째로 접힌다.
-	const int32 MaxHealth = ShouldShowStats() ? FMath::Min(View.MaxHealth, NumHearts) : 0;
-	const int32 Health = FMath::Clamp(View.Health, 0, MaxHealth);
-
-	for (int32 Index = 0; Index < NumHearts; ++Index)
-	{
-		UImage* Heart = Hearts[Index];
-		if (!Heart)
-		{
-			continue;
-		}
-
-		//	최대 체력을 넘는 칸은 자리까지 접는다. 숨기기만 하면 줄이 가운데로 모이지 않는다.
-		if (Index >= MaxHealth)
-		{
-			Heart->SetVisibility(ESlateVisibility::Collapsed);
-			continue;
-		}
-
-		Heart->SetVisibility(ESlateVisibility::HitTestInvisible);
-		Heart->SetColorAndOpacity(Index < Health ? HeartFullTint : HeartEmptyTint);
-	}
+	UBGHeartSlotWidget::RefreshRow(Hearts, View.Health, ShouldShowStats() ? View.MaxHealth : 0,
+		HeartRow);
 }
 
 void UBGSeatInfoWidget::BuildFallbackLayout()
@@ -118,7 +82,9 @@ void UBGSeatInfoWidget::BuildFallbackLayout()
 			continue;
 		}
 
-		ApplySeatInfoFont(Line);
+		FSlateFontInfo Font = Line->GetFont();
+		UBGUIStyleSubsystem::ApplyDefaultTypeface(this, Font);
+		Line->SetFont(Font);
 		Line->SetJustification(ETextJustify::Center);
 		Line->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.85f));
 		Line->SetShadowOffset(FVector2D(1.f, 1.f));
