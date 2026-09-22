@@ -28,7 +28,8 @@ public class BG : ModuleRules
 		{
 			"Slate", "SlateCore",
 			"OnlineSubsystemUtils",  // Online::GetSubsystem 헬퍼 (.cpp 전용)
-			"ApplicationCore"
+			"ApplicationCore",
+			"CommonUI"               // UCommonTextStyle — 코드로 만드는 텍스트의 기본 서체
 		});
 
 		//	⚠️ PublicIncludePaths.Add(ModuleDirectory) 를 다시 넣지 말 것.

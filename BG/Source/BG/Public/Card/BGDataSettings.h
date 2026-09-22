@@ -10,6 +10,7 @@
 
 class UDataTable;
 class UBGPresentationDataAsset;
+class UCommonTextStyle;
 class USoundClass;
 class USoundMix;
 class UStaticMesh;
@@ -42,6 +43,13 @@ public:
 	/** 카드 기능과 분리된 시네마틱 Niagara 매핑 표 (FBGCardFXRow). */
 	UPROPERTY(EditAnywhere, Config, Category = "Data", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGCardFXRow"))
 	TSoftObjectPtr<UDataTable> CardFXTable;
+
+	/**
+	 * 코드로 만드는 텍스트의 기본 스타일. UI 서체는 여기서만 정한다.
+	 * UBGUIStyleSubsystem 이 게임 시작 때 미리 로드한다.
+	 */
+	UPROPERTY(EditAnywhere, Config, Category = "UI")
+	TSoftClassPtr<UCommonTextStyle> DefaultTextStyle;
 
 	/** 카드와 무관한 공통 연출 카탈로그. 아트 작업자는 이 DataAsset 안의 참조를 교체한다. */
 	UPROPERTY(EditAnywhere, Config, Category = "Presentation")

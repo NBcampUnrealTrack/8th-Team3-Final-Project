@@ -7,7 +7,6 @@
 #include "BG/Public/Chating/BGChatEntry.h"
 #include "BGChatingWidget.generated.h"
 
-class UFont;
 class UScrollBox;
 class UEditableTextBox;
 class UButton;
@@ -20,8 +19,6 @@ class BG_API UBGChatingWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	UBGChatingWidget(const FObjectInitializer& ObjectInitializer);
-
 	/** 입력창을 열고 닫는다. 버튼 말고 다른 경로로도 부를 수 있게 열어 둔다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Chat")
 	void ToggleChatInput();
@@ -84,10 +81,6 @@ protected:
 	/** 로그 한 줄의 글자 크기. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat", meta = (ClampMin = "6"))
 	int32 LogFontSize = 12;
-
-	/** 로그 한 줄의 폰트. */
-	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
-	TObjectPtr<UFont> LogFont;
 
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
 	FLinearColor LogTextColor = FLinearColor(1.f, 1.f, 1.f, 0.9f);

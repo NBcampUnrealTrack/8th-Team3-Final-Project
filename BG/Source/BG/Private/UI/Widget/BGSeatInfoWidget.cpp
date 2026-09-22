@@ -5,13 +5,7 @@
 #include "Components/OverlaySlot.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
-#include "UI/BGUIFont.h"
-
-UBGSeatInfoWidget::UBGSeatInfoWidget(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-{
-	TextFont = BGUIFont::FindDefault();
-}
+#include "UI/BGUIStyleSubsystem.h"
 
 void UBGSeatInfoWidget::SetSeatInfo(const FBGSeatView& InView)
 {
@@ -89,7 +83,7 @@ void UBGSeatInfoWidget::BuildFallbackLayout()
 		}
 
 		FSlateFontInfo Font = Line->GetFont();
-		BGUIFont::Apply(Font, TextFont);
+		UBGUIStyleSubsystem::ApplyDefaultTypeface(this, Font);
 		Line->SetFont(Font);
 		Line->SetJustification(ETextJustify::Center);
 		Line->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.85f));

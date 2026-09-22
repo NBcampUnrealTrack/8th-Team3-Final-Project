@@ -17,7 +17,6 @@ class UBGSessionMenuWidget;
 class UButton;
 class UEditableTextBox;
 class UImage;
-class UFont;
 class UScrollBox;
 class UTextBlock;
 class UVerticalBox;
@@ -45,16 +44,10 @@ class BG_API UBGSessionMenuWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	UBGSessionMenuWidget(const FObjectInitializer& ObjectInitializer);
-
 	// 목록 행에서 호출된다(UBGSessionRowHandler).
 	void JoinByIndex(int32 ResultIndex);
 
 protected:
-	/** 디자이너가 안 올려 코드가 만드는 텍스트·버튼·입력창에 쓰는 폰트. */
-	UPROPERTY(EditDefaultsOnly, Category = "BG|Session|Style")
-	TObjectPtr<UFont> TextFont;
-
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;

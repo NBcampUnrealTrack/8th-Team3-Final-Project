@@ -10,13 +10,7 @@
 #include "Components/Button.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Core/BGPlayerController.h"
-#include "UI/BGUIFont.h"
-
-UBGChatingWidget::UBGChatingWidget(const FObjectInitializer& ObjectInitializer)
-	: Super(ObjectInitializer)
-{
-	LogFont = BGUIFont::FindDefault();
-}
+#include "UI/BGUIStyleSubsystem.h"
 
 void UBGChatingWidget::NativeConstruct()
 {
@@ -144,7 +138,7 @@ void UBGChatingWidget::AddEntryToLog(const FBGChatEntry& Entry)
 	//	NewObject 로 만든 것이라 WBP 에서 손댈 수 없다. 여기서 정한다.
 	FSlateFontInfo Font = Line->GetFont();
 	Font.Size = LogFontSize;
-	BGUIFont::Apply(Font, LogFont);
+	UBGUIStyleSubsystem::ApplyDefaultTypeface(this, Font);
 	Line->SetFont(Font);
 
 	Line->SetColorAndOpacity(FSlateColor(Entry.bSystem ? SystemTextColor : LogTextColor));
