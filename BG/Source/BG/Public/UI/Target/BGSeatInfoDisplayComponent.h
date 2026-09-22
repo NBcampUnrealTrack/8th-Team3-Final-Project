@@ -12,11 +12,13 @@
 #include "Components/ActorComponent.h"
 #include "UI/Widget/BGSeatDetailWidget.h"
 #include "UI/Widget/BGSeatInfoWidget.h"
+#include "UI/Presentation/BGPresentationTypes.h"   // FBGPresentationRequest — UFUNCTION 인자라 완전한 타입이 필요하다
 #include "BGSeatInfoDisplayComponent.generated.h"
 
 class ABGCharacter;
 class ABGPlayerController;
 class UWidgetComponent;
+enum class EBGCinematicStage : uint8;
 
 /** 커서가 올라간 좌석이 바뀌었다. 없으면 INDEX_NONE. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGHoveredSeatChanged, int32, SeatIndex);
@@ -109,6 +111,50 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
 	float StructureCheckInterval = 1.f;
 
+	// ── 카드 연출 중 이름표 ──
+	//
+	//  HUD 와 함께 카드 연출 시작에 걷고, 피격 연출(Secondary)에서 다시 띄운다.
+	//  바뀐 체력(피해·회복)은 연출에 맞춰서야 보여준다 — 규칙상 효과는 연출 전에 이미 적용돼 있다.
+
+	/** 공격 연출이 시작될 때 이름표가 사라지는 시간(초). */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo|Cinematic", meta = (ClampMin = "0.0"))
+	float PlateFadeOutSeconds = 0.25f;
+
+	/** 피격 연출이 시작될 때 이름표가 돌아오는 시간(초). */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo|Cinematic", meta = (ClampMin = "0.0"))
+	float PlateFadeInSeconds = 0.3f;
+
+	/**
+	 * 피격 연출이 시작되고 이만큼 뒤에 하트를 깎는다.
+	 * 이름표가 다 떠오르기 전에 깎이면 줄어드는 순간을 못 본다 — PlateFadeInSeconds 이상으로 둘 것.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo|Cinematic", meta = (ClampMin = "0.0"))
+	float HealthRevealDelay = 0.45f;
+
+	/**
+	 * 내 하트(턴 패널)는 연출이 끝나고 이만큼 뒤에 깎는다.
+	 * ⚠️ WBP_BGHUD 가 다시 떠오르는 애니메이션 길이 이상으로 둘 것 — 짧으면 HUD 가 반쯤 투명할 때 깎인다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo|Cinematic", meta = (ClampMin = "0.0"))
+	float LocalHealthRevealDelay = 0.4f;
+
+	/**
+	 * 체력 변화가 연출 없이 도착했을 때, 연출이 뒤따라오는지 기다려 보는 시간(초).
+	 *
+	 * ⚠️ 체력(폰의 ASC)과 연출 상태(GameState)는 다른 액터로 복제돼 도착 순서가 보장되지 않는다.
+	 *    이 유예가 없으면 체력이 한 발 먼저 온 클라에서는 하트가 연출 전에 깎여 버린다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo|Cinematic", meta = (ClampMin = "0.0"))
+	float HealthHoldGraceSeconds = 0.3f;
+
+	/**
+	 * 체력 표시를 붙잡아 둘 수 있는 상한(초). 연출이 비정상으로 끊겨도 표시가 영영 멈추지 않게 한다.
+	 * ⚠️ 가장 긴 정상 흐름(판정 UI → 공격 → 피격 → 사망 → 역할 공개, 약 15초)보다 넉넉해야 한다 —
+	 *    짧으면 내 하트가 HUD 가 숨은 동안 풀려 버린다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo|Cinematic", meta = (ClampMin = "0.1"))
+	float MaxHealthHoldSeconds = 25.f;
+
 private:
 	/** 좌석 목록에 맞춰 위젯을 만들고 없어진 좌석 것은 지운다. */
 	void SyncWidgets();
@@ -131,8 +177,42 @@ private:
 	/** 누군가의 이탈 표시가 바뀌었다. */
 	void HandleDisconnectChanged(int32 SeatIndex, bool bDisconnected);
 
-	/** 체력이 바뀌었다. 좌석마다 그 폰의 ASC 에 걸어 둔다. */
-	void HandleHealthChanged(const struct FOnAttributeChangeData& Data);
+	/** 체력이 바뀌었다. 좌석마다 그 폰의 ASC 에 걸어 둔다. 피해든 회복이든 연출에 맞춰 드러나도록 표시를 붙잡는다. */
+	void HandleHealthChanged(const struct FOnAttributeChangeData& Data, int32 SeatIndex);
+
+	/** 최대 체력이 바뀌었다(직업 배정). 연출과 무관하므로 곧바로 반영한다. */
+	void HandleMaxHealthChanged(const struct FOnAttributeChangeData& Data);
+
+	/** 연출 단계가 바뀌었다. 피격(Secondary)에 닿으면 이름표를 다시 띄운다. */
+	void HandleCinematicStageChanged(EBGCinematicStage Stage, ABGCharacter* Subject);
+
+	/** 카드 연출이 시작됐다 — HUD 가 걷히는 신호와 같다. 이름표도 걷는다. */
+	UFUNCTION()
+	void HandlePresentationStarted(const FBGPresentationRequest& Request);
+
+	/** 카드 연출이 끝났다. 피격 단계가 없던 카드는 여기서 이름표가 돌아온다. */
+	UFUNCTION()
+	void HandlePresentationFinished(const FBGPresentationRequest& Request);
+
+	/** 지금 상태로 이름표를 걷을지 정해 페이드 방향을 바꾼다. */
+	void UpdatePlateVisibility();
+
+	/** 붙잡아 둔 체력을 풀 때가 됐는지 본다. 표시가 바뀌었으면(다시 그렸으면) true. */
+	bool TickHealthHold();
+
+	/** 이 화면 주인의 좌석. 아직 배정 전이면 INDEX_NONE. */
+	int32 GetLocalSeatIndex() const;
+
+	void ReleaseHeldHealth();
+
+	/** 이름표 투명도를 목표로 한 프레임 옮긴다. */
+	void TickPlateFade(float DeltaTime);
+
+	/** 현재 투명도를 이름표 하나에 입힌다. 0 이면 컴포넌트째 숨긴다. */
+	void ApplyPlateOpacity(UWidgetComponent* Widget) const;
+
+	/** 월드 시간(초). 복제와 무관한 로컬 시계다 — 이 컴포넌트의 타이밍은 전부 화면 쪽 사정이다. */
+	double GetNow() const;
 
 	/** 이 좌석 폰의 체력 통지를 구독한다. 이미 걸려 있으면 아무것도 하지 않는다. */
 	void BindHealthDelegate(class ABGCharacter* Character, int32 SeatIndex);
@@ -183,6 +263,34 @@ private:
 
 	FDelegateHandle PublicInfoHandle;
 	FDelegateHandle DisconnectHandle;
+	FDelegateHandle CinematicStageHandle;
+
+	//	좌석 → 지금 보여주고 있는(바뀌기 전) 체력. 여기 있는 좌석은 실제 값 대신 이 값을 그린다.
+	TMap<int32, int32> HeldHealthBySeat;
+
+	//	붙잡기 시작한 시각. 상한 판정에 쓴다.
+	double HealthHoldStartTime = 0.0;
+
+	//	유예의 기준점 — 마지막 체력 변화 또는 마지막으로 연출 중이던 시각 중 늦은 쪽.
+	double HoldGraceAnchorTime = 0.0;
+
+	//	피격 연출이 시작된 시각. HealthRevealDelay 를 여기서부터 잰다.
+	double SecondaryStageStartTime = 0.0;
+
+	//	카드 연출이 끝난(HUD 가 돌아오기 시작한) 시각. LocalHealthRevealDelay 를 여기서부터 잰다.
+	double PresentationFinishedTime = 0.0;
+
+	//	구독해 둔 연출 디렉터. HUD 가 걷히는 신호를 여기서 받는다.
+	TWeakObjectPtr<class UBGPresentationDirector> BoundDirector;
+
+	//	카드 연출이 도는 중인가 / 이번 연출이 피격에 닿았는가 / 공격 연출(Primary) 중인가.
+	bool bPresentationActive = false;
+	bool bHitReached = false;
+	bool bPrimaryStage = false;
+
+	//	이름표 투명도. 연출 시작~피격 전까지 0 을 향하고 그 밖에는 1 을 향한다.
+	float PlateOpacity = 1.f;
+	bool bPlatesHidden = false;
 
 	//	좌석 배정을 기다리는 타이머. 배정되면 표시를 켜고 계속 감시한다(퇴장 대비).
 	FTimerHandle SeatWaitTimer;

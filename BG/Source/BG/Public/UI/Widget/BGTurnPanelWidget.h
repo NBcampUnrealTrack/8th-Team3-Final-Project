@@ -7,6 +7,7 @@
 #include "Blueprint/UserWidget.h"
 #include "UI/View/BGSeatView.h"
 #include "UI/View/BGTurnView.h"
+#include "UI/Widget/BGHeartSlotWidget.h"
 #include "BGTurnPanelWidget.generated.h"
 
 class UBGInfoTooltipWidget;
@@ -30,7 +31,7 @@ class UTexture2D;
  *   Text_Name      (TextBlock, 선택 — 내 이름)
  *   Text_Job       (TextBlock, 선택 — 캐릭터 이름)
  *   Text_Health    (TextBlock, 선택 — "체력 5 / 5")
- *   Img_Heart_1..6 (Image,     선택 — 체력을 하트로. Text_Health 대신 쓰는 표시다)
+ *   Heart_1..6     (WBP_BGHeartSlot, 선택 — 체력을 하트로. Text_Health 대신 쓰는 표시다)
  *   Text_Role      (TextBlock, 선택 — 내 역할. 본인 것이라 숨기지 않는다)
  *   Img_JobIcon    (Image,     선택 — 직업 아이콘. JobIcons 에서 태그로 고른다)
  *   Img_RoleIcon   (Image,     선택 — 역할 아이콘. RoleIcons 에서 태그로 고른다)
@@ -119,34 +120,26 @@ protected:
 	TObjectPtr<UTextBlock> Text_Health;
 
 	/**
-	 * 최대 체력 여섯 칸을 미리 두고 남는 것은 접는다.
-	 * 하나도 없으면 Text_Health 만으로 표시된다.
+	 * 최대 체력 여섯 칸(WBP_BGHeartSlot)을 미리 두고 남는 것은 접는다.
+	 * 하나도 없으면 Text_Health 만으로 표시된다. 색·연출은 하트 칸 WBP 가 정한다.
 	 */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_1;
+	TObjectPtr<UBGHeartSlotWidget> Heart_1;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_2;
+	TObjectPtr<UBGHeartSlotWidget> Heart_2;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_3;
+	TObjectPtr<UBGHeartSlotWidget> Heart_3;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_4;
+	TObjectPtr<UBGHeartSlotWidget> Heart_4;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_5;
+	TObjectPtr<UBGHeartSlotWidget> Heart_5;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_6;
-
-	/** 남아 있는 체력 하트의 색. */
-	UPROPERTY(EditAnywhere, Category = "BG|Turn")
-	FLinearColor HeartFullTint = FLinearColor::White;
-
-	/** 잃은 체력 하트의 색 — 자리는 남기고 어둡게만 만든다. */
-	UPROPERTY(EditAnywhere, Category = "BG|Turn")
-	FLinearColor HeartEmptyTint = FLinearColor(0.06f, 0.06f, 0.06f, 0.55f);
+	TObjectPtr<UBGHeartSlotWidget> Heart_6;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Role;
@@ -253,6 +246,8 @@ private:
 
 	//	LocalSeatView 의 체력을 하트 줄에 반영한다.
 	void RefreshHealthHearts();
+
+	FBGHeartRowState HeartRow;
 
 	// 직업·역할 아이콘을 LocalSeatView 의 태그에 맞춘다.
 	void RefreshIcons();

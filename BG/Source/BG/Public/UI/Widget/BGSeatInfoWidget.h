@@ -8,6 +8,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "UI/View/BGSeatView.h"
+#include "UI/Widget/BGHeartSlotWidget.h"
 #include "BGSeatInfoWidget.generated.h"
 
 /**
@@ -56,33 +57,26 @@ protected:
 	TObjectPtr<class UTextBlock> Text_Health;
 
 	/**
-	 * 체력을 하트 칸으로 보여준다. Text_Health 대신 쓰는 표시다 — 둘 다 두면 둘 다 나온다.
-	 * 최대 체력을 넘는 칸은 자리까지 접는다(턴 패널과 같은 규칙).
+	 * 체력을 하트 칸(WBP_BGHeartSlot)으로 보여준다. Text_Health 대신 쓰는 표시다 — 둘 다 두면 둘 다 나온다.
+	 * 최대 체력을 넘는 칸은 자리까지 접는다(턴 패널과 같은 규칙). 색·연출은 하트 칸 WBP 가 정한다.
 	 */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<class UImage> Img_Heart_1;
+	TObjectPtr<UBGHeartSlotWidget> Heart_1;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<class UImage> Img_Heart_2;
+	TObjectPtr<UBGHeartSlotWidget> Heart_2;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<class UImage> Img_Heart_3;
+	TObjectPtr<UBGHeartSlotWidget> Heart_3;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<class UImage> Img_Heart_4;
+	TObjectPtr<UBGHeartSlotWidget> Heart_4;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<class UImage> Img_Heart_5;
+	TObjectPtr<UBGHeartSlotWidget> Heart_5;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<class UImage> Img_Heart_6;
-
-	UPROPERTY(EditAnywhere, Category = "BG|SeatInfo|Style")
-	FLinearColor HeartFullTint = FLinearColor::White;
-
-	/** 잃은 체력 하트의 색 — 자리는 남기고 어둡게만 만든다. */
-	UPROPERTY(EditAnywhere, Category = "BG|SeatInfo|Style")
-	FLinearColor HeartEmptyTint = FLinearColor(0.06f, 0.06f, 0.06f, 0.55f);
+	TObjectPtr<UBGHeartSlotWidget> Heart_6;
 
 	/** 값이 들어왔다. 색·애니메이션처럼 텍스트 말고 더 할 것이 있으면 여기서 한다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|SeatInfo")
@@ -98,4 +92,6 @@ private:
 
 	UPROPERTY()
 	FBGSeatView View;
+
+	FBGHeartRowState HeartRow;
 };

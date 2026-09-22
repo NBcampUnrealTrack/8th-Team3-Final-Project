@@ -15,6 +15,7 @@
 #include "GAS/BGAttributeSet.h"
 #include "GameFramework/GameStateBase.h"
 #include "TimerManager.h"
+#include "UI/Presentation/BGPresentationDirector.h"
 #include "UI/View/BGSeatViewLibrary.h"
 #include "UI/Widget/BGTurnPanelWidget.h"
 
@@ -104,6 +105,13 @@ void UBGSeatInfoDisplayComponent::SetDisplayEnabled(bool bEnabled)
 		HideDetail();
 		DestroyAllWidgets();
 
+		HeldHealthBySeat.Reset();
+		PlateOpacity = 1.f;
+		bPlatesHidden = false;
+		bPresentationActive = false;
+		bHitReached = false;
+		bPrimaryStage = false;
+
 		if (HoveredSeat != INDEX_NONE)
 		{
 			HoveredSeat = INDEX_NONE;
@@ -137,7 +145,26 @@ void UBGSeatInfoDisplayComponent::BindDelegates()
 	if (GS && BoundGameState.Get() != GS)
 	{
 		GS->OnTurnStateChanged.AddUniqueDynamic(this, &UBGSeatInfoDisplayComponent::HandleTurnStateChanged);
+		CinematicStageHandle = GS->OnCinematicStageChanged.AddUObject(
+			this, &UBGSeatInfoDisplayComponent::HandleCinematicStageChanged);
 		BoundGameState = GS;
+
+		//	연출 도중에 켜졌을 수 있다 — 통지를 기다리지 않고 지금 단계에 맞춘다.
+		HandleCinematicStageChanged(GS->GetCinematicStage(), GS->GetCinematicSubject());
+	}
+
+	//	HUD 가 걷히는 신호. 같은 PlayerController 에 붙어 있다.
+	UBGPresentationDirector* Director = GetOwner() ? GetOwner()->FindComponentByClass<UBGPresentationDirector>() : nullptr;
+	if (Director && BoundDirector.Get() != Director)
+	{
+		Director->OnPresentationStarted.AddUniqueDynamic(this, &UBGSeatInfoDisplayComponent::HandlePresentationStarted);
+		Director->OnPresentationFinished.AddUniqueDynamic(this, &UBGSeatInfoDisplayComponent::HandlePresentationFinished);
+		BoundDirector = Director;
+
+		if (Director->IsPresenting())
+		{
+			HandlePresentationStarted(Director->GetActiveRequest());
+		}
 	}
 }
 
@@ -158,10 +185,27 @@ void UBGSeatInfoDisplayComponent::UnbindDelegates()
 	if (ABGGameState* GS = BoundGameState.Get())
 	{
 		GS->OnTurnStateChanged.RemoveDynamic(this, &UBGSeatInfoDisplayComponent::HandleTurnStateChanged);
+		GS->OnCinematicStageChanged.Remove(CinematicStageHandle);
 	}
+	CinematicStageHandle.Reset();
 	BoundGameState = nullptr;
 
-	//	체력 구독은 ASC 가 사라지면 함께 없어진다. 목록만 비운다.
+	if (UBGPresentationDirector* Director = BoundDirector.Get())
+	{
+		Director->OnPresentationStarted.RemoveDynamic(this, &UBGSeatInfoDisplayComponent::HandlePresentationStarted);
+		Director->OnPresentationFinished.RemoveDynamic(this, &UBGSeatInfoDisplayComponent::HandlePresentationFinished);
+	}
+	BoundDirector = nullptr;
+
+	//	⚠️ 체력 구독도 떼야 한다. 목록만 비우면 다시 켤 때 같은 ASC 에 두 번 걸린다.
+	for (const TPair<int32, TWeakObjectPtr<UAbilitySystemComponent>>& Pair : BoundHealthASCs)
+	{
+		if (UAbilitySystemComponent* ASC = Pair.Value.Get())
+		{
+			ASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetHealthAttribute()).RemoveAll(this);
+			ASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetMaxHealthAttribute()).RemoveAll(this);
+		}
+	}
 	BoundHealthASCs.Reset();
 }
 
@@ -183,9 +227,234 @@ void UBGSeatInfoDisplayComponent::HandleDisconnectChanged(int32 /*SeatIndex*/, b
 	RefreshWidgets();
 }
 
-void UBGSeatInfoDisplayComponent::HandleHealthChanged(const FOnAttributeChangeData& /*Data*/)
+double UBGSeatInfoDisplayComponent::GetNow() const
+{
+	const UWorld* World = GetWorld();
+	return World ? World->GetTimeSeconds() : 0.0;
+}
+
+//	피해·회복은 연출보다 먼저 적용된다(규칙 → 판정 UI → 공격 → 피격 순). 그대로 그리면
+//	주사위가 굴러가는 동안 결과가 하트로 드러난다. 그래서 변화는 일단 붙잡고,
+//	피격 연출에 와서 푼다. 연출이 따라오지 않으면 유예 뒤에 곧장 푼다.
+void UBGSeatInfoDisplayComponent::HandleHealthChanged(const FOnAttributeChangeData& Data, int32 SeatIndex)
+{
+	//	⚠️ 값이 같은 통지는 무시해야 한다. 서버에서는 GE 적용 뒤 PostGameplayEffectExecute 의 클램프가
+	//	   한 번 더 통지할 수 있다 — 이걸 회복으로 치면 붙잡은 데미지가 풀린다.
+	if (FMath::IsNearlyEqual(Data.NewValue, Data.OldValue))
+	{
+		return;
+	}
+
+	//	회복도 데미지와 똑같이 붙잡는다. 회복 역시 판정 UI 보다 먼저 적용돼서, 바로 그리면
+	//	주사위가 굴러가는 동안 하트가 차 결과가 드러난다.
+
+	const double Now = GetNow();
+
+	if (HeldHealthBySeat.IsEmpty())
+	{
+		HealthHoldStartTime = Now;
+	}
+	HoldGraceAnchorTime = Now;
+
+	//	이미 붙잡은 좌석이면 처음 값을 지킨다 — 연출 한 번에 여러 번 바뀌어도 연출 전 값을 보여줘야 한다.
+	if (!HeldHealthBySeat.Contains(SeatIndex))
+	{
+		HeldHealthBySeat.Add(SeatIndex, FMath::RoundToInt(Data.OldValue));
+	}
+
+	//	피격 연출 도중에 늦게 온 변화 같은 경우는 여기서 바로 풀린다.
+	if (!TickHealthHold())
+	{
+		RefreshWidgets();
+	}
+}
+
+void UBGSeatInfoDisplayComponent::HandleMaxHealthChanged(const FOnAttributeChangeData& /*Data*/)
 {
 	RefreshWidgets();
+}
+
+bool UBGSeatInfoDisplayComponent::TickHealthHold()
+{
+	if (HeldHealthBySeat.IsEmpty())
+	{
+		return false;
+	}
+
+	const double Now = GetNow();
+
+	if (Now - HealthHoldStartTime >= MaxHealthHoldSeconds)
+	{
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[SeatInfo] 체력 표시를 %.1f초 넘게 붙잡았습니다 — 연출이 끝나지 않은 채 풀어 줍니다."),
+			MaxHealthHoldSeconds);
+		ReleaseHeldHealth();
+		return true;
+	}
+
+	const ABGGameState* GS = BoundGameState.Get();
+	const EBGCinematicStage Stage = GS ? GS->GetCinematicStage() : EBGCinematicStage::None;
+
+	//	판정 UI → 공격 연출로 넘어갈 때 두 신호가 한 프레임 어긋나 "아무것도 아닌" 틈이 보일 수 있다.
+	//	유예를 마지막으로 연출 중이던 순간부터 재서 그 틈에 풀리지 않게 한다.
+	//	HUD 가 걷혀 있는 동안(카드 연출이 돌고 아직 피격 전)도 같은 대기로 본다.
+	const bool bResolving = (GS && GS->IsResolutionPresentationPlaying()) || (bPresentationActive && !bHitReached);
+	if (bResolving || Stage == EBGCinematicStage::Primary)
+	{
+		HoldGraceAnchorTime = Now;
+	}
+
+	bool bRelease = false;
+	switch (Stage)
+	{
+	case EBGCinematicStage::Primary:
+		break;   //	공격 연출 중 — 아직 맞지 않았다.
+
+	case EBGCinematicStage::Secondary:
+		bRelease = Now - SecondaryStageStartTime >= HealthRevealDelay;
+		break;
+
+	case EBGCinematicStage::None:
+		//	판정 UI 가 도는 동안은 뒤에 연출이 올 수 있다. 그것도 아니면 유예만큼 기다려 본다.
+		bRelease = !bResolving && Now - HoldGraceAnchorTime >= HealthHoldGraceSeconds;
+		break;
+
+	default:
+		bRelease = true;   //	사망 연출은 피격 뒤다 — 붙잡을 이유가 없다.
+		break;
+	}
+
+	if (!bRelease)
+	{
+		return false;
+	}
+
+	//	내 하트는 HUD(턴 패널) 안에 있다. HUD 는 연출이 다 끝나야 돌아오므로, 남들과 같이 풀면
+	//	숨어 있는 동안 깎여 버려 꺼지는 연출을 못 본다 — HUD 가 다 떠오른 뒤에 푼다.
+	const int32 LocalSeat = GetLocalSeatIndex();
+	const bool bHoldLocal = LocalSeat != INDEX_NONE && HeldHealthBySeat.Contains(LocalSeat)
+		&& (bPresentationActive || Now - PresentationFinishedTime < LocalHealthRevealDelay);
+
+	if (!bHoldLocal)
+	{
+		ReleaseHeldHealth();
+		return true;
+	}
+
+	//	남은 것이 내 좌석뿐이면 바뀐 것이 없다 — 매 프레임 다시 그리지 않는다.
+	if (HeldHealthBySeat.Num() == 1)
+	{
+		return false;
+	}
+
+	const int32 LocalHeld = HeldHealthBySeat[LocalSeat];
+	HeldHealthBySeat.Reset();
+	HeldHealthBySeat.Add(LocalSeat, LocalHeld);
+	RefreshWidgets();
+	return true;
+}
+
+int32 UBGSeatInfoDisplayComponent::GetLocalSeatIndex() const
+{
+	const ABGPlayerController* PC = GetOwningController();
+	const ABGPlayerState* PS = PC ? PC->GetPlayerState<ABGPlayerState>() : nullptr;
+	return PS ? PS->GetSeatIndex() : INDEX_NONE;
+}
+
+void UBGSeatInfoDisplayComponent::ReleaseHeldHealth()
+{
+	HeldHealthBySeat.Reset();
+	RefreshWidgets();
+}
+
+//	HUD(WBP_BGHUD)가 카드 연출 시작에 맞춰 걷힌다 — 이름표도 같은 신호로 걷는다.
+//	다시 띄우는 것은 HUD 보다 이르다: 피격 연출에서 맞는 순간을 보여줘야 하기 때문이다.
+void UBGSeatInfoDisplayComponent::HandlePresentationStarted(const FBGPresentationRequest& Request)
+{
+	if (Request.Kind != EBGPresentationKind::CardPlay)
+	{
+		return;
+	}
+
+	bPresentationActive = true;
+	bHitReached = false;
+	UpdatePlateVisibility();
+}
+
+void UBGSeatInfoDisplayComponent::HandlePresentationFinished(const FBGPresentationRequest& /*Request*/)
+{
+	//	피격 단계가 없는 카드(비시네마틱)는 여기서 돌아온다 — HUD 와 같은 때다.
+	bPresentationActive = false;
+	PresentationFinishedTime = GetNow();
+	UpdatePlateVisibility();
+}
+
+void UBGSeatInfoDisplayComponent::HandleCinematicStageChanged(EBGCinematicStage Stage, ABGCharacter* /*Subject*/)
+{
+	if (Stage == EBGCinematicStage::Secondary)
+	{
+		SecondaryStageStartTime = GetNow();
+		bHitReached = true;
+	}
+
+	bPrimaryStage = Stage == EBGCinematicStage::Primary;
+	UpdatePlateVisibility();
+}
+
+void UBGSeatInfoDisplayComponent::UpdatePlateVisibility()
+{
+	//	Primary 도 따로 본다 — 디렉터 신호가 빠져도 공격 연출 동안은 걷혀 있어야 한다.
+	const bool bHide = (bPresentationActive && !bHitReached) || bPrimaryStage;
+	if (bHide == bPlatesHidden)
+	{
+		return;
+	}
+	bPlatesHidden = bHide;
+
+	if (bPlatesHidden)
+	{
+		HideDetail();
+	}
+	else if (HoveredSeat != INDEX_NONE)
+	{
+		//	커서가 그대로 올라가 있으면 호버 통지가 다시 오지 않는다 — 여기서 되살린다.
+		ShowDetailFor(HoveredSeat);
+	}
+}
+
+void UBGSeatInfoDisplayComponent::TickPlateFade(float DeltaTime)
+{
+	const float Target = bPlatesHidden ? 0.f : 1.f;
+	if (PlateOpacity == Target)
+	{
+		return;
+	}
+
+	const float Seconds = bPlatesHidden ? PlateFadeOutSeconds : PlateFadeInSeconds;
+	PlateOpacity = Seconds > 0.f
+		? FMath::FInterpConstantTo(PlateOpacity, Target, DeltaTime, 1.f / Seconds)
+		: Target;
+
+	for (const TPair<int32, TObjectPtr<UWidgetComponent>>& Pair : WidgetsBySeat)
+	{
+		ApplyPlateOpacity(Pair.Value);
+	}
+}
+
+void UBGSeatInfoDisplayComponent::ApplyPlateOpacity(UWidgetComponent* Widget) const
+{
+	if (!Widget)
+	{
+		return;
+	}
+
+	if (UUserWidget* UserWidget = Widget->GetUserWidgetObject())
+	{
+		UserWidget->SetRenderOpacity(PlateOpacity);
+	}
+
+	//	다 사라졌으면 컴포넌트째 끈다. 투명한 채로 그리는 비용을 아낀다.
+	Widget->SetVisibility(PlateOpacity > 0.f);
 }
 
 void UBGSeatInfoDisplayComponent::BindHealthDelegate(ABGCharacter* Character, int32 SeatIndex)
@@ -197,16 +466,25 @@ void UBGSeatInfoDisplayComponent::BindHealthDelegate(ABGCharacter* Character, in
 		return;   //	폰은 있는데 ASC 가 아직 없다. 다음 구조 확인에서 다시 본다.
 	}
 
-	if (BoundHealthASCs.FindRef(SeatIndex).Get() == ASC)
+	const TWeakObjectPtr<UAbilitySystemComponent> Previous = BoundHealthASCs.FindRef(SeatIndex);
+	if (Previous.Get() == ASC)
 	{
 		return;
 	}
 
+	//	같은 좌석에 폰이 바뀌었다(복귀·재스폰). 옛 ASC 에 남은 구독을 뗀다.
+	if (UAbilitySystemComponent* OldASC = Previous.Get())
+	{
+		OldASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetHealthAttribute()).RemoveAll(this);
+		OldASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetMaxHealthAttribute()).RemoveAll(this);
+	}
+
 	//	Health 와 MaxHealth 둘 다 본다. 최대치만 바뀌는 경우(직업 배정)도 표시가 달라진다.
+	//	Health 에는 좌석을 실어 보낸다 — 변화 전 값을 좌석별로 붙잡아야 한다.
 	ASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetHealthAttribute())
-		.AddUObject(this, &UBGSeatInfoDisplayComponent::HandleHealthChanged);
+		.AddUObject(this, &UBGSeatInfoDisplayComponent::HandleHealthChanged, SeatIndex);
 	ASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetMaxHealthAttribute())
-		.AddUObject(this, &UBGSeatInfoDisplayComponent::HandleHealthChanged);
+		.AddUObject(this, &UBGSeatInfoDisplayComponent::HandleMaxHealthChanged);
 
 	BoundHealthASCs.Add(SeatIndex, ASC);
 }
@@ -223,6 +501,10 @@ void UBGSeatInfoDisplayComponent::TickComponent(float DeltaTime, ELevelTick Tick
 
 	//	커서 위치에는 통지가 없다 — 호버만은 매 프레임 본다.
 	UpdateHover();
+
+	//	페이드와 체력 공개 시점도 시간 조건이라 통지로는 잡을 수 없다.
+	TickPlateFade(DeltaTime);
+	TickHealthHold();
 
 	//	값 갱신은 델리게이트가 한다. 여기서는 늦게 도착한 폰만 주워 담는다.
 	TimeSinceStructureCheck += DeltaTime;
@@ -308,6 +590,9 @@ UWidgetComponent* UBGSeatInfoDisplayComponent::EnsureWidgetFor(ABGCharacter* Cha
 		return nullptr;
 	}
 	WidgetsBySeat.Add(SeatIndex, Widget);
+
+	//	연출 도중에 붙었으면 지금 투명도로 시작한다. 안 그러면 혼자 불쑥 뜬다.
+	ApplyPlateOpacity(Widget);
 
 	//	상세는 이름표 위에 얹는다. 평소에는 숨어 있다가 커서를 올렸을 때만 켜진다.
 	if (DetailWidgetClass && DetailDrawSize.Y > 0.f)
@@ -408,6 +693,8 @@ void UBGSeatInfoDisplayComponent::SyncWidgets()
 		//	자기 머리 위에는 띄우지 않는다. 자기 정보는 화면 좌하단 전용 패널이 맡는다.
 		if (PS == LocalState)
 		{
+			//	그래도 체력은 듣는다 — 턴 패널의 내 하트도 피격 연출에 맞춰 깎여야 한다.
+			BindHealthDelegate(Character, PS->GetSeatIndex());
 			continue;
 		}
 
@@ -459,8 +746,14 @@ void UBGSeatInfoDisplayComponent::RefreshWidgets()
 		return;
 	}
 
-	for (const FBGSeatView& View : UBGSeatViewLibrary::MakeSeatViews(PC))
+	for (FBGSeatView& View : UBGSeatViewLibrary::MakeSeatViews(PC))
 	{
+		//	연출이 아직 결과를 보여줄 때가 아니면 바뀌기 전 체력을 보여준다.
+		if (const int32* Held = HeldHealthBySeat.Find(View.SeatIndex))
+		{
+			View.Health = *Held;
+		}
+
 		//	본인 것은 머리 위가 아니라 좌하단 턴 패널이 맡는다.
 		if (View.bIsLocalPlayer)
 		{
@@ -500,7 +793,8 @@ void UBGSeatInfoDisplayComponent::ShowDetailFor(int32 SeatIndex)
 {
 	HideDetail();
 
-	if (SeatIndex == INDEX_NONE)
+	//	공격 연출 중에는 이름표를 걷어 둔다 — 상세만 떠 있으면 어색하다.
+	if (SeatIndex == INDEX_NONE || bPlatesHidden)
 	{
 		return;
 	}
