@@ -38,17 +38,24 @@ void UBGAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 	LoadVolumes();
 	const UBGDataSettings* Settings = GetDefault<UBGDataSettings>();
+	MasterSoundClass = Settings ? Settings->MasterSoundClass.LoadSynchronous() : nullptr;
 	MusicSoundClass = Settings ? Settings->MusicSoundClass.LoadSynchronous() : nullptr;
 	SFXSoundClass = Settings ? Settings->SFXSoundClass.LoadSynchronous() : nullptr;
-	UserSettingsSoundMix = Settings ? Settings->UserSettingsSoundMix.LoadSynchronous() : nullptr;
-	//	비면 그 갈래는 슬라이더가 움직여도 소리가 안 변한다.
-	if (!MusicSoundClass || !SFXSoundClass || !UserSettingsSoundMix)
+	MasterSoundMix = Settings ? Settings->MasterSoundMix.LoadSynchronous() : nullptr;
+	MusicSoundMix = Settings ? Settings->MusicSoundMix.LoadSynchronous() : nullptr;
+	SFXSoundMix = Settings ? Settings->SFXSoundMix.LoadSynchronous() : nullptr;
+	if (!MasterSoundClass || !MusicSoundClass || !SFXSoundClass
+		|| !MasterSoundMix || !MusicSoundMix || !SFXSoundMix)
 	{
 		UE_LOG(LogBGAudio, Warning,
-			TEXT("볼륨 설정 에셋 로드 실패 — Music=%s SFX=%s SoundMix=%s. BGDataSettings 에서 지정할 것."),
+			TEXT("볼륨 설정 에셋 로드 실패 — MasterClass=%s MusicClass=%s SFXClass=%s "
+				"MasterMix=%s MusicMix=%s SFXMix=%s. BGDataSettings 에서 지정할 것."),
+			Settings ? *Settings->MasterSoundClass.ToString() : TEXT("BGDataSettings 없음"),
 			Settings ? *Settings->MusicSoundClass.ToString() : TEXT("BGDataSettings 없음"),
 			Settings ? *Settings->SFXSoundClass.ToString() : TEXT("BGDataSettings 없음"),
-			Settings ? *Settings->UserSettingsSoundMix.ToString() : TEXT("BGDataSettings 없음"));
+			Settings ? *Settings->MasterSoundMix.ToString() : TEXT("BGDataSettings 없음"),
+			Settings ? *Settings->MusicSoundMix.ToString() : TEXT("BGDataSettings 없음"),
+			Settings ? *Settings->SFXSoundMix.ToString() : TEXT("BGDataSettings 없음"));
 	}
 	EnsureVolumesApplied();
 
@@ -74,12 +81,29 @@ void UBGAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UBGAudioSubsystem::Deinitialize()
 {
-	if (bUserSettingsSoundMixPushed && UserSettingsSoundMix && GetWorld())
+	UWorld* World = GetWorld();
+	if (World)
 	{
-		UGameplayStatics::PopSoundMixModifier(this, UserSettingsSoundMix);
+		if (bMasterSoundMixPushed && MasterSoundMix)
+		{
+			UGameplayStatics::PopSoundMixModifier(World, MasterSoundMix);
+		}
+		if (bMusicSoundMixPushed && MusicSoundMix)
+		{
+			UGameplayStatics::PopSoundMixModifier(World, MusicSoundMix);
+		}
+		if (bSFXSoundMixPushed && SFXSoundMix)
+		{
+			UGameplayStatics::PopSoundMixModifier(World, SFXSoundMix);
+		}
 	}
-	bUserSettingsSoundMixPushed = false;
-	UserSettingsSoundMix = nullptr;
+	bMasterSoundMixPushed = false;
+	bMusicSoundMixPushed = false;
+	bSFXSoundMixPushed = false;
+	MasterSoundMix = nullptr;
+	MusicSoundMix = nullptr;
+	SFXSoundMix = nullptr;
+	MasterSoundClass = nullptr;
 	MusicSoundClass = nullptr;
 	SFXSoundClass = nullptr;
 
@@ -133,39 +157,38 @@ void UBGAudioSubsystem::SaveVolumes() const
 void UBGAudioSubsystem::EnsureVolumesApplied()
 {
 	UWorld* World = GetWorld();
-	if (!World || !World->bAllowAudioPlayback || !World->GetAudioDeviceRaw()
-		|| !UserSettingsSoundMix)
+	if (!World || !World->bAllowAudioPlayback || !World->GetAudioDeviceRaw())
 	{
 		return;
 	}
 
-	// GameInstanceSubsystem 초기화 시점에는 PIE 오디오 장치가 아직 없을 수 있다.
-	// 오버라이드를 먼저 등록하고, 실제 장치가 준비된 뒤에만 Mix를 푸시 완료로 기록한다.
-	//
-	//	⚠️ 두 클래스는 서로 부모·자식이 아니다 — 마스터 곱셈을 여기서 직접 한다.
-	//	   계층에 기대면 부모의 ChildClasses 가 저장되지 않았을 때 자식이 계층 순회에서 빠져
-	//	   마스터가 조용히 안 먹는다. bApplyToChildren 이 false 인 것도 같은 이유다.
-	auto Override = [this, World](USoundClass* Class, float Volume)
+	// SC_Basic의 자식으로 SC_Music과 SC_SFX가 연결되어 있어 엔진이
+	// Master × Category 볼륨을 자연스럽게 합성한다.
+	auto ApplyMix = [World](USoundMix* Mix, USoundClass* Class, float Volume,
+		bool bApplyToChildren, bool& bPushed)
 	{
-		if (Class)
+		if (!Mix || !Class)
 		{
-			UGameplayStatics::SetSoundMixClassOverride(
-				World, UserSettingsSoundMix, Class, FMath::Clamp(Volume, 0.f, 1.f),
-				/*Pitch=*/1.f, /*FadeInTime=*/0.05f, /*bApplyToChildren=*/false);
+			return;
+		}
+
+		UGameplayStatics::SetSoundMixClassOverride(
+			World, Mix, Class, FMath::Clamp(Volume, 0.f, 1.f),
+			/*Pitch=*/1.f, /*FadeInTime=*/0.05f, bApplyToChildren);
+
+		if (!bPushed)
+		{
+			UGameplayStatics::PushSoundMixModifier(World, Mix);
+			bPushed = true;
 		}
 	};
 
-	Override(MusicSoundClass, MasterVolume * MusicVolume);
-	Override(SFXSoundClass, MasterVolume * SFXVolume);
-
-	if (!bUserSettingsSoundMixPushed)
-	{
-		UGameplayStatics::PushSoundMixModifier(World, UserSettingsSoundMix);
-		bUserSettingsSoundMixPushed = true;
-		UE_LOG(LogBGAudio, Log,
-			TEXT("사용자 볼륨 Sound Mix 활성화 (마스터=%.2f BGM=%.2f 효과음=%.2f)"),
-			MasterVolume, MusicVolume, SFXVolume);
-	}
+	ApplyMix(MasterSoundMix, MasterSoundClass, MasterVolume,
+		/*bApplyToChildren=*/true, bMasterSoundMixPushed);
+	ApplyMix(MusicSoundMix, MusicSoundClass, MusicVolume,
+		/*bApplyToChildren=*/false, bMusicSoundMixPushed);
+	ApplyMix(SFXSoundMix, SFXSoundClass, SFXVolume,
+		/*bApplyToChildren=*/false, bSFXSoundMixPushed);
 }
 
 void UBGAudioSubsystem::ApplyVolumes()
