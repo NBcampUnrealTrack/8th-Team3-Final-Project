@@ -11,6 +11,8 @@
 #include "UI/Widget/BGHeartSlotWidget.h"
 #include "BGSeatInfoWidget.generated.h"
 
+class UFont;
+
 /**
  * WBP 에서 OnSeatInfoChanged 를 구현해 자기 텍스트를 채운다.
  *
@@ -23,6 +25,8 @@ class BG_API UBGSeatInfoWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	UBGSeatInfoWidget(const FObjectInitializer& ObjectInitializer);
+
 	/** 좌석 정보를 밀어넣는다. 매 프레임 불러도 안전하다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|SeatInfo")
 	void SetSeatInfo(const FBGSeatView& InView);
@@ -77,6 +81,10 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UBGHeartSlotWidget> Heart_6;
+
+	/** WBP 가 배치를 주지 않아 코드가 텍스트를 만들 때 쓰는 폰트. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo|Style")
+	TObjectPtr<UFont> TextFont;
 
 	/** 값이 들어왔다. 색·애니메이션처럼 텍스트 말고 더 할 것이 있으면 여기서 한다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|SeatInfo")
