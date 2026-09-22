@@ -10,6 +10,7 @@
 #include "Debug/BGCardLog.h"
 #include "Card/BGDataSubsystem.h"
 #include "Card/BGDiceComponent.h"
+#include "Audio/BGAudioSubsystem.h"
 #include "BGGameplayTags.h"
 #include "Core/BGPlayerState.h"
 #include "Core/BGCharacter.h"
@@ -1121,6 +1122,8 @@ void ABGGameState::BeginTurn(int32 Seat)
 		return;
 	}
 
+	MulticastPlaySystemAudio(BG::Audio::System::TurnStart.GetTag());
+
 	SetCurrentSeat(Seat);
 	SetPhaseTag(BG::Phase::TurnStart.GetTag());
 
@@ -1982,6 +1985,11 @@ void ABGGameState::ReturnToLobby()
 
 void ABGGameState::AdvanceToNextSeat()
 {
+	if (HasAuthority() && bMatchRunning && CurrentSeat != INDEX_NONE)
+	{
+		MulticastPlaySystemAudio(BG::Audio::System::TurnEnd.GetTag());
+	}
+
 	//	넘어가는 동안에는 밧줄이 타지 않는다. 새 좌석의 BeginTurn 이 다시 붙인다.
 	if (Rope)
 	{
@@ -2019,6 +2027,19 @@ void ABGGameState::AdvanceToNextSeat()
 	}
 
 	BeginTurn(Alive[NextIndex]);
+}
+
+void ABGGameState::MulticastPlaySystemAudio_Implementation(FGameplayTag AudioTag)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->Play(AudioTag);
+	}
 }
 
 void ABGGameState::GetDeck(TArray<FBGCardInstance>& OutDeck) const

@@ -31,6 +31,8 @@ namespace BG
 		namespace System
 		{
 			UE_DEFINE_GAMEPLAY_TAG(TurnStart,   "Audio.System.Turn.Start")
+			UE_DEFINE_GAMEPLAY_TAG(TurnCountdown, "Audio.System.Turn.Countdown")
+			UE_DEFINE_GAMEPLAY_TAG(TurnEnd,     "Audio.System.Turn.End")
 			UE_DEFINE_GAMEPLAY_TAG(RoleReveal,  "Audio.System.RoleReveal")
 			UE_DEFINE_GAMEPLAY_TAG(Victory,     "Audio.System.Victory")
 			UE_DEFINE_GAMEPLAY_TAG(Defeat,      "Audio.System.Defeat")

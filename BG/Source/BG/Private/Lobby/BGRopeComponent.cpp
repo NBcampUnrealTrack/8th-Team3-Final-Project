@@ -1,5 +1,7 @@
 #include "Lobby/BGRopeComponent.h"
 
+#include "Audio/BGAudioSubsystem.h"
+#include "BGGameplayTags.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerState.h"
 #include "Debug/BGCardLog.h"
@@ -9,8 +11,51 @@
 
 UBGRopeComponent::UBGRopeComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
 	SetIsReplicatedByDefault(true);
+}
+
+void UBGRopeComponent::TickComponent(float DeltaTime, ELevelTick TickType,
+	FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (Rope.Seat == INDEX_NONE)
+	{
+		LastCountdownSecond = INDEX_NONE;
+		LastCountdownSeat = INDEX_NONE;
+		return;
+	}
+
+	//	멈춘 동안에는 남은 초와 마지막 재생 초를 모두 유지한다. 다시 탈 때 같은 초가
+	//	한 번 더 울리지 않고, 다음 정수 초 경계를 지날 때 이어서 재생된다.
+	if (Rope.bPaused)
+	{
+		return;
+	}
+
+	const int32 SecondsRemaining = FMath::CeilToInt(GetSecondsRemaining());
+	if (LastCountdownSeat != Rope.Seat || SecondsRemaining > 10)
+	{
+		LastCountdownSeat = Rope.Seat;
+		LastCountdownSecond = INDEX_NONE;
+	}
+
+	if (SecondsRemaining < 1 || SecondsRemaining > 10 || SecondsRemaining == LastCountdownSecond)
+	{
+		return;
+	}
+
+	LastCountdownSecond = SecondsRemaining;
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->Play(BG::Audio::System::TurnCountdown.GetTag());
+	}
 }
 
 UBGRopeComponent* UBGRopeComponent::Find(const UWorld* World)

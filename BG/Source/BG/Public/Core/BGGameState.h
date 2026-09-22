@@ -536,6 +536,10 @@ protected:
 
 	void BroadcastTurnState();
 
+	/** 서버에서 발생한 시스템 사운드를 모든 플레이어 화면에 같은 순서로 재생한다. */
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastPlaySystemAudio(FGameplayTag AudioTag);
+
 	//	서버 전용. 현재 좌석과 판 진행 여부를 바꾸는 유일한 입구다(SetPhaseTag 와 같은 원칙).
 	void SetCurrentSeat(int32 Seat);
 	void SetMatchRunning(bool bRunning);

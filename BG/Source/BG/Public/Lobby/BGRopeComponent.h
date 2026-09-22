@@ -151,6 +151,9 @@ public:
 	int32 GetMaxStrikes() const { return MaxStrikes; }
 
 protected:
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
+		FActorComponentTickFunction* ThisTickFunction) override;
+
 	/** 접속 중인 사람의 턴 길이(초). */
 	UPROPERTY(EditDefaultsOnly, Config, Category = "BG|Rope")
 	float TurnSeconds = 20.f;
@@ -202,4 +205,8 @@ protected:
 
 	//	서버 전용. 놓아 주는 쪽이 빠졌을 때를 대비한 감시 타이머.
 	FTimerHandle PauseWatchdog;
+
+	//	각 로컬 화면에서 마지막으로 울린 카운트다운 초. 서버 복제 값에는 포함하지 않는다.
+	int32 LastCountdownSecond = INDEX_NONE;
+	int32 LastCountdownSeat = INDEX_NONE;
 };
