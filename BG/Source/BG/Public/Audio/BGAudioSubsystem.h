@@ -8,6 +8,8 @@
 class UAudioComponent;
 class UButton;
 class UDataTable;
+class USoundClass;
+class USoundMix;
 class UUserWidget;
 struct FBGSystemAudioRow;
 
@@ -53,7 +55,49 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Audio")
 	bool HasAudioRow(FGameplayTag AudioTag) const;
 
+	//	볼륨은 마스터 · BGM · 효과음 셋이지만 Sound Class 는 둘뿐이다(SC_Music · SC_Basic).
+	//	마스터는 클래스가 아니라 두 값에 곱해지는 배수이고, 곱셈은 EnsureVolumesApplied 가 직접 한다.
+	//
+	//	⚠️ 둘은 서로 부모·자식이 아니다. 계층에 기대면 부모의 ChildClasses 가 저장되지 않았을 때
+	//	   자식이 계층 순회에서 빠져 마스터가 조용히 안 먹는다.
+	//
+	//	분류는 사운드 에셋의 SoundClassObject 가 정한다 — Niagara 처럼 서브시스템을 안 거치는
+	//	재생 경로도 그 값을 따르기 때문이다. 서브시스템으로 낸 소리는 CreateComponent 가
+	//	Row.Category 로 한 번 더 덮어써서 DT 쪽 분류가 이기게 한다.
+
+	/** 사용자 마스터 볼륨. 아래 둘에 곱해져서 적용된다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Audio")
+	float GetMasterVolume() const { return MasterVolume; }
+
+	/** SC_Music에 적용되는 BGM 볼륨. */
+	UFUNCTION(BlueprintPure, Category = "BG|Audio")
+	float GetMusicVolume() const { return MusicVolume; }
+
+	/** SC_SFX에 적용되는 효과음 볼륨. DT의 UI · System 행이 모두 여기로 간다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Audio")
+	float GetSFXVolume() const { return SFXVolume; }
+
+	/** 값을 저장하고 Sound Mix 오버라이드에 즉시 반영한다. */
+	UFUNCTION(BlueprintCallable, Category = "BG|Audio")
+	void SetMasterVolume(float InVolume);
+
+	UFUNCTION(BlueprintCallable, Category = "BG|Audio")
+	void SetMusicVolume(float InVolume);
+
+	UFUNCTION(BlueprintCallable, Category = "BG|Audio")
+	void SetSFXVolume(float InVolume);
+
+	/** 저장값을 바꾸지 않고 현재 World의 오디오 장치에 세 볼륨을 다시 적용한다. */
+	void ApplyVolumes();
+
 private:
+	void LoadVolumes();
+	void SaveVolumes() const;
+	void EnsureVolumesApplied();
+
+	/** Row 분류에 맞는 Sound Class. 못 찾으면 nullptr — 그때는 사운드 에셋이 가진 클래스를 그대로 쓴다. */
+	USoundClass* ResolveSoundClass(const FBGSystemAudioRow& Row) const;
+
 	const FBGSystemAudioRow* FindRow(FGameplayTag AudioTag) const;
 	UAudioComponent* CreateComponent(FGameplayTag AudioTag, const FBGSystemAudioRow& Row);
 	float ResolveFadeOut(const FBGSystemAudioRow* Row, float Override) const;
@@ -82,10 +126,24 @@ private:
 	TObjectPtr<UDataTable> AudioTable;
 
 	UPROPERTY(Transient)
+	TObjectPtr<USoundClass> MusicSoundClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundClass> SFXSoundClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USoundMix> UserSettingsSoundMix;
+
+	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UAudioComponent>> ActiveSounds;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> CurrentMusic;
 
 	FGameplayTag CurrentMusicTag;
+
+	float MasterVolume = 1.f;
+	float MusicVolume  = 1.f;
+	float SFXVolume    = 1.f;
+	bool bUserSettingsSoundMixPushed = false;
 };

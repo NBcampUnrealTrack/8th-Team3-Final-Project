@@ -209,12 +209,8 @@ public:
 	UPROPERTY()
 	class UBGChatingWidget* ChatWidgetInstance;
 
-	// PvE 로비(세션 없음)에서 "게임 시작" 버튼 하나짜리 위젯. PvP는 세션 로비를 쓰므로 비워둔다.
-	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
-	TSubclassOf<class UBGPvELobbyWidget> PvELobbyWidgetClass;
-
-	UPROPERTY()
-	class UBGPvELobbyWidget* PvELobbyWidgetInstance;
+	// PvE 로비("게임 시작" 버튼)는 여기서 들고 있지 않다 — WBP_BGHUD 안에 얹혀 있고
+	// 띄울지 말지는 UBGPvELobbyWidget 이 스스로 본다.
 
 	// PvE 조우 승리 보상 선택 위젯. 보상 후보가 있을 때만 스스로 나타난다(PvELobbyWidget과 짝).
 	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")

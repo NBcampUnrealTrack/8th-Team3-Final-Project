@@ -5,6 +5,22 @@
 #include "Components/OverlaySlot.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
+#include "UObject/SoftObjectPath.h"
+
+namespace
+{
+	//	코드로 만든 텍스트 위젯은 엔진 기본 폰트(Roboto)를 물고 나온다 — WBP 쪽과 같은 폰트로 맞춘다.
+	void ApplySeatInfoFont(UTextBlock* Block)
+	{
+		FSlateFontInfo Font = Block->GetFont();
+		if (UObject* Loaded = FSoftObjectPath(TEXT("/Game/UI/Font/HeirofLightRegular_Font.HeirofLightRegular_Font")).TryLoad())
+		{
+			Font.FontObject = Loaded;
+			Font.TypefaceFontName = TEXT("Default");
+		}
+		Block->SetFont(Font);
+	}
+}
 
 void UBGSeatInfoWidget::SetSeatInfo(const FBGSeatView& InView)
 {
@@ -81,6 +97,7 @@ void UBGSeatInfoWidget::BuildFallbackLayout()
 			continue;
 		}
 
+		ApplySeatInfoFont(Line);
 		Line->SetJustification(ETextJustify::Center);
 		Line->SetShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.85f));
 		Line->SetShadowOffset(FVector2D(1.f, 1.f));

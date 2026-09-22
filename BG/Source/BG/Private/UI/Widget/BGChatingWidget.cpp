@@ -10,6 +10,20 @@
 #include "Components/Button.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Core/BGPlayerController.h"
+#include "UObject/SoftObjectPath.h"
+
+namespace
+{
+	//	코드로 만든 텍스트 위젯은 엔진 기본 폰트(Roboto)를 물고 나온다 — WBP 쪽과 같은 폰트로 맞춘다.
+	void ApplyChatLogFont(FSlateFontInfo& Font)
+	{
+		if (UObject* Loaded = FSoftObjectPath(TEXT("/Game/UI/Font/HeirofLightRegular_Font.HeirofLightRegular_Font")).TryLoad())
+		{
+			Font.FontObject = Loaded;
+			Font.TypefaceFontName = TEXT("Default");
+		}
+	}
+}
 
 void UBGChatingWidget::NativeConstruct()
 {
@@ -137,6 +151,7 @@ void UBGChatingWidget::AddEntryToLog(const FBGChatEntry& Entry)
 	//	NewObject 로 만든 것이라 WBP 에서 손댈 수 없다. 여기서 정한다.
 	FSlateFontInfo Font = Line->GetFont();
 	Font.Size = LogFontSize;
+	ApplyChatLogFont(Font);
 	Line->SetFont(Font);
 
 	Line->SetColorAndOpacity(FSlateColor(Entry.bSystem ? SystemTextColor : LogTextColor));
