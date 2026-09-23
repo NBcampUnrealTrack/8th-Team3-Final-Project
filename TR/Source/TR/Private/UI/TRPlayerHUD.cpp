@@ -2,7 +2,6 @@
 
 #include "UI/TRPlayerHUD.h"
 #include "Blueprint/UserWidget.h"
-#include "Debug/TRGameplayLog.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
@@ -161,7 +160,7 @@ void ATRPlayerHUD::BeginPlay()
 	if (APlayerController* PC = GetOwningPlayerController())
 	{
 		EnableInput(PC);
-		if (IsValid(InputComponent))
+		if (ensure(InputComponent))
 		{
 			InputComponent->BindKey(PauseKey, IE_Pressed, this, &ATRPlayerHUD::TogglePauseMenu);
 		}
@@ -186,10 +185,7 @@ void ATRPlayerHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ATRPlayerHUD::BindMatchPhase()
 {
 	UWorld* World = GetWorld();
-	if (!IsValid(World))
-	{
-		return;
-	}
+	check(World);
 
 	if (AGameStateBase* GameState = World->GetGameState())
 	{
@@ -232,9 +228,9 @@ void ATRPlayerHUD::ApplyMatchPhase(bool bStarted)
 {
 	EScreenPhase Wanted = bStarted ? EScreenPhase::Gameplay : EScreenPhase::PreMatch;
 
-	if (Wanted == EScreenPhase::PreMatch && !IsValid(PreMatchWidgetClass))
+	if (Wanted == EScreenPhase::PreMatch
+		&& !ensureMsgf(PreMatchWidgetClass, TEXT("BP 의 PreMatchWidgetClass 가 비어 있다")))
 	{
-		UE_LOG(LogTRGameplay, Warning, TEXT("PreMatchWidgetClass is not set"));
 		Wanted = EScreenPhase::Gameplay;
 	}
 
@@ -259,7 +255,7 @@ void ATRPlayerHUD::ShowPreMatchScreen()
 	APlayerController* PC = GetOwningPlayerController();
 
 	PreMatchWidget = CreateWidget<UUserWidget>(PC, PreMatchWidgetClass);
-	if (!IsValid(PreMatchWidget))
+	if (!ensure(PreMatchWidget))
 	{
 		return;
 	}
@@ -313,14 +309,13 @@ void ATRPlayerHUD::ShowGameplayHUD()
 		bCenterMouse = true;
 	}
 
-	if (!IsValid(PlayerHUDWidgetClass))
+	if (!ensureMsgf(PlayerHUDWidgetClass, TEXT("BP 의 PlayerHUDWidgetClass 가 비어 있다")))
 	{
-		UE_LOG(LogTRGameplay, Warning, TEXT("PlayerHUDWidgetClass is not set"));
 		return;
 	}
 
 	PlayerHUDWidget = CreateWidget<UTRPlayerHUDWidget>(PC, PlayerHUDWidgetClass);
-	if (IsValid(PlayerHUDWidget))
+	if (ensure(PlayerHUDWidget))
 	{
 		PlayerHUDWidget->AddToViewport();
 	}
@@ -336,14 +331,13 @@ void ATRPlayerHUD::ToggleControlConsole()
 		return;
 	}
 
-	if (!IsValid(ControlConsoleWidgetClass))
+	if (!ensureMsgf(ControlConsoleWidgetClass, TEXT("BP 의 ControlConsoleWidgetClass 가 비어 있다")))
 	{
-		UE_LOG(LogTRGameplay, Warning, TEXT("ControlConsoleWidgetClass is not set"));
 		return;
 	}
 
 	ControlConsoleWidget = CreateWidget<UTRControlConsoleWidget>(GetOwningPlayerController(), ControlConsoleWidgetClass);
-	if (IsValid(ControlConsoleWidget))
+	if (ensure(ControlConsoleWidget))
 	{
 		ControlConsoleWidget->AddToViewport(ControlConsoleZOrder);
 	}
@@ -365,14 +359,13 @@ void ATRPlayerHUD::TogglePauseMenu()
 		return;
 	}
 
-	if (!IsValid(PauseMenuWidgetClass))
+	if (!ensureMsgf(PauseMenuWidgetClass, TEXT("BP 의 PauseMenuWidgetClass 가 비어 있다")))
 	{
-		UE_LOG(LogTRGameplay, Warning, TEXT("PauseMenuWidgetClass is not set"));
 		return;
 	}
 
 	PauseMenuWidget = CreateWidget<UTRPauseMenuWidget>(GetOwningPlayerController(), PauseMenuWidgetClass);
-	if (IsValid(PauseMenuWidget))
+	if (ensure(PauseMenuWidget))
 	{
 		PauseMenuWidget->AddToViewport(PauseMenuZOrder);
 	}

@@ -33,7 +33,7 @@ void UTRPlayerHUDWidget::NativeConstruct()
 
 void UTRPlayerHUDWidget::SetCrosshairVisible(bool bVisible)
 {
-	if (!IsValid(CrossHair))
+	if (!ensure(CrossHair))
 	{
 		return;
 	}
@@ -48,13 +48,13 @@ void UTRPlayerHUDWidget::SetTurretControlsVisible(bool bMounted)
 
 	for (UWidget* OnFootLine : { Repair.Get(), Cancel.Get(), Move.Get() })
 	{
-		if (IsValid(OnFootLine))
+		if (ensure(OnFootLine))
 		{
 			OnFootLine->SetVisibility(OnFootVisibility);
 		}
 	}
 
-	if (IsValid(Fire))
+	if (ensure(Fire))
 	{
 		Fire->SetVisibility(MountedVisibility);
 	}
@@ -63,7 +63,7 @@ void UTRPlayerHUDWidget::SetTurretControlsVisible(bool bMounted)
 // 빈 텍스트면 줄을 접고, 아니면 표시 및 텍스트 갱신
 static void ApplyTextLine(UWidget* Line, UTextBlock* Text, const FText& Value)
 {
-	if (!IsValid(Line))
+	if (!ensure(Line))
 	{
 		return;
 	}
@@ -71,7 +71,7 @@ static void ApplyTextLine(UWidget* Line, UTextBlock* Text, const FText& Value)
 	const bool bVisible = !Value.IsEmpty();
 	Line->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 
-	if (bVisible && IsValid(Text))
+	if (bVisible && ensure(Text))
 	{
 		Text->SetText(Value);
 	}
@@ -79,7 +79,7 @@ static void ApplyTextLine(UWidget* Line, UTextBlock* Text, const FText& Value)
 
 void UTRPlayerHUDWidget::SetInteractionPrompts(const FText& RepairPrompt, const FText& ReloadPrompt, const FText& InteractPrompt)
 {
-	if (!IsValid(PlayerInteraction_VerticalBox))
+	if (!ensure(PlayerInteraction_VerticalBox))
 	{
 		return;
 	}
@@ -116,12 +116,12 @@ void UTRPlayerHUDWidget::SetActionProgress(ETRActionType ActionType, float Progr
 		return;
 	}
 
-	if (IsValid(InteractPercent))
+	if (ensure(InteractPercent))
 	{
 		InteractPercent->SetText(FText::AsPercent(Progress01));
 	}
 
-	if (IsValid(ProgressValue))
+	if (ensure(ProgressValue))
 	{
 		if (UMaterialInstanceDynamic* FillMaterial = ProgressValue->GetDynamicMaterial())
 		{
@@ -153,7 +153,7 @@ static FText MakeHPText(float CurrentHP, float MaxHP)
 
 void UTRPlayerHUDWidget::SetTargetInfo(const AActor* Target)
 {
-	if (!IsValid(PlayerInfoPanel))
+	if (!ensure(PlayerInfoPanel))
 	{
 		return;
 	}
@@ -196,7 +196,7 @@ void UTRPlayerHUDWidget::SetTargetInfo(const AActor* Target)
 
 void UTRPlayerHUDWidget::SetCarriedSupply(int32 Count)
 {
-	if (!IsValid(SupplySlotBox))
+	if (!ensure(SupplySlotBox))
 	{
 		return;
 	}

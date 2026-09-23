@@ -171,7 +171,7 @@ TOptional<FUIInputConfig> UTRSettingsWidget::GetDesiredInputConfig() const
 void UTRSettingsWidget::InitializeRows()
 {
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
-	if (!S)
+	if (!ensure(S))
 	{
 		return;
 	}
@@ -230,7 +230,7 @@ void UTRSettingsWidget::InitializeRows()
 void UTRSettingsWidget::RefreshFromSettings()
 {
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
-	if (!S)
+	if (!ensure(S))
 	{
 		SetStatus(TEXT("설정 시스템을 찾을 수 없습니다"), false);
 		return;
@@ -276,7 +276,7 @@ UTRSettingsSubsystem* UTRSettingsWidget::GetSettingsSubsystem() const
 void UTRSettingsWidget::HandleSliderValueChanged(const ETRSettingId SettingId, const float NewValue)
 {
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
-	if (!S)
+	if (!ensure(S))
 	{
 		return;
 	}
@@ -309,7 +309,7 @@ void UTRSettingsWidget::HandleSliderValueChanged(const ETRSettingId SettingId, c
 void UTRSettingsWidget::HandleOptionChanged(const ETRSettingId SettingId, const FString& SelectedOption)
 {
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
-	if (!S)
+	if (!ensure(S))
 	{
 		return;
 	}
@@ -319,7 +319,7 @@ void UTRSettingsWidget::HandleOptionChanged(const ETRSettingId SettingId, const 
 	case ETRSettingId::DisplayMode:
 	{
 		const int32 Mode = TRSettingsUI::DisplayModeOptions.IndexOfByKey(SelectedOption);
-		if (Mode == INDEX_NONE)
+		if (!ensureMsgf(Mode != INDEX_NONE, TEXT("TRSettings: unknown display mode option %s"), *SelectedOption))
 		{
 			return;
 		}
@@ -332,7 +332,7 @@ void UTRSettingsWidget::HandleOptionChanged(const ETRSettingId SettingId, const 
 	case ETRSettingId::Resolution:
 	{
 		const FIntPoint Resolution = TRSettingsUI::StringToResolution(SelectedOption);
-		if (Resolution.X <= 0 || Resolution.Y <= 0)
+		if (!ensureMsgf(Resolution.X > 0 && Resolution.Y > 0, TEXT("TRSettings: unparsable resolution option %s"), *SelectedOption))
 		{
 			return;
 		}
@@ -401,7 +401,7 @@ void UTRSettingsWidget::SetUpTabs()
 
 	for (const TPair<FName, UWidget*>& Page : Pages)
 	{
-		if (IsValid(Page.Value))
+		if (ensure(Page.Value))
 		{
 			TabList->RegisterTab(Page.Key, TabButtonClass, Page.Value);
 		}
@@ -417,7 +417,8 @@ void UTRSettingsWidget::SetUpTabs()
 
 void UTRSettingsWidget::ApplyTabLabel(const FName TabId, const FText& InLabel) const
 {
-	if (UTRSettingsCommonButton* TabButton = Cast<UTRSettingsCommonButton>(TabList->GetTabButtonBaseByID(TabId)))
+	UTRSettingsCommonButton* TabButton = Cast<UTRSettingsCommonButton>(TabList->GetTabButtonBaseByID(TabId));
+	if (ensureMsgf(TabButton, TEXT("TRSettings: tab button %s not found"), *TabId.ToString()))
 	{
 		TabButton->SetButtonText(InLabel);
 	}
@@ -427,7 +428,7 @@ void UTRSettingsWidget::ApplyTabLabel(const FName TabId, const FText& InLabel) c
 void UTRSettingsWidget::HandleApplyClicked()
 {
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
-	const bool bOK = S && S->ApplySettings(true);
+	const bool bOK = ensure(S) && S->ApplySettings(true);
 	SetStatus(bOK ? TEXT("적용하고 저장했습니다") : TEXT("적용에 실패했습니다"), bOK);
 }
 
@@ -435,7 +436,7 @@ void UTRSettingsWidget::HandleApplyClicked()
 void UTRSettingsWidget::HandleCancelClicked()
 {
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
-	const bool bOK = S && S->ReloadSettings();
+	const bool bOK = ensure(S) && S->ReloadSettings();
 	RefreshFromSettings();
 	SetStatus(bOK ? TEXT("저장하지 않은 변경을 되돌렸습니다") : TEXT("되돌리기에 실패했습니다"), bOK);
 }
@@ -444,7 +445,7 @@ void UTRSettingsWidget::HandleCancelClicked()
 void UTRSettingsWidget::HandleDefaultsClicked()
 {
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
-	const bool bOK = S && S->ResetToDefaults();
+	const bool bOK = ensure(S) && S->ResetToDefaults();
 	RefreshFromSettings();
 	SetStatus(bOK ? TEXT("기본값을 적용했습니다. 저장하려면 적용하고 저장을 누르세요") : TEXT("기본값 복원에 실패했습니다"), bOK);
 }
@@ -454,7 +455,7 @@ void UTRSettingsWidget::HandleAutoDetectClicked()
 {
 	SetStatus(TEXT("권장 그래픽 설정을 측정하는 중입니다"), true);
 	UTRSettingsSubsystem* S = GetSettingsSubsystem();
-	const bool bOK = S && S->RunHardwareBenchmark(10);
+	const bool bOK = ensure(S) && S->RunHardwareBenchmark(10);
 	RefreshFromSettings();
 	SetStatus(bOK ? TEXT("권장 설정을 적용했습니다. 저장하려면 적용하고 저장을 누르세요") : TEXT("성능 측정에 실패했습니다"), bOK);
 }
@@ -463,7 +464,8 @@ void UTRSettingsWidget::HandleAutoDetectClicked()
 // 저장 안 한 변경을 되돌리고 닫는다. AUTO DETECT, DEFAULTS 는 누른 즉시 실행 상태를 바꾼다.
 void UTRSettingsWidget::HandleBackClicked()
 {
-	if (UTRSettingsSubsystem* S = GetSettingsSubsystem())
+	UTRSettingsSubsystem* S = GetSettingsSubsystem();
+	if (ensure(S))
 	{
 		S->ReloadSettings();
 	}

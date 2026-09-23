@@ -15,7 +15,7 @@ UTRSettingsTabList::UTRSettingsTabList(const FObjectInitializer& ObjectInitializ
 
 void UTRSettingsTabList::HandleTabCreation_Implementation(FName TabNameID, UCommonButtonBase* TabButton)
 {
-	if (!IsValid(TabButtonBox) || !IsValid(TabButton))
+	if (!ensure(TabButtonBox) || !ensure(TabButton))
 	{
 		return;
 	}

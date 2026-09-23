@@ -7,7 +7,6 @@
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Core/TRGameState.h"
-#include "Debug/TRGameplayLog.h"
 #include "Interaction/TRActionComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Player/TRPlayerCharacter.h"
@@ -64,7 +63,7 @@ void UTRControlConsoleWidget::NativeTick(const FGeometry& MyGeometry, float InDe
 void UTRControlConsoleWidget::ApplyPopupInputMode()
 {
 	APlayerController* PC = GetOwningPlayer();
-	if (!IsValid(PC))
+	if (!ensure(PC))
 	{
 		return;
 	}
@@ -98,7 +97,7 @@ void UTRControlConsoleWidget::RestoreGameInputMode()
 
 void UTRControlConsoleWidget::CollectSlotRow(const UEnum* SlotEnum, const TCHAR* NamePrefix, bool bArmor)
 {
-	if (!IsValid(SlotEnum))
+	if (!ensure(SlotEnum))
 	{
 		return;
 	}
@@ -124,10 +123,7 @@ void UTRControlConsoleWidget::CollectSlotRow(const UEnum* SlotEnum, const TCHAR*
 		Button->OnClicked().AddUObject(this, &UTRControlConsoleWidget::BuildSlot, SlotIndex);
 	}
 
-	if (!Missing.IsEmpty())
-	{
-		UE_LOG(LogTRGameplay, Warning, TEXT("%s: console buttons not found: %s%s"), *GetName(), NamePrefix, *FString::Join(Missing, TEXT(", ")));
-	}
+	ensureMsgf(Missing.IsEmpty(), TEXT("%s: console buttons not found: %s%s"), *GetName(), NamePrefix, *FString::Join(Missing, TEXT(", ")));
 }
 
 void UTRControlConsoleWidget::Refresh()
@@ -283,7 +279,7 @@ void UTRControlConsoleWidget::BuildSlot(int32 SlotIndex)
 {
 	ATRTrain* Train = GetTrain();
 	UTRActionComponent* ActionComp = GetActionComponent();
-	if (!IsValid(Train) || !IsValid(ActionComp) || !SlotButtons.IsValidIndex(SlotIndex))
+	if (!ensure(SlotButtons.IsValidIndex(SlotIndex)) || !IsValid(Train) || !IsValid(ActionComp))
 	{
 		return;
 	}

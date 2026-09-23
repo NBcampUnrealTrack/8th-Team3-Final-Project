@@ -27,7 +27,8 @@ void UTRPauseMenuWidget::NativeConstruct()
 	Btn_Quit->OnClicked().RemoveAll(this);
 	Btn_Quit->OnClicked().AddUObject(this, &UTRPauseMenuWidget::HandleQuitClicked);
 
-	if (APlayerController* PC = GetOwningPlayer())
+	APlayerController* PC = GetOwningPlayer();
+	if (ensure(PC))
 	{
 		ATRPlayerHUD::PushPopupInputMode(PC, this);
 

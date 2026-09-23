@@ -21,7 +21,7 @@ void UTRMainMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	if (IsValid(Btn_FindGame))
+	if (ensure(Btn_FindGame))
 	{
 		Btn_FindGame->OnClicked().RemoveAll(this);
 		Btn_FindGame->OnClicked().AddUObject(this, &UTRMainMenuWidget::HandleFindGameClicked);
@@ -29,7 +29,8 @@ void UTRMainMenuWidget::NativeConstruct()
 
 	SettingsButton = GetWidgetFromName(TEXT("Btn_Settings"));
 
-	if (UCommonButtonBase* SettingsAsButton = Cast<UCommonButtonBase>(SettingsButton))
+	UCommonButtonBase* SettingsAsButton = Cast<UCommonButtonBase>(SettingsButton);
+	if (ensureMsgf(SettingsAsButton, TEXT("WBP 에 Btn_Settings 버튼이 없다")))
 	{
 		SettingsAsButton->OnClicked().RemoveAll(this);
 		SettingsAsButton->OnClicked().AddUObject(this, &UTRMainMenuWidget::HandleSettingsClicked);
@@ -309,7 +310,8 @@ void UTRMainMenuWidget::HandleRefreshClicked()
 
 void UTRMainMenuWidget::HandleInviteClicked()
 {
-	if (IInterface_TRSession* Session = GetSession())
+	IInterface_TRSession* Session = GetSession();
+	if (ensure(Session))
 	{
 		Session->OpenInviteOverlay();
 	}
@@ -327,7 +329,7 @@ void UTRMainMenuWidget::HandleLeaveClicked()
 void UTRMainMenuWidget::HandleReadyClicked()
 {
 	UTRSessionFlow* Flow = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTRSessionFlow>() : nullptr;
-	if (Flow == nullptr)
+	if (!ensure(Flow))
 	{
 		return;
 	}
@@ -337,7 +339,8 @@ void UTRMainMenuWidget::HandleReadyClicked()
 
 void UTRMainMenuWidget::HandleStartClicked()
 {
-	if (UTRSessionFlow* Flow = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTRSessionFlow>() : nullptr)
+	UTRSessionFlow* Flow = GetGameInstance() ? GetGameInstance()->GetSubsystem<UTRSessionFlow>() : nullptr;
+	if (ensure(Flow))
 	{
 		Flow->StartMatch();
 	}
@@ -346,7 +349,8 @@ void UTRMainMenuWidget::HandleStartClicked()
 void UTRMainMenuWidget::HandleQuitClicked()
 {
 	// 세션을 남긴 채 끝내면 다음 실행에서 유령 방이 남는다.
-	if (IInterface_TRSession* Session = GetSession())
+	IInterface_TRSession* Session = GetSession();
+	if (ensure(Session))
 	{
 		Session->LeaveSession();
 	}
@@ -419,7 +423,7 @@ void UTRMainMenuWidget::ApplySlot(int32 SlotIndex, const FTRSessionSearchResult*
 	UTextBlock* const Labels[SlotCount] = { Txt_Slot0, Txt_Slot1, Txt_Slot2, Txt_Slot3 };
 	UTRMenuButton* const JoinButtons[SlotCount] = { Btn_JoinSlot0, Btn_JoinSlot1, Btn_JoinSlot2, Btn_JoinSlot3 };
 
-	if (SlotIndex < 0 || SlotIndex >= SlotCount)
+	if (!ensure(SlotIndex >= 0 && SlotIndex < SlotCount))
 	{
 		return;
 	}
@@ -452,7 +456,8 @@ void UTRMainMenuWidget::JoinBySlot(int32 SlotIndex)
 		return;   // 빈 자리다. 목록을 갱신하기 전이거나 결과가 그만큼 없다.
 	}
 
-	if (IInterface_TRSession* Session = GetSession())
+	IInterface_TRSession* Session = GetSession();
+	if (ensure(Session))
 	{
 		Session->JoinSessionByIndex(SlotResultIndices[SlotIndex]);
 	}
@@ -461,7 +466,7 @@ void UTRMainMenuWidget::JoinBySlot(int32 SlotIndex)
 void UTRMainMenuWidget::RefreshStatusTexts()
 {
 	IInterface_TRSession* Session = GetSession();
-	if (!Session)
+	if (!ensure(Session))
 	{
 		return;
 	}
@@ -490,7 +495,7 @@ void UTRMainMenuWidget::RefreshLobbyControls()
 	RefreshSessionPresence();
 
 	IInterface_TRSession* Session = GetSession();
-	if (Session == nullptr)
+	if (!ensure(Session))
 	{
 		return;
 	}
