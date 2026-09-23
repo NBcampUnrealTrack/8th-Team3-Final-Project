@@ -26,6 +26,7 @@ class UTexture2D;
  *   Text_Deck      (TextBlock, 선택 — 남은 덱 장수)
  *   Text_CardUse   (TextBlock, 선택 — "카드 1 / 2")
  *   Text_Rope      (TextBlock, 선택 — "밧줄 37초" 턴 제한 시간)
+ *   Image_Rope     (Image, 선택 — 밧줄이 타는 그림. 지금 아트는 깃털이다)
  *
  * 좌하단 본인 정보도 이 패널이 맡는다. 머리 위 이름표는 남만 띄우기 때문이다:
  *   Text_Name      (TextBlock, 선택 — 내 이름)
@@ -109,6 +110,14 @@ protected:
 	/** 밧줄(턴 제한 시간). 남은 초는 매 틱 줄어들므로 델리게이트가 아니라 여기서 직접 읽는다. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Rope;
+
+	//	밧줄이 타는 그림. 아트는 깃털이지만 부르는 이름은 밧줄 그대로다 —
+	//	게임 규칙 쪽이 전부 Rope 라서, 여기만 Feather 로 부르면 둘을 잇는 사람이 헷갈린다.
+	//
+	//	브러시 머티리얼의 Remaining(0~1) 스칼라를 매 틱 밀어 넣는다. 머티리얼이 그 값을
+	//	기준으로 오른쪽 끝부터 왼쪽으로 태운다(M_Feather_Burn).
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Rope;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Name;
@@ -257,5 +266,15 @@ private:
 
 	void RefreshRopeText();
 
+	/** 남은 비율을 밧줄 그림에 밀어 넣는다. 타는 중이 아니면 그림을 접는다. */
+	void RefreshRopeFeather();
+
+	/** Image_Rope 브러시의 머티리얼로 MID 를 한 번 만들어 둔다. 없으면 nullptr. */
+	UMaterialInstanceDynamic* GetRopeMaterial();
+
 	TWeakObjectPtr<class UBGRopeComponent> Rope;
+
+	/** Image_Rope 브러시에 물린 동적 머티리얼. 매 틱 Remaining 만 바꾼다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> RopeMaterial;
 };
