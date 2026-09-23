@@ -14,6 +14,7 @@ class UGameplayEffect;
 class UAnimInstance;
 class UNiagaraSystem;
 class USkeletalMesh;
+class UStaticMesh;
 class UTexture2D;
 
 /**
@@ -292,6 +293,7 @@ struct FBGCharacterAttackFX
  *   PassiveEffects      : 직업 정체성 패시브 GE(Infinite).
  *   GrantedAbilities    : 직업 고유 능동 GA.
  *   SkeletalMesh        : 직업 외형.
+ *   WeaponMesh          : 직업이 손에 쥐는 무기. 비우면 맨손.
  *   AttackFX            : CharacterAttack 정책 카드가 공유하는 직업별 Niagara 세트.
  */
 USTRUCT(BlueprintType)
@@ -340,6 +342,11 @@ public:
 	// 비워 두면 BP 기본 ABP 를 다시 물린다(스켈레톤이 호환될 때만 정상 동작).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
 	TSubclassOf<UAnimInstance> AnimClass;
+
+	// 손에 쥐는 무기 메시. ABGCharacter 가 WeaponSocketName 소켓에 붙인다(공용 스켈레톤이라
+	// 소켓 위치는 직업과 무관하게 같다). 비워 두면 무기 없이 맨손 — 정상 상태다(수도사 등).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	TSoftObjectPtr<UStaticMesh> WeaponMesh;
 
 	/** Bang·QuickStrike 등 CharacterAttack 정책 카드가 공유하는 직업별 연출. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|AttackFX")

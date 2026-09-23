@@ -45,6 +45,12 @@ ABGCharacter::ABGCharacter()
 	RevealMeshComponent->SetVisibility(false);
 	RevealMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
+	//	메시(GetMesh())의 소켓에 붙인다 — 스켈레톤은 공용이라 직업이 바뀌어도 소켓은 그대로다.
+	//	ApplyJobVisual 이 직업 Row 의 WeaponMesh 를 채운다(비어 있으면 맨손 그대로).
+	WeaponMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMeshComponent"));
+	WeaponMeshComponent->SetupAttachment(GetMesh(), WeaponSocketName);
+	WeaponMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
 	//	── 카메라 (구 ABGPlayerBase 에서 통합) ──
 	//	ACharacter 는 CapsuleComponent 를 루트로 하드코딩한다. 별도의 씬 루트를 둘 수 없으므로
 	//	두 카메라는 캡슐 밑에 붙는다 — 캡슐이 돌면 함께 돈다.
@@ -897,5 +903,29 @@ void ABGCharacter::ApplyJobVisual()
 			*GetName(), *JobTag.ToString(),
 			bMeshChanged && AppliedMesh ? *AppliedMesh->GetName() : TEXT("그대로"),
 			bAnimChanged ? *Row->AnimClass->GetName() : TEXT("그대로"));
+	}
+
+	// ── 무기 ──
+	//	메쉬/ABP 와 독립 판단한다 — 무기가 없는 직업(맨손, 수도사 등)도 정상 상태라
+	//	위 둘처럼 "비어 있으면 건너뛴다" 로 묶으면 이전 직업의 무기가 손에 남는다.
+	if (WeaponMeshComponent)
+	{
+		UStaticMesh* NewWeapon = nullptr;
+		if (!Row->WeaponMesh.IsNull())
+		{
+			NewWeapon = Row->WeaponMesh.LoadSynchronous();
+			if (!NewWeapon)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[BG] 직업 무기 메시 로드 실패 — %s (%s)"),
+					*JobTag.ToString(), *Row->WeaponMesh.ToString());
+			}
+		}
+
+		if (WeaponMeshComponent->GetStaticMesh() != NewWeapon)
+		{
+			WeaponMeshComponent->SetStaticMesh(NewWeapon);
+			UE_LOG(LogTemp, Log, TEXT("[BG] 직업 무기 적용 — %s (%s) 무기=%s"),
+				*GetName(), *JobTag.ToString(), NewWeapon ? *NewWeapon->GetName() : TEXT("맨손"));
+		}
 	}
 }
