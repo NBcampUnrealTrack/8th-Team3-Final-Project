@@ -1,4 +1,4 @@
-// BANG! 플레이어 컨트롤러 — 클라 입력을 서버로 중계한다 (md §1.2).
+﻿// BANG! 플레이어 컨트롤러 — 클라 입력을 서버로 중계한다 (md §1.2).
 // HUD 는 GAS 인풋 바인딩을 쓰지 않고, 카드 사용 의도를 이 커스텀 RPC 로 보낸다.
 
 #pragma once
@@ -194,6 +194,14 @@ public:
 	// ─────────────── 채팅 ───────────────────── //
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerSendChatMessage(const FString& Message);
+
+	// ─────────────── 핑 ───────────────────── //
+	//	검증과 전파는 UBGPingComponent 가 맡는다. 여기는 RPC 경계만 제공한다.
+	UFUNCTION(Server, Reliable, WithValidation)
+	void ServerSendPing(FGameplayTag PingTag, int32 TargetSeat);
+
+	UFUNCTION(BlueprintPure, Category = "BG|Ping")
+	class UBGPingComponent* GetPingComponent() const { return Ping; }
 	
 	UPROPERTY(EditDefaultsOnly, Category = "BG|UI")
 	TSubclassOf<class UBGChatingWidget> ChatWidgetClass;
@@ -201,12 +209,8 @@ public:
 	UPROPERTY()
 	class UBGChatingWidget* ChatWidgetInstance;
 
-	// PvE 로비(세션 없음)에서 "게임 시작" 버튼 하나짜리 위젯. PvP는 세션 로비를 쓰므로 비워둔다.
-	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
-	TSubclassOf<class UBGPvELobbyWidget> PvELobbyWidgetClass;
-
-	UPROPERTY()
-	class UBGPvELobbyWidget* PvELobbyWidgetInstance;
+	// PvE 로비("게임 시작" 버튼)는 여기서 들고 있지 않다 — WBP_BGHUD 안에 얹혀 있고
+	// 띄울지 말지는 UBGPvELobbyWidget 이 스스로 본다.
 
 	// PvE 조우 승리 보상 선택 위젯. 보상 후보가 있을 때만 스스로 나타난다(PvELobbyWidget과 짝).
 	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
@@ -518,6 +522,13 @@ private:
 	//	카드 위젯이 대신 들면 카드가 죽을 때 연출도 함께 끊긴다.
 	UPROPERTY(VisibleAnywhere, Category = "BG|Presentation")
 	TObjectPtr<class UBGPresentationDirector> PresentationDirector;
+
+	//	핑 발신·표시. 보는 사람 화면의 일이라 복제하지 않는다.
+	UPROPERTY(VisibleAnywhere, Category = "BG|Ping")
+	TObjectPtr<class UBGPingComponent> Ping;
+
+	UPROPERTY(VisibleAnywhere, Category = "BG|Ping")
+	TObjectPtr<class UBGPingDisplayComponent> PingDisplay;
 
 	//	로컬 연출 카메라. 복제하지 않는다 — 각 클라가 자기 것을 스폰한다.
 	UPROPERTY()

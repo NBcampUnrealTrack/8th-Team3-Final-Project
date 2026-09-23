@@ -1,10 +1,13 @@
 #include "UI/Widget/BGTurnPanelWidget.h"
 
+#include "Audio/BGAudioSubsystem.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "Debug/BGCardLog.h"
 #include "Lobby/BGRopeComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "UI/View/BGInfoTooltipRow.h"
 #include "UI/Widget/BGInfoTooltipWidget.h"
 #include "Engine/DataTable.h"
@@ -43,6 +46,10 @@ void UBGTurnPanelWidget::NativePreConstruct()
 void UBGTurnPanelWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->BindDefaultButtonsInWidget(this);
+	}
 
 	if (Button_EndTurn)
 	{
@@ -183,12 +190,63 @@ bool UBGTurnPanelWidget::TryBindRope()
 
 	//	위젯이 밧줄보다 늦게 만들어졌으면 점화 통지를 이미 놓쳤다 — 지금 상태로 한 번 맞춘다.
 	RefreshRopeText();
+	RefreshRopeFeather();
 	return true;
 }
 
 void UBGTurnPanelWidget::HandleRopeChanged(int32 Seat, float SecondsRemaining, float TotalSeconds)
 {
 	RefreshRopeText();
+	RefreshRopeFeather();
+}
+
+UMaterialInstanceDynamic* UBGTurnPanelWidget::GetRopeMaterial()
+{
+	if (RopeMaterial)
+	{
+		return RopeMaterial;
+	}
+
+	if (!Image_Rope)
+	{
+		return nullptr;   // WBP 에 밧줄 그림을 안 올렸다. 선택 사항이다.
+	}
+
+	//	⚠️ 브러시에 머티리얼이 아니라 텍스처가 들어 있으면 여기서 nullptr 이 나온다 —
+	//	   그러면 그림은 뜨지만 타지 않는다. WBP 에서 M_Feather_Burn 을 물릴 것.
+	RopeMaterial = Image_Rope->GetDynamicMaterial();
+	if (!RopeMaterial)
+	{
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[TurnPanel] Image_Rope 브러시에 머티리얼이 없다 — 밧줄이 타지 않는다."));
+	}
+	return RopeMaterial;
+}
+
+void UBGTurnPanelWidget::RefreshRopeFeather()
+{
+	if (!Image_Rope)
+	{
+		return;
+	}
+
+	const UBGRopeComponent* R = Rope.Get();
+	const bool bBurning = R && R->IsBurning();
+
+	//	타는 중이 아니면 자리째 접는다. 다 탄 깃털을 남겨 두면 다음 턴까지 숯이 걸려 있다.
+	Image_Rope->SetVisibility(bBurning
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
+
+	if (!bBurning)
+	{
+		return;
+	}
+
+	if (UMaterialInstanceDynamic* M = GetRopeMaterial())
+	{
+		M->SetScalarParameterValue(TEXT("Remaining"), FMath::Clamp(R->GetRemainingRatio(), 0.f, 1.f));
+	}
 }
 
 void UBGTurnPanelWidget::RefreshRopeText()
@@ -229,7 +287,8 @@ void UBGTurnPanelWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 	//	Text_Rope 가 없어도 부른다 — 그때는 화면 표시로 폴백하기 때문이다.
 	if (TryBindRope())
 	{
-		RefreshRopeText();   //	남은 초는 매 프레임 줄어든다 — 델리게이트로는 표현할 수 없다.
+		RefreshRopeText();     //	남은 초는 매 프레임 줄어든다 — 델리게이트로는 표현할 수 없다.
+		RefreshRopeFeather();  //	타는 자리도 마찬가지다.
 	}
 }
 
@@ -350,41 +409,28 @@ void UBGTurnPanelWidget::SetLocalSeatInfo(const FBGSeatView& InView)
 
 void UBGTurnPanelWidget::RefreshHealthHearts()
 {
-	UImage* const Hearts[] = { Img_Heart_1, Img_Heart_2, Img_Heart_3, Img_Heart_4, Img_Heart_5, Img_Heart_6 };
-	const int32 NumHearts = UE_ARRAY_COUNT(Hearts);
+	UBGHeartSlotWidget* const Hearts[] = { Heart_1, Heart_2, Heart_3, Heart_4, Heart_5, Heart_6 };
 
 	//	판 전에는 최대 체력이 0 이다 — 줄째로 접힌다.
-	const int32 MaxHealth = ShouldShowLocalStats() ? FMath::Min(LocalSeatView.MaxHealth, NumHearts) : 0;
-	const int32 Health = FMath::Clamp(LocalSeatView.Health, 0, MaxHealth);
-
-	for (int32 Index = 0; Index < NumHearts; ++Index)
-	{
-		UImage* Heart = Hearts[Index];
-		if (!Heart)
-		{
-			continue;
-		}
-
-		//	최대 체력을 넘는 칸은 자리까지 접는다. 숨기기만 하면 줄이 가운데로 모이지 않는다.
-		if (Index >= MaxHealth)
-		{
-			Heart->SetVisibility(ESlateVisibility::Collapsed);
-			continue;
-		}
-
-		Heart->SetVisibility(ESlateVisibility::HitTestInvisible);
-		Heart->SetColorAndOpacity(Index < Health ? HeartFullTint : HeartEmptyTint);
-	}
+	UBGHeartSlotWidget::RefreshRow(Hearts, LocalSeatView.Health, ShouldShowLocalStats() ? LocalSeatView.MaxHealth : 0,
+		HeartRow);
 }
 
 void UBGTurnPanelWidget::RefreshIcons()
 {
-	//	태그가 없거나(배정 전) 표에 없는 태그면 접는다. 브러시를 비우기만 하면
-	//	이미지가 흰 사각형으로 남아 자리를 차지한다.
-	struct FIconSlot { UImage* Image; const TMap<FGameplayTag, TObjectPtr<UTexture2D>>& Table; FGameplayTag Tag; };
+	//	태그를 못 찾으면(배정 전이거나 역할이 숨겨져 있으면) WBP 가 깔아 둔 범용 아이콘으로
+	//	되돌린다. 접으면 아이콘 자리가 통째로 빠져 그 줄만 쪼그라들고, 아이콘이 있는 장비·손패
+	//	줄과 높이가 어긋난다. (UBGSeatDetailWidget::RefreshIcons 와 같은 규칙이다.)
+	struct FIconSlot
+	{
+		UImage* Image;
+		const TMap<FGameplayTag, TObjectPtr<UTexture2D>>& Table;
+		FGameplayTag Tag;
+		TObjectPtr<UTexture2D>& Fallback;
+	};
 	const FIconSlot Slots[] = {
-		{ Img_JobIcon,  JobIcons,  LocalSeatView.JobTag  },
-		{ Img_RoleIcon, RoleIcons, LocalSeatView.RoleTag },
+		{ Img_JobIcon,  JobIcons,  LocalSeatView.JobTag,  JobIconDefault  },
+		{ Img_RoleIcon, RoleIcons, LocalSeatView.RoleTag, RoleIconDefault },
 	};
 
 	for (const FIconSlot& IconSlot : Slots)
@@ -394,10 +440,18 @@ void UBGTurnPanelWidget::RefreshIcons()
 			continue;
 		}
 
-		const TObjectPtr<UTexture2D>* Found = IconSlot.Tag.IsValid() ? IconSlot.Table.Find(IconSlot.Tag) : nullptr;
-		UTexture2D* Icon = Found ? Found->Get() : nullptr;
+		//	WBP 가 깔아 둔 것은 처음 한 번만 기억한다 — 한 번 갈아끼우고 나면 읽을 수 없다.
+		if (!IconSlot.Fallback)
+		{
+			IconSlot.Fallback = Cast<UTexture2D>(IconSlot.Image->GetBrush().GetResourceObject());
+		}
 
-		IconSlot.Image->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		const TObjectPtr<UTexture2D>* Found = IconSlot.Tag.IsValid() ? IconSlot.Table.Find(IconSlot.Tag) : nullptr;
+		UTexture2D* Icon = Found ? Found->Get() : IconSlot.Fallback.Get();
+
+		//	범용 아이콘조차 없으면 흰 사각형이 남으므로 그때만 감춘다. 접지 않고 감추는 것은
+		//	자리를 남겨 줄 높이를 유지하기 위해서다.
+		IconSlot.Image->SetVisibility(Icon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
 		if (Icon)
 		{
 			//	bMatchSize=false — 크기는 WBP 의 슬롯이 정한다. 텍스처 해상도를 따라가면

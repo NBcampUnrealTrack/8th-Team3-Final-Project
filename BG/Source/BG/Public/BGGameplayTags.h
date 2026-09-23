@@ -17,6 +17,70 @@
 namespace BG
 {
 	// ---------------------------------------------------------------------------------
+	//  Audio.* — UI/시스템 2D 사운드 카탈로그. Row 이름도 이 문자열과 동일하다.
+	//  Niagara와 Montage에 붙는 공간/동작 사운드는 이 분류에 넣지 않는다.
+	// ---------------------------------------------------------------------------------
+	namespace Audio
+	{
+		namespace UI
+		{
+			namespace Button
+			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverEnd)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(PressBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(PressEnd)
+			}
+
+			namespace Card
+			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverEnd)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(DragBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(DragEnd)
+			}
+		}
+
+		namespace System
+		{
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(TurnStart)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(TurnCountdown)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(TurnEnd)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(RoleReveal)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Victory)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Defeat)
+		}
+
+		namespace Music
+		{
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(MainMenu)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Gameplay)
+		}
+
+		// Audio.Ping.* — 핑 종류별 알림음. DT_BGSystemAudio 의 Row 이름과 같다.
+		namespace Ping
+		{
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Attack)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Warning)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Suspect)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Protect)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Heal)
+		}
+	}
+
+	// ---------------------------------------------------------------------------------
+	//  Ping.* — 플레이어가 서로에게 보내는 신호 5종. 전원 공개, 사망자 발신 불가.
+	// ---------------------------------------------------------------------------------
+	namespace Ping
+	{
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Attack)   // 저 사람 공격하자 (좌석 필수)
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Warning)  // 주의·경고
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Suspect)  // 의심된다 (좌석 필수)
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Protect)  // 저 사람 지켜라 (좌석 필수)
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Heal)     // 치유해 줘
+	}
+
+	// ---------------------------------------------------------------------------------
 	//  GameplayCue.* — ASC AddGameplayCue / RemoveGameplayCue 로 유지되는 카드 연출.
 	// ---------------------------------------------------------------------------------
 	namespace GameplayCue

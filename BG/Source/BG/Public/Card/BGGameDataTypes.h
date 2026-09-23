@@ -351,6 +351,10 @@ public:
 	/** Bang·QuickStrike 등 CharacterAttack 정책 카드가 공유하는 직업별 연출. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|AttackFX")
 	FBGCharacterAttackFX AttackFX;
+
+	// 이 직업을 고른 플레이어를 나타내는 색. 핑 테두리 등 "누가 했는지" 표시에 쓴다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	FLinearColor PlayerColor = FLinearColor::White;
 };
 
 /**

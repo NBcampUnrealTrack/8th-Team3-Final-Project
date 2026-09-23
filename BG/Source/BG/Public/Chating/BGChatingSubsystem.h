@@ -1,8 +1,9 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "BG/Public/Chating/BGChatEntry.h"
 #include "BGChatingSubsystem.generated.h"
@@ -34,6 +35,10 @@ public:
 	
 	UFUNCTION(BlueprintCallable, Category = "BG|Chat")
 	void AddSystemMessage(const FString& Message);
+
+	/** 핑 한 줄을 로그에 남긴다. 표시 컴포넌트가 부른다. */
+	UFUNCTION(BlueprintCallable, Category = "BG|Chat")
+	void AddPingEntry(const FString& Message, FGameplayTag PingTag, int32 SenderSeat, int32 TargetSeat);
 	
 private:
 	

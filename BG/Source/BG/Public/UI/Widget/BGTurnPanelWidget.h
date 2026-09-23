@@ -7,6 +7,7 @@
 #include "Blueprint/UserWidget.h"
 #include "UI/View/BGSeatView.h"
 #include "UI/View/BGTurnView.h"
+#include "UI/Widget/BGHeartSlotWidget.h"
 #include "BGTurnPanelWidget.generated.h"
 
 class UBGInfoTooltipWidget;
@@ -25,12 +26,13 @@ class UTexture2D;
  *   Text_Deck      (TextBlock, 선택 — 남은 덱 장수)
  *   Text_CardUse   (TextBlock, 선택 — "카드 1 / 2")
  *   Text_Rope      (TextBlock, 선택 — "밧줄 37초" 턴 제한 시간)
+ *   Image_Rope     (Image, 선택 — 밧줄이 타는 그림. 지금 아트는 깃털이다)
  *
  * 좌하단 본인 정보도 이 패널이 맡는다. 머리 위 이름표는 남만 띄우기 때문이다:
  *   Text_Name      (TextBlock, 선택 — 내 이름)
  *   Text_Job       (TextBlock, 선택 — 캐릭터 이름)
  *   Text_Health    (TextBlock, 선택 — "체력 5 / 5")
- *   Img_Heart_1..6 (Image,     선택 — 체력을 하트로. Text_Health 대신 쓰는 표시다)
+ *   Heart_1..6     (WBP_BGHeartSlot, 선택 — 체력을 하트로. Text_Health 대신 쓰는 표시다)
  *   Text_Role      (TextBlock, 선택 — 내 역할. 본인 것이라 숨기지 않는다)
  *   Img_JobIcon    (Image,     선택 — 직업 아이콘. JobIcons 에서 태그로 고른다)
  *   Img_RoleIcon   (Image,     선택 — 역할 아이콘. RoleIcons 에서 태그로 고른다)
@@ -109,6 +111,14 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Rope;
 
+	//	밧줄이 타는 그림. 아트는 깃털이지만 부르는 이름은 밧줄 그대로다 —
+	//	게임 규칙 쪽이 전부 Rope 라서, 여기만 Feather 로 부르면 둘을 잇는 사람이 헷갈린다.
+	//
+	//	브러시 머티리얼의 Remaining(0~1) 스칼라를 매 틱 밀어 넣는다. 머티리얼이 그 값을
+	//	기준으로 오른쪽 끝부터 왼쪽으로 태운다(M_Feather_Burn).
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Image_Rope;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Name;
 
@@ -119,34 +129,26 @@ protected:
 	TObjectPtr<UTextBlock> Text_Health;
 
 	/**
-	 * 최대 체력 여섯 칸을 미리 두고 남는 것은 접는다.
-	 * 하나도 없으면 Text_Health 만으로 표시된다.
+	 * 최대 체력 여섯 칸(WBP_BGHeartSlot)을 미리 두고 남는 것은 접는다.
+	 * 하나도 없으면 Text_Health 만으로 표시된다. 색·연출은 하트 칸 WBP 가 정한다.
 	 */
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_1;
+	TObjectPtr<UBGHeartSlotWidget> Heart_1;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_2;
+	TObjectPtr<UBGHeartSlotWidget> Heart_2;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_3;
+	TObjectPtr<UBGHeartSlotWidget> Heart_3;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_4;
+	TObjectPtr<UBGHeartSlotWidget> Heart_4;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_5;
+	TObjectPtr<UBGHeartSlotWidget> Heart_5;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UImage> Img_Heart_6;
-
-	/** 남아 있는 체력 하트의 색. */
-	UPROPERTY(EditAnywhere, Category = "BG|Turn")
-	FLinearColor HeartFullTint = FLinearColor::White;
-
-	/** 잃은 체력 하트의 색 — 자리는 남기고 어둡게만 만든다. */
-	UPROPERTY(EditAnywhere, Category = "BG|Turn")
-	FLinearColor HeartEmptyTint = FLinearColor(0.06f, 0.06f, 0.06f, 0.55f);
+	TObjectPtr<UBGHeartSlotWidget> Heart_6;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Role;
@@ -161,7 +163,7 @@ protected:
 
 	/**
 	 * 직업 태그(Character.Job.*) → 아이콘. WBP 에서 채운다.
-	 * 태그가 없거나 표에 없는 직업이면 Img_JobIcon 은 접힌다 — 빈 흰 사각형을 남기지 않는다.
+	 * 태그가 없거나 표에 없는 직업이면 WBP 가 깔아 둔 범용 아이콘으로 되돌아간다.
 	 */
 	UPROPERTY(EditAnywhere, Category = "BG|Turn|Icon")
 	TMap<FGameplayTag, TObjectPtr<UTexture2D>> JobIcons;
@@ -169,6 +171,13 @@ protected:
 	/** 역할 태그(Role.*) → 아이콘. JobIcons 와 같은 규칙이다. */
 	UPROPERTY(EditAnywhere, Category = "BG|Turn|Icon")
 	TMap<FGameplayTag, TObjectPtr<UTexture2D>> RoleIcons;
+
+	//	WBP 가 깔아 둔 범용 아이콘. 태그를 못 찾았을 때 되돌릴 곳이라 처음 한 번 기억해 둔다.
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> JobIconDefault;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> RoleIconDefault;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Equipment;
@@ -247,6 +256,8 @@ private:
 	//	LocalSeatView 의 체력을 하트 줄에 반영한다.
 	void RefreshHealthHearts();
 
+	FBGHeartRowState HeartRow;
+
 	// 직업·역할 아이콘을 LocalSeatView 의 태그에 맞춘다.
 	void RefreshIcons();
 
@@ -255,5 +266,15 @@ private:
 
 	void RefreshRopeText();
 
+	/** 남은 비율을 밧줄 그림에 밀어 넣는다. 타는 중이 아니면 그림을 접는다. */
+	void RefreshRopeFeather();
+
+	/** Image_Rope 브러시의 머티리얼로 MID 를 한 번 만들어 둔다. 없으면 nullptr. */
+	UMaterialInstanceDynamic* GetRopeMaterial();
+
 	TWeakObjectPtr<class UBGRopeComponent> Rope;
+
+	/** Image_Rope 브러시에 물린 동적 머티리얼. 매 틱 Remaining 만 바꾼다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> RopeMaterial;
 };

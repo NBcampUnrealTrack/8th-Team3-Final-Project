@@ -1,5 +1,7 @@
 #include "Core/BGMainMenuPlayerController.h"
 
+#include "Audio/BGAudioSubsystem.h"
+#include "BGGameplayTags.h"
 #include "Blueprint/UserWidget.h"
 #include "Debug/BGNetLog.h"
 #include "UI/Menu/BGMainMenuWidget.h"
@@ -16,6 +18,11 @@ void ABGMainMenuPlayerController::BeginPlay()
 	if (!IsLocalController())
 	{
 		return;
+	}
+
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->PlayMusic(BG::Audio::Music::MainMenu.GetTag());
 	}
 
 	UClass* WidgetClass = MenuWidgetClass.LoadSynchronous();

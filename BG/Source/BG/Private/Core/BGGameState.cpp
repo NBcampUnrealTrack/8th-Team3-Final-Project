@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "Core/BGGameState.h"
@@ -10,6 +10,7 @@
 #include "Debug/BGCardLog.h"
 #include "Card/BGDataSubsystem.h"
 #include "Card/BGDiceComponent.h"
+#include "Audio/BGAudioSubsystem.h"
 #include "BGGameplayTags.h"
 #include "Core/BGPlayerState.h"
 #include "Core/BGCharacter.h"
@@ -599,6 +600,12 @@ void ABGGameState::Multicast_ChatMessage_Implementation(const FString& SenderNam
 	OnChatMessageReceived.Broadcast(SenderName, Message);
 }
 
+void ABGGameState::Multicast_Ping_Implementation(const FBGPingEvent& Event)
+{
+	UE_LOG(LogBGPing, Log, TEXT("[BGPing] 멀티캐스트 도착 (NetMode %d)"), GetWorld() ? static_cast<int32>(GetWorld()->GetNetMode()) : -1);
+	OnPingReceived.Broadcast(Event);
+}
+
 void ABGGameState::Multicast_CardEquipped_Implementation(int32 SeatIndex, FGameplayTag CardId)
 {
 	//	밧줄은 멈추지 않는다 — 장비는 판정 표시가 뜨지 않아 읽을 시간이 따로 필요 없고,
@@ -1114,6 +1121,8 @@ void ABGGameState::BeginTurn(int32 Seat)
 	{
 		return;
 	}
+
+	MulticastPlaySystemAudio(BG::Audio::System::TurnStart.GetTag());
 
 	SetCurrentSeat(Seat);
 	SetPhaseTag(BG::Phase::TurnStart.GetTag());
@@ -1976,6 +1985,11 @@ void ABGGameState::ReturnToLobby()
 
 void ABGGameState::AdvanceToNextSeat()
 {
+	if (HasAuthority() && bMatchRunning && CurrentSeat != INDEX_NONE)
+	{
+		MulticastPlaySystemAudio(BG::Audio::System::TurnEnd.GetTag());
+	}
+
 	//	넘어가는 동안에는 밧줄이 타지 않는다. 새 좌석의 BeginTurn 이 다시 붙인다.
 	if (Rope)
 	{
@@ -2013,6 +2027,19 @@ void ABGGameState::AdvanceToNextSeat()
 	}
 
 	BeginTurn(Alive[NextIndex]);
+}
+
+void ABGGameState::MulticastPlaySystemAudio_Implementation(FGameplayTag AudioTag)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->Play(AudioTag);
+	}
 }
 
 void ABGGameState::GetDeck(TArray<FBGCardInstance>& OutDeck) const

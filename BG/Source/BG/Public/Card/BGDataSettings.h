@@ -10,6 +10,9 @@
 
 class UDataTable;
 class UBGPresentationDataAsset;
+class UCommonTextStyle;
+class USoundClass;
+class USoundMix;
 class UStaticMesh;
 /**
  *
@@ -41,9 +44,44 @@ public:
 	UPROPERTY(EditAnywhere, Config, Category = "Data", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGCardFXRow"))
 	TSoftObjectPtr<UDataTable> CardFXTable;
 
+	/**
+	 * 코드로 만드는 텍스트의 기본 스타일. UI 서체는 여기서만 정한다.
+	 * UBGUIStyleSubsystem 이 게임 시작 때 미리 로드한다.
+	 */
+	UPROPERTY(EditAnywhere, Config, Category = "UI")
+	TSoftClassPtr<UCommonTextStyle> DefaultTextStyle;
+
 	/** 카드와 무관한 공통 연출 카탈로그. 아트 작업자는 이 DataAsset 안의 참조를 교체한다. */
 	UPROPERTY(EditAnywhere, Config, Category = "Presentation")
 	TSoftObjectPtr<UBGPresentationDataAsset> PresentationData;
+
+	/** UI·시스템·BGM 태그를 USoundBase 에 연결하는 표 (FBGSystemAudioRow). */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio", meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGSystemAudioRow"))
+	TSoftObjectPtr<UDataTable> AudioTable;
+
+	/** 모든 게임 사운드의 부모 Sound Class. */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio")
+	TSoftObjectPtr<USoundClass> MasterSoundClass;
+
+	/** 마스터 볼륨 오버라이드를 담는 Sound Mix. */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio")
+	TSoftObjectPtr<USoundMix> MasterSoundMix;
+
+	/** BGM 볼륨이 적용되는 Sound Class. */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio")
+	TSoftObjectPtr<USoundClass> MusicSoundClass;
+
+	/** 음악 볼륨 오버라이드를 담는 Sound Mix. */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio")
+	TSoftObjectPtr<USoundMix> MusicSoundMix;
+
+	/** 효과음 볼륨이 적용되는 Sound Class. UI와 System도 이 클래스를 사용한다. */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio")
+	TSoftObjectPtr<USoundClass> SFXSoundClass;
+
+	/** 효과음 볼륨 오버라이드를 담는 Sound Mix. */
+	UPROPERTY(EditAnywhere, Config, Category = "Audio")
+	TSoftObjectPtr<USoundMix> SFXSoundMix;
 
 	/**
 	 * 암살자가 대성공 시 받는 카드 (Card.Id.*). 기본값은 그림자 일격.
