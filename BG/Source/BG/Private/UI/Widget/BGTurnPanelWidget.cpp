@@ -5,7 +5,9 @@
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "Debug/BGCardLog.h"
 #include "Lobby/BGRopeComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "UI/View/BGInfoTooltipRow.h"
 #include "UI/Widget/BGInfoTooltipWidget.h"
 #include "Engine/DataTable.h"
@@ -188,12 +190,63 @@ bool UBGTurnPanelWidget::TryBindRope()
 
 	//	위젯이 밧줄보다 늦게 만들어졌으면 점화 통지를 이미 놓쳤다 — 지금 상태로 한 번 맞춘다.
 	RefreshRopeText();
+	RefreshRopeFeather();
 	return true;
 }
 
 void UBGTurnPanelWidget::HandleRopeChanged(int32 Seat, float SecondsRemaining, float TotalSeconds)
 {
 	RefreshRopeText();
+	RefreshRopeFeather();
+}
+
+UMaterialInstanceDynamic* UBGTurnPanelWidget::GetRopeMaterial()
+{
+	if (RopeMaterial)
+	{
+		return RopeMaterial;
+	}
+
+	if (!Image_Rope)
+	{
+		return nullptr;   // WBP 에 밧줄 그림을 안 올렸다. 선택 사항이다.
+	}
+
+	//	⚠️ 브러시에 머티리얼이 아니라 텍스처가 들어 있으면 여기서 nullptr 이 나온다 —
+	//	   그러면 그림은 뜨지만 타지 않는다. WBP 에서 M_Feather_Burn 을 물릴 것.
+	RopeMaterial = Image_Rope->GetDynamicMaterial();
+	if (!RopeMaterial)
+	{
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[TurnPanel] Image_Rope 브러시에 머티리얼이 없다 — 밧줄이 타지 않는다."));
+	}
+	return RopeMaterial;
+}
+
+void UBGTurnPanelWidget::RefreshRopeFeather()
+{
+	if (!Image_Rope)
+	{
+		return;
+	}
+
+	const UBGRopeComponent* R = Rope.Get();
+	const bool bBurning = R && R->IsBurning();
+
+	//	타는 중이 아니면 자리째 접는다. 다 탄 깃털을 남겨 두면 다음 턴까지 숯이 걸려 있다.
+	Image_Rope->SetVisibility(bBurning
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed);
+
+	if (!bBurning)
+	{
+		return;
+	}
+
+	if (UMaterialInstanceDynamic* M = GetRopeMaterial())
+	{
+		M->SetScalarParameterValue(TEXT("Remaining"), FMath::Clamp(R->GetRemainingRatio(), 0.f, 1.f));
+	}
 }
 
 void UBGTurnPanelWidget::RefreshRopeText()
@@ -234,7 +287,8 @@ void UBGTurnPanelWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTi
 	//	Text_Rope 가 없어도 부른다 — 그때는 화면 표시로 폴백하기 때문이다.
 	if (TryBindRope())
 	{
-		RefreshRopeText();   //	남은 초는 매 프레임 줄어든다 — 델리게이트로는 표현할 수 없다.
+		RefreshRopeText();     //	남은 초는 매 프레임 줄어든다 — 델리게이트로는 표현할 수 없다.
+		RefreshRopeFeather();  //	타는 자리도 마찬가지다.
 	}
 }
 
