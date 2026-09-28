@@ -41,6 +41,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Settings")
 	void SetStandaloneMode(bool bStandalone);
 
+	// 지금 게임 창이 올라가 있는 모니터의 네이티브 해상도. 못 찾으면 (0,0).
+	static FIntPoint GetCurrentMonitorResolution();
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -57,14 +60,19 @@ private:
 	void RefreshFromSettings();
 
 	/**
+	 * 저장된 창 모드·해상도를 지금 게임 창의 실제 상태로 맞춘다(저장은 하지 않는다).
+	 * -windowed 같은 실행 인자는 창만 바꾸고 GameUserSettings 에는 옛 값을 남긴다. 그대로 두면
+	 * 콤보가 실제와 다른 모드를 보여주고, 다른 항목을 바꿀 때 ApplySettings 가 옛 모드로 창을 튕긴다.
+	 * 적용 직후에는 창이 다음 틱에야 바뀌므로 패널을 열 때만 부른다.
+	 */
+	void SyncSettingsToActualWindow();
+
+	/**
 	 * 구분선 두께를 DPI 스케일로 역보정한다.
 	 * 얇은 선은 (레이아웃 높이 x 스케일)이 정수가 아니면 놓인 y 소수부에 따라 1px·2px 로
 	 * 갈린다. 두께를 스케일로 나눠 두면 화면에서는 항상 같은 정수 픽셀로 떨어진다.
 	 */
 	void RefreshDividerThickness();
-
-	// 지금 게임 창이 올라가 있는 모니터의 네이티브 해상도. 못 찾으면 (0,0).
-	static FIntPoint GetCurrentMonitorResolution();
 
 	// 목록에 없는 해상도(창을 끌어서 만든 크기 등)를 가장 가까운 칸으로 돌려준다.
 	int32 FindClosestResolutionIndex(const FIntPoint& Target) const;

@@ -16,6 +16,7 @@
 #include "Engine/GameViewportClient.h"
 #include "GenericPlatform/GenericApplication.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "UnrealEngine.h"
 #include "Session/BGSessionFlow.h"
 #include "Session/BGSessionInterface.h"
 #include "Widgets/SWindow.h"
@@ -204,6 +205,7 @@ void UBGSettingsWidget::NativeConstruct()
 
 	RefreshVolumesFromAudioSubsystem();
 
+	SyncSettingsToActualWindow();
 	PopulateOptions();
 	RefreshFromSettings();
 
@@ -498,6 +500,28 @@ void UBGSettingsWidget::PopulateOptions()
 	}
 }
 
+void UBGSettingsWidget::SyncSettingsToActualWindow()
+{
+	// PIE 창은 에디터 안의 뷰포트라 게임 창 설정으로 옮기면 저장 파일만 더럽힌다.
+	if (GIsEditor)
+	{
+		return;
+	}
+
+	UGameUserSettings* Settings = GEngine ? GEngine->GetGameUserSettings() : nullptr;
+	const TSharedPtr<SWindow> Window = (GEngine && GEngine->GameViewport) ? GEngine->GameViewport->GetWindow() : nullptr;
+	if (!Settings || !Window.IsValid())
+	{
+		return;
+	}
+
+	Settings->SetFullscreenMode(Window->GetWindowMode());
+	if (GSystemResolution.ResX > 0 && GSystemResolution.ResY > 0)
+	{
+		Settings->SetScreenResolution(FIntPoint(GSystemResolution.ResX, GSystemResolution.ResY));
+	}
+}
+
 void UBGSettingsWidget::RefreshFromSettings()
 {
 	const UGameUserSettings* Settings = GEngine ? GEngine->GetGameUserSettings() : nullptr;
@@ -631,6 +655,7 @@ void UBGSettingsWidget::RefreshVolumeTexts() const
 void UBGSettingsWidget::OpenSettings()
 {
 	// 창을 다른 모니터로 옮겼을 수 있다 — 열 때마다 해상도 목록부터 다시 만든다.
+	SyncSettingsToActualWindow();
 	PopulateOptions();
 	RefreshFromSettings();
 	if (SettingsPanel)
