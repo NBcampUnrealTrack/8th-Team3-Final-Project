@@ -39,6 +39,35 @@ namespace BG
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(DragBegin)
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(DragEnd)
 			}
+
+			namespace ComboBox
+			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverEnd)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Open)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Select)
+			}
+
+			namespace Slider
+			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverEnd)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(CaptureBegin)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(CaptureEnd)
+			}
+
+			namespace RollGauge
+			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(LightStep)
+
+				namespace Result
+				{
+					UE_DECLARE_GAMEPLAY_TAG_EXTERN(CriticalFailure)
+					UE_DECLARE_GAMEPLAY_TAG_EXTERN(Failure)
+					UE_DECLARE_GAMEPLAY_TAG_EXTERN(Success)
+					UE_DECLARE_GAMEPLAY_TAG_EXTERN(CriticalSuccess)
+				}
+			}
 		}
 
 		namespace System

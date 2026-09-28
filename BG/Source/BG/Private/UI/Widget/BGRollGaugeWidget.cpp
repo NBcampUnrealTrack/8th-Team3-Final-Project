@@ -1,6 +1,8 @@
 #include "UI/Widget/BGRollGaugeWidget.h"
 
 #include "Animation/WidgetAnimation.h"
+#include "Audio/BGAudioSubsystem.h"
+#include "BGGameplayTags.h"
 #include "Components/Image.h"
 #include "Engine/Texture2D.h"
 #include "Components/TextBlock.h"
@@ -257,6 +259,27 @@ void UBGRollGaugeWidget::BeginResultIn()
 
 	const float ResultInSeconds = PlayPhaseAnimation(Anim_ResultIn, ResultInFallbackSeconds, LastResultInAnimation);
 
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		switch (ResolutionView.Tier)
+		{
+		case EBGResolutionTier::CriticalFailure:
+			Audio->Play(BG::Audio::UI::RollGauge::Result::CriticalFailure.GetTag());
+			break;
+		case EBGResolutionTier::Failure:
+			Audio->Play(BG::Audio::UI::RollGauge::Result::Failure.GetTag());
+			break;
+		case EBGResolutionTier::Success:
+			Audio->Play(BG::Audio::UI::RollGauge::Result::Success.GetTag());
+			break;
+		case EBGResolutionTier::CriticalSuccess:
+			Audio->Play(BG::Audio::UI::RollGauge::Result::CriticalSuccess.GetTag());
+			break;
+		default:
+			break;
+		}
+	}
+
 	OnResultShown(ResolutionView);
 
 	ScheduleStep(ResultInFinishTimer, &UBGRollGaugeWidget::FinishResultIn, ResultInSeconds);
@@ -481,6 +504,10 @@ void UBGRollGaugeWidget::SetLitSlot(int32 SlotIndex)
 	//	전부 끄는 경우(판정 사이)는 연출이 아니다. BP 에 알리지 않는다.
 	if (SlotIndex != INDEX_NONE)
 	{
+		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+		{
+			Audio->Play(BG::Audio::UI::RollGauge::LightStep.GetTag());
+		}
 		OnLitSlotChanged(SlotIndex);
 	}
 }

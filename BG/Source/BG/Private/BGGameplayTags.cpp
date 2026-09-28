@@ -26,6 +26,35 @@ namespace BG
 				UE_DEFINE_GAMEPLAY_TAG(DragBegin,  "Audio.UI.Card.Drag.Begin")
 				UE_DEFINE_GAMEPLAY_TAG(DragEnd,    "Audio.UI.Card.Drag.End")
 			}
+
+			namespace ComboBox
+			{
+				UE_DEFINE_GAMEPLAY_TAG(HoverBegin, "Audio.UI.ComboBox.Hover.Begin")
+				UE_DEFINE_GAMEPLAY_TAG(HoverEnd,   "Audio.UI.ComboBox.Hover.End")
+				UE_DEFINE_GAMEPLAY_TAG(Open,       "Audio.UI.ComboBox.Open")
+				UE_DEFINE_GAMEPLAY_TAG(Select,     "Audio.UI.ComboBox.Select")
+			}
+
+			namespace Slider
+			{
+				UE_DEFINE_GAMEPLAY_TAG(HoverBegin,  "Audio.UI.Slider.Hover.Begin")
+				UE_DEFINE_GAMEPLAY_TAG(HoverEnd,    "Audio.UI.Slider.Hover.End")
+				UE_DEFINE_GAMEPLAY_TAG(CaptureBegin,"Audio.UI.Slider.Capture.Begin")
+				UE_DEFINE_GAMEPLAY_TAG(CaptureEnd,  "Audio.UI.Slider.Capture.End")
+			}
+
+			namespace RollGauge
+			{
+				UE_DEFINE_GAMEPLAY_TAG(LightStep, "Audio.UI.RollGauge.LightStep")
+
+				namespace Result
+				{
+					UE_DEFINE_GAMEPLAY_TAG(CriticalFailure, "Audio.UI.RollGauge.Result.CriticalFailure")
+					UE_DEFINE_GAMEPLAY_TAG(Failure,         "Audio.UI.RollGauge.Result.Failure")
+					UE_DEFINE_GAMEPLAY_TAG(Success,         "Audio.UI.RollGauge.Result.Success")
+					UE_DEFINE_GAMEPLAY_TAG(CriticalSuccess, "Audio.UI.RollGauge.Result.CriticalSuccess")
+				}
+			}
 		}
 
 		namespace System

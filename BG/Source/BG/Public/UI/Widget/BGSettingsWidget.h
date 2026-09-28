@@ -76,6 +76,18 @@ private:
 	void RefreshVolumesFromAudioSubsystem();
 	void RefreshVolumeTexts() const;
 
+	/** ComboBox/Slider의 현재 Hover 대상을 비교해 시작·종료음을 한 번씩만 재생한다. */
+	void RefreshInteractiveAudioHover();
+
+	UFUNCTION()
+	void HandleComboOpeningAudio();
+	UFUNCTION()
+	void HandleComboSelectionAudio(FString SelectedItem, ESelectInfo::Type SelectionType);
+	UFUNCTION()
+	void HandleSliderCaptureBeginAudio();
+	UFUNCTION()
+	void HandleSliderCaptureEndAudio();
+
 	UFUNCTION()
 	void HandleSettingsClicked();
 	UFUNCTION()
@@ -173,6 +185,10 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UComboBoxString>> DetailCombos;
 
+	// Hover/Open/Select 사운드가 필요한 모든 설정 ComboBox.
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UComboBoxString>> AudioCombos;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCheckBox> VSyncCheck;
 
@@ -191,6 +207,10 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<USlider> SFXVolumeSlider;
+
+	// Hover/Capture 사운드가 필요한 모든 설정 Slider.
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<USlider>> AudioSliders;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> SFXVolumeText;
@@ -223,6 +243,9 @@ private:
 
 	// 현재 값을 위젯에 되돌려 쓰는 중. 그 선택 통지로 다시 적용이 돌지 않게 막는다.
 	bool bRefreshing = false;
+
+	// 직전 프레임 Hover 대상. ComboBox와 Slider 사이 이동도 End→Begin 한 번씩만 발생시킨다.
+	TWeakObjectPtr<UWidget> HoveredAudioWidget;
 
 	bool bToggleInputBound = false;
 };

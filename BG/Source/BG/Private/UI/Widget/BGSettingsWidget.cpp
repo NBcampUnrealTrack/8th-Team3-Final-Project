@@ -1,6 +1,7 @@
 ﻿#include "UI/Widget/BGSettingsWidget.h"
 
 #include "Audio/BGAudioSubsystem.h"
+#include "BGGameplayTags.h"
 #include "Components/InputComponent.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/Button.h"
@@ -168,9 +169,35 @@ void UBGSettingsWidget::NativeConstruct()
 	if (PostProcessCombo)        { PostProcessCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandlePostProcessChanged); }
 	if (GlobalIlluminationCombo) { GlobalIlluminationCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleGlobalIlluminationChanged); }
 
+	AudioCombos = { WindowModeCombo, ResolutionCombo, QualityCombo, FrameLimitCombo,
+	                ShadowCombo, TextureCombo, EffectsCombo, AntiAliasingCombo,
+	                PostProcessCombo, GlobalIlluminationCombo };
+	for (UComboBoxString* Combo : AudioCombos)
+	{
+		if (!Combo)
+		{
+			continue;
+		}
+		Combo->OnOpening.AddUniqueDynamic(this, &UBGSettingsWidget::HandleComboOpeningAudio);
+		Combo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleComboSelectionAudio);
+	}
+
 	if (MasterVolumeSlider) { MasterVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleMasterVolumeChanged); }
 	if (MusicVolumeSlider)  { MusicVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleMusicVolumeChanged); }
 	if (SFXVolumeSlider)    { SFXVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSFXVolumeChanged); }
+
+	AudioSliders = { MasterVolumeSlider, MusicVolumeSlider, SFXVolumeSlider };
+	for (USlider* Slider : AudioSliders)
+	{
+		if (!Slider)
+		{
+			continue;
+		}
+		Slider->OnMouseCaptureBegin.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSliderCaptureBeginAudio);
+		Slider->OnMouseCaptureEnd.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSliderCaptureEndAudio);
+		Slider->OnControllerCaptureBegin.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSliderCaptureBeginAudio);
+		Slider->OnControllerCaptureEnd.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSliderCaptureEndAudio);
+	}
 
 	Dividers = { Image_Div1, Image_Div2, Image_Div3, Image_Div4 };
 	RefreshDividerThickness();
@@ -199,6 +226,100 @@ void UBGSettingsWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 	{
 		RefreshDividerThickness();
 	}
+
+	RefreshInteractiveAudioHover();
+}
+
+void UBGSettingsWidget::RefreshInteractiveAudioHover()
+{
+	UWidget* NewHovered = nullptr;
+	for (UComboBoxString* Combo : AudioCombos)
+	{
+		if (Combo && Combo->IsVisible() && Combo->GetIsEnabled() && Combo->IsHovered())
+		{
+			NewHovered = Combo;
+			break;
+		}
+	}
+
+	if (!NewHovered)
+	{
+		for (USlider* Slider : AudioSliders)
+		{
+			if (Slider && Slider->IsVisible() && Slider->GetIsEnabled() && Slider->IsHovered())
+			{
+				NewHovered = Slider;
+				break;
+			}
+		}
+	}
+
+	UWidget* OldHovered = HoveredAudioWidget.Get();
+	if (OldHovered == NewHovered)
+	{
+		return;
+	}
+
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		if (Cast<UComboBoxString>(OldHovered))
+		{
+			Audio->Play(BG::Audio::UI::ComboBox::HoverEnd.GetTag());
+		}
+		else if (Cast<USlider>(OldHovered))
+		{
+			Audio->Play(BG::Audio::UI::Slider::HoverEnd.GetTag());
+		}
+
+		if (Cast<UComboBoxString>(NewHovered))
+		{
+			Audio->Play(BG::Audio::UI::ComboBox::HoverBegin.GetTag());
+		}
+		else if (Cast<USlider>(NewHovered))
+		{
+			Audio->Play(BG::Audio::UI::Slider::HoverBegin.GetTag());
+		}
+	}
+
+	HoveredAudioWidget = NewHovered;
+}
+
+void UBGSettingsWidget::HandleComboOpeningAudio()
+{
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->Play(BG::Audio::UI::ComboBox::Open.GetTag());
+	}
+}
+
+void UBGSettingsWidget::HandleComboSelectionAudio(FString SelectedItem, ESelectInfo::Type SelectionType)
+{
+	// SetSelectedIndex 등 코드가 현재 표시를 맞추는 Direct 변경에는 선택음을 내지 않는다.
+	if (bRefreshing || SelectionType == ESelectInfo::Direct)
+	{
+		return;
+	}
+
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->Play(BG::Audio::UI::ComboBox::Select.GetTag());
+	}
+}
+
+void UBGSettingsWidget::HandleSliderCaptureBeginAudio()
+{
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->Play(BG::Audio::UI::Slider::CaptureBegin.GetTag());
+	}
+}
+
+void UBGSettingsWidget::HandleSliderCaptureEndAudio()
+{
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->Play(BG::Audio::UI::Slider::CaptureEnd.GetTag());
+	}
 }
 
 void UBGSettingsWidget::RefreshDividerThickness()
@@ -226,6 +347,9 @@ void UBGSettingsWidget::RefreshDividerThickness()
 
 void UBGSettingsWidget::NativeDestruct()
 {
+	HoveredAudioWidget.Reset();
+	AudioCombos.Reset();
+	AudioSliders.Reset();
 	UnbindToggleInput();
 	Super::NativeDestruct();
 }
