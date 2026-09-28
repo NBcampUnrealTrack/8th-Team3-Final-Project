@@ -1,6 +1,5 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "Core/BGGameState.h"
 
 #include "AbilitySystemComponent.h"
@@ -1147,7 +1146,15 @@ void ABGGameState::SetIntroStage(EBGIntroStage NewStage)
 	default: break;
 	}
 
-	ScheduleCinematicStep(Seconds, [this]() { AdvanceIntroStage(); });
+	if (Seconds > 0.f)
+	{
+		GetWorldTimerManager().SetTimer(IntroStageTimer, this,
+			&ABGGameState::AdvanceIntroStage, Seconds, false);
+	}
+	else
+	{
+		AdvanceIntroStage();
+	}
 }
 
 void ABGGameState::AdvanceIntroStage()
@@ -2259,4 +2266,3 @@ void ABGGameState::ReshuffleDeck(EBGDeckSide Side)
 	TargetDiscard.Empty();
 	RefreshPublicCounts();
 }
-

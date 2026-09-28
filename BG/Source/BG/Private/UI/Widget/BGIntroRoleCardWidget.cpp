@@ -32,7 +32,15 @@ void UBGIntroRoleCardWidget::ShowCard()
 		World->GetTimerManager().ClearTimer(RemoveTimer);
 	}
 
+	bCardShown = true;
+	bHiding = false;
+	bFallbackOut = false;
+	RevealElapsed = 0.f;
+	SetRenderOpacity(1.f);
+	SetRenderTransform(FWidgetTransform());
 	SetVisibility(ESlateVisibility::HitTestInvisible);
+	if (Border_JobAbility) { Border_JobAbility->SetRenderOpacity(0.f); }
+	if (Border_SecretRole) { Border_SecretRole->SetRenderOpacity(0.f); }
 	bWaitingForValues = !RefreshFromGame();
 
 	if (Anim_In)
@@ -43,6 +51,10 @@ void UBGIntroRoleCardWidget::ShowCard()
 
 void UBGIntroRoleCardWidget::HideCard()
 {
+	if (bHiding) { return; }
+	bHiding = true;
+	bCardShown = false;
+	if (Anim_In) { StopAnimation(Anim_In); }
 	if (!Anim_Out)
 	{
 		//	WBP 에 퇴장 애니메이션이 없다 — 작아지며 정보창 쪽으로 빨려 들어가는 연출을 코드가 낸다.
@@ -71,6 +83,8 @@ void UBGIntroRoleCardWidget::NativeTick(const FGeometry& MyGeometry, float InDel
 		TickFallbackOut(InDeltaTime);
 		return;   //	나가는 중에 값을 다시 채울 이유가 없다.
 	}
+
+	UpdateReveal(InDeltaTime);
 
 	if (!bWaitingForValues)
 	{
@@ -118,6 +132,7 @@ void UBGIntroRoleCardWidget::TickFallbackOut(float DeltaTime)
 
 void UBGIntroRoleCardWidget::NativeDestruct()
 {
+	bCardShown = false;
 	//	⚠️ 타이머가 파괴 뒤에 발동하면 죽은 위젯을 건드린다.
 	if (UWorld* World = GetWorld())
 	{
@@ -211,6 +226,11 @@ bool UBGIntroRoleCardWidget::RefreshFromGame()
 		Text_Job->SetText(View.JobName);
 	}
 
+	if (Text_JobAbility)
+	{
+		Text_JobAbility->SetText(View.JobDescription);
+	}
+
 	if (Text_Role)
 	{
 		Text_Role->SetText(View.RoleName);
@@ -236,4 +256,24 @@ bool UBGIntroRoleCardWidget::RefreshFromGame()
 
 	//	직업과 역할이 둘 다 와야 끝이다. 역할은 본인에게만 오는 값이라 늦게 도착하는 쪽이다.
 	return View.JobTag.IsValid() && View.RoleTag.IsValid();
+}
+
+void UBGIntroRoleCardWidget::UpdateReveal(float DeltaTime)
+{
+	if (!bCardShown || bHiding || bWaitingForValues)
+	{
+		return;
+	}
+
+	//	그림이 아직 오는 중이면 기다린다 — 빈 카드 위에서 글자만 떠오르면 어색하다.
+	if (CardArtHandle.IsValid() && !CardArtHandle->HasLoadCompleted())
+	{
+		return;
+	}
+
+	RevealElapsed += DeltaTime;
+	const float JobAlpha = FMath::Clamp((RevealElapsed - 0.3f) / 0.25f, 0.f, 1.f);
+	const float RoleAlpha = FMath::Clamp((RevealElapsed - 0.65f) / 0.25f, 0.f, 1.f);
+	if (Border_JobAbility) { Border_JobAbility->SetRenderOpacity(JobAlpha); }
+	if (Border_SecretRole) { Border_SecretRole->SetRenderOpacity(RoleAlpha); }
 }

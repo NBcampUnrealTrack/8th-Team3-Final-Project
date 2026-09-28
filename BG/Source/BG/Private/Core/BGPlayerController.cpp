@@ -981,7 +981,7 @@ void ABGPlayerController::UpdateIntroRoleCard(EBGIntroStage Stage)
 
 	if (!IntroRoleCardClass || !GetLocalPlayer())
 	{
-		return;   //	카드를 안 지정했으면 이 단계는 화면 없이 지나간다.
+		return;   //	카드를 안 지정했으면 이 단계는 화면 없이 지나간다 — 단계 진행은 그대로다.
 	}
 
 	if (!IntroRoleCardInstance)

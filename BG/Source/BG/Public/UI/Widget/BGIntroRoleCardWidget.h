@@ -1,19 +1,3 @@
-// BANG! 도입 연출 ② — 내 역할 확인. 봉인된 편지가 뒤집히며 직업과 비밀 역할을 보여준다.
-//
-// **이 화면 주인에게만 보이는 위젯이다.** 값은 자기 PlayerController 에서 읽으므로
-// 남의 역할이 섞여 들어올 여지가 없다.
-//
-// 띄우고 내리는 것은 ABGPlayerController 가 도입 단계를 보고 한다 — 위젯은 시키는 대로만 한다.
-//
-// WBP 에 둘 것 (모두 선택):
-//   Text_Job           (TextBlock) — "사제"
-//   Text_Role          (TextBlock) — "무법자"
-//   Text_WinCondition  (TextBlock) — 내 승리 조건 한 문장
-//   Anim_In            (애니메이션) — 카드가 뒤집히며 등장
-//   Anim_Out           (애니메이션) — 내 정보창으로 작아지며 퇴장
-//
-// ⚠️ "이 정보는 나에게만 보입니다" 같은 고정 문구는 WBP 에 직접 적을 것 — 코드가 채우는 값이 아니다.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -70,6 +54,17 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Job;
 
+	/** 직업이 무엇을 하는지 한 줄 설명(DT_BGCharacterRow 의 Description). */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> Text_JobAbility;
+
+	//	카드가 한 번에 다 보이지 않고 이 두 칸이 차례로 떠오른다(UpdateReveal).
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_JobAbility;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> Border_SecretRole;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Role;
 
@@ -100,11 +95,6 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Intro", meta = (ClampMin = "0.05", Units = "s"))
 	float RetryInterval = 0.2f;
 
-	// ── Anim_Out 이 없을 때의 퇴장 연출 ──
-	//
-	//  기획의 "역할 카드가 내 정보창으로 작아지며 들어감" 을 코드로 낸다.
-	//  ⚠️ WBP 에 Anim_Out 을 만들어 두면 그쪽이 우선이다 — 여기 값들은 쓰이지 않는다.
-
 	/** 퇴장에 걸리는 시간(초). */
 	UPROPERTY(EditAnywhere, Category = "BG|Intro|Fallback", meta = (ClampMin = "0.05", Units = "s"))
 	float FallbackOutSeconds = 0.5f;
@@ -123,6 +113,17 @@ protected:
 private:
 	/** 지금 읽을 수 있는 값으로 카드를 채운다. 직업과 역할이 모두 채워졌으면 true. */
 	bool RefreshFromGame();
+
+	/**
+	 * 직업 능력 → 비밀 역할 순으로 칸을 띄운다. 한꺼번에 보여주면 읽을 순서가 없다.
+	 * ⚠️ 카드 그림이 도착한 뒤부터 센다 — 빈 카드 위에서 글자만 먼저 떠오르면 어색하다.
+	 */
+	void UpdateReveal(float DeltaTime);
+
+	//	카드가 화면에 떠 있는가 / 내려가는 중인가. 떠 있는 동안만 위 연출이 돈다.
+	bool bCardShown = false;
+	bool bHiding = false;
+	float RevealElapsed = 0.f;
 
 	/** 카드 그림을 비동기로 받아 둔다. 이미 같은 그림을 요청했으면 아무것도 하지 않는다. */
 	void RequestCardArt();
