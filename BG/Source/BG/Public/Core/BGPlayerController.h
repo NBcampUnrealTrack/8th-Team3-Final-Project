@@ -211,6 +211,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Intro")
 	EBGIntroStage GetIntroStage() const;
 
+
 	/** 첫 턴을 가져갈 좌석의 이름. ⑤ "에드릭의 차례" 문구에 쓴다. 아직 모르면 빈 텍스트. */
 	UFUNCTION(BlueprintPure, Category = "BG|Intro")
 	FText GetFirstTurnPlayerName() const;
@@ -395,7 +396,6 @@ protected:
 	/** 판정 UI 대기가 도는 동안 쥐고 있는 표. 턴 상태 통지마다 상태를 맞춘다. */
 	void RefreshResolutionPresentationTrack();
 	FBGPresentationTrackHold ResolutionHold;
-
 
 	/** EBGDiceOutcome → EBGResolutionTier. 뷰 계층이 게임 enum 을 모르게 하는 경계다. */
 	static EBGResolutionTier ToResolutionTier(EBGDiceOutcome Outcome);

@@ -12,7 +12,6 @@
 #include "GameFramework/GameStateBase.h"
 #include "BGGameState.generated.h"
 
-
 /**
  *
  */
@@ -951,6 +950,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
 	float IntroCampfireSeconds = 2.f;
 
+	/** 역할 카드를 보여주는 시간. 이 시간이 지나면 카드가 퇴장하고 다음 단계로 넘어간다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
 	float IntroRoleRevealSeconds = 4.f;
 
