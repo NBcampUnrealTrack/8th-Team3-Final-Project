@@ -29,6 +29,7 @@
 #include "UI/Widget/BGTurnPanelWidget.h"
 #include "UI/Widget/BGResolutionWidget.h"
 #include "UI/Widget/BGRewardSelectWidget.h"
+#include "UI/Widget/BGIntroRoleCardWidget.h"
 #include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
 #include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
 #include "Core/BGCharacter.h"                // 연출 주인공 캐스팅
@@ -246,6 +247,9 @@ void ABGPlayerController::OnRep_PlayerState()
 
 void ABGPlayerController::Destroyed()
 {
+	//	⚠️ 파괴 뒤에 발동하면 죽은 컨트롤러를 건드린다.
+	GetWorldTimerManager().ClearTimer(IntroFadeTimer);
+
 	//	판이 도는 중이면 폰을 떼어 내 월드에 남긴다. Super 가 폰을 파괴하기 전 마지막 기회다.
 	const ABGGameState* GS = GetBGGameState();
 	APawn* Current = GetPawn();
@@ -854,12 +858,14 @@ void ABGPlayerController::TryBindGameStateDelegates()
 		Previous->OnCardEquipped.RemoveAll(this);
 		Previous->OnCameraShotChanged.RemoveAll(this);
 		Previous->OnCinematicStageChanged.RemoveAll(this);
+		Previous->OnIntroStageChanged.RemoveAll(this);
 	}
 
 	GS->OnCardResolved.AddUObject(this, &ABGPlayerController::HandleCardResolved);
 	GS->OnCardEquipped.AddUObject(this, &ABGPlayerController::HandleCardEquipped);
 	GS->OnCameraShotChanged.AddUObject(this, &ABGPlayerController::HandleCameraShotChanged);
 	GS->OnCinematicStageChanged.AddUObject(this, &ABGPlayerController::HandleCinematicStageChangedForFX);
+	GS->OnIntroStageChanged.AddUObject(this, &ABGPlayerController::HandleIntroStageChanged);
 	GS->OnTurnStateChanged.AddUniqueDynamic(this, &ABGPlayerController::HandleTurnStateChanged);
 
 	BoundGameState = GS;
@@ -867,9 +873,137 @@ void ABGPlayerController::TryBindGameStateDelegates()
 	//	⚠️ 구독보다 판이 먼저 시작됐을 수 있다(늦게 접속). 상태로 둔 것들은 지금 한 번
 	//	   맞춰 줘야 첫 통지가 올 때까지 화면이 비어 있지 않다.
 	HandleCameraShotChanged(GS->GetCameraShot());
+	HandleIntroStageChanged(GS->GetIntroStage());
 	HandleTurnStateChanged();
 
 	UE_LOG(LogBGCard, Verbose, TEXT("[PC] GameState 통지 구독"));
+}
+
+//	도입 연출의 화면 페이드. 야영지 진입은 검은 화면에서 밝아지며 시작한다.
+//
+//	⚠️ 위젯 위에 덮는 검은 판이 아니라 카메라 페이드다 — 위젯으로 가리면 그 위에 뜨는
+//	   다른 UI(로딩·채팅)가 새어 나온다. 카메라 페이드는 화면 전체를 마지막에 덮는다.
+void ABGPlayerController::HandleIntroStageChanged(EBGIntroStage Stage)
+{
+	if (!IsLocalController() || !PlayerCameraManager)
+	{
+		return;
+	}
+
+	if (Stage == EBGIntroStage::Campfire)
+	{
+		//	⚠️ PvP 는 맵 이동 없이 로비에서 제자리로 시작한다(UBGSessionFlow::StartGame) —
+		//	   이 순간 화면은 이미 밝다. 먼저 검게 덮지 않으면 "검은 화면에서 밝아짐" 이 성립하지 않는다.
+		PlayerCameraManager->SetManualCameraFade(1.f, FLinearColor::Black, /*bInFadeAudio=*/true);
+
+		//	장작 소리만 들리는 구간. 이만큼 머문 뒤 밝아진다.
+		GetWorldTimerManager().SetTimer(IntroFadeTimer, this,
+			&ABGPlayerController::BeginIntroFadeIn, FMath::Max(IntroBlackHoldSeconds, 0.01f), /*bLoop=*/false);
+	}
+	else
+	{
+		//	다른 단계에서 붙었거나 연출이 끝났는데 화면이 덮여 있으면 곧바로 걷는다.
+		GetWorldTimerManager().ClearTimer(IntroFadeTimer);
+		PlayerCameraManager->StopCameraFade();
+	}
+
+	UpdateIntroRoleCard(Stage);
+
+	//	HUD 는 BP 라 네이티브 통지를 못 듣는다. 무엇을 보여줄지는 HUD 가 정한다.
+	OnIntroStageChangedBP.Broadcast(Stage);
+}
+
+void ABGPlayerController::BeginIntroFadeIn()
+{
+	if (PlayerCameraManager)
+	{
+		PlayerCameraManager->StartCameraFade(1.f, 0.f, IntroFadeInSeconds, FLinearColor::Black,
+			/*bShouldFadeAudio=*/true, /*bHoldWhenFinished=*/false);
+	}
+}
+
+EBGIntroStage ABGPlayerController::GetIntroStage() const
+{
+	const ABGGameState* GS = GetBGGameState();
+	return GS ? GS->GetIntroStage() : EBGIntroStage::None;
+}
+
+//	좌석 번호를 이름으로 바꾸는 것은 좌석 뷰가 이미 한다 — 여기서 또 PlayerState 를 뒤지지 않는다.
+static FText FindSeatPlayerName(const APlayerController* PC, int32 Seat)
+{
+	if (!PC || Seat == INDEX_NONE)
+	{
+		return FText::GetEmpty();
+	}
+
+	const ABGPlayerState* PS = UBGSeatViewLibrary::FindPlayerStateBySeat(PC, Seat);
+	return PS ? FText::FromString(PS->GetPlayerName()) : FText::GetEmpty();
+}
+
+FText ABGPlayerController::GetFirstTurnPlayerName() const
+{
+	const ABGGameState* GS = GetBGGameState();
+	return FindSeatPlayerName(this, GS ? GS->GetFirstTurnSeat() : INDEX_NONE);
+}
+
+FText ABGPlayerController::GetHeroPlayerName() const
+{
+	const ABGGameState* GS = GetBGGameState();
+	return FindSeatPlayerName(this, GS ? GS->GetHeroSeat() : INDEX_NONE);
+}
+
+bool ABGPlayerController::IsFirstTurnMine() const
+{
+	const ABGGameState* GS = GetBGGameState();
+	const int32 MySeat = GetMySeatIndex();
+
+	return GS && MySeat != INDEX_NONE && GS->GetFirstTurnSeat() == MySeat;
+}
+
+//	② 내 역할 확인 — 이 화면 주인에게만 뜨는 카드다.
+//	③ 으로 넘어갈 때 내려가며, 퇴장 연출(Anim_Out)이 있으면 그것이 끝난 뒤 사라진다.
+void ABGPlayerController::UpdateIntroRoleCard(EBGIntroStage Stage)
+{
+	//	⚠️ 카드 그림은 미리 받아 둬야 한다. 뜨는 순간에 요청하면 그림이 한 박자 늦게 채워진다.
+	//	   한 단계 앞(야영지 진입)에서 위젯을 만들어 두되 화면에는 올리지 않는다.
+	const bool bPrepare = Stage == EBGIntroStage::Campfire;
+	const bool bShow    = Stage == EBGIntroStage::RoleReveal;
+
+	if (!bPrepare && !bShow)
+	{
+		if (IntroRoleCardInstance)
+		{
+			IntroRoleCardInstance->HideCard();
+			IntroRoleCardInstance = nullptr;
+		}
+		return;
+	}
+
+	if (!IntroRoleCardClass || !GetLocalPlayer())
+	{
+		return;   //	카드를 안 지정했으면 이 단계는 화면 없이 지나간다.
+	}
+
+	if (!IntroRoleCardInstance)
+	{
+		IntroRoleCardInstance = CreateWidget<UBGIntroRoleCardWidget>(this, IntroRoleCardClass);
+		if (!IntroRoleCardInstance)
+		{
+			return;
+		}
+
+		//	숨긴 채로 붙인다 — 위젯이 화면에 있어야 틱이 돌고, 그래야 값이 늦게 와도 따라잡는다.
+		IntroRoleCardInstance->AddToViewport();
+		IntroRoleCardInstance->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	if (bPrepare)
+	{
+		IntroRoleCardInstance->PrepareCard();
+		return;
+	}
+
+	IntroRoleCardInstance->ShowCard();
 }
 
 void ABGPlayerController::HandleCinematicStageChangedForFX(EBGCinematicStage Stage, ABGCharacter* Subject)
@@ -2020,6 +2154,14 @@ void ABGPlayerController::ServerRequestEndTurn_Implementation()
 	{
 		//	좌석은 서버가 가진 PlayerState 에서 읽는다 — 클라가 보낸 값을 믿지 않는다.
 		GS->RequestEndTurn(GetMySeatIndex());
+	}
+}
+
+void ABGPlayerController::ServerRequestSkipIntro_Implementation()
+{
+	if (ABGGameState* GS = GetBGGameState())
+	{
+		GS->SkipIntro();
 	}
 }
 

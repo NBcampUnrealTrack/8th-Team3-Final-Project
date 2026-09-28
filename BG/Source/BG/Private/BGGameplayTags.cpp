@@ -159,6 +159,7 @@ namespace BG
 	namespace Phase
 	{
 		UE_DEFINE_GAMEPLAY_TAG(Lobby,     "Phase.Lobby")
+		UE_DEFINE_GAMEPLAY_TAG(Intro,     "Phase.Intro")
 		UE_DEFINE_GAMEPLAY_TAG(TurnStart, "Phase.TurnStart")
 		UE_DEFINE_GAMEPLAY_TAG(Draw,      "Phase.Draw")
 		UE_DEFINE_GAMEPLAY_TAG(Play,      "Phase.Play")

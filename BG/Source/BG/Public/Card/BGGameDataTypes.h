@@ -1,4 +1,4 @@
-﻿// BANG! 데이터 테이블 Row 타입 모음 (Team4Project 의 BaseGameDataTypes 대응)
+// BANG! 데이터 테이블 Row 타입 모음 (Team4Project 의 BaseGameDataTypes 대응)
 
 #pragma once
 
@@ -314,6 +314,10 @@ public:
 	// 이 직업이 무엇을 하는지 한 줄 설명(턴 패널 툴팁이 읽는다).
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FText Description;
+
+	/** Role-reveal card artwork for this job. Text and secret role remain dynamic. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|UI")
+	TSoftObjectPtr<UTexture2D> IntroCardTexture;
 
 	// 기본 스탯 세팅 GE (Instant). Health/MaxHealth/WeaponRange/BangLimit ... 를 초기화.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)

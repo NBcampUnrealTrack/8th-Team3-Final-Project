@@ -11,6 +11,7 @@
 #include "UI/View/BGResolutionView.h" // EBGResolutionTier (ToResolutionTier 반환형)
 #include "UI/Presentation/BGPresentationTypes.h"  // FBGPresentationHandle (시네마틱 트랙)
 #include "Card/BGGameDataTypes.h"     // EBGDiceOutcome (ToResolutionTier 인자)
+#include "Core/BGIntroStage.h"        // EBGIntroStage — BP 델리게이트 인자라 완전한 타입이 필요하다
 #include "UI/Target/BGGameplayHudOwner.h"   // 조준 중 클릭 통과 대상 알려주기
 #include "BGPlayerController.generated.h"   // 항상 마지막
 
@@ -48,6 +49,9 @@ enum class EBGCardPlayRejectReason : uint8
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBGCardPlayRejected,
 	int32, InstanceId, EBGCardPlayRejectReason, Reason);
+
+/** 도입 연출 단계가 바뀌었다 — HUD(WBP)가 자기 등장·퇴장 애니메이션을 여기에 건다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGIntroStageChangedBP, EBGIntroStage, Stage);
 
 UCLASS()
 class BG_API ABGPlayerController : public APlayerController, public IBGGameplayHudOwner
@@ -190,6 +194,34 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "BG|Target")
 	FOnBGTargetSelectionCancelled OnTargetSelectionCancelled;
+
+	// ── 도입 연출 ────────────────────────────────────────────────
+	//
+	//  HUD 는 BP 라서 GameState 의 네이티브 통지를 못 듣는다. 여기서 BP 용으로 한 번 더 쏜다.
+	//  ⚠️ 무엇을 보여줄지는 HUD 가 정한다 — 코드는 "지금 몇 단계다" 만 알린다.
+
+	/** 도입 연출 단계가 바뀌었다. HUD 가 Event Construct 에서 여기에 바인딩하면 된다. */
+	UPROPERTY(BlueprintAssignable, Category = "BG|Intro")
+	FOnBGIntroStageChangedBP OnIntroStageChangedBP;
+
+	/**
+	 * 지금 도입 연출 단계. HUD 가 늦게 만들어져 통지를 놓쳤을 때 스스로 맞추는 용도다.
+	 * 판이 도는 중이면 None.
+	 */
+	UFUNCTION(BlueprintPure, Category = "BG|Intro")
+	EBGIntroStage GetIntroStage() const;
+
+	/** 첫 턴을 가져갈 좌석의 이름. ⑤ "에드릭의 차례" 문구에 쓴다. 아직 모르면 빈 텍스트. */
+	UFUNCTION(BlueprintPure, Category = "BG|Intro")
+	FText GetFirstTurnPlayerName() const;
+
+	/** 용사(보안관)의 이름. ③ "용사는 에드릭입니다" 문구에 쓴다. 아직 모르면 빈 텍스트. */
+	UFUNCTION(BlueprintPure, Category = "BG|Intro")
+	FText GetHeroPlayerName() const;
+
+	/** 첫 턴이 내 차례인가. ⑤ 에서 "내 차례" 와 "OO의 차례" 를 가르는 데 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Intro")
+	bool IsFirstTurnMine() const;
 	
 	// ─────────────── 채팅 ───────────────────── //
 	UFUNCTION(Server, Reliable, WithValidation)
@@ -244,6 +276,10 @@ public:
 	// 현재 턴/페이즈/손패 한도를 출력한다.
 	UFUNCTION(Exec)
 	void BG_DumpTurn();
+
+	// 도입 연출을 건너뛰고 바로 판을 연다. 서버가 단계를 소유하므로 전원이 함께 건너뛴다.
+	UFUNCTION(Exec)
+	void BG_SkipIntro();
 
 	/**
 	 * 손패 각 카드의 4단계 확률을 기본값과 보정 후로 나란히 출력한다 (GDD §10).
@@ -324,6 +360,34 @@ protected:
 
 	/** 연출 단계가 바뀌었다. 시네마틱 트랙의 표를 여기서 쥐고 놓는다. */
 	void HandleCinematicStageChangedForFX(EBGCinematicStage Stage, class ABGCharacter* Subject);
+
+	/** 도입 연출 단계가 바뀌었다. 화면 페이드와 역할 카드를 여기서 연다. */
+	void HandleIntroStageChanged(EBGIntroStage Stage);
+
+	/** 역할 카드를 이 단계에 맞게 띄우거나 내린다. */
+	void UpdateIntroRoleCard(EBGIntroStage Stage);
+
+	/**
+	 * 검은 화면에 머무는 시간(초). 장작 소리만 들리는 구간이다.
+	 * ⚠️ IntroFadeInSeconds 와 합쳐서 야영지 진입 단계 길이(기본 2초)를 넘지 않게 둘 것 —
+	 *    넘으면 다음 단계가 시작된 뒤에도 화면이 덮여 있다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
+	float IntroBlackHoldSeconds = 0.5f;
+
+	/** 검은 화면이 걷히는 시간(초). */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
+	float IntroFadeInSeconds = 1.2f;
+
+	/** 검은 화면에 머문 뒤 밝아지기 시작한다. */
+	void BeginIntroFadeIn();
+
+	/** 도입 ② 에서 띄울 내 역할 카드. 비워 두면 그 단계는 화면에 아무것도 뜨지 않는다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro")
+	TSubclassOf<class UBGIntroRoleCardWidget> IntroRoleCardClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UBGIntroRoleCardWidget> IntroRoleCardInstance;
 
 	/** 시네마틱이 도는 동안 쥐고 있는 표. */
 	FBGPresentationTrackHold CinematicHold;
@@ -447,6 +511,10 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerRequestEndTurn();
 
+	/** 도입 연출 건너뛰기(콘솔 BG_SkipIntro). 단계는 서버가 소유하므로 전원이 함께 건너뛴다. */
+	UFUNCTION(Server, Reliable)
+	void ServerRequestSkipIntro();
+
 	UFUNCTION(Server, Reliable)
 	void ServerRequestStartPvEMatch();
 
@@ -535,6 +603,9 @@ private:
 	TObjectPtr<class ABGCinematicCamera> CinematicCamera;
 
 	FTimerHandle SeatRefreshTimer;
+
+	//	검은 화면에 머무는 동안 도는 타이머. ⚠️ Destroyed 에서 반드시 끊는다.
+	FTimerHandle IntroFadeTimer;
 	
 	void HandleChatKeyPressed();
 };

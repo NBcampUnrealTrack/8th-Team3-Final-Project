@@ -214,6 +214,7 @@ TArray<FBGSeatView> UBGSeatViewLibrary::MakeSeatViews(const APlayerController* V
 			if (const FBGCharacterRow* JobRow = Data ? Data->GetCharacterRow(JobTag) : nullptr)
 			{
 				View.JobDescription = JobRow->Description;
+				View.IntroCardTexture = JobRow->IntroCardTexture;
 			}
 		}
 
