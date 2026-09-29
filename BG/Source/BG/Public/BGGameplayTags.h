@@ -275,6 +275,7 @@ namespace BG
 	namespace Phase
 	{
 		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Lobby)
+		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Intro)     // 도입 연출 — 판은 열렸지만 아직 첫 턴 전
 		UE_DECLARE_GAMEPLAY_TAG_EXTERN(TurnStart) // 감옥/다이너마이트 판정
 		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Draw)      // DrawCount 장 뽑기
 		UE_DECLARE_GAMEPLAY_TAG_EXTERN(Play)      // 카드 사용

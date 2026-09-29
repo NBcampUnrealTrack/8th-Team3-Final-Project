@@ -13,6 +13,7 @@
 #include "UI/Widget/BGSeatDetailWidget.h"
 #include "UI/Widget/BGSeatInfoWidget.h"
 #include "UI/Presentation/BGPresentationTypes.h"   // FBGPresentationRequest — UFUNCTION 인자라 완전한 타입이 필요하다
+#include "Core/BGIntroStage.h"                     // EBGIntroStage
 #include "BGSeatInfoDisplayComponent.generated.h"
 
 class ABGCharacter;
@@ -186,6 +187,12 @@ private:
 	/** 연출 단계가 바뀌었다. 피격(Secondary)에 닿으면 이름표를 다시 띄운다. */
 	void HandleCinematicStageChanged(EBGCinematicStage Stage, ABGCharacter* Subject);
 
+	/** 도입 연출 단계가 바뀌었다. 비출 좌석 하나만 남기고 나머지를 걷는다. */
+	void HandleIntroStageChanged(EBGIntroStage Stage);
+
+	/** 이 좌석의 이름표가 지금 떠 있어야 하는가(0 또는 1). */
+	float GetTargetPlateOpacity(int32 SeatIndex) const;
+
 	/** 카드 연출이 시작됐다 — HUD 가 걷히는 신호와 같다. 이름표도 걷는다. */
 	UFUNCTION()
 	void HandlePresentationStarted(const FBGPresentationRequest& Request);
@@ -208,8 +215,8 @@ private:
 	/** 이름표 투명도를 목표로 한 프레임 옮긴다. */
 	void TickPlateFade(float DeltaTime);
 
-	/** 현재 투명도를 이름표 하나에 입힌다. 0 이면 컴포넌트째 숨긴다. */
-	void ApplyPlateOpacity(UWidgetComponent* Widget) const;
+	/** 투명도를 이름표 하나에 입힌다. 0 이면 컴포넌트째 숨긴다. */
+	void ApplyPlateOpacity(UWidgetComponent* Widget, float Opacity) const;
 
 	/** 월드 시간(초). 복제와 무관한 로컬 시계다 — 이 컴포넌트의 타이밍은 전부 화면 쪽 사정이다. */
 	double GetNow() const;
@@ -264,6 +271,7 @@ private:
 	FDelegateHandle PublicInfoHandle;
 	FDelegateHandle DisconnectHandle;
 	FDelegateHandle CinematicStageHandle;
+	FDelegateHandle IntroStageHandle;
 
 	//	좌석 → 지금 보여주고 있는(바뀌기 전) 체력. 여기 있는 좌석은 실제 값 대신 이 값을 그린다.
 	TMap<int32, int32> HeldHealthBySeat;
@@ -288,9 +296,15 @@ private:
 	bool bHitReached = false;
 	bool bPrimaryStage = false;
 
-	//	이름표 투명도. 연출 시작~피격 전까지 0 을 향하고 그 밖에는 1 을 향한다.
-	float PlateOpacity = 1.f;
+	//	좌석 → 지금 화면에 입혀 둔 이름표 투명도. 도입 연출은 좌석마다 답이 달라 하나로 못 둔다.
+	TMap<int32, float> PlateOpacityBySeat;
+
+	//	카드 연출로 전원을 걷어 둔 상태인가.
 	bool bPlatesHidden = false;
+
+	//	도입 연출 중인가 / 그중 비추고 있는 좌석. INDEX_NONE 이면 아무도 안 비춘다.
+	bool bIntroActive = false;
+	int32 IntroFocusSeat = INDEX_NONE;
 
 	//	좌석 배정을 기다리는 타이머. 배정되면 표시를 켜고 계속 감시한다(퇴장 대비).
 	FTimerHandle SeatWaitTimer;

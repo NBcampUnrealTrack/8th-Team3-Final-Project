@@ -6,11 +6,11 @@
 #include "Card/BGCardType.h"
 #include "Card/BGGameDataTypes.h"   // FBGCardResolution — 멀티캐스트 인자라 완전한 타입이 필요하다
 #include "Core/BGCinematicCamera.h" // FBGCameraShot — 복제 프로퍼티라 완전한 타입이 필요하다
+#include "Core/BGIntroStage.h"      // EBGIntroStage — 복제 프로퍼티라 완전한 타입이 필요하다
 #include "GameplayTagContainer.h"
 #include "Ping/BGPingTypes.h"   // FBGPingEvent — 멀티캐스트 인자라 완전한 타입이 필요하다
 #include "GameFramework/GameStateBase.h"
 #include "BGGameState.generated.h"
-
 
 /**
  *
@@ -223,8 +223,40 @@ public:
 	//  손패가 한도(=현재 Health)를 넘으면 Discard 로 가서 버릴 때까지 대기한다.
 	// ══════════════════════════════════════════════════════════════════
 
-	/** 판 시작 — 초기 손패를 나눠주고 첫 턴을 연다. 역할 배정이 끝난 뒤 호출할 것. */
+	/**
+	 * 판 시작 — 도입 연출을 연다. 역할 배정이 끝난 뒤 호출할 것.
+	 * 손패 배분과 첫 턴은 연출이 끝나는 자리(BeginFirstTurn)에서 함께 이뤄진다.
+	 */
 	void StartMatch();
+
+	// ── 도입 연출 ────────────────────────────────────────────────────
+	//
+	//  판이 열리기 전 12초짜리 도입부. 규칙은 이 사이 아무것도 하지 않는다 —
+	//  손패 배분도 첫 턴도 연출이 끝난 뒤에 이뤄진다(BeginFirstTurn).
+
+	/** 서버 전용. 도입 연출을 시작한다. 이미 돌고 있으면 무시한다. */
+	void BeginIntro();
+
+	/** 서버 전용. 남은 단계를 건너뛰고 바로 판을 연다(콘솔 BG_SkipIntro). */
+	void SkipIntro();
+
+	UFUNCTION(BlueprintPure, Category = "BG|Intro")
+	EBGIntroStage GetIntroStage() const { return IntroStage; }
+
+	/** 도입 연출 중인가. 그동안은 아무도 카드를 낼 수 없다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Intro")
+	bool IsIntroPlaying() const { return IntroStage != EBGIntroStage::None; }
+
+	/** 용사(보안관) 좌석. 공개 역할이 없으면 INDEX_NONE — 용사 공개 단계가 이 좌석을 비춘다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Intro")
+	int32 GetHeroSeat() const;
+
+	/** 첫 턴을 가져갈 좌석. 도입 연출이 "누구 차례인지" 를 미리 보여줄 때 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Intro")
+	int32 GetFirstTurnSeat() const;
+
+	/** 단계 전환 통지. HUD·이름표·손패가 각자 구독한다. */
+	FOnBGIntroStageChanged OnIntroStageChanged;
 
 	/** 보안관이 고를 수 있는 PvE 보상 후보. 없으면 빈 배열. */
 	UFUNCTION(BlueprintPure, Category = "BG|PvE")
@@ -871,6 +903,62 @@ protected:
 	//	판 시작 시 나눠줄 초기 손패. 0 이하면 좌석의 Health 만큼 준다(뱅 원작 규칙).
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Turn")
 	int32 InitialHandSize = 0;
+
+	// ── 도입 연출 내부 ──
+	//	단계 전환의 유일한 입구. 다음 단계 예약까지 여기서 한다(SetCinematicStage 와 같은 원칙).
+	void SetIntroStage(EBGIntroStage NewStage);
+
+	//	서버·클라 공통 진입점. 서버는 SetIntroStage 에서, 클라는 OnRep 에서 여기로 모인다.
+	void HandleIntroStage();
+
+	UFUNCTION()
+	void OnRep_IntroStage();
+
+	//	이번 단계가 끝났다. 다음 단계로 넘기거나, 마지막이면 판을 연다.
+	void AdvanceIntroStage();
+
+	//	초기 손패를 나눠준다. 좌석의 Health 를 보고 장수를 정하므로 역할 배정 뒤여야 한다.
+	void DealInitialHands();
+
+	//	첫 턴을 연다(FirstTurn 단계의 끝). 여기서 비로소 밧줄이 점화된다.
+	void BeginFirstTurn();
+
+	UPROPERTY(ReplicatedUsing = OnRep_IntroStage)
+	EBGIntroStage IntroStage = EBGIntroStage::None;
+
+	//	서버 전용. 초기 손패를 이미 나눴는가 — 건너뛰기가 배분을 두 번 부르는 것을 막는다.
+	bool bInitialHandsDealt = false;
+
+	//	복제 재전송으로 같은 통지가 두 번 나가는 것을 막는다(BroadcastedCinematicStage 와 같은 이유).
+	EBGIntroStage BroadcastedIntroStage = EBGIntroStage::None;
+
+	//	타이머는 서버에만 하나 돈다. 클라가 각자 세면 늦게 들어온 사람이 어긋난다.
+	FTimerHandle IntroStageTimer;
+
+	/**
+	 * PvE 에서도 도입 연출을 재생할지.
+	 *
+	 * 기본은 끔이다 — 도입 연출은 PvP 한 판의 서두이고, PvE 는 조우를 연달아 도는 구조라
+	 * 매 조우마다 붙으면 진행이 끊긴다. **혼자 연출을 확인할 때만** 켜서 쓴다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro")
+	bool bPlayIntroInPvE = false;
+
+	//	단계별 길이(초). 0 이하면 그 단계를 건너뛴다 — 전부 0 이면 도입 연출이 통째로 꺼진다.
+	//	기획 수치: 야영지 2 · 역할 4 · 용사 2 · 첫 턴 2 = 10초.
+
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
+	float IntroCampfireSeconds = 2.f;
+
+	/** 역할 카드를 보여주는 시간. 이 시간이 지나면 카드가 퇴장하고 다음 단계로 넘어간다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
+	float IntroRoleRevealSeconds = 4.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
+	float IntroHeroRevealSeconds = 2.f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
+	float IntroFirstTurnSeconds = 2.f;
 
 	/**
 	 * 손패 상한. 이 장수를 넘기는 드로우는 넘는 만큼만 뽑히지 않는다.

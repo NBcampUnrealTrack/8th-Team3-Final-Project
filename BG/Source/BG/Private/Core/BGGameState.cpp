@@ -1,6 +1,5 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "Core/BGGameState.h"
 
 #include "AbilitySystemComponent.h"
@@ -55,6 +54,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, MatchEndStage);
 	DOREPLIFETIME(ABGGameState, PendingRewardCandidates);
 	DOREPLIFETIME(ABGGameState, CameraShot);
+	DOREPLIFETIME(ABGGameState, IntroStage);
 	DOREPLIFETIME(ABGGameState, CinematicStage);
 	DOREPLIFETIME(ABGGameState, CinematicInstigator);
 	DOREPLIFETIME(ABGGameState, CinematicTarget);
@@ -1029,6 +1029,8 @@ bool ABGGameState::HasCardUsesLeft(int32 Seat) const
 //  턴 진행
 // ══════════════════════════════════════════════════════════════════════════════════════
 
+//	판을 여는 입구. 규칙을 바로 돌리지 않고 도입 연출부터 연다 —
+//	손패 배분(Deal)과 첫 턴(FirstTurn)은 그 연출이 제 차례에 부른다.
 void ABGGameState::StartMatch()
 {
 	if (!HasAuthority() || bMatchRunning)
@@ -1043,7 +1045,176 @@ void ABGGameState::StartMatch()
 		return;
 	}
 
+	//	⚠️ 여기서 켜야 한다. 도입 연출 동안에도 이름표·HUD 가 "판이 도는 중" 을 보고 값을 그린다.
+	//	   카드를 못 내는 것은 CanSeatPlayCards 가 IsIntroPlaying 으로 막는다.
 	SetMatchRunning(true);
+
+	//	도입 연출은 PvP 전용이다 — 방을 만들고 전원이 준비한 뒤 방장이 여는 그 판의 서두다.
+	//	PvE 는 조우를 연달아 도는 구조라 매 조우마다 12초를 붙이면 진행이 끊긴다.
+	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
+	if (GM && GM->IsPvE() && !bPlayIntroInPvE)
+	{
+		DealInitialHands();
+		BeginFirstTurn();
+		return;
+	}
+
+	BeginIntro();
+}
+
+void ABGGameState::BeginIntro()
+{
+	if (!HasAuthority() || IsIntroPlaying())
+	{
+		return;
+	}
+
+	//	⚠️ 페이즈를 로비에서 빼는 것이 먼저다. 로비·세션 UI 는 "페이즈가 로비가 아니다" 를 보고
+	//	   스스로 닫는다(UBGSessionMenuWidget) — 첫 턴까지 기다리면 연출 내내 로비가 떠 있는다.
+	SetPhaseTag(BG::Phase::Intro.GetTag());
+
+	SetIntroStage(EBGIntroStage::Campfire);
+}
+
+void ABGGameState::SkipIntro()
+{
+	if (!HasAuthority() || !IsIntroPlaying())
+	{
+		return;
+	}
+
+	UE_LOG(LogBGCard, Log, TEXT("[Intro] 건너뛰기 — %d 단계에서 바로 판을 연다."),
+		static_cast<int32>(IntroStage));
+
+	GetWorldTimerManager().ClearTimer(IntroStageTimer);
+
+	SetIntroStage(EBGIntroStage::None);
+	BeginFirstTurn();   //	손패 배분도 여기서 함께 이뤄진다.
+}
+
+int32 ABGGameState::GetHeroSeat() const
+{
+	//	용사 = 판 시작부터 공개되는 역할(보안관). 좌석과 역할은 따로 배정되므로 좌석 번호로는 못 찾는다.
+	for (const int32 Seat : GetAliveSeatsInTableOrder())
+	{
+		if (GetSeatRole(Seat) == BG::Role::Sheriff.GetTag())
+		{
+			return Seat;
+		}
+	}
+	return INDEX_NONE;
+}
+
+int32 ABGGameState::GetFirstTurnSeat() const
+{
+	//	뱅 규칙: 보안관이 선이다. 없으면 자리 순서 맨 앞.
+	const int32 HeroSeat = GetHeroSeat();
+	if (HeroSeat != INDEX_NONE)
+	{
+		return HeroSeat;
+	}
+
+	const TArray<int32> Alive = GetAliveSeatsInTableOrder();
+	return Alive.IsEmpty() ? INDEX_NONE : Alive[0];
+}
+
+void ABGGameState::SetIntroStage(EBGIntroStage NewStage)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	IntroStage = NewStage;
+	HandleIntroStage();
+
+	GetWorldTimerManager().ClearTimer(IntroStageTimer);
+
+	if (NewStage == EBGIntroStage::None)
+	{
+		return;
+	}
+
+	//	단계 길이. 0 이하면 그 단계는 화면에 뜨자마자 다음으로 넘어간다.
+	float Seconds = 0.f;
+	switch (NewStage)
+	{
+	case EBGIntroStage::Campfire:   Seconds = IntroCampfireSeconds;   break;
+	case EBGIntroStage::RoleReveal: Seconds = IntroRoleRevealSeconds; break;
+	case EBGIntroStage::HeroReveal: Seconds = IntroHeroRevealSeconds; break;
+	case EBGIntroStage::FirstTurn:  Seconds = IntroFirstTurnSeconds;  break;
+	default: break;
+	}
+
+	if (Seconds > 0.f)
+	{
+		GetWorldTimerManager().SetTimer(IntroStageTimer, this,
+			&ABGGameState::AdvanceIntroStage, Seconds, false);
+	}
+	else
+	{
+		AdvanceIntroStage();
+	}
+}
+
+void ABGGameState::AdvanceIntroStage()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	switch (IntroStage)
+	{
+	case EBGIntroStage::Campfire:
+		SetIntroStage(EBGIntroStage::RoleReveal);
+		break;
+
+	case EBGIntroStage::RoleReveal:
+		SetIntroStage(EBGIntroStage::HeroReveal);
+		break;
+
+	case EBGIntroStage::HeroReveal:
+		SetIntroStage(EBGIntroStage::FirstTurn);
+		break;
+
+	case EBGIntroStage::FirstTurn:
+		SetIntroStage(EBGIntroStage::None);
+		BeginFirstTurn();
+		break;
+
+	default:
+		break;
+	}
+}
+
+void ABGGameState::HandleIntroStage()
+{
+	if (BroadcastedIntroStage == IntroStage)
+	{
+		return;   // 복제 재전송으로 같은 통지가 두 번 나가는 것을 막는다.
+	}
+	BroadcastedIntroStage = IntroStage;
+
+	UE_LOG(LogBGCard, Log, TEXT("[Intro] 단계 %d"), static_cast<int32>(IntroStage));
+
+	OnIntroStageChanged.Broadcast(IntroStage);
+}
+
+void ABGGameState::OnRep_IntroStage()
+{
+	HandleIntroStage();
+}
+
+void ABGGameState::DealInitialHands()
+{
+	//	⚠️ 두 번 나가면 안 된다. 건너뛰기(SkipIntro)가 이미 배분이 끝난 뒤에도 불릴 수 있다.
+	if (!HasAuthority() || bInitialHandsDealt)
+	{
+		return;
+	}
+
+	const TArray<int32> Alive = GetAliveSeatsInTableOrder();
 
 	//	초기 손패. InitialHandSize 가 0 이하면 좌석의 Health 만큼 준다(뱅 원작).
 	for (const int32 Seat : Alive)
@@ -1068,17 +1239,28 @@ void ABGGameState::StartMatch()
 		UE_LOG(LogBGCard, Log, TEXT("[Turn] 초기 손패 — 좌석 %d : %d 장"), Seat, PS->GetHandCount());
 	}
 
-	//	뱅 규칙: 보안관이 선이다. 좌석과 역할은 따로 배정되므로 좌석 번호로 찾을 수 없다.
-	int32 FirstSeat = Alive[0];
-	for (const int32 Seat : Alive)
+	bInitialHandsDealt = true;
+}
+
+//	도입 연출이 끝나는 자리. 손패는 여기서 나간다 — 연출 중에 나눠 주면 아직 열리지도 않은
+//	판의 카드가 손에 들려 있게 된다.
+void ABGGameState::BeginFirstTurn()
+{
+	if (!HasAuthority())
 	{
-		if (GetSeatRole(Seat) == BG::Role::Sheriff.GetTag())
-		{
-			FirstSeat = Seat;
-			break;
-		}
+		return;
 	}
-	if (FirstSeat == Alive[0] && GetSeatRole(Alive[0]) != BG::Role::Sheriff.GetTag())
+
+	DealInitialHands();
+
+	const int32 FirstSeat = GetFirstTurnSeat();
+	if (FirstSeat == INDEX_NONE)
+	{
+		UE_LOG(LogBGCard, Error, TEXT("[Turn] 첫 턴 좌석을 찾지 못했습니다."));
+		return;
+	}
+
+	if (GetHeroSeat() == INDEX_NONE)
 	{
 		UE_LOG(LogBGCard, Warning, TEXT("[Turn] 보안관 좌석을 찾지 못해 좌석 %d 로 시작합니다."), FirstSeat);
 	}
@@ -1320,6 +1502,7 @@ void ABGGameState::EnterPlayPhase()
 bool ABGGameState::CanSeatPlayCards(int32 Seat) const
 {
 	return bMatchRunning
+		&& !IsIntroPlaying()       // 도입 연출 중에는 아직 판이 열리지 않았다
 		&& !bResolutionPresentationActive
 		&& !IsCinematicPlaying()   // 판정 UI 및 월드 연출 중에는 전원 조작 불가
 		&& Seat != INDEX_NONE
@@ -2083,4 +2266,3 @@ void ABGGameState::ReshuffleDeck(EBGDeckSide Side)
 	TargetDiscard.Empty();
 	RefreshPublicCounts();
 }
-

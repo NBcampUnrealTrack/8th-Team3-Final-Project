@@ -10,6 +10,8 @@
 #include "GameplayTagContainer.h"
 #include "BGSeatView.generated.h"
 
+class UTexture2D;
+
 /** 장착 중인 파란 카드 한 장. 이름도 설명도 공개 정보다. */
 USTRUCT(BlueprintType)
 struct FBGEquipmentView
@@ -74,6 +76,11 @@ struct FBGSeatView
 	/** DT_BGCharacterRow 의 Description. 직업이 무엇을 하는지 한 줄 설명이다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
 	FText JobDescription;
+
+	/** Public job artwork supplied by DT_BGCharacterRow. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BG|Seat")
+	TSoftObjectPtr<UTexture2D> IntroCardTexture;
+
 
 	/**
 	 * 보는 사람 기준 거리. 자기 자신이거나 계산 불가면 INDEX_NONE (화면에는 "-").

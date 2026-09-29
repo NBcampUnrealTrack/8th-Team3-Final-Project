@@ -470,6 +470,14 @@ void ABGPlayerController::BG_EndTurn()
 #endif
 }
 
+void ABGPlayerController::BG_SkipIntro()
+{
+#if !UE_BUILD_SHIPPING
+	//	단계는 서버가 소유한다 — 클라가 혼자 건너뛰면 그 화면만 어긋난다.
+	ServerRequestSkipIntro();
+#endif
+}
+
 void ABGPlayerController::BG_DumpTurn()
 {
 #if !UE_BUILD_SHIPPING

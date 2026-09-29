@@ -106,11 +106,13 @@ void UBGSeatInfoDisplayComponent::SetDisplayEnabled(bool bEnabled)
 		DestroyAllWidgets();
 
 		HeldHealthBySeat.Reset();
-		PlateOpacity = 1.f;
+		PlateOpacityBySeat.Reset();
 		bPlatesHidden = false;
 		bPresentationActive = false;
 		bHitReached = false;
 		bPrimaryStage = false;
+		bIntroActive = false;
+		IntroFocusSeat = INDEX_NONE;
 
 		if (HoveredSeat != INDEX_NONE)
 		{
@@ -147,10 +149,13 @@ void UBGSeatInfoDisplayComponent::BindDelegates()
 		GS->OnTurnStateChanged.AddUniqueDynamic(this, &UBGSeatInfoDisplayComponent::HandleTurnStateChanged);
 		CinematicStageHandle = GS->OnCinematicStageChanged.AddUObject(
 			this, &UBGSeatInfoDisplayComponent::HandleCinematicStageChanged);
+		IntroStageHandle = GS->OnIntroStageChanged.AddUObject(
+			this, &UBGSeatInfoDisplayComponent::HandleIntroStageChanged);
 		BoundGameState = GS;
 
 		//	연출 도중에 켜졌을 수 있다 — 통지를 기다리지 않고 지금 단계에 맞춘다.
 		HandleCinematicStageChanged(GS->GetCinematicStage(), GS->GetCinematicSubject());
+		HandleIntroStageChanged(GS->GetIntroStage());
 	}
 
 	//	HUD 가 걷히는 신호. 같은 PlayerController 에 붙어 있다.
@@ -186,8 +191,10 @@ void UBGSeatInfoDisplayComponent::UnbindDelegates()
 	{
 		GS->OnTurnStateChanged.RemoveDynamic(this, &UBGSeatInfoDisplayComponent::HandleTurnStateChanged);
 		GS->OnCinematicStageChanged.Remove(CinematicStageHandle);
+		GS->OnIntroStageChanged.Remove(IntroStageHandle);
 	}
 	CinematicStageHandle.Reset();
+	IntroStageHandle.Reset();
 	BoundGameState = nullptr;
 
 	if (UBGPresentationDirector* Director = BoundDirector.Get())
@@ -401,47 +408,85 @@ void UBGSeatInfoDisplayComponent::HandleCinematicStageChanged(EBGCinematicStage 
 	UpdatePlateVisibility();
 }
 
+//	도입 연출은 "한 사람만 비추는" 구간이다 — 용사 공개는 용사만, 첫 턴 안내는 시작 좌석만.
+//	카드 연출과 달리 좌석마다 답이 다르므로 투명도도 좌석별로 간다.
+void UBGSeatInfoDisplayComponent::HandleIntroStageChanged(EBGIntroStage Stage)
+{
+	const ABGGameState* GS = BoundGameState.Get();
+
+	bIntroActive = Stage != EBGIntroStage::None;
+
+	IntroFocusSeat = INDEX_NONE;
+	if (GS)
+	{
+		if (Stage == EBGIntroStage::HeroReveal)
+		{
+			IntroFocusSeat = GS->GetHeroSeat();
+		}
+		else if (Stage == EBGIntroStage::FirstTurn)
+		{
+			IntroFocusSeat = GS->GetFirstTurnSeat();
+		}
+	}
+
+	UpdatePlateVisibility();
+}
+
+float UBGSeatInfoDisplayComponent::GetTargetPlateOpacity(int32 SeatIndex) const
+{
+	if (bPlatesHidden)
+	{
+		return 0.f;   //	카드 연출 — 전원 걷는다.
+	}
+
+	if (!bIntroActive)
+	{
+		return 1.f;
+	}
+
+	//	도입 연출 중에는 비추는 좌석 하나만 뜬다. 비출 좌석이 없는 단계면 전부 걷힌다.
+	return SeatIndex == IntroFocusSeat ? 1.f : 0.f;
+}
+
 void UBGSeatInfoDisplayComponent::UpdatePlateVisibility()
 {
 	//	Primary 도 따로 본다 — 디렉터 신호가 빠져도 공격 연출 동안은 걷혀 있어야 한다.
-	const bool bHide = (bPresentationActive && !bHitReached) || bPrimaryStage;
-	if (bHide == bPlatesHidden)
-	{
-		return;
-	}
-	bPlatesHidden = bHide;
+	bPlatesHidden = (bPresentationActive && !bHitReached) || bPrimaryStage;
 
-	if (bPlatesHidden)
+	//	목표가 바뀌면 상세도 따라가야 한다. 커서가 그대로 올라가 있으면 호버 통지가 다시 오지 않는다.
+	if (HoveredSeat != INDEX_NONE && GetTargetPlateOpacity(HoveredSeat) <= 0.f)
 	{
 		HideDetail();
 	}
-	else if (HoveredSeat != INDEX_NONE)
+	else if (HoveredSeat != INDEX_NONE && VisibleDetailSeat == INDEX_NONE)
 	{
-		//	커서가 그대로 올라가 있으면 호버 통지가 다시 오지 않는다 — 여기서 되살린다.
 		ShowDetailFor(HoveredSeat);
 	}
 }
 
 void UBGSeatInfoDisplayComponent::TickPlateFade(float DeltaTime)
 {
-	const float Target = bPlatesHidden ? 0.f : 1.f;
-	if (PlateOpacity == Target)
-	{
-		return;
-	}
-
-	const float Seconds = bPlatesHidden ? PlateFadeOutSeconds : PlateFadeInSeconds;
-	PlateOpacity = Seconds > 0.f
-		? FMath::FInterpConstantTo(PlateOpacity, Target, DeltaTime, 1.f / Seconds)
-		: Target;
-
 	for (const TPair<int32, TObjectPtr<UWidgetComponent>>& Pair : WidgetsBySeat)
 	{
-		ApplyPlateOpacity(Pair.Value);
+		const int32 Seat = Pair.Key;
+		const float Target = GetTargetPlateOpacity(Seat);
+
+		float& Opacity = PlateOpacityBySeat.FindOrAdd(Seat, 1.f);
+		if (Opacity == Target)
+		{
+			continue;
+		}
+
+		const float Seconds = Target < Opacity ? PlateFadeOutSeconds : PlateFadeInSeconds;
+		Opacity = Seconds > 0.f
+			? FMath::FInterpConstantTo(Opacity, Target, DeltaTime, 1.f / Seconds)
+			: Target;
+
+		ApplyPlateOpacity(Pair.Value, Opacity);
 	}
 }
 
-void UBGSeatInfoDisplayComponent::ApplyPlateOpacity(UWidgetComponent* Widget) const
+void UBGSeatInfoDisplayComponent::ApplyPlateOpacity(UWidgetComponent* Widget, float Opacity) const
 {
 	if (!Widget)
 	{
@@ -450,11 +495,11 @@ void UBGSeatInfoDisplayComponent::ApplyPlateOpacity(UWidgetComponent* Widget) co
 
 	if (UUserWidget* UserWidget = Widget->GetUserWidgetObject())
 	{
-		UserWidget->SetRenderOpacity(PlateOpacity);
+		UserWidget->SetRenderOpacity(Opacity);
 	}
 
 	//	다 사라졌으면 컴포넌트째 끈다. 투명한 채로 그리는 비용을 아낀다.
-	Widget->SetVisibility(PlateOpacity > 0.f);
+	Widget->SetVisibility(Opacity > 0.f);
 }
 
 void UBGSeatInfoDisplayComponent::BindHealthDelegate(ABGCharacter* Character, int32 SeatIndex)
@@ -591,8 +636,10 @@ UWidgetComponent* UBGSeatInfoDisplayComponent::EnsureWidgetFor(ABGCharacter* Cha
 	}
 	WidgetsBySeat.Add(SeatIndex, Widget);
 
-	//	연출 도중에 붙었으면 지금 투명도로 시작한다. 안 그러면 혼자 불쑥 뜬다.
-	ApplyPlateOpacity(Widget);
+	//	연출 도중에 붙었으면 지금 있어야 할 투명도로 시작한다. 안 그러면 혼자 불쑥 뜬다.
+	const float Opacity = GetTargetPlateOpacity(SeatIndex);
+	PlateOpacityBySeat.Add(SeatIndex, Opacity);
+	ApplyPlateOpacity(Widget, Opacity);
 
 	//	상세는 이름표 위에 얹는다. 평소에는 숨어 있다가 커서를 올렸을 때만 켜진다.
 	if (DetailWidgetClass && DetailDrawSize.Y > 0.f)
@@ -734,6 +781,7 @@ void UBGSeatInfoDisplayComponent::SyncWidgets()
 		}
 
 		BoundHealthASCs.Remove(GoneSeat);
+		PlateOpacityBySeat.Remove(GoneSeat);
 		It.RemoveCurrent();
 	}
 }
@@ -793,8 +841,8 @@ void UBGSeatInfoDisplayComponent::ShowDetailFor(int32 SeatIndex)
 {
 	HideDetail();
 
-	//	공격 연출 중에는 이름표를 걷어 둔다 — 상세만 떠 있으면 어색하다.
-	if (SeatIndex == INDEX_NONE || bPlatesHidden)
+	//	이름표가 걷혀 있는 좌석에는 상세도 열지 않는다 — 상세만 떠 있으면 어색하다.
+	if (SeatIndex == INDEX_NONE || GetTargetPlateOpacity(SeatIndex) <= 0.f)
 	{
 		return;
 	}
