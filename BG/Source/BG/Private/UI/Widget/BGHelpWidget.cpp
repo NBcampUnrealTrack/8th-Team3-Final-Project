@@ -5,7 +5,10 @@
 #include "Card/BGGameDataTypes.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
-#include "Components/VerticalBox.h"
+#include "Components/ScrollBox.h"
+#include "Components/Spacer.h"
+#include "Components/TextBlock.h"
+#include "Components/UniformGridPanel.h"
 #include "Engine/DataTable.h"
 #include "UI/View/BGInfoTooltipRow.h"
 #include "UI/Widget/BGHelpRowWidget.h"
@@ -54,12 +57,16 @@ void UBGHelpWidget::NativeConstruct()
 
 	if (HelpButton)  { HelpButton->OnClicked.AddUniqueDynamic(this, &UBGHelpWidget::HandleHelpClicked); }
 	if (CloseButton) { CloseButton->OnClicked.AddUniqueDynamic(this, &UBGHelpWidget::HandleCloseClicked); }
+	if (Tab_Jobs)    { Tab_Jobs->OnClicked.AddUniqueDynamic(this, &UBGHelpWidget::HandleJobsTabClicked); }
+	if (Tab_Roles)   { Tab_Roles->OnClicked.AddUniqueDynamic(this, &UBGHelpWidget::HandleRolesTabClicked); }
+	if (Tab_Equips)  { Tab_Equips->OnClicked.AddUniqueDynamic(this, &UBGHelpWidget::HandleEquipsTabClicked); }
 
 	Dividers = { Image_Div1, Image_Div2 };
 	RefreshDividerThickness();
 
 	// 문구는 판이 돌아가는 동안 바뀌지 않는다 — 한 번 만들어 두고 열 때는 보이기만 한다.
 	BuildRows();
+	SelectTab(0);
 
 	// 패널은 버튼을 눌러야 열린다.
 	if (HelpPanel)
@@ -110,39 +117,30 @@ void UBGHelpWidget::BuildRows()
 		return;
 	}
 
-	if (VBox_Jobs)
+	if (Grid_Jobs)
 	{
 		//	NativeConstruct 는 위젯이 다시 뷰포트에 붙을 때마다 불릴 수 있다 — 행이 쌓이지 않게 비운다.
-		VBox_Jobs->ClearChildren();
-		if (VBox_Jobs2)
-		{
-			VBox_Jobs2->ClearChildren();
-		}
+		Grid_Jobs->ClearChildren();
 
+		int32 Count = 0;
 		if (CharacterTable)
 		{
-			//	둘째 열이 있으면 반씩 나눠 담는다. 홀수면 앞 열이 한 줄 더 가져간다.
-			//	열이 하나뿐이면(WBP 에 VBox_Jobs2 가 없으면) 전부 앞 열로 간다.
-			const int32 FirstColumnCount = VBox_Jobs2
-				? FMath::DivideAndRoundUp(CharacterTable->GetRowMap().Num(), 2)
-				: MAX_int32;
-
-			int32 Index = 0;
 			for (const TPair<FName, uint8*>& Pair : CharacterTable->GetRowMap())
 			{
-				UVerticalBox* Column = (Index++ < FirstColumnCount) ? VBox_Jobs.Get() : VBox_Jobs2.Get();
 				if (const FBGCharacterRow* Row = reinterpret_cast<const FBGCharacterRow*>(Pair.Value))
 				{
-					AddRow(*Column, JobTitle(*Row), Row->Description, FindIcon(JobIcons, Row->CharacterTag));
+					AddRow(*Grid_Jobs, Count++, JobTitle(*Row), Row->Description, FindIcon(JobIcons, Row->CharacterTag));
 				}
 			}
 		}
+		PadFirstRow(*Grid_Jobs, Count);
 	}
 
-	if (VBox_Roles)
+	if (Grid_Roles)
 	{
-		VBox_Roles->ClearChildren();
+		Grid_Roles->ClearChildren();
 
+		int32 Count = 0;
 		for (int32 Index = 0; Index < RoleCount; ++Index)
 		{
 			const FGameplayTag& Tag = RoleOrder()[Index];
@@ -154,13 +152,33 @@ void UBGHelpWidget::BuildRows()
 
 			if (Row)
 			{
-				AddRow(*VBox_Roles, Row->Title, Row->Body, FindIcon(RoleIcons, Tag));
+				AddRow(*Grid_Roles, Count++, Row->Title, Row->Body, FindIcon(RoleIcons, Tag));
 			}
 		}
+		PadFirstRow(*Grid_Roles, Count);
+	}
+
+	if (Grid_Equips)
+	{
+		Grid_Equips->ClearChildren();
+
+		int32 Count = 0;
+		if (CardTable)
+		{
+			for (const TPair<FName, uint8*>& Pair : CardTable->GetRowMap())
+			{
+				const FBGCardRow* Row = reinterpret_cast<const FBGCardRow*>(Pair.Value);
+				if (Row && Row->TypeTag == BG::Card::Type::Blue.GetTag())
+				{
+					AddRow(*Grid_Equips, Count++, Row->DisplayName, Row->Description, FindIcon(EquipIcons, Row->CardIdTag));
+				}
+			}
+		}
+		PadFirstRow(*Grid_Equips, Count);
 	}
 }
 
-void UBGHelpWidget::AddRow(UVerticalBox& Box, const FText& Title, const FText& Body, UTexture2D* Icon)
+void UBGHelpWidget::AddRow(UUniformGridPanel& Grid, int32 Index, const FText& Title, const FText& Body, UTexture2D* Icon)
 {
 	UBGHelpRowWidget* Row = CreateWidget<UBGHelpRowWidget>(this, RowClass);
 	if (!Row)
@@ -171,8 +189,46 @@ void UBGHelpWidget::AddRow(UVerticalBox& Box, const FText& Title, const FText& B
 	Row->SetInfo(Title, Body);
 	Row->SetIcon(Icon);
 
-	//	행 사이 여백은 WBP_BGHelpRow 가 자기 패딩으로 갖는다 — 슬롯을 여기서 만지지 않는다.
-	Box.AddChildToVerticalBox(Row);
+	//	행 사이 세로 여백은 WBP_BGHelpRow 가 자기 패딩으로, 열 사이 여백은 격자의 SlotPadding 이 갖는다.
+	const int32 ColumnCount = FMath::Max(1, Columns);
+	Grid.AddChildToUniformGrid(Row, Index / ColumnCount, Index % ColumnCount);
+}
+
+void UBGHelpWidget::PadFirstRow(UUniformGridPanel& Grid, int32 Count)
+{
+	for (int32 Index = Count; Index < Columns; ++Index)
+	{
+		Grid.AddChildToUniformGrid(NewObject<USpacer>(this), 0, Index);
+	}
+}
+
+void UBGHelpWidget::SelectTab(int32 Index)
+{
+	if (Scroll_Body)
+	{
+		Scroll_Body->ScrollToStart();
+	}
+
+	UButton* Buttons[] = { Tab_Jobs, Tab_Roles, Tab_Equips };
+	UTextBlock* Texts[] = { Tab_Jobs_Text, Tab_Roles_Text, Tab_Equips_Text };
+	UUniformGridPanel* Pages[] = { Grid_Jobs, Grid_Roles, Grid_Equips };
+	for (int32 Tab = 0; Tab < UE_ARRAY_COUNT(Buttons); ++Tab)
+	{
+		const bool bActive = (Tab == Index);
+		if (Pages[Tab])
+		{
+			//	Collapsed 가 아니라 Hidden — 자리를 남겨야 Overlay 가 가장 큰 탭 크기를 유지한다.
+			Pages[Tab]->SetVisibility(bActive ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
+		}
+		if (Buttons[Tab])
+		{
+			Buttons[Tab]->SetBackgroundColor(bActive ? FLinearColor::White : InactiveTabTint);
+		}
+		if (Texts[Tab])
+		{
+			Texts[Tab]->SetColorAndOpacity(bActive ? ActiveTabColor : InactiveTabColor);
+		}
+	}
 }
 
 void UBGHelpWidget::OpenHelp()
@@ -207,4 +263,19 @@ void UBGHelpWidget::HandleHelpClicked()
 void UBGHelpWidget::HandleCloseClicked()
 {
 	CloseHelp();
+}
+
+void UBGHelpWidget::HandleJobsTabClicked()
+{
+	SelectTab(0);
+}
+
+void UBGHelpWidget::HandleRolesTabClicked()
+{
+	SelectTab(1);
+}
+
+void UBGHelpWidget::HandleEquipsTabClicked()
+{
+	SelectTab(2);
 }
