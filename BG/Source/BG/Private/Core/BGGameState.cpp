@@ -28,6 +28,12 @@
 #include "Net/UnrealNetwork.h"
 #include "AI/BGAIPlayerController.h"
 #include "Core/BGGameMode.h"
+#include "FX/BGStatusFXTypes.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "Components/SceneComponent.h"
+#include "GameFramework/Character.h"
 
 ABGGameState::ABGGameState()
 {
@@ -124,20 +130,33 @@ void ABGGameState::BeginCardCinematic(ABGCharacter* Caster, ABGCharacter* Victim
 int32 ABGGameState::BeginCardRulesPresentation()
 {
 	if (!HasAuthority()) return 0;
+	RulesEquipmentProcs.Reset();
 	RulesPresentationId = ++NextPresentationId;
 	return RulesPresentationId;
 }
 
 // 카드 효과 실행을 마치고 발동 실패 시 보류한 상태 FX 표시를 해제한다.
-void ABGGameState::EndCardRulesPresentation(bool bActivated)
+TArray<FBGEquipmentProcEvent> ABGGameState::EndCardRulesPresentation(bool bActivated)
 {
-	if (!HasAuthority()) return;
+	if (!HasAuthority()) return {};
 	if (!bActivated && RulesPresentationId > ReleasedPresentationId)
 	{
 		ReleasedPresentationId = RulesPresentationId;
 		OnStatusVisualsReleased.Broadcast();
 	}
 	RulesPresentationId = 0;
+	TArray<FBGEquipmentProcEvent> Result = bActivated ? MoveTemp(RulesEquipmentProcs) : TArray<FBGEquipmentProcEvent>();
+	RulesEquipmentProcs.Reset();
+	return Result;
+}
+
+// 서버가 확정한 장비 발동을 현재 카드의 결과 연출 목록에 쌓는다.
+void ABGGameState::RecordEquipmentProc(const FBGEquipmentProcEvent& Event)
+{
+	if (HasAuthority() && RulesPresentationId > 0 && !Event.FXRowKey.IsNone() && Event.Target)
+	{
+		RulesEquipmentProcs.Add(Event);
+	}
 }
 
 // 연출 해제 번호가 복제되면 클라이언트의 상태 FX를 다시 맞춘다.
@@ -227,6 +246,7 @@ void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGChar
 	{
 		return;
 	}
+	PlayEquipmentProcs(Resolution, EBGEquipmentProcPhase::AfterResolution);
 
 	const UGameInstance* GI = GetGameInstance();
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
@@ -241,6 +261,7 @@ void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGChar
 		: Presentation->FailureEffect).IsNull();
 	if (!CardRow || (!FXRow && !(bFailed && bHasFailureEffect)))
 	{
+		PlayEquipmentProcs(Resolution, EBGEquipmentProcPhase::Impact);
 		return; // 성공 계열은 카드 FX Row, 실패 계열은 Presentation 전역 FX가 있어야 한다.
 	}
 
@@ -258,6 +279,27 @@ void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGChar
 		? Presentation->FailureCueSeconds
 		: FXRow->NonCinematicCueSeconds;
 	AddNonCinematicCardGameplayCue(Caster, Target, Resolution, ActiveSeconds);
+	PlayEquipmentProcs(Resolution, EBGEquipmentProcPhase::Impact);
+}
+
+// 지정한 연출 단계의 장비 발동을 기록 순서대로 모든 화면에 전달한다.
+void ABGGameState::PlayEquipmentProcs(const FBGCardResolution& Resolution, EBGEquipmentProcPhase Phase)
+{
+	if (!HasAuthority()) return;
+	for (const FBGEquipmentProcEvent& Event : Resolution.EquipmentProcs)
+	{
+		if (Event.Phase == Phase) Multicast_PlayEquipmentProc(Event);
+	}
+}
+
+// 장비 발동이 일반 피격 연출을 대체해야 하는지 확인한다.
+bool ABGGameState::ReplacesDefaultImpact(const FBGCardResolution& Resolution)
+{
+	for (const FBGEquipmentProcEvent& Event : Resolution.EquipmentProcs)
+	{
+		if (Event.Phase == EBGEquipmentProcPhase::Impact && Event.bReplaceDefaultImpact) return true;
+	}
+	return false;
 }
 
 void ABGGameState::FinishResolutionPresentation()
@@ -363,6 +405,10 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 	// 서버 ASC에 추가하면 ActiveGameplayCues가 모든 클라이언트로 복제된다.
 	// ExecuteGameplayCue를 쓰지 않아 늦게 들어온 클라이언트도 WhileActive를 복원한다.
 	AddCardGameplayCueForStage(NewStage);
+	if (NewStage == EBGCinematicStage::Secondary)
+	{
+		PlayEquipmentProcs(CinematicResolution, EBGEquipmentProcPhase::Impact);
+	}
 
 	//	서버는 자기 OnRep 을 받지 못한다 — 여기서 직접 부르지 않으면 리슨서버 호스트만 연출이 안 뜬다.
 	HandleCinematicStage();
@@ -402,6 +448,10 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 void ABGGameState::AddCardGameplayCueForStage(EBGCinematicStage Stage)
 {
 	if (!HasAuthority() || (Stage != EBGCinematicStage::Primary && Stage != EBGCinematicStage::Secondary))
+	{
+		return;
+	}
+	if (Stage == EBGCinematicStage::Secondary && ReplacesDefaultImpact(CinematicResolution))
 	{
 		return;
 	}
@@ -497,6 +547,11 @@ void ABGGameState::AddNonCinematicCardGameplayCue(ABGCharacter* Caster, ABGChara
 	if (!FXRow && !bFailed)
 	{
 		return;
+	}
+	if (ReplacesDefaultImpact(Resolution) && Target && FXRow
+		&& FXRow->PrimaryAnchor == EBGCardFXAnchor::Target)
+	{
+		return; // 대상 기준 단발 Cue라면 장비 발동 연출이 대신한다.
 	}
 	ABGCharacter* CueTarget = !bFailed
 		&& FXRow->PrimaryAnchor == EBGCardFXAnchor::Target && Target
@@ -656,6 +711,41 @@ void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution
 	//	리슨서버에서는 호스트에서도 이 본문이 실행된다 — 호스트 UI 도 같은 경로로 갱신된다.
 	//	여기서 규칙을 처리하지 않는다. 판정과 효과 적용은 이미 서버에서 끝났고 이건 통지뿐이다.
 	OnCardResolved.Broadcast(Resolution);
+}
+
+// 기존 상태 FX 표의 발동 행을 읽어 대상 화면에 단발 Niagara를 재생한다.
+void ABGGameState::Multicast_PlayEquipmentProc_Implementation(const FBGEquipmentProcEvent& Event)
+{
+	if (GetNetMode() == NM_DedicatedServer || !Event.Target || Event.FXRowKey.IsNone()) return;
+	const UBGDataSubsystem* Data = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	const FBGStatusFXRow* Row = Data ? Data->GetStatusFXRow(Event.FXRowKey) : nullptr;
+	if (!Row || Row->Effect.IsNull())
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[EquipmentProc] FX 행 또는 Effect 없음: %s"), *Event.FXRowKey.ToString());
+		return;
+	}
+	UNiagaraSystem* System = Row->Effect.LoadSynchronous();
+	AActor* Target = Event.Target.Get();
+	USceneComponent* AttachTo = nullptr;
+	if (ACharacter* Character = Cast<ACharacter>(Target)) AttachTo = Character->GetMesh();
+	if (!AttachTo) AttachTo = Target->GetRootComponent();
+	if (!System || !AttachTo) return;
+
+	const FTransform SocketWorld = AttachTo->GetSocketTransform(Row->AttachSocket, RTS_World);
+	const USceneComponent* Root = Target->GetRootComponent();
+	const FVector BaseLocation = !Row->AttachSocket.IsNone() || !Root
+		? SocketWorld.GetLocation() : Root->GetComponentLocation();
+	const FVector SpawnLocation = BaseLocation + SocketWorld.TransformVector(Row->LocationOffset);
+	UNiagaraComponent* FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		System, AttachTo, Row->AttachSocket, SpawnLocation, SocketWorld.Rotator(),
+		EAttachLocation::KeepWorldPosition, /*bAutoDestroy=*/true, /*bAutoActivate=*/false);
+	if (FX)
+	{
+		FX->AddWorldOffset(FVector::UpVector * Data->GetGlobalFXSpawnZOffset());
+		FX->SetRelativeScale3D(FVector(Row->Scale));
+		FX->Activate(true);
+	}
 }
 
 void ABGGameState::Multicast_ChatMessage_Implementation(const FString& SenderName, const FString& Message)

@@ -10,6 +10,7 @@
 #include "BGGameDataTypes.generated.h"
 
 class UGameplayAbility;
+class AActor;
 class UGameplayEffect;
 class UAnimInstance;
 class UNiagaraSystem;
@@ -89,6 +90,34 @@ struct FBGOutcomeWeights
 	}
 };
 
+/** 장비 발동 이펙트를 판정 UI 뒤 또는 피격 단계에 재생할지 정한다. */
+UENUM(BlueprintType)
+enum class EBGEquipmentProcPhase : uint8
+{
+	AfterResolution,
+	Impact
+};
+
+/** 서버가 확정한 장비 발동 1건. FXRowKey는 DT_BGStatusFX의 단발 연출 행 이름이다. */
+USTRUCT(BlueprintType)
+struct FBGEquipmentProcEvent
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	FName FXRowKey;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	TObjectPtr<AActor> Target;
+
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	EBGEquipmentProcPhase Phase = EBGEquipmentProcPhase::AfterResolution;
+
+	/** Impact에서 일반 피격 GameplayCue를 대신할 때만 참. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	bool bReplaceDefaultImpact = false;
+};
+
 /**
  * 판정 1회의 결과 — 서버가 굴린 뒤 전원에게 알리는 내용 (GDD §4.1
  * "판정은 서버 권한으로 실행하고 **모든 플레이어에게 동일한 결과를 표시한다**").
@@ -117,6 +146,10 @@ struct FBGCardResolution
 	/** 준비·함정(Status.NextCard.Force*)이 굴림 결과를 덮어썼는가. */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
 	bool bForced = false;
+
+	/** 카드 효과 실행 중 확정된 장비 발동 목록. 여러 장비가 함께 발동해도 보존한다. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	TArray<FBGEquipmentProcEvent> EquipmentProcs;
 
 	/** 카드를 쓴 좌석. */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")

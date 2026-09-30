@@ -1846,7 +1846,10 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	ABGGameState* PresentationGS = GetBGGameState();
 	Resolution.PresentationId = PresentationGS ? PresentationGS->BeginCardRulesPresentation() : 0;
 	const FGameplayAbilitySpecHandle ActivatedHandle = ASC->GiveAbilityAndActivateOnce(Spec, &Payload);
-	if (PresentationGS) PresentationGS->EndCardRulesPresentation(ActivatedHandle.IsValid());
+	if (PresentationGS)
+	{
+		Resolution.EquipmentProcs = PresentationGS->EndCardRulesPresentation(ActivatedHandle.IsValid());
+	}
 
 	if (MyPS)
 	{

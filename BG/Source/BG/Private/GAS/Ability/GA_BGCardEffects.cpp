@@ -275,6 +275,20 @@ FString UGA_BGCardEffects::ApplyDamage(int32 Amount, AActor* Avatar, AActor* Tar
 
 		if (Roll != INDEX_NONE && static_cast<float>(Roll) < NegateChance)
 		{
+			// 실제 장착한 요정 갑옷이 피해를 막은 경우만 단발 발동 연출을 예약한다.
+			const ABGPlayerState* DefenderPS = GetBGPlayerState(TargetActor);
+			if (DefenderPS && DefenderPS->HasEquippedCard(BG::Card::Id::FairyArmor.GetTag().GetTagName()))
+			{
+				if (ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+				{
+					FBGEquipmentProcEvent Event;
+					Event.FXRowKey = TEXT("Card.Id.FairyArmor.Activated");
+					Event.Target = TargetActor;
+					Event.Phase = EBGEquipmentProcPhase::Impact;
+					Event.bReplaceDefaultImpact = true;
+					GS->RecordEquipmentProc(Event);
+				}
+			}
 			//	GDD §10: 자동 판정은 원인·확률·결과를 로그에 남긴다.
 			UE_LOG(LogBGCard, Log,
 				TEXT("[방어] 요정 갑옷 발동 — 눈 %d / 방어율 %.0f%% → 피해 %d 무효화"),

@@ -128,13 +128,18 @@ public:
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_CardResolved(const FBGCardResolution& Resolution);
 
+	/** 결과 연출 단계에서 장비 발동 단발 FX를 모든 화면에 재생한다. */
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_PlayEquipmentProc(const FBGEquipmentProcEvent& Event);
+
 	/** 위 멀티캐스트가 도착하면 발사된다. UI(PlayerController)가 구독한다. */
 	FOnBGCardResolved OnCardResolved;
 	FOnBGStatusVisualsReleased OnStatusVisualsReleased;
 
 	/** GA 실행 직전 번호를 발급한다. 새 상태 FX는 해당 판정 UI가 끝날 때까지 숨긴다. */
 	int32 BeginCardRulesPresentation();
-	void EndCardRulesPresentation(bool bActivated);
+	TArray<FBGEquipmentProcEvent> EndCardRulesPresentation(bool bActivated);
+	void RecordEquipmentProc(const FBGEquipmentProcEvent& Event);
 	int32 GetRulesPresentationId() const { return RulesPresentationId; }
 	bool IsStatusVisualReleased(int32 PresentationId) const
 	{
@@ -751,6 +756,8 @@ protected:
 	/** 판정 UI 대기 없이 기존 시네마틱/단발 Cue 분기를 실행한다. 서버 전용. */
 	void PlayResolvedCardPresentationNow(class ABGCharacter* Caster, class ABGCharacter* Target,
 		const FBGCardResolution& Resolution);
+	void PlayEquipmentProcs(const FBGCardResolution& Resolution, EBGEquipmentProcPhase Phase);
+	static bool ReplacesDefaultImpact(const FBGCardResolution& Resolution);
 
 	/** 판정 UI 종료 통지가 모이거나 안전망 타이머가 끝난 뒤 월드 연출을 시작한다. */
 	void FinishResolutionPresentation();
@@ -771,6 +778,7 @@ protected:
 	TSet<TWeakObjectPtr<class ABGPlayerController>> PendingPresentationObservers;
 	int32 NextPresentationId = 0;
 	int32 RulesPresentationId = 0;
+	TArray<FBGEquipmentProcEvent> RulesEquipmentProcs;
 	UPROPERTY(ReplicatedUsing = OnRep_ReleasedPresentationId)
 	int32 ReleasedPresentationId = 0;
 

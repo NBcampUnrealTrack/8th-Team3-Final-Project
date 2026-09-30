@@ -14,16 +14,17 @@
 class UNiagaraSystem;
 
 /**
- * 캐릭터에 계속 붙어 있는 이펙트 1종 (장비 오라 · 상태 표식).
+ * 장비·상태 이펙트 1종. 지속 오라와 단발 발동 연출이 같은 자산 표를 쓴다.
  *
  * ⚠️ **Row 이름이 곧 조회 키다.** 출처가 둘인데 표는 하나다:
  *      장비 → FBGCardInstance::CardId        예) "Card.Id.FairyArmor"
  *      상태 → FBGPendingStatus::Tag 의 이름   예) "Status.NextAttack.DamageBonus"
+ *      발동 → 서버가 기록한 FXRowKey           예) "Card.Id.FairyArmor.Activated"
  *    둘 다 FName 이고, DT_BGCard 의 Row 이름도 태그 문자열이라 그대로 맞아떨어진다.
  *    Row 이름을 태그 문자열과 다르게 지으면 **경고 없이 조용히 안 뜬다.**
  *
- * 여기 없는 키는 "이펙트 없음" 이다. 장비·상태를 추가할 때마다 이 표를 채워야 하는 것은
- * 아니며, 표에 없다고 규칙이 달라지지도 않는다.
+ * 지속 행은 UBGStatusFXComponent가 상태에 맞춰 유지한다. 발동 행은 GameState가
+ * 판정 UI 뒤 단발 재생한다. 표에 없다고 규칙이 달라지지는 않는다.
  */
 USTRUCT(BlueprintType)
 struct FBGStatusFXRow : public FTableRowBase
@@ -68,7 +69,7 @@ struct FBGStatusFXRow : public FTableRowBase
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0.01"))
 	float Scale = 1.f;
 
-	/** 제거 시 종료 연출로 넘길 bool. 현재 지속형 Niagara 공통 이름. */
+	/** 지속형 FX 제거 시 종료 연출로 넘길 bool. 단발 발동 행에서는 사용하지 않는다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FName EndBoolParameter = TEXT("User.bIsEnding");
 
