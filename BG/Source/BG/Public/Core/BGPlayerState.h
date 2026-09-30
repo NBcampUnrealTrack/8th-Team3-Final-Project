@@ -330,10 +330,14 @@ private:
 	UPROPERTY(Replicated)
 	int32 RopeStrikes = 0;
 
-	//	서버 전용 사본. 폰이 사라져도 역할·직업을 잃지 않기 위한 것 — 복제 금지(은닉 정보).
-	UPROPERTY()
+	//	폰이 사라져도 역할·직업을 잃지 않기 위한 사본.
+	//
+	//	⚠️ COND_OwnerOnly 다. 자기 역할은 본인이 원래 아는 정보라 본인에게 보내도 새지 않지만,
+	//	   전원 공개로 바꾸면 판 도중에 남의 역할을 들여다볼 수 있다.
+	//	   본인에게 보내는 이유: 승패 판정(ABGPlayerController::DidIWin)이 클라에서도 돌아야 한다.
+	UPROPERTY(Replicated)
 	FGameplayTag CachedRoleTag;
-	UPROPERTY()
+	UPROPERTY(Replicated)
 	FGameplayTag CachedJobTag;
 
 	//	재접속 열쇠. 서버 전용 — 복제하면 남의 자리를 가로챌 수 있다.

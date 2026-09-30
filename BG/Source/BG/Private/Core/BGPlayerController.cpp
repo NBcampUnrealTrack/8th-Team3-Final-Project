@@ -1,4 +1,6 @@
 ﻿#include "Core/BGPlayerController.h"
+
+#include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Ping/BGPingComponent.h"
 #include "Ping/BGPingDisplayComponent.h"
 #include "Audio/BGAudioSubsystem.h"
@@ -30,6 +32,13 @@
 #include "UI/Widget/BGResolutionWidget.h"
 #include "UI/Widget/BGRewardSelectWidget.h"
 #include "UI/Widget/BGIntroRoleCardWidget.h"
+#include "UI/Widget/BGMatchResultWidget.h"
+#include "Core/BGEndingSequenceSet.h"
+#include "LevelSequence.h"
+#include "LevelSequenceActor.h"
+#include "LevelSequencePlayer.h"
+#include "Engine/AssetManager.h"
+#include "Engine/StreamableManager.h"
 #include "Core/BGCinematicCamera.h"          // 연출 카메라 (로컬 스폰)
 #include "Core/BGCampfire.h"                 // 선회 중심 = 판의 중심
 #include "Core/BGCharacter.h"                // 연출 주인공 캐스팅
@@ -39,6 +48,7 @@
 #include "UI/Target/BGWorldTargetingComponent.h"
 #include "UI/Target/BGTargetHighlight.h"
 #include "Components/InputComponent.h"
+#include "UObject/ConstructorHelpers.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 
@@ -64,6 +74,13 @@ ABGPlayerController::ABGPlayerController()
 
 	//	연출 큐도 화면 쪽이라 같이 복제하지 않는다.
 	PresentationDirector = CreateDefaultSubobject<UBGPresentationDirector>(TEXT("PresentationDirector"));
+
+	//	다른 WBP 를 쓰려면 BP_BGPlayerController 에서 이 값만 바꾸면 된다.
+	static ConstructorHelpers::FClassFinder<UUserWidget> VictoryBP(TEXT("/Game/UI/Ending/WBP_Victory"));
+	if (VictoryBP.Succeeded()) { VictoryWidgetClass = VictoryBP.Class; }
+
+	static ConstructorHelpers::FClassFinder<UUserWidget> DefeatBP(TEXT("/Game/UI/Ending/WBP_Defeat"));
+	if (DefeatBP.Succeeded()) { DefeatWidgetClass = DefeatBP.Class; }
 }
 
 // ======================================================================================
@@ -249,6 +266,9 @@ void ABGPlayerController::Destroyed()
 {
 	//	⚠️ 파괴 뒤에 발동하면 죽은 컨트롤러를 건드린다.
 	GetWorldTimerManager().ClearTimer(IntroFadeTimer);
+
+	//	로비 복귀(ServerTravel)로 여기까지 온다 — 돌던 시퀀스와 그 액터를 두고 가면 안 된다.
+	ResetEndingPresentation();
 
 	//	판이 도는 중이면 폰을 떼어 내 월드에 남긴다. Super 가 폰을 파괴하기 전 마지막 기회다.
 	const ABGGameState* GS = GetBGGameState();
@@ -622,6 +642,13 @@ void ABGPlayerController::EnsureCinematicCamera()
 
 void ABGPlayerController::HandleCameraShotChanged(const FBGCameraShot& Shot)
 {
+	// Late intro/combat camera notifications must not take the view from Sequencer.
+	const ABGGameState* EndingState = GetBGGameState();
+	if (EndingState && EndingState->IsEndingPresentationActive())
+	{
+		return;
+	}
+
 	if (!IsLocalController())
 	{
 		return;   // 화면이 없는 컨트롤러에는 뷰타깃 개념이 없다.
@@ -866,6 +893,7 @@ void ABGPlayerController::TryBindGameStateDelegates()
 	GS->OnCameraShotChanged.AddUObject(this, &ABGPlayerController::HandleCameraShotChanged);
 	GS->OnCinematicStageChanged.AddUObject(this, &ABGPlayerController::HandleCinematicStageChangedForFX);
 	GS->OnIntroStageChanged.AddUObject(this, &ABGPlayerController::HandleIntroStageChanged);
+	GS->OnMatchEndStageChanged.AddUniqueDynamic(this, &ABGPlayerController::HandleMatchEndStageChanged);
 	GS->OnTurnStateChanged.AddUniqueDynamic(this, &ABGPlayerController::HandleTurnStateChanged);
 
 	BoundGameState = GS;
@@ -874,6 +902,7 @@ void ABGPlayerController::TryBindGameStateDelegates()
 	//	   맞춰 줘야 첫 통지가 올 때까지 화면이 비어 있지 않다.
 	HandleCameraShotChanged(GS->GetCameraShot());
 	HandleIntroStageChanged(GS->GetIntroStage());
+	HandleMatchEndStageChanged(GS->GetMatchEndStage());
 	HandleTurnStateChanged();
 
 	UE_LOG(LogBGCard, Verbose, TEXT("[PC] GameState 통지 구독"));
@@ -919,6 +948,251 @@ void ABGPlayerController::BeginIntroFadeIn()
 	{
 		PlayerCameraManager->StartCameraFade(1.f, 0.f, IntroFadeInSeconds, FLinearColor::Black,
 			/*bShouldFadeAudio=*/true, /*bHoldWhenFinished=*/false);
+	}
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════
+//  엔딩 시퀀스 — 승리 진영마다 다른 성 연출
+//
+//  ⚠️ 각 클라가 로컬로 재생한다. 서버는 단계와 승리 진영만 복제한다 —
+//     시퀀스 액터를 복제하면 재생 위치를 매 프레임 맞춰야 하고 렉에서 끊긴다.
+// ══════════════════════════════════════════════════════════════════════════════════════
+
+void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	//	⚠️ 늦게 들어온 클라는 중간 단계부터 받는다 — 각 단계는 앞 단계를 거쳤다고 가정하지 않는다.
+	switch (Stage)
+	{
+	case EBGMatchEndStage::FinalReveal:
+		//	시퀀스는 승리 위젯이 떠 있는 동안까지 여유가 있다 — 지금부터 받아 둔다.
+		PrepareEndingSequence();
+		break;
+
+	case EBGMatchEndStage::Victory:
+		//	HUD 는 아직 둔다 — 시퀀스로 컷될 때 닉네임과 함께 걷힌다.
+		PrepareEndingSequence();
+		ShowVictoryWidget();
+		break;
+
+	case EBGMatchEndStage::EndingSequence:
+		HideGameplayWidgetsForEnding();
+		HideVictoryWidget();
+		PlayEndingSequence();
+		break;
+
+	case EBGMatchEndStage::Credits:
+		//	시퀀스는 마지막 프레임에 멈춰 있다(bPauseAtEnd) — 결과 표의 배경으로 남긴다.
+		HideGameplayWidgetsForEnding();
+		HideVictoryWidget();
+		ShowMatchResult();
+		break;
+
+	default:
+		ResetEndingPresentation();
+		break;
+	}
+}
+
+void ABGPlayerController::ShowVictoryWidget()
+{
+	if (VictoryWidgetInstance || !GetLocalPlayer())
+	{
+		return;
+	}
+
+	const ABGGameState* GS = GetBGGameState();
+	const TSubclassOf<UUserWidget> WidgetClass =
+		(GS && DidIWin(GS->GetWinningRole())) ? VictoryWidgetClass : DefeatWidgetClass;
+	if (!WidgetClass)
+	{
+		return;
+	}
+
+	VictoryWidgetInstance = CreateWidget<UUserWidget>(this, WidgetClass);
+	if (VictoryWidgetInstance)
+	{
+		VictoryWidgetInstance->AddToViewport(1000);
+	}
+
+	//	보기만 하는 구간이다. 결과 화면이 뜨면 다시 연다.
+	bShowMouseCursor = false;
+	SetInputMode(FInputModeGameOnly());
+}
+
+void ABGPlayerController::HideVictoryWidget()
+{
+	if (VictoryWidgetInstance)
+	{
+		VictoryWidgetInstance->RemoveFromParent();
+		VictoryWidgetInstance = nullptr;
+	}
+}
+
+//	전원 정체·승패 표. 판이 끝나면 역할이 전원 공개되므로 남의 정체도 읽힌다.
+void ABGPlayerController::ShowMatchResult()
+{
+	if (!MatchResultWidgetClass || !GetLocalPlayer())
+	{
+		return;   //	결과 화면을 안 지정했으면 그대로 로비 복귀를 기다린다.
+	}
+
+	if (!MatchResultWidgetInstance)
+	{
+		MatchResultWidgetInstance = CreateWidget<UBGMatchResultWidget>(this, MatchResultWidgetClass);
+		if (!MatchResultWidgetInstance)
+		{
+			return;
+		}
+		MatchResultWidgetInstance->AddToViewport(1000);
+	}
+
+	MatchResultWidgetInstance->ShowResult();
+
+	//	버튼을 눌러야 하므로 커서를 연다. 로비로 넘어가면 월드째 새로 열려 원래대로 돌아온다.
+	bShowMouseCursor = true;
+	SetInputMode(FInputModeGameAndUI().SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock));
+}
+
+//	맵에 배치된 목록이 먼저다. 시퀀스는 그 맵의 성을 찍은 것이라 맵마다 다르기 때문이다.
+//	목록 액터가 없는 맵에서는 컨트롤러에 적어 둔 기본 목록으로 돌아간다.
+ULevelSequence* ABGPlayerController::ResolveEndingSequence() const
+{
+	const ABGGameState* GS = GetBGGameState();
+	if (!GS || !GS->GetWinningRole().IsValid())
+	{
+		return nullptr;
+	}
+
+	if (const ABGEndingSequenceSet* MapSet = ABGEndingSequenceSet::Find(this))
+	{
+		//	레벨과 함께 이미 로드돼 있다 — 기다릴 것이 없다.
+		if (ULevelSequence* MapSequence = MapSet->FindSequence(GS->GetWinningRole()))
+		{
+			return MapSequence;
+		}
+	}
+
+	//	폴백은 소프트 참조라 받아 둔 뒤에야 값이 나온다.
+	const TSoftObjectPtr<ULevelSequence>* Fallback = EndingSequences.Find(GS->GetWinningRole());
+	return Fallback ? Fallback->Get() : nullptr;
+}
+
+void ABGPlayerController::PrepareEndingSequence()
+{
+	const ABGGameState* GS = GetBGGameState();
+	if (!GS || EndingSequenceHandle.IsValid())
+	{
+		return;
+	}
+
+	//	맵에 배치된 것을 쓸 수 있으면 받아 올 것이 없다.
+	if (const ABGEndingSequenceSet* MapSet = ABGEndingSequenceSet::Find(this))
+	{
+		if (MapSet->FindSequence(GS->GetWinningRole()))
+		{
+			return;
+		}
+	}
+
+	const TSoftObjectPtr<ULevelSequence>* Found = EndingSequences.Find(GS->GetWinningRole());
+	if (!Found || Found->IsNull())
+	{
+		//	이 진영의 시퀀스를 안 넣었다 — 연출 없이 문구만 뜨고 지나간다.
+		return;
+	}
+
+	EndingSequenceHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		Found->ToSoftObjectPath(),
+		FStreamableDelegate::CreateWeakLambda(this, [this]()
+		{
+			//	받는 동안 재생 시점이 지나갔으면 지금 튼다.
+			if (bEndingSequenceWantsPlay)
+			{
+				PlayEndingSequence();
+			}
+		}));
+}
+
+void ABGPlayerController::PlayEndingSequence()
+{
+	bEndingSequenceWantsPlay = true;
+
+	const ABGGameState* GS = GetBGGameState();
+	if (!GS)
+	{
+		return;
+	}
+
+	ULevelSequence* Sequence = ResolveEndingSequence();
+	if (!Sequence)
+	{
+		PrepareEndingSequence();   //	아직 안 왔다. 도착하면 위 콜백이 다시 부른다.
+		return;
+	}
+
+	if (EndingSequencePlayer)
+	{
+		return;   //	이미 돌고 있다.
+	}
+
+	//	시퀀스가 카메라를 잡게 둔다 — 성이 무너지는 동안 플레이어 시점이 살아 있으면 연출이 깨진다.
+	FMovieSceneSequencePlaybackSettings Settings;
+	Settings.bPauseAtEnd = true;
+	Settings.bDisableLookAtInput  = true;
+	Settings.bDisableMovementInput = true;
+
+	ALevelSequenceActor* SpawnedActor = nullptr;
+	EndingSequencePlayer = ULevelSequencePlayer::CreateLevelSequencePlayer(
+		this, Sequence, Settings, SpawnedActor);
+	EndingSequenceActor = SpawnedActor;
+
+	if (EndingSequencePlayer)
+	{
+		EndingSequencePlayer->Play();
+	}
+}
+
+void ABGPlayerController::ResetEndingPresentation()
+{
+	StopEndingSequence();
+	HideVictoryWidget();
+
+	if (MatchResultWidgetInstance)
+	{
+		MatchResultWidgetInstance->RemoveFromParent();
+		MatchResultWidgetInstance = nullptr;
+	}
+
+	for (const TPair<TWeakObjectPtr<UUserWidget>, ESlateVisibility>& Entry : EndingHiddenWidgets)
+	{
+		if (UUserWidget* Widget = Entry.Key.Get())
+		{
+			Widget->SetVisibility(Entry.Value);
+		}
+	}
+	EndingHiddenWidgets.Empty();
+}
+
+void ABGPlayerController::StopEndingSequence()
+{
+	bEndingSequenceWantsPlay = false;
+	EndingSequenceHandle.Reset();
+
+	if (EndingSequencePlayer)
+	{
+		EndingSequencePlayer->Stop();
+		EndingSequencePlayer = nullptr;
+	}
+
+	if (EndingSequenceActor)
+	{
+		EndingSequenceActor->Destroy();
+		EndingSequenceActor = nullptr;
 	}
 }
 
@@ -2112,15 +2386,46 @@ int32 ABGPlayerController::GetMySeatIndex() const
 	return PS ? PS->GetSeatIndex() : INDEX_NONE;
 }
 
-bool ABGPlayerController::DidIWin(FGameplayTag WinningRole) const
+//	역할·직업은 PlayerState 의 사본을 먼저 본다(본인에게만 복제된다). 아직 안 왔으면 폰에서 읽는다 —
+//	폰의 RoleTag 도 COND_OwnerOnly 라 어느 쪽이든 남의 값은 볼 수 없다.
+FGameplayTag ABGPlayerController::GetMyRoleTag() const
 {
-	const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
-	if (!PS)
+	if (const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
 	{
-		return false;
+		if (PS->GetCachedRole().IsValid())
+		{
+			return PS->GetCachedRole();
+		}
 	}
 
-	const FGameplayTag MyRole = PS->GetCachedRole();
+	const ABGCharacter* MyCharacter = Cast<ABGCharacter>(GetPawn());
+	return MyCharacter ? MyCharacter->GetRoleTag() : FGameplayTag();
+}
+
+FGameplayTag ABGPlayerController::GetMyJobTag() const
+{
+	if (const ABGPlayerState* PS = GetPlayerState<ABGPlayerState>())
+	{
+		if (PS->GetCachedJob().IsValid())
+		{
+			return PS->GetCachedJob();
+		}
+	}
+
+	const ABGCharacter* MyCharacter = Cast<ABGCharacter>(GetPawn());
+	return MyCharacter ? MyCharacter->GetJobTag() : FGameplayTag();
+}
+
+bool ABGPlayerController::DidIWin(FGameplayTag WinningRole) const
+{
+	const FGameplayTag MyRole = GetMyRoleTag();
+	if (!MyRole.IsValid())
+	{
+		//	⚠️ 조용히 패배로 처리하면 "전원이 패배 화면" 이 되고 원인을 짚기 어렵다.
+		UE_LOG(LogBGCard, Warning,
+			TEXT("[Match] 내 역할을 알 수 없어 승패를 판정하지 못했다 — 패배로 표시된다."));
+		return false;
+	}
 
 	// 보안관 진영이 이기면 부관도 함께 승리로 본다(뱅 원작 규칙).
 	if (WinningRole == BG::Role::Sheriff.GetTag())
@@ -2162,6 +2467,20 @@ void ABGPlayerController::ServerRequestSkipIntro_Implementation()
 	if (ABGGameState* GS = GetBGGameState())
 	{
 		GS->SkipIntro();
+	}
+}
+
+void ABGPlayerController::RequestReturnToLobby()
+{
+	ServerRequestReturnToLobby();
+}
+
+void ABGPlayerController::ServerRequestReturnToLobby_Implementation()
+{
+	if (ABGGameState* GS = GetBGGameState())
+	{
+		//	시점 검증은 서버가 한다 — 클라가 언제 눌렀는지는 믿지 않는다.
+		GS->RequestReturnToLobbyFromResult();
 	}
 }
 
@@ -2312,4 +2631,27 @@ AActor* ABGPlayerController::ResolveTargetActor(int32 TargetSeat) const
 		}
 	}
 	return nullptr;
+}
+
+void ABGPlayerController::HideGameplayWidgetsForEnding()
+{
+	TArray<UUserWidget*> Widgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(this, Widgets, UUserWidget::StaticClass(), /*TopLevelOnly=*/true);
+
+	for (UUserWidget* Widget : Widgets)
+	{
+		//	⚠️ 엔딩 위젯까지 숨기면 단계가 넘어갈 때마다 방금 띄운 위젯이 사라진다.
+		if (!Widget || Widget->GetOwningPlayer() != this
+			|| Widget == VictoryWidgetInstance || Widget == MatchResultWidgetInstance)
+		{
+			continue;
+		}
+
+		//	처음 숨길 때의 가시성만 기억한다 — 두 번째 호출에서 Collapsed 를 원래 값으로 덮으면 되살릴 수 없다.
+		if (!EndingHiddenWidgets.Contains(Widget))
+		{
+			EndingHiddenWidgets.Add(Widget, Widget->GetVisibility());
+		}
+		Widget->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }

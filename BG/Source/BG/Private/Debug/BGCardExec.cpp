@@ -602,3 +602,27 @@ void ABGGameMode::BG_DamageAllOutlaws(int32 Amount)
 	UE_LOG(LogBGCard, Log, TEXT("[Exec] 무법자 %d 명에게 피해 %d 적용"), NumHit, Damage);
 #endif
 }
+
+void ABGGameMode::BG_ForceWin(const FString& Side)
+{
+#if !UE_BUILD_SHIPPING
+	ABGGameState* GS = GetGameState<ABGGameState>();
+	if (!GS)
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[Exec] ABGGameState 없음"));
+		return;
+	}
+
+	FGameplayTag Winner;
+	if      (Side.Equals(TEXT("Outlaw"),   ESearchCase::IgnoreCase)) { Winner = BG::Role::Outlaw.GetTag(); }
+	else if (Side.Equals(TEXT("Sheriff"),  ESearchCase::IgnoreCase)) { Winner = BG::Role::Sheriff.GetTag(); }
+	else if (Side.Equals(TEXT("Renegade"), ESearchCase::IgnoreCase)) { Winner = BG::Role::Renegade.GetTag(); }
+	else
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[Exec] BG_ForceWin — 알 수 없는 진영 '%s' (Outlaw / Sheriff / Renegade)"), *Side);
+		return;
+	}
+
+	GS->DebugForceWin(Winner);
+#endif
+}
