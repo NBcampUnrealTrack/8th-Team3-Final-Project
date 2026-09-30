@@ -1,15 +1,20 @@
-﻿#include "UI/Widget/BGSettingsWidget.h"
+﻿#include "UI/Widget/BGSystemMenuWidget.h"
 
 #include "Audio/BGAudioSubsystem.h"
 #include "BGGameplayTags.h"
 #include "Components/InputComponent.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
+#include "Card/BGGameDataTypes.h"
 #include "Components/Button.h"
 #include "Components/Image.h"
 #include "Components/CheckBox.h"
 #include "Components/ComboBoxString.h"
+#include "Components/ScrollBox.h"
 #include "Components/Slider.h"
+#include "Components/Spacer.h"
 #include "Components/TextBlock.h"
+#include "Components/UniformGridPanel.h"
+#include "Engine/DataTable.h"
 #include "Engine/Engine.h"
 #include "GameFramework/GameUserSettings.h"
 #include "GameFramework/PlayerController.h"
@@ -22,7 +27,9 @@
 #include "Widgets/SWindow.h"
 #include "Core/BGPlayerController.h"
 #include "UI/Target/BGWorldTargetingComponent.h"
+#include "UI/View/BGInfoTooltipRow.h"
 #include "UI/Widget/BGChatingWidget.h"
+#include "UI/Widget/BGHelpRowWidget.h"
 
 namespace
 {
@@ -40,7 +47,7 @@ namespace
 	const TCHAR* CustomQualityLabel = TEXT("사용자 지정");
 	const int32 CustomQualityIndex = UE_ARRAY_COUNT(QualityLabels);
 
-	// 세부 품질 표. 순서가 UBGSettingsWidget::DetailCombos 와 같아야 한다.
+	// 세부 품질 표. 순서가 UBGSystemMenuWidget::DetailCombos 와 같아야 한다.
 	// 실내 테이블 씬이라 시야 거리·폴리지·랜드스케이프는 차이가 없어 넣지 않았다.
 	using FQualitySetter = void (UGameUserSettings::*)(int32);
 	using FQualityGetter = int32 (UGameUserSettings::*)() const;
@@ -65,7 +72,7 @@ namespace
 	const TArray<float> FrameLimitValues = { 0.f, 30.f, 60.f, 120.f, 144.f, 240.f };
 
 	// 구분선이 화면에서 차지해야 할 픽셀 두께. DPI 스케일과 무관하게 이 값으로 떨어진다.
-	constexpr float SettingsDividerPixels = 2.f;
+	constexpr float SystemMenuDividerPixels = 2.f;
 
 	FString ResolutionLabel(const FIntPoint& Resolution)
 	{
@@ -92,9 +99,43 @@ namespace
 		}
 		return FIntPoint(MAX_int32, MAX_int32);
 	}
+
+	// ─ 도움말 ─
+
+	// 읽는 순서는 진영 순서다. 태그를 코드가 갖고 있으므로 DT 의 행 순서에 맡기지 않는다.
+	const FGameplayTag* HelpRoleOrder()
+	{
+		static const FGameplayTag Tags[] = {
+			BG::Role::Sheriff.GetTag(), BG::Role::Deputy.GetTag(),
+			BG::Role::Outlaw.GetTag(),  BG::Role::Renegade.GetTag() };
+		return Tags;
+	}
+	constexpr int32 HelpRoleCount = 4;
+
+	// 직업 이름. DT 의 DisplayName 이 우선이고, 비어 있으면 태그의 마지막 마디를 쓴다
+	// (Character.Job.Mage → "Mage"). 폴백이 보기 나빠도 그대로 둔다 — DT 를 채우라는 신호다.
+	FText HelpJobTitle(const FBGCharacterRow& Row)
+	{
+		if (!Row.DisplayName.IsEmpty())
+		{
+			return Row.DisplayName;
+		}
+
+		const FString Tag = Row.CharacterTag.ToString();
+		FString Last;
+		return Tag.Split(TEXT("."), nullptr, &Last, ESearchCase::IgnoreCase, ESearchDir::FromEnd)
+			? FText::FromString(Last)
+			: FText::FromString(Tag);
+	}
+
+	UTexture2D* FindHelpIcon(const TMap<FGameplayTag, TObjectPtr<UTexture2D>>& Table, const FGameplayTag& Tag)
+	{
+		const TObjectPtr<UTexture2D>* Found = Tag.IsValid() ? Table.Find(Tag) : nullptr;
+		return Found ? Found->Get() : nullptr;
+	}
 }
 
-FIntPoint UBGSettingsWidget::GetCurrentMonitorResolution()
+FIntPoint UBGSystemMenuWidget::GetCurrentMonitorResolution()
 {
 	// 캐시가 아니라 새로 만든다 — 모니터를 옮긴 뒤에도 지금 배치가 나와야 한다.
 	FDisplayMetrics Metrics;
@@ -121,7 +162,7 @@ FIntPoint UBGSettingsWidget::GetCurrentMonitorResolution()
 	return Fallback ? FIntPoint(Fallback->NativeWidth, Fallback->NativeHeight) : FIntPoint::ZeroValue;
 }
 
-int32 UBGSettingsWidget::FindClosestResolutionIndex(const FIntPoint& Target) const
+int32 UBGSystemMenuWidget::FindClosestResolutionIndex(const FIntPoint& Target) const
 {
 	int32 Closest = INDEX_NONE;
 	int64 BestDelta = MAX_int64;
@@ -140,7 +181,7 @@ int32 UBGSettingsWidget::FindClosestResolutionIndex(const FIntPoint& Target) con
 	return Closest;
 }
 
-void UBGSettingsWidget::NativeConstruct()
+void UBGSystemMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
@@ -148,27 +189,33 @@ void UBGSettingsWidget::NativeConstruct()
 		Audio->BindDefaultButtonsInWidget(this);
 	}
 
-	if (SettingsButton) { SettingsButton->OnClicked.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSettingsClicked); }
-	if (CloseButton)    { CloseButton->OnClicked.AddUniqueDynamic(this, &UBGSettingsWidget::HandleCloseClicked); }
-	if (ResetButton)    { ResetButton->OnClicked.AddUniqueDynamic(this, &UBGSettingsWidget::HandleResetClicked); }
-	if (MainMenuButton) { MainMenuButton->OnClicked.AddUniqueDynamic(this, &UBGSettingsWidget::HandleMainMenuClicked); }
+	if (SettingsButton) { SettingsButton->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleSettingsClicked); }
+	if (CloseButton)    { CloseButton->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleCloseClicked); }
+	if (ResetButton)    { ResetButton->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleResetClicked); }
+	if (MainMenuButton) { MainMenuButton->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleMainMenuClicked); }
 
-	if (WindowModeCombo)  { WindowModeCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleWindowModeChanged); }
-	if (ResolutionCombo)  { ResolutionCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleResolutionChanged); }
-	if (QualityCombo)     { QualityCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleQualityChanged); }
-	if (FrameLimitCombo)  { FrameLimitCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleFrameLimitChanged); }
-	if (VSyncCheck)       { VSyncCheck->OnCheckStateChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleVSyncChanged); }
+	if (HelpButton)      { HelpButton->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleHelpClicked); }
+	if (HelpCloseButton) { HelpCloseButton->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleHelpCloseClicked); }
+	if (Tab_Jobs)        { Tab_Jobs->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleJobsTabClicked); }
+	if (Tab_Roles)       { Tab_Roles->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleRolesTabClicked); }
+	if (Tab_Equips)      { Tab_Equips->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleEquipsTabClicked); }
+
+	if (WindowModeCombo)  { WindowModeCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleWindowModeChanged); }
+	if (ResolutionCombo)  { ResolutionCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleResolutionChanged); }
+	if (QualityCombo)     { QualityCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleQualityChanged); }
+	if (FrameLimitCombo)  { FrameLimitCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleFrameLimitChanged); }
+	if (VSyncCheck)       { VSyncCheck->OnCheckStateChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleVSyncChanged); }
 
 	// 세부 품질 — 선언 순서 그대로 담고, 같은 자리의 게터/세터와 짝이 된다.
 	DetailCombos = { ShadowCombo, TextureCombo, EffectsCombo,
 	                 AntiAliasingCombo, PostProcessCombo, GlobalIlluminationCombo };
 
-	if (ShadowCombo)             { ShadowCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleShadowChanged); }
-	if (TextureCombo)            { TextureCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleTextureChanged); }
-	if (EffectsCombo)            { EffectsCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleEffectsChanged); }
-	if (AntiAliasingCombo)       { AntiAliasingCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleAntiAliasingChanged); }
-	if (PostProcessCombo)        { PostProcessCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandlePostProcessChanged); }
-	if (GlobalIlluminationCombo) { GlobalIlluminationCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleGlobalIlluminationChanged); }
+	if (ShadowCombo)             { ShadowCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleShadowChanged); }
+	if (TextureCombo)            { TextureCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleTextureChanged); }
+	if (EffectsCombo)            { EffectsCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleEffectsChanged); }
+	if (AntiAliasingCombo)       { AntiAliasingCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleAntiAliasingChanged); }
+	if (PostProcessCombo)        { PostProcessCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandlePostProcessChanged); }
+	if (GlobalIlluminationCombo) { GlobalIlluminationCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleGlobalIlluminationChanged); }
 
 	AudioCombos = { WindowModeCombo, ResolutionCombo, QualityCombo, FrameLimitCombo,
 	                ShadowCombo, TextureCombo, EffectsCombo, AntiAliasingCombo,
@@ -179,13 +226,13 @@ void UBGSettingsWidget::NativeConstruct()
 		{
 			continue;
 		}
-		Combo->OnOpening.AddUniqueDynamic(this, &UBGSettingsWidget::HandleComboOpeningAudio);
-		Combo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleComboSelectionAudio);
+		Combo->OnOpening.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleComboOpeningAudio);
+		Combo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleComboSelectionAudio);
 	}
 
-	if (MasterVolumeSlider) { MasterVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleMasterVolumeChanged); }
-	if (MusicVolumeSlider)  { MusicVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleMusicVolumeChanged); }
-	if (SFXVolumeSlider)    { SFXVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSFXVolumeChanged); }
+	if (MasterVolumeSlider) { MasterVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleMasterVolumeChanged); }
+	if (MusicVolumeSlider)  { MusicVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleMusicVolumeChanged); }
+	if (SFXVolumeSlider)    { SFXVolumeSlider->OnValueChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleSFXVolumeChanged); }
 
 	AudioSliders = { MasterVolumeSlider, MusicVolumeSlider, SFXVolumeSlider };
 	for (USlider* Slider : AudioSliders)
@@ -194,13 +241,13 @@ void UBGSettingsWidget::NativeConstruct()
 		{
 			continue;
 		}
-		Slider->OnMouseCaptureBegin.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSliderCaptureBeginAudio);
-		Slider->OnMouseCaptureEnd.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSliderCaptureEndAudio);
-		Slider->OnControllerCaptureBegin.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSliderCaptureBeginAudio);
-		Slider->OnControllerCaptureEnd.AddUniqueDynamic(this, &UBGSettingsWidget::HandleSliderCaptureEndAudio);
+		Slider->OnMouseCaptureBegin.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleSliderCaptureBeginAudio);
+		Slider->OnMouseCaptureEnd.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleSliderCaptureEndAudio);
+		Slider->OnControllerCaptureBegin.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleSliderCaptureBeginAudio);
+		Slider->OnControllerCaptureEnd.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleSliderCaptureEndAudio);
 	}
 
-	Dividers = { Image_Div1, Image_Div2, Image_Div3, Image_Div4 };
+	Dividers = { Image_Div1, Image_Div2, Image_Div3, Image_Div4, Help_Div1, Help_Div2 };
 	RefreshDividerThickness();
 
 	RefreshVolumesFromAudioSubsystem();
@@ -209,6 +256,10 @@ void UBGSettingsWidget::NativeConstruct()
 	PopulateOptions();
 	RefreshFromSettings();
 
+	// 도움말 문구는 판이 돌아가는 동안 바뀌지 않는다 — 한 번 만들어 두고 열 때는 보이기만 한다.
+	BuildHelpRows();
+	SelectHelpTab(0);
+
 	TryBindToggleInput();
 
 	// 패널은 버튼이나 ESC 를 눌러야 열린다.
@@ -216,9 +267,13 @@ void UBGSettingsWidget::NativeConstruct()
 	{
 		SettingsPanel->SetVisibility(ESlateVisibility::Collapsed);
 	}
+	if (HelpPanel)
+	{
+		HelpPanel->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
-void UBGSettingsWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+void UBGSystemMenuWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
@@ -232,7 +287,7 @@ void UBGSettingsWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTim
 	RefreshInteractiveAudioHover();
 }
 
-void UBGSettingsWidget::RefreshInteractiveAudioHover()
+void UBGSystemMenuWidget::RefreshInteractiveAudioHover()
 {
 	UWidget* NewHovered = nullptr;
 	for (UComboBoxString* Combo : AudioCombos)
@@ -286,7 +341,7 @@ void UBGSettingsWidget::RefreshInteractiveAudioHover()
 	HoveredAudioWidget = NewHovered;
 }
 
-void UBGSettingsWidget::HandleComboOpeningAudio()
+void UBGSystemMenuWidget::HandleComboOpeningAudio()
 {
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
@@ -294,7 +349,7 @@ void UBGSettingsWidget::HandleComboOpeningAudio()
 	}
 }
 
-void UBGSettingsWidget::HandleComboSelectionAudio(FString SelectedItem, ESelectInfo::Type SelectionType)
+void UBGSystemMenuWidget::HandleComboSelectionAudio(FString SelectedItem, ESelectInfo::Type SelectionType)
 {
 	// SetSelectedIndex 등 코드가 현재 표시를 맞추는 Direct 변경에는 선택음을 내지 않는다.
 	if (bRefreshing || SelectionType == ESelectInfo::Direct)
@@ -308,7 +363,7 @@ void UBGSettingsWidget::HandleComboSelectionAudio(FString SelectedItem, ESelectI
 	}
 }
 
-void UBGSettingsWidget::HandleSliderCaptureBeginAudio()
+void UBGSystemMenuWidget::HandleSliderCaptureBeginAudio()
 {
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
@@ -316,7 +371,7 @@ void UBGSettingsWidget::HandleSliderCaptureBeginAudio()
 	}
 }
 
-void UBGSettingsWidget::HandleSliderCaptureEndAudio()
+void UBGSystemMenuWidget::HandleSliderCaptureEndAudio()
 {
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
@@ -324,7 +379,7 @@ void UBGSettingsWidget::HandleSliderCaptureEndAudio()
 	}
 }
 
-void UBGSettingsWidget::RefreshDividerThickness()
+void UBGSystemMenuWidget::RefreshDividerThickness()
 {
 	const float Scale = UWidgetLayoutLibrary::GetViewportScale(this);
 	if (Scale <= KINDA_SMALL_NUMBER)
@@ -333,8 +388,8 @@ void UBGSettingsWidget::RefreshDividerThickness()
 	}
 	LastViewportScale = Scale;
 
-	//	스케일이 곱해진 뒤 정확히 SettingsDividerPixels 가 되도록 미리 나눠 둔다.
-	const float Thickness = SettingsDividerPixels / Scale;
+	//	스케일이 곱해진 뒤 정확히 SystemMenuDividerPixels 가 되도록 미리 나눠 둔다.
+	const float Thickness = SystemMenuDividerPixels / Scale;
 	for (UImage* Divider : Dividers)
 	{
 		if (!Divider)
@@ -347,7 +402,7 @@ void UBGSettingsWidget::RefreshDividerThickness()
 	}
 }
 
-void UBGSettingsWidget::NativeDestruct()
+void UBGSystemMenuWidget::NativeDestruct()
 {
 	HoveredAudioWidget.Reset();
 	AudioCombos.Reset();
@@ -356,7 +411,7 @@ void UBGSettingsWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-void UBGSettingsWidget::TryBindToggleInput()
+void UBGSystemMenuWidget::TryBindToggleInput()
 {
 	APlayerController* PC = GetOwningPlayer();
 	if (bToggleInputBound || !PC || !PC->InputComponent)
@@ -366,11 +421,11 @@ void UBGSettingsWidget::TryBindToggleInput()
 
 	// ESC 는 PlayerController 가 대상 선택 취소에 이미 물려 두었다. 키를 뺏는 게 아니라
 	// 한 번 더 붙는 것이라 두 핸들러가 같이 불린다 — 양보는 HandleTogglePressed 에서 한다.
-	PC->InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &UBGSettingsWidget::HandleTogglePressed);
+	PC->InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &UBGSystemMenuWidget::HandleTogglePressed);
 	bToggleInputBound = true;
 }
 
-void UBGSettingsWidget::UnbindToggleInput()
+void UBGSystemMenuWidget::UnbindToggleInput()
 {
 	APlayerController* PC = GetOwningPlayer();
 	if (!bToggleInputBound || !PC || !PC->InputComponent)
@@ -387,10 +442,16 @@ void UBGSettingsWidget::UnbindToggleInput()
 	bToggleInputBound = false;
 }
 
-void UBGSettingsWidget::HandleTogglePressed()
+void UBGSystemMenuWidget::HandleTogglePressed()
 {
-	const bool bOpen = SettingsPanel && SettingsPanel->GetVisibility() != ESlateVisibility::Collapsed;
-	if (bOpen)
+	// 도움말이 떠 있으면 ESC 는 그것부터 닫는다. 설정을 여는 건 그다음 ESC 다.
+	if (IsHelpOpen())
+	{
+		CloseHelp();
+		return;
+	}
+
+	if (IsSettingsOpen())
 	{
 		CloseSettings();
 		return;
@@ -415,7 +476,7 @@ void UBGSettingsWidget::HandleTogglePressed()
 	OpenSettings();
 }
 
-void UBGSettingsWidget::PopulateOptions()
+void UBGSystemMenuWidget::PopulateOptions()
 {
 	TGuardValue<bool> Guard(bRefreshing, true);
 
@@ -500,7 +561,7 @@ void UBGSettingsWidget::PopulateOptions()
 	}
 }
 
-void UBGSettingsWidget::SyncSettingsToActualWindow()
+void UBGSystemMenuWidget::SyncSettingsToActualWindow()
 {
 	// PIE 창은 에디터 안의 뷰포트라 게임 창 설정으로 옮기면 저장 파일만 더럽힌다.
 	if (GIsEditor)
@@ -522,7 +583,7 @@ void UBGSettingsWidget::SyncSettingsToActualWindow()
 	}
 }
 
-void UBGSettingsWidget::RefreshFromSettings()
+void UBGSystemMenuWidget::RefreshFromSettings()
 {
 	const UGameUserSettings* Settings = GEngine ? GEngine->GetGameUserSettings() : nullptr;
 	if (!Settings)
@@ -616,7 +677,7 @@ void UBGSettingsWidget::RefreshFromSettings()
 	RefreshVolumeTexts();
 }
 
-void UBGSettingsWidget::ApplyAndSaveGraphics()
+void UBGSystemMenuWidget::ApplyAndSaveGraphics()
 {
 	if (UGameUserSettings* Settings = GEngine ? GEngine->GetGameUserSettings() : nullptr)
 	{
@@ -625,7 +686,7 @@ void UBGSettingsWidget::ApplyAndSaveGraphics()
 	}
 }
 
-void UBGSettingsWidget::RefreshVolumesFromAudioSubsystem()
+void UBGSystemMenuWidget::RefreshVolumesFromAudioSubsystem()
 {
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
@@ -636,7 +697,7 @@ void UBGSettingsWidget::RefreshVolumesFromAudioSubsystem()
 	}
 }
 
-void UBGSettingsWidget::RefreshVolumeTexts() const
+void UBGSystemMenuWidget::RefreshVolumeTexts() const
 {
 	auto Write = [](UTextBlock* Label, float Volume)
 	{
@@ -652,8 +713,11 @@ void UBGSettingsWidget::RefreshVolumeTexts() const
 	Write(SFXVolumeText, SFXVolume);
 }
 
-void UBGSettingsWidget::OpenSettings()
+void UBGSystemMenuWidget::OpenSettings()
 {
+	// 패널은 한 번에 하나만 띄운다.
+	CloseHelp();
+
 	// 창을 다른 모니터로 옮겼을 수 있다 — 열 때마다 해상도 목록부터 다시 만든다.
 	SyncSettingsToActualWindow();
 	PopulateOptions();
@@ -664,14 +728,15 @@ void UBGSettingsWidget::OpenSettings()
 	}
 }
 
-void UBGSettingsWidget::SetStandaloneMode(bool bStandalone)
+void UBGSystemMenuWidget::SetStandaloneMode(bool bStandalone)
 {
 	const ESlateVisibility Mode = bStandalone ? ESlateVisibility::Collapsed : ESlateVisibility::Visible;
 	if (SettingsButton) { SettingsButton->SetVisibility(Mode); }
 	if (MainMenuButton) { MainMenuButton->SetVisibility(Mode); }
+	if (HelpButton)     { HelpButton->SetVisibility(Mode); }
 }
 
-void UBGSettingsWidget::CloseSettings()
+void UBGSystemMenuWidget::CloseSettings()
 {
 	if (SettingsPanel)
 	{
@@ -679,10 +744,9 @@ void UBGSettingsWidget::CloseSettings()
 	}
 }
 
-void UBGSettingsWidget::HandleSettingsClicked()
+void UBGSystemMenuWidget::HandleSettingsClicked()
 {
-	const bool bOpen = SettingsPanel && SettingsPanel->GetVisibility() != ESlateVisibility::Collapsed;
-	if (bOpen)
+	if (IsSettingsOpen())
 	{
 		CloseSettings();
 	}
@@ -692,12 +756,12 @@ void UBGSettingsWidget::HandleSettingsClicked()
 	}
 }
 
-void UBGSettingsWidget::HandleCloseClicked()
+void UBGSystemMenuWidget::HandleCloseClicked()
 {
 	CloseSettings();
 }
 
-void UBGSettingsWidget::HandleMainMenuClicked()
+void UBGSystemMenuWidget::HandleMainMenuClicked()
 {
 	// 세션 파기 → 세션 메뉴 닫기 → 메인메뉴 맵 이동까지 LeaveSession 이 다 한다.
 	// 세션 메뉴의 "나가기" 와 같은 경로라 여기서 따로 정리할 게 없다.
@@ -708,7 +772,7 @@ void UBGSettingsWidget::HandleMainMenuClicked()
 	}
 }
 
-void UBGSettingsWidget::HandleResetClicked()
+void UBGSystemMenuWidget::HandleResetClicked()
 {
 	if (UGameUserSettings* Settings = GEngine ? GEngine->GetGameUserSettings() : nullptr)
 	{
@@ -739,7 +803,7 @@ void UBGSettingsWidget::HandleResetClicked()
 	RefreshFromSettings();
 }
 
-void UBGSettingsWidget::HandleWindowModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+void UBGSystemMenuWidget::HandleWindowModeChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshing || !WindowModeCombo)
 	{
@@ -779,7 +843,7 @@ void UBGSettingsWidget::HandleWindowModeChanged(FString SelectedItem, ESelectInf
 	}
 }
 
-void UBGSettingsWidget::HandleResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+void UBGSystemMenuWidget::HandleResolutionChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshing || !ResolutionCombo)
 	{
@@ -799,7 +863,7 @@ void UBGSettingsWidget::HandleResolutionChanged(FString SelectedItem, ESelectInf
 	}
 }
 
-void UBGSettingsWidget::HandleQualityChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+void UBGSystemMenuWidget::HandleQualityChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshing || !QualityCombo)
 	{
@@ -823,7 +887,7 @@ void UBGSettingsWidget::HandleQualityChanged(FString SelectedItem, ESelectInfo::
 	}
 }
 
-void UBGSettingsWidget::ApplyDetailQuality(int32 RowIndex)
+void UBGSystemMenuWidget::ApplyDetailQuality(int32 RowIndex)
 {
 	if (bRefreshing || !DetailCombos.IsValidIndex(RowIndex) || !DetailCombos[RowIndex])
 	{
@@ -846,14 +910,14 @@ void UBGSettingsWidget::ApplyDetailQuality(int32 RowIndex)
 	}
 }
 
-void UBGSettingsWidget::HandleShadowChanged(FString SelectedItem, ESelectInfo::Type SelectionType)             { ApplyDetailQuality(0); }
-void UBGSettingsWidget::HandleTextureChanged(FString SelectedItem, ESelectInfo::Type SelectionType)            { ApplyDetailQuality(1); }
-void UBGSettingsWidget::HandleEffectsChanged(FString SelectedItem, ESelectInfo::Type SelectionType)            { ApplyDetailQuality(2); }
-void UBGSettingsWidget::HandleAntiAliasingChanged(FString SelectedItem, ESelectInfo::Type SelectionType)       { ApplyDetailQuality(3); }
-void UBGSettingsWidget::HandlePostProcessChanged(FString SelectedItem, ESelectInfo::Type SelectionType)        { ApplyDetailQuality(4); }
-void UBGSettingsWidget::HandleGlobalIlluminationChanged(FString SelectedItem, ESelectInfo::Type SelectionType) { ApplyDetailQuality(5); }
+void UBGSystemMenuWidget::HandleShadowChanged(FString SelectedItem, ESelectInfo::Type SelectionType)             { ApplyDetailQuality(0); }
+void UBGSystemMenuWidget::HandleTextureChanged(FString SelectedItem, ESelectInfo::Type SelectionType)            { ApplyDetailQuality(1); }
+void UBGSystemMenuWidget::HandleEffectsChanged(FString SelectedItem, ESelectInfo::Type SelectionType)            { ApplyDetailQuality(2); }
+void UBGSystemMenuWidget::HandleAntiAliasingChanged(FString SelectedItem, ESelectInfo::Type SelectionType)       { ApplyDetailQuality(3); }
+void UBGSystemMenuWidget::HandlePostProcessChanged(FString SelectedItem, ESelectInfo::Type SelectionType)        { ApplyDetailQuality(4); }
+void UBGSystemMenuWidget::HandleGlobalIlluminationChanged(FString SelectedItem, ESelectInfo::Type SelectionType) { ApplyDetailQuality(5); }
 
-void UBGSettingsWidget::HandleFrameLimitChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
+void UBGSystemMenuWidget::HandleFrameLimitChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
 {
 	if (bRefreshing || !FrameLimitCombo)
 	{
@@ -873,7 +937,7 @@ void UBGSettingsWidget::HandleFrameLimitChanged(FString SelectedItem, ESelectInf
 	}
 }
 
-void UBGSettingsWidget::HandleVSyncChanged(bool bIsChecked)
+void UBGSystemMenuWidget::HandleVSyncChanged(bool bIsChecked)
 {
 	if (bRefreshing)
 	{
@@ -887,7 +951,7 @@ void UBGSettingsWidget::HandleVSyncChanged(bool bIsChecked)
 	}
 }
 
-void UBGSettingsWidget::HandleMasterVolumeChanged(float Value)
+void UBGSystemMenuWidget::HandleMasterVolumeChanged(float Value)
 {
 	if (bRefreshing)
 	{
@@ -902,7 +966,7 @@ void UBGSettingsWidget::HandleMasterVolumeChanged(float Value)
 	}
 }
 
-void UBGSettingsWidget::HandleMusicVolumeChanged(float Value)
+void UBGSystemMenuWidget::HandleMusicVolumeChanged(float Value)
 {
 	if (bRefreshing)
 	{
@@ -917,7 +981,7 @@ void UBGSettingsWidget::HandleMusicVolumeChanged(float Value)
 	}
 }
 
-void UBGSettingsWidget::HandleSFXVolumeChanged(float Value)
+void UBGSystemMenuWidget::HandleSFXVolumeChanged(float Value)
 {
 	if (bRefreshing)
 	{
@@ -932,3 +996,188 @@ void UBGSettingsWidget::HandleSFXVolumeChanged(float Value)
 	}
 }
 
+// ======================================================================================
+//  도움말
+// ======================================================================================
+
+bool UBGSystemMenuWidget::IsSettingsOpen() const
+{
+	return SettingsPanel && SettingsPanel->GetVisibility() != ESlateVisibility::Collapsed;
+}
+
+bool UBGSystemMenuWidget::IsHelpOpen() const
+{
+	return HelpPanel && HelpPanel->GetVisibility() != ESlateVisibility::Collapsed;
+}
+
+void UBGSystemMenuWidget::BuildHelpRows()
+{
+	if (!RowClass)
+	{
+		return;
+	}
+
+	if (Grid_Jobs)
+	{
+		//	NativeConstruct 는 위젯이 다시 뷰포트에 붙을 때마다 불릴 수 있다 — 행이 쌓이지 않게 비운다.
+		Grid_Jobs->ClearChildren();
+
+		int32 Count = 0;
+		if (CharacterTable)
+		{
+			for (const TPair<FName, uint8*>& Pair : CharacterTable->GetRowMap())
+			{
+				if (const FBGCharacterRow* Row = reinterpret_cast<const FBGCharacterRow*>(Pair.Value))
+				{
+					AddHelpRow(*Grid_Jobs, Count++, HelpJobTitle(*Row), Row->Description, FindHelpIcon(JobIcons, Row->CharacterTag));
+				}
+			}
+		}
+		PadFirstHelpRow(*Grid_Jobs, Count);
+	}
+
+	if (Grid_Roles)
+	{
+		Grid_Roles->ClearChildren();
+
+		int32 Count = 0;
+		for (int32 Index = 0; Index < HelpRoleCount; ++Index)
+		{
+			const FGameplayTag& Tag = HelpRoleOrder()[Index];
+
+			//	Row 이름은 태그 문자열 그대로다. 없으면 그 역할만 빠진다 — 경고는 끈다.
+			const FBGInfoTooltipRow* Row = InfoTable
+				? InfoTable->FindRow<FBGInfoTooltipRow>(FName(*Tag.ToString()), TEXT("BGHelp Role"), /*bWarnIfMissing=*/ false)
+				: nullptr;
+
+			if (Row)
+			{
+				AddHelpRow(*Grid_Roles, Count++, Row->Title, Row->Body, FindHelpIcon(RoleIcons, Tag));
+			}
+		}
+		PadFirstHelpRow(*Grid_Roles, Count);
+	}
+
+	if (Grid_Equips)
+	{
+		Grid_Equips->ClearChildren();
+
+		int32 Count = 0;
+		if (CardTable)
+		{
+			for (const TPair<FName, uint8*>& Pair : CardTable->GetRowMap())
+			{
+				const FBGCardRow* Row = reinterpret_cast<const FBGCardRow*>(Pair.Value);
+				if (Row && Row->TypeTag == BG::Card::Type::Blue.GetTag())
+				{
+					AddHelpRow(*Grid_Equips, Count++, Row->DisplayName, Row->Description, FindHelpIcon(EquipIcons, Row->CardIdTag));
+				}
+			}
+		}
+		PadFirstHelpRow(*Grid_Equips, Count);
+	}
+}
+
+void UBGSystemMenuWidget::AddHelpRow(UUniformGridPanel& Grid, int32 Index, const FText& Title, const FText& Body, UTexture2D* Icon)
+{
+	UBGHelpRowWidget* Row = CreateWidget<UBGHelpRowWidget>(this, RowClass);
+	if (!Row)
+	{
+		return;
+	}
+
+	Row->SetInfo(Title, Body);
+	Row->SetIcon(Icon);
+
+	//	행 사이 세로 여백은 WBP_BGHelpRow 가 자기 패딩으로, 열 사이 여백은 격자의 SlotPadding 이 갖는다.
+	const int32 ColumnCount = FMath::Max(1, Columns);
+	Grid.AddChildToUniformGrid(Row, Index / ColumnCount, Index % ColumnCount);
+}
+
+void UBGSystemMenuWidget::PadFirstHelpRow(UUniformGridPanel& Grid, int32 Count)
+{
+	for (int32 Index = Count; Index < Columns; ++Index)
+	{
+		Grid.AddChildToUniformGrid(NewObject<USpacer>(this), 0, Index);
+	}
+}
+
+void UBGSystemMenuWidget::SelectHelpTab(int32 Index)
+{
+	if (Scroll_Body)
+	{
+		Scroll_Body->ScrollToStart();
+	}
+
+	UButton* Buttons[] = { Tab_Jobs, Tab_Roles, Tab_Equips };
+	UTextBlock* Texts[] = { Tab_Jobs_Text, Tab_Roles_Text, Tab_Equips_Text };
+	UUniformGridPanel* Pages[] = { Grid_Jobs, Grid_Roles, Grid_Equips };
+	for (int32 Tab = 0; Tab < UE_ARRAY_COUNT(Buttons); ++Tab)
+	{
+		const bool bActive = (Tab == Index);
+		if (Pages[Tab])
+		{
+			//	Collapsed 가 아니라 Hidden — 자리를 남겨야 Overlay 가 가장 큰 탭 크기를 유지한다.
+			Pages[Tab]->SetVisibility(bActive ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
+		}
+		if (Buttons[Tab])
+		{
+			Buttons[Tab]->SetBackgroundColor(bActive ? FLinearColor::White : InactiveTabTint);
+		}
+		if (Texts[Tab])
+		{
+			Texts[Tab]->SetColorAndOpacity(bActive ? ActiveTabColor : InactiveTabColor);
+		}
+	}
+}
+
+void UBGSystemMenuWidget::OpenHelp()
+{
+	// 패널은 한 번에 하나만 띄운다.
+	CloseSettings();
+
+	if (HelpPanel)
+	{
+		HelpPanel->SetVisibility(ESlateVisibility::Visible);
+	}
+}
+
+void UBGSystemMenuWidget::CloseHelp()
+{
+	if (HelpPanel)
+	{
+		HelpPanel->SetVisibility(ESlateVisibility::Collapsed);
+	}
+}
+
+void UBGSystemMenuWidget::HandleHelpClicked()
+{
+	if (IsHelpOpen())
+	{
+		CloseHelp();
+	}
+	else
+	{
+		OpenHelp();
+	}
+}
+
+void UBGSystemMenuWidget::HandleHelpCloseClicked()
+{
+	CloseHelp();
+}
+
+void UBGSystemMenuWidget::HandleJobsTabClicked()
+{
+	SelectHelpTab(0);
+}
+
+void UBGSystemMenuWidget::HandleRolesTabClicked()
+{
+	SelectHelpTab(1);
+}
+
+void UBGSystemMenuWidget::HandleEquipsTabClicked()
+{
+	SelectHelpTab(2);
+}

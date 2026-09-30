@@ -5,6 +5,7 @@
 #include "BG/Public/Chating/BGChatingSubsystem.h"
 #include "Audio/BGAudioSubsystem.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/EditableTextBox.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
@@ -133,7 +134,8 @@ void UBGChatingWidget::AddEntryToLog(const FBGChatEntry& Entry)
 		if (FChar::IsWhitespace(Body[i])) { Run = 0; }
 		else if (++Run > 12) { Body.InsertAt(i++, TCHAR(0x200B)); Run = 0; }
 	}
-	Line->SetText(Entry.bSystem ? FText::FromString(Body) : FText::FromString(FString::Printf(TEXT("%s: %s"), *Entry.SenderName, *Body)));
+	const FString Text = Entry.bSystem ? Body : FString::Printf(TEXT("%s: %s"), *Entry.SenderName, *Body);
+	Line->SetText(FText::FromString(LogLinePrefix + Text));
 
 	//	NewObject 로 만든 것이라 WBP 에서 손댈 수 없다. 여기서 정한다.
 	FSlateFontInfo Font = Line->GetFont();
@@ -146,7 +148,10 @@ void UBGChatingWidget::AddEntryToLog(const FBGChatEntry& Entry)
 	//	기본 정책은 띄어쓰기에서만 끊는다 — 공백 없는 긴 채팅이 통째로 삐져나간다.
 	Line->SetWrappingPolicy(ETextWrappingPolicy::AllowPerCharacterWrapping);
 
-	ChatScrollBox->AddChild(Line);
+	if (UScrollBoxSlot* LineSlot = Cast<UScrollBoxSlot>(ChatScrollBox->AddChild(Line)))
+	{
+		LineSlot->SetPadding(LogLinePadding);
+	}
 	ChatScrollBox->ScrollToEnd();
 
 	TrimOldMessages();
@@ -277,9 +282,30 @@ void UBGChatingWidget::RefreshFilterButtons()
 
 	for (const TTuple<UButton*, EBGChatFilter>& Tab : Tabs)
 	{
-		UTexture2D* Texture = (ChatFilter == Tab.Get<1>()) ? FilterTabActive : FilterTabInactive;
-		if (!Tab.Get<0>() || !Texture)
+		if (!Tab.Get<0>())
 		{
+			continue;
+		}
+
+		const bool bActive = (ChatFilter == Tab.Get<1>());
+		UTexture2D* Texture = bActive ? FilterTabActive : FilterTabInactive;
+		if (!Texture)
+		{
+			//	텍스처가 없으면 브러시째 갈아끼운다. 호버·눌림은 같은 색을 밝기만 바꿔 쓴다.
+			const FSlateBrush& Brush = bActive ? FilterTabActiveBrush : FilterTabInactiveBrush;
+			if (Brush.DrawAs == ESlateBrushDrawType::NoDrawType)
+			{
+				continue;
+			}
+
+			const FLinearColor Base = Brush.TintColor.GetSpecifiedColor();
+			FButtonStyle Style = Tab.Get<0>()->GetStyle();
+			Style.Normal = Brush;
+			Style.Hovered = Brush;
+			Style.Hovered.TintColor = FSlateColor((Base * 1.25f).CopyWithNewOpacity(Base.A));
+			Style.Pressed = Brush;
+			Style.Pressed.TintColor = FSlateColor((Base * 0.75f).CopyWithNewOpacity(Base.A));
+			Tab.Get<0>()->SetStyle(Style);
 			continue;
 		}
 

@@ -2,7 +2,7 @@
 
 #include "Engine/Engine.h"
 #include "GameFramework/GameUserSettings.h"
-#include "UI/Widget/BGSettingsWidget.h"
+#include "UI/Widget/BGSystemMenuWidget.h"
 
 void UBGDisplaySubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -38,7 +38,7 @@ bool UBGDisplaySubsystem::HandleFirstTick(float DeltaTime)
 
 	// 전체 창 모드는 엔진이 데스크톱 해상도로 그려 ResolutionSizeX/Y 를 보지 않는다.
 	// 저장값도 모니터 해상도로 맞춰 둬야 나중에 전체 화면으로 바꿀 때 옛 값이 되살아나지 않는다.
-	const FIntPoint Native = UBGSettingsWidget::GetCurrentMonitorResolution();
+	const FIntPoint Native = UBGSystemMenuWidget::GetCurrentMonitorResolution();
 	if (Native.X > 0 && Native.Y > 0)
 	{
 		Settings->SetScreenResolution(Native);

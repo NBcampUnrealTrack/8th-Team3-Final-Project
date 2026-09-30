@@ -95,6 +95,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
 	TObjectPtr<UTexture2D> FilterTabInactive;
 
+	/**
+	 * 텍스처 없이 브러시만으로 그리는 탭. 위의 텍스처가 비어 있을 때만 쓴다.
+	 * 호버·눌림은 이 브러시의 색을 밝게/어둡게 바꿔 만든다. 비워 두면(NoDrawType) WBP 설정 그대로다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
+	FSlateBrush FilterTabActiveBrush = FSlateNoResource();
+
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
+	FSlateBrush FilterTabInactiveBrush = FSlateNoResource();
+
+	/** 로그 한 줄 위아래 여백. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
+	FMargin LogLinePadding = FMargin(0.f, 3.f);
+
+	/** 로그 한 줄 앞에 붙이는 머리표. 비우면 붙이지 않는다. 서체에 없는 글자는 빈칸으로 찍힌다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
+	FString LogLinePrefix;
+
 private:
 	UFUNCTION()
 	void HandleMessageReceived(const FBGChatEntry& Entry);
