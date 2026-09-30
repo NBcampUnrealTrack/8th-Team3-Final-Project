@@ -8,6 +8,7 @@
 #include "Core/BGCinematicCamera.h" // FBGCameraShot — 복제 프로퍼티라 완전한 타입이 필요하다
 #include "GameplayTagContainer.h"
 #include "Ping/BGPingTypes.h"   // FBGPingEvent — 멀티캐스트 인자라 완전한 타입이 필요하다
+#include "UI/Presentation/BGPresentationTypes.h"
 #include "GameFramework/GameStateBase.h"
 #include "BGGameState.generated.h"
 
@@ -146,6 +147,7 @@ public:
 		return PresentationId <= ReleasedPresentationId;
 	}
 	void NotifyResolutionPresentationFinished(class ABGPlayerController* Controller, int32 PresentationId);
+	void NotifyCardPresentationFinished(class ABGPlayerController* Controller, int32 PresentationId);
 	
 	/** 채팅 메시지를 전원에게 알린다 (서버에서만 호출) */
 	UFUNCTION(NetMulticast, Reliable)
@@ -281,8 +283,7 @@ public:
 	/** 턴 종료 요청. 자기 턴이 아니면 무시된다. 손패 초과면 Discard 페이즈로 간다. */
 	void RequestEndTurn(int32 RequestingSeat);
 
-	// 서버 전용. 밧줄이 다 타서 턴을 강제로 넘긴다. 본인 의사와 무관하므로 아무것도 묻지 않고
-	// 바로 다음 좌석으로 간다.
+	// 서버 전용. 밧줄이 다 타면 턴을 강제로 넘긴다. 카드 연출 중에는 보류한다.
 	void ForceEndTurn(int32 Seat, const FString& Reason);
 
 	// 서버 전용. 좌석을 즉사시킨다(복귀 포기 등). ASC 가 있으면 피해 GE, 없으면 직접 통지.
@@ -758,6 +759,14 @@ protected:
 		const FBGCardResolution& Resolution);
 	void PlayEquipmentProcs(const FBGCardResolution& Resolution, EBGEquipmentProcPhase Phase);
 	static bool ReplacesDefaultImpact(const FBGCardResolution& Resolution);
+	void BeginCardWorldPresentation(const FBGCardResolution& Resolution);
+	void MarkCardWorldLogicFinished();
+	void TryFinishCardWorldPresentation();
+	void FinishCardWorldPresentation();
+	void HandleCardWorldPresentationTimeout();
+	UFUNCTION()
+	void HandleEquipmentProcSystemFinished(class UNiagaraComponent* FinishedSystem);
+	TMap<TWeakObjectPtr<class UNiagaraComponent>, FBGPresentationHandle> EquipmentProcHolds;
 
 	/** 판정 UI 종료 통지가 모이거나 안전망 타이머가 끝난 뒤 월드 연출을 시작한다. */
 	void FinishResolutionPresentation();
@@ -766,6 +775,16 @@ protected:
 
 	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
 	bool bResolutionPresentationActive = false;
+	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
+	bool bCardWorldPresentationActive = false;
+	int32 ActiveCardWorldPresentationId = 0;
+	bool bCardWorldLogicFinished = false;
+	bool bWaitingForNonCinematicCueEnd = false;
+	bool bCardWorldFinishScheduled = false;
+	bool bCardWorldPausedRope = false;
+	int32 CardWorldPresentationSerial = 0;
+	TSet<TWeakObjectPtr<class ABGPlayerController>> PendingCardWorldObservers;
+	FTimerHandle CardWorldPresentationTimer;
 
 	UPROPERTY()
 	TObjectPtr<class ABGCharacter> PendingPresentationCaster;
@@ -943,6 +962,10 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "12.0", Units = "s"))
 	float ResolutionPresentationSeconds = 12.f;
+
+	/** 월드 연출 완료 통지가 누락될 때만 카드 사용 잠금을 푸는 안전망. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "1.0", Units = "s"))
+	float CardWorldPresentationTimeoutSeconds = 20.f;
 
 public:
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")

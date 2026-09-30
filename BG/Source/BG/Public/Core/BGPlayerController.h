@@ -275,6 +275,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Presentation")
 	class UBGPresentationDirector* GetPresentationDirector() const { return PresentationDirector; }
 
+	/** 서버의 월드 연출 단계가 끝나면 로컬 연출 연결 표를 놓는다. */
+	UFUNCTION(Client, Reliable)
+	void ClientCardWorldLogicFinished(int32 PresentationId);
+
 protected:
 	// PlayerState 의 OnHandChanged 에 구독한다. 위젯/PlayerState 중 늦게 오는 쪽에 맞춰 재시도된다.
 	void TryBindHandDelegate();
@@ -311,6 +315,13 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerConfirmResolutionHidden(int32 PresentationId);
 	int32 ActiveResolutionPresentationId = 0;
+	UFUNCTION()
+	void HandleCardPresentationFinished(const struct FBGPresentationRequest& Request);
+	UFUNCTION(Server, Reliable)
+	void ServerConfirmCardPresentationFinished(int32 PresentationId);
+	FBGPresentationTrackHold ServerWorldHold;
+	int32 ServerWorldHoldPresentationId = 0;
+	int32 LastWorldLogicFinishedId = 0;
 
 	/**
 	 * 누군가 장비를 착용했다. 남의 착용이면 관전 카드를 중앙에 세운다.

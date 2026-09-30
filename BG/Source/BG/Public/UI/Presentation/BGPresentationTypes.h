@@ -45,6 +45,9 @@ enum class EBGPresentationTrack : uint8
 
 	/** 위젯 연출. 끝내는 주체: BP(UMG 애니메이션 Finished). */
 	UI        UMETA(DisplayName = "UI"),
+
+	/** UI와 월드 FX 사이를 잇는다. 끝내는 주체: 서버의 카드 연출 종료 통지. */
+	ServerWorld UMETA(DisplayName = "서버 월드 연출"),
 };
 
 /**
