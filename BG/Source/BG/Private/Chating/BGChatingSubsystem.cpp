@@ -11,6 +11,8 @@
 
 #include "BG/Public/Core/BGGameState.h"
 #include "BG/Public/Core/BGPlayerController.h"
+#include "Audio/BGAudioSubsystem.h"
+#include "BGGameplayTags.h"
 
 void UBGChatingSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -22,7 +24,8 @@ void UBGChatingSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(
 		this, &UBGChatingSubsystem::HandlePostLoadMap);
 
-	if (UGameInstance* GI = GetGameInstance())
+	if (UGameInstance* GI = GetGameInstance(); GI && GI->GetWorld()
+		&& GI->GetWorld()->GetNetMode() != NM_DedicatedServer)
 	{
 		BindToWorld(GI->GetWorld());
 	}
@@ -99,6 +102,13 @@ void UBGChatingSubsystem::HandleChatFromGameState(const FString& SenderName, con
 	Entry.Timestamp = FDateTime::Now();
 
 	History.Add(Entry);
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBGAudioSubsystem* Audio = GI->GetSubsystem<UBGAudioSubsystem>())
+		{
+			Audio->Play(BG::Audio::UI::Chat::Message.GetTag());
+		}
+	}
 
 	OnMessageReceived.Broadcast(Entry);
 	

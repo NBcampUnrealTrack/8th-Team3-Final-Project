@@ -24,6 +24,12 @@ namespace BG
 	{
 		namespace UI
 		{
+			namespace Chat
+			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Typing)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Message)
+			}
+
 			namespace Button
 			{
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverBegin)

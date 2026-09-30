@@ -11,6 +11,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Core/BGPlayerController.h"
 #include "UI/BGUIStyleSubsystem.h"
+#include "BGGameplayTags.h"
 
 void UBGChatingWidget::NativeConstruct()
 {
@@ -40,6 +41,8 @@ void UBGChatingWidget::NativeConstruct()
 		if (ChatInputBox)
 		{
 			ChatInputBox->OnTextCommitted.AddUniqueDynamic(this, &UBGChatingWidget::HandleInputCommitted);
+			ChatInputBox->OnTextChanged.AddUniqueDynamic(this, &UBGChatingWidget::HandleInputChanged);
+			PreviousInputText = ChatInputBox->GetText().ToString();
 
 			//	입력창은 항상 떠 있다 — 클릭하면 바로 타이핑할 수 있다.
 			//	여기서 입력 모드를 건드리지 않는다. 위젯이 생길 때마다
@@ -197,6 +200,34 @@ void UBGChatingWidget::HandleInputCommitted(const FText& Text, ETextCommit::Type
 	}
 
 	CloseChatInput();
+}
+
+void UBGChatingWidget::HandleInputChanged(const FText& Text)
+{
+	// 삭제와 입력창 초기화를 제외하고, 한글 조합 변경도 로컬 타이핑음으로 처리한다.
+	const FString CurrentText = Text.ToString();
+	const bool bTyped = ChatInputBox && ChatInputBox->HasKeyboardFocus()
+		&& !CurrentText.IsEmpty() && CurrentText != PreviousInputText
+		&& CurrentText.Len() >= PreviousInputText.Len();
+	PreviousInputText = CurrentText;
+	if (!bTyped)
+	{
+		return;
+	}
+
+	const double Now = FPlatformTime::Seconds();
+	if (LastTypingSoundTime >= 0.0 && Now - LastTypingSoundTime < 0.1)
+	{
+		return;
+	}
+
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		if (Audio->Play(BG::Audio::UI::Chat::Typing.GetTag()))
+		{
+			LastTypingSoundTime = Now;
+		}
+	}
 }
 
 void UBGChatingWidget::OpenChatInput()
