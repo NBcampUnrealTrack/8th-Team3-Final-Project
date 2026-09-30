@@ -13,6 +13,7 @@
 #include "Audio/BGAudioSubsystem.h"
 #include "BGGameplayTags.h"
 #include "Core/BGPlayerState.h"
+#include "Core/BGPlayerController.h"
 #include "Core/BGCharacter.h"
 #include "GAS/BGAttributeSet.h"
 #include "Core/BGGameInstance.h"
@@ -60,6 +61,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, CinematicTarget);
 	DOREPLIFETIME(ABGGameState, CinematicResolution);
 	DOREPLIFETIME(ABGGameState, bResolutionPresentationActive);
+	DOREPLIFETIME(ABGGameState, ReleasedPresentationId);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -118,6 +120,32 @@ void ABGGameState::BeginCardCinematic(ABGCharacter* Caster, ABGCharacter* Victim
 	SetCinematicStage(EBGCinematicStage::Primary);
 }
 
+// 카드 효과 실행 전 연출 번호를 발급해 새 상태 FX의 표시 시점을 묶는다.
+int32 ABGGameState::BeginCardRulesPresentation()
+{
+	if (!HasAuthority()) return 0;
+	RulesPresentationId = ++NextPresentationId;
+	return RulesPresentationId;
+}
+
+// 카드 효과 실행을 마치고 발동 실패 시 보류한 상태 FX 표시를 해제한다.
+void ABGGameState::EndCardRulesPresentation(bool bActivated)
+{
+	if (!HasAuthority()) return;
+	if (!bActivated && RulesPresentationId > ReleasedPresentationId)
+	{
+		ReleasedPresentationId = RulesPresentationId;
+		OnStatusVisualsReleased.Broadcast();
+	}
+	RulesPresentationId = 0;
+}
+
+// 연출 해제 번호가 복제되면 클라이언트의 상태 FX를 다시 맞춘다.
+void ABGGameState::OnRep_ReleasedPresentationId()
+{
+	OnStatusVisualsReleased.Broadcast();
+}
+
 // 시네마틱과 재생할지 시네마틱 없이 재생할지 확인하는 분기 함수
 void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharacter* Target,
 	const FBGCardResolution& Resolution)
@@ -139,9 +167,20 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 			return;
 		}
 
-		if (ResolutionPresentationSeconds > 0.f)
+		if (GetResolutionPresentationSeconds() > 0.f)
 		{
+			PendingPresentationObservers.Reset();
+			for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+			{
+				if (ABGPlayerController* PC = Cast<ABGPlayerController>(It->Get());
+					PC && !PC->IsA<ABGAIPlayerController>())
+				{
+					PendingPresentationObservers.Add(PC);
+				}
+			}
 			bResolutionPresentationActive = true;
+			UE_LOG(LogBGCard, Log, TEXT("[CardPresentation] 판정 UI 대기: %s / %d명 / ID=%d"),
+				*Resolution.CardId.ToString(), PendingPresentationObservers.Num(), Resolution.PresentationId);
 			PendingPresentationCaster = Caster;
 			PendingPresentationTarget = Target;
 			PendingPresentationResolution = Resolution;
@@ -158,14 +197,27 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 
 			GetWorldTimerManager().SetTimer(ResolutionPresentationTimer, this,
 				&ABGGameState::FinishResolutionPresentation,
-				ResolutionPresentationSeconds, /*bLoop=*/false);
+				GetResolutionPresentationSeconds(), /*bLoop=*/false);
+			if (PendingPresentationObservers.IsEmpty()) FinishResolutionPresentation();
 			return;
 		}
 
-		Multicast_CardResolved(Resolution);
 	}
 
+	ReleasedPresentationId = FMath::Max(ReleasedPresentationId, Resolution.PresentationId);
+	OnStatusVisualsReleased.Broadcast();
 	PlayResolvedCardPresentationNow(Caster, Target, Resolution);
+}
+
+// 플레이어의 판정 UI 종료를 기록하고 전원 완료 시 월드 연출을 시작한다.
+void ABGGameState::NotifyResolutionPresentationFinished(ABGPlayerController* Controller, int32 PresentationId)
+{
+	if (!HasAuthority() || !bResolutionPresentationActive || !Controller
+		|| PresentationId != PendingPresentationResolution.PresentationId) return;
+	if (PendingPresentationObservers.Remove(TWeakObjectPtr<ABGPlayerController>(Controller)) == 0) return;
+	UE_LOG(LogBGCard, Log, TEXT("[CardPresentation] 판정 UI 완료: %s / 남은 %d명 / ID=%d"),
+		*PendingPresentationResolution.CardId.ToString(), PendingPresentationObservers.Num(), PresentationId);
+	if (PendingPresentationObservers.IsEmpty()) FinishResolutionPresentation();
 }
 
 void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGCharacter* Target,
@@ -215,6 +267,12 @@ void ABGGameState::FinishResolutionPresentation()
 		return;
 	}
 
+	if (!bResolutionPresentationActive) return;
+	if (!PendingPresentationObservers.IsEmpty())
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[CardPresentation] 판정 UI 통지 대기 초과: %d명"),
+			PendingPresentationObservers.Num());
+	}
 	GetWorldTimerManager().ClearTimer(ResolutionPresentationTimer);
 
 	ABGCharacter* Caster = PendingPresentationCaster.Get();
@@ -224,8 +282,13 @@ void ABGGameState::FinishResolutionPresentation()
 	PendingPresentationCaster = nullptr;
 	PendingPresentationTarget = nullptr;
 	PendingPresentationResolution = FBGCardResolution();
+	PendingPresentationObservers.Reset();
 	bResolutionPresentationActive = false;
 	BroadcastTurnState();
+	ReleasedPresentationId = FMath::Max(ReleasedPresentationId, Resolution.PresentationId);
+	OnStatusVisualsReleased.Broadcast();
+	UE_LOG(LogBGCard, Log, TEXT("[CardPresentation] 결과 월드 FX 시작: %s / ID=%d"),
+		*Resolution.CardId.ToString(), Resolution.PresentationId);
 
 	// 먼저 월드 연출을 열어 Cinematic pause holder를 잡는다. 그 뒤 Resolution holder를
 	// 놓아야 두 단계 사이에 밧줄이 잠깐 재개되지 않는다.

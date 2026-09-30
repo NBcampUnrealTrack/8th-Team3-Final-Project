@@ -29,6 +29,7 @@
 #include "BGStatusFXComponent.generated.h"
 
 class ABGPlayerState;
+class ABGGameState;
 class UNiagaraComponent;
 struct FBGStatusFXRow;
 
@@ -84,12 +85,15 @@ protected:
 	 * UBGSeatInfoDisplayComponent 가 "폰이 생겼다" 를 폴링으로 잡는 것과 같은 사정이다.
 	 */
 	void PollPlayerState();
+	void BindPresentationRelease();
 
 	/** 붙어 있는 이펙트. 키는 장비 CardId 또는 상태 태그 이름. */
 	UPROPERTY()
 	TMap<FName, TObjectPtr<UNiagaraComponent>> ActiveFX;
 
 	FDelegateHandle PublicInfoHandle;
+	FDelegateHandle PresentationReleaseHandle;
+	TWeakObjectPtr<ABGGameState> BoundPresentationGameState;
 	FTimerHandle    PlayerStateWaitTimer;
 
 	/** 표가 없다는 경고를 한 번만 찍기 위한 표시. 매 갱신마다 찍으면 로그가 묻힌다. */

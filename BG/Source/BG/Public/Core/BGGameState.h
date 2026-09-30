@@ -109,6 +109,7 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCameraShotChanged, const FBGCameraShot&
 
 /** 채팅 메시지 '1'건 도착시 UI로 중계 */
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGChatMessageReceived, const FString& /*SenderName*/, const FString& /*Message*/)
+DECLARE_MULTICAST_DELEGATE(FOnBGStatusVisualsReleased)
 
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase
@@ -129,6 +130,17 @@ public:
 
 	/** 위 멀티캐스트가 도착하면 발사된다. UI(PlayerController)가 구독한다. */
 	FOnBGCardResolved OnCardResolved;
+	FOnBGStatusVisualsReleased OnStatusVisualsReleased;
+
+	/** GA 실행 직전 번호를 발급한다. 새 상태 FX는 해당 판정 UI가 끝날 때까지 숨긴다. */
+	int32 BeginCardRulesPresentation();
+	void EndCardRulesPresentation(bool bActivated);
+	int32 GetRulesPresentationId() const { return RulesPresentationId; }
+	bool IsStatusVisualReleased(int32 PresentationId) const
+	{
+		return PresentationId <= ReleasedPresentationId;
+	}
+	void NotifyResolutionPresentationFinished(class ABGPlayerController* Controller, int32 PresentationId);
 	
 	/** 채팅 메시지를 전원에게 알린다 (서버에서만 호출) */
 	UFUNCTION(NetMulticast, Reliable)
@@ -429,8 +441,8 @@ public:
 	 * 서버 전용. 카드 규칙 처리 성공 뒤의 공통 연출 입구.
 	 *
 	 * 주사위 판정 카드면 먼저 Multicast_CardResolved로 UI를 시작하고
-	 * ResolutionPresentationSeconds 뒤에 월드 연출을 연다. BGCardWidget의 종료 신호에는
-	 * 의존하지 않는다. 그 뒤 DT_BGCardFX와 Card.Trait.Cinematic을 보고 시네마틱 또는
+	 * 각 플레이어의 판정 UI 종료 통지 뒤 월드 연출을 연다. 통지 누락 때만
+	 * ResolutionPresentationSeconds를 상한으로 쓴다. 그 뒤 DT_BGCardFX와 Card.Trait.Cinematic을 보고 시네마틱 또는
 	 * 단발 GameplayCue를 선택한다. PlayerController는 이 함수 호출만 담당한다.
 	 */
 	void PlayResolvedCardPresentation(class ABGCharacter* Caster, class ABGCharacter* Target,
@@ -440,9 +452,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	bool IsResolutionPresentationPlaying() const { return bResolutionPresentationActive; }
 
-	/** 판정 UI 에 주어진 시간. 클래스 기본값이라 클라에서도 서버와 같은 값이 나온다. */
+	/** 판정 UI 종료 통지의 대기 상한. */
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
-	float GetResolutionPresentationSeconds() const { return ResolutionPresentationSeconds; }
+	float GetResolutionPresentationSeconds() const { return FMath::Max(12.f, ResolutionPresentationSeconds); }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
@@ -740,8 +752,10 @@ protected:
 	void PlayResolvedCardPresentationNow(class ABGCharacter* Caster, class ABGCharacter* Target,
 		const FBGCardResolution& Resolution);
 
-	/** 서버 판정 연출 타이머가 끝난 뒤 보관한 월드 연출을 시작한다. */
+	/** 판정 UI 종료 통지가 모이거나 안전망 타이머가 끝난 뒤 월드 연출을 시작한다. */
 	void FinishResolutionPresentation();
+	UFUNCTION()
+	void OnRep_ReleasedPresentationId();
 
 	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
 	bool bResolutionPresentationActive = false;
@@ -754,6 +768,11 @@ protected:
 
 	UPROPERTY()
 	FBGCardResolution PendingPresentationResolution;
+	TSet<TWeakObjectPtr<class ABGPlayerController>> PendingPresentationObservers;
+	int32 NextPresentationId = 0;
+	int32 RulesPresentationId = 0;
+	UPROPERTY(ReplicatedUsing = OnRep_ReleasedPresentationId)
+	int32 ReleasedPresentationId = 0;
 
 	FTimerHandle ResolutionPresentationTimer;
 
@@ -911,13 +930,11 @@ protected:
 	TObjectPtr<class UBGRopeComponent> Rope;
 
 	/**
-	 * 주사위/판정 UI를 보여준 뒤 월드 GameplayCue를 시작하기까지의 시간.
-	 * 판정 게이지를 쓰면 카드 대기·퇴장 + 게이지 전체 길이에 맞춘다
-	 * (UBGRollGaugeWidget 이 넘치면 경고를 남긴다).
+	 * 판정 UI 종료 통지가 누락될 때의 최대 대기 시간.
 	 * 이 시간 동안 카드 사용과 턴 종료를 막고 밧줄도 멈춘다.
 	 */
-	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0", Units = "s"))
-	float ResolutionPresentationSeconds = 2.5f;
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "12.0", Units = "s"))
+	float ResolutionPresentationSeconds = 12.f;
 
 public:
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")

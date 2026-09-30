@@ -100,6 +100,10 @@ struct FBGCardResolution
 {
 	GENERATED_BODY()
 
+	/** 판정 UI와 결과 FX를 묶는 서버 발급 번호. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	int32 PresentationId = 0;
+
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
 	FGameplayTag CardId;
 

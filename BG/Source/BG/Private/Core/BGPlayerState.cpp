@@ -5,11 +5,13 @@
 #include "Card/BGDataSubsystem.h"
 #include "Card/BGGameDataTypes.h"
 #include "Core/BGCharacter.h"       // OnRep_IsDead 가 폰의 애니메이션 상태를 갱신한다
+#include "Core/BGGameState.h"
 #include "BGGameplayTags.h"
 #include "GAS/BGAttributeSet.h"
 #include "GAS/Effect/GE_BGDamage.h"
 #include "Lobby/BGReadyComponent.h"
 #include "Engine/GameInstance.h"
+#include "Engine/World.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
 #include "GameFramework/Pawn.h"
@@ -237,6 +239,10 @@ bool ABGPlayerState::AddPendingStatus(FGameplayTag StatusTag, int32 Amount)
 	FBGPendingStatus& Added = PendingStatuses.AddDefaulted_GetRef();
 	Added.Tag    = StatusTag;
 	Added.Amount = Amount;
+	if (const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr)
+	{
+		Added.PresentationId = GS->GetRulesPresentationId();
+	}
 
 	UE_LOG(LogBGCard, Log, TEXT("[Status] 좌석 %d 에 %s (수치 %d) 부여"),
 		SeatIndex, *StatusTag.ToString(), Amount);

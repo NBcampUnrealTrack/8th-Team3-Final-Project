@@ -305,6 +305,12 @@ protected:
 
 	/** 판정 결과가 도착했다. 게임 로직 타입 → UI 뷰모델 변환이 여기서 일어난다. */
 	void HandleCardResolved(const struct FBGCardResolution& Resolution);
+	UFUNCTION()
+	void HandleResolutionHidden();
+	void AcknowledgeResolutionPresentation();
+	UFUNCTION(Server, Reliable)
+	void ServerConfirmResolutionHidden(int32 PresentationId);
+	int32 ActiveResolutionPresentationId = 0;
 
 	/**
 	 * 누군가 장비를 착용했다. 남의 착용이면 관전 카드를 중앙에 세운다.
