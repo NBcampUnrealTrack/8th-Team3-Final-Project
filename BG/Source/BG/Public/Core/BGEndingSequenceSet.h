@@ -30,9 +30,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Ending")
 	ULevelSequence* FindSequence(FGameplayTag WinningRole) const;
 
-	/** 그 시퀀스의 재생 길이(초). 시퀀스가 없으면 0. */
-	float GetSequenceSeconds(FGameplayTag WinningRole) const;
-
 	/**
 	 * 지금 월드에 배치된 목록. 없으면 nullptr —
 	 * 그때는 PlayerController 에 적어 둔 기본 목록을 쓴다(맵별로 나눌 필요가 없는 경우).

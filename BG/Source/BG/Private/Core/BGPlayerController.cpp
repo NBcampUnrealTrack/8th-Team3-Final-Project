@@ -262,6 +262,12 @@ void ABGPlayerController::OnRep_PlayerState()
 	RefreshHandWidget();
 }
 
+void ABGPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearAllTimersForObject(this);
+	Super::EndPlay(EndPlayReason);
+}
+
 void ABGPlayerController::Destroyed()
 {
 	//	⚠️ 파괴 뒤에 발동하면 죽은 컨트롤러를 건드린다.
@@ -1121,12 +1127,6 @@ void ABGPlayerController::PrepareEndingSequence()
 void ABGPlayerController::PlayEndingSequence()
 {
 	bEndingSequenceWantsPlay = true;
-
-	const ABGGameState* GS = GetBGGameState();
-	if (!GS)
-	{
-		return;
-	}
 
 	ULevelSequence* Sequence = ResolveEndingSequence();
 	if (!Sequence)

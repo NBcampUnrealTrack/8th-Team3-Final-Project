@@ -191,6 +191,12 @@ public:
 	bool DidIWin(FGameplayTag WinningRole) const;
 
 	/**
+	 * 지금 틀 시퀀스. 맵에 배치된 목록이 먼저고, 없으면 EndingSequences 로 돌아간다.
+	 * 폴백은 소프트 참조라 PrepareEndingSequence 로 받아 두기 전에는 nullptr 이다.
+	 */
+	class ULevelSequence* ResolveEndingSequence() const;
+
+	/**
 	 * 내 역할(Role.*). 승패 분기와 역할 표시에 쓴다. 아직 배정 전이면 무효 태그.
 	 *
 	 * ⚠️ 남의 역할은 이 경로로 알 수 없다 — 복제가 본인에게만 온다.
@@ -357,6 +363,9 @@ public:
 	// Logout 보다 이 시점이 빨라서, 여기서 잡지 않으면 캐릭터가 자리에서 사라진다.
 	virtual void Destroyed() override;
 
+	//	맵 이동(ServerTravel)은 Destroyed 가 아니라 EndPlay 만 부른다 — 타이머 정리는 여기서 한다.
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	// 서버: 검증 통과 후 실제 처리. 카드가 구동할 GA 를 부여+발동한다.
 	void HandlePlayCard(int32 InstanceId, int32 TargetSeat);
 
@@ -423,9 +432,6 @@ protected:
 	/** 종료 연출 단계가 바뀌었다. 엔딩 시퀀스를 여기서 받아 두고 재생한다. */
 	UFUNCTION()
 	void HandleMatchEndStageChanged(EBGMatchEndStage Stage);
-
-	/** 지금 틀 시퀀스. 맵에 배치된 목록이 먼저고, 없으면 EndingSequences 로 돌아간다. */
-	class ULevelSequence* ResolveEndingSequence() const;
 
 	/** 승리 진영에 맞는 시퀀스를 비동기로 받아 둔다. 이미 받고 있으면 아무것도 하지 않는다. */
 	void PrepareEndingSequence();

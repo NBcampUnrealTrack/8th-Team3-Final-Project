@@ -465,12 +465,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Match")
 	void StartEndingCredits();
 
-	/**
-	 * 이번 승리 진영의 엔딩 시퀀스 길이(초). 서버가 EndingSequence 단계를 얼마나 둘지 정한다.
-	 * 맵에 배치된 목록(ABGEndingSequenceSet)에서 실제 길이를 읽고, 없으면 EndingSequenceSeconds.
-	 */
-	float GetEndingSequenceSeconds() const;
-
 	// ── 연출 카메라 (GDD §10 "짧은 연출") ─────────────────────────
 	//
 	//  복제되는 것은 "지금 누구의 B 카메라를 비추는가" 라는 상태 하나뿐이다.
@@ -532,7 +526,10 @@ public:
 
 	/** 판정 UI 에 주어진 시간. 클래스 기본값이라 클라에서도 서버와 같은 값이 나온다. */
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
-	float GetResolutionPresentationSeconds() const { return ResolutionPresentationSeconds; }
+	float GetResolutionPresentationSeconds() const { return ResolutionPresentationSeconds + CardRevealSeconds; }
+
+	/** 판정 연출 전에 카드를 중앙에 보여 주는 시간. 카드 위젯이 이만큼 기다린 뒤 연출을 터뜨린다. */
+	float GetCardRevealSeconds() const { return CardRevealSeconds; }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
@@ -952,8 +949,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Match", meta = (ClampMin = "0"))
 	float VictoryWidgetSeconds = 3.f;
 
-	//	엔딩 시퀀스 길이를 읽지 못할 때(맵에 목록 액터가 없을 때)만 쓰는 대체값.
-	//	목록 액터가 있으면 시퀀스의 실제 길이를 쓴다 — 여기를 시퀀스에 맞춰 둘 필요가 없다.
+	//	시퀀스만 보여 주는 시간. 이 뒤 결과 표가 뜨고, 시퀀스는 그 뒤에서 계속 재생된다.
+	//	⚠️ 시퀀스 전체 길이(75초)를 쓰면 안 된다 — 뒷부분은 결과 표 배경으로 깔리도록 만든 구간이다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Match", meta = (ClampMin = "0"))
 	float EndingSequenceSeconds = 6.f;
 
@@ -1022,7 +1019,7 @@ protected:
 	bool bPlayIntroInPvE = false;
 
 	//	단계별 길이(초). 0 이하면 그 단계를 건너뛴다 — 전부 0 이면 도입 연출이 통째로 꺼진다.
-	//	기획 수치: 야영지 2 · 역할 4 · 용사 2 · 첫 턴 2 = 10초.
+	//	야영지 2 · 역할 4 · 용사 1 · 첫 턴 1 = 8초. 용사·첫 턴은 둘 다 보안관만 비춰 기획(2·2)의 반으로 줄였다.
 
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
 	float IntroCampfireSeconds = 2.f;
@@ -1032,10 +1029,10 @@ protected:
 	float IntroRoleRevealSeconds = 4.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
-	float IntroHeroRevealSeconds = 2.f;
+	float IntroHeroRevealSeconds = 1.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
-	float IntroFirstTurnSeconds = 2.f;
+	float IntroFirstTurnSeconds = 1.f;
 
 	/**
 	 * 손패 상한. 이 장수를 넘기는 드로우는 넘는 만큼만 뽑히지 않는다.
@@ -1083,6 +1080,14 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0", Units = "s"))
 	float ResolutionPresentationSeconds = 2.5f;
+
+	/**
+	 * 판정 연출 전에 사용한 카드를 중앙에 보여 주는 시간. 남의 카드는 판정 순간에야 처음 날아오므로
+	 * 이게 없으면 무슨 카드인지 읽기도 전에 연출이 터진다.
+	 * ⚠️ 카드 위젯과 서버 판정 대기에 **같이** 들어간다 — 한쪽만 늘리면 게이지 착지 전에 월드 연출이 터진다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0", Units = "s"))
+	float CardRevealSeconds = 1.5f;
 
 public:
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")

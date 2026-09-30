@@ -26,7 +26,6 @@
 #include "Net/UnrealNetwork.h"
 #include "AI/BGAIPlayerController.h"
 #include "Core/BGGameMode.h"
-#include "Core/BGEndingSequenceSet.h"
 
 ABGGameState::ABGGameState()
 {
@@ -159,7 +158,7 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 
 			GetWorldTimerManager().SetTimer(ResolutionPresentationTimer, this,
 				&ABGGameState::FinishResolutionPresentation,
-				ResolutionPresentationSeconds, /*bLoop=*/false);
+				GetResolutionPresentationSeconds(), /*bLoop=*/false);
 			return;
 		}
 
@@ -644,7 +643,8 @@ void ABGGameState::BeginPlay()
 
 void ABGGameState::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	GetWorldTimerManager().ClearTimer(ResolutionPresentationTimer);
+	//	⚠️ 타이머가 다섯 개다(판정·연출·도입·종료·카드 큐). 하나씩 끊으면 새로 생긴 것을 빠뜨린다.
+	GetWorldTimerManager().ClearAllTimersForObject(this);
 	RemoveActiveCardGameplayCue();
 	RemoveActiveNonCinematicCardGameplayCue();
 	Super::EndPlay(EndPlayReason);
@@ -2123,7 +2123,7 @@ void ABGGameState::SetMatchEndStage(EBGMatchEndStage NewStage)
 		break;
 
 	case EBGMatchEndStage::EndingSequence:
-		AdvanceMatchEndStageAfter(EBGMatchEndStage::Credits, GetEndingSequenceSeconds());
+		AdvanceMatchEndStageAfter(EBGMatchEndStage::Credits, EndingSequenceSeconds);
 		break;
 
 	case EBGMatchEndStage::Credits:
@@ -2168,21 +2168,6 @@ void ABGGameState::StartEndingCredits()
 		return;   // 아직 시퀀스 단계가 아니거나 이미 넘어갔다.
 	}
 	SetMatchEndStage(EBGMatchEndStage::Credits);
-}
-
-float ABGGameState::GetEndingSequenceSeconds() const
-{
-	//	⚠️ 서버는 맵에 배치된 목록만 읽는다. PlayerController 의 폴백 목록은 소프트 참조라
-	//	   서버에 로드돼 있다는 보장이 없다 — 그때는 대체값을 쓴다.
-	if (const ABGEndingSequenceSet* MapSet = ABGEndingSequenceSet::Find(this))
-	{
-		const float Seconds = MapSet->GetSequenceSeconds(WinningRoleTag);
-		if (Seconds > 0.f)
-		{
-			return Seconds;
-		}
-	}
-	return EndingSequenceSeconds;
 }
 
 void ABGGameState::OnRep_MatchEndStage()

@@ -3,9 +3,6 @@
 #include "Debug/BGCardLog.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
-#include "LevelSequence.h"
-#include "MovieScene.h"
-#include "MovieSceneTimeHelpers.h"
 
 ABGEndingSequenceSet::ABGEndingSequenceSet()
 {
@@ -23,19 +20,6 @@ ULevelSequence* ABGEndingSequenceSet::FindSequence(FGameplayTag WinningRole) con
 
 	const TObjectPtr<ULevelSequence>* Found = Sequences.Find(WinningRole);
 	return Found ? Found->Get() : nullptr;
-}
-
-float ABGEndingSequenceSet::GetSequenceSeconds(FGameplayTag WinningRole) const
-{
-	const ULevelSequence* Sequence = FindSequence(WinningRole);
-	const UMovieScene* MovieScene = Sequence ? Sequence->GetMovieScene() : nullptr;
-	if (!MovieScene)
-	{
-		return 0.f;
-	}
-
-	const int32 Ticks = UE::MovieScene::DiscreteSize(MovieScene->GetPlaybackRange());
-	return static_cast<float>(MovieScene->GetTickResolution().AsSeconds(FFrameTime(Ticks)));
 }
 
 ABGEndingSequenceSet* ABGEndingSequenceSet::Find(const UObject* WorldContextObject)
