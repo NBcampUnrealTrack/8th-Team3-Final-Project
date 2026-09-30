@@ -24,7 +24,7 @@ class UTexture2D;
  *   Text_Status    (TextBlock, 선택 — "내 차례" 등 안내문)
  *   Text_HandLimit (TextBlock, 선택 — "5 / 4". 손패 장수 / 한도)
  *   Text_Deck      (TextBlock, 선택 — 남은 덱 장수)
- *   Text_CardUse   (TextBlock, 선택 — "카드 1 / 2")
+ *   Text_CardUse   (TextBlock, 선택 — "카드 사용 1 / 2")
  *   Text_Rope      (TextBlock, 선택 — "밧줄 37초" 턴 제한 시간)
  *   Image_Rope     (Image, 선택 — 밧줄이 타는 그림. 지금 아트는 깃털이다)
  *
@@ -103,7 +103,7 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Deck;
 
-	/** "카드 1 / 2" — GDD §10 이 요구하는 사용한 카드 수 / 한도 표시. */
+	/** "카드 사용 1 / 2" — GDD §10 이 요구하는 사용한 카드 수 / 한도 표시. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_CardUse;
 

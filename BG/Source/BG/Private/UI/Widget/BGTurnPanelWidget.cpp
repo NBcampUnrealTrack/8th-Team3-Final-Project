@@ -339,7 +339,7 @@ void UBGTurnPanelWidget::RefreshVisual()
 	{
 		//	GDD §10: 턴 UI 에 "사용한 카드 수 / 현재 카드 사용 한도" 를 표시한다.
 		Text_CardUse->SetText(FText::FromString(
-			FString::Printf(TEXT("카드 %d / %d"), TurnView.CardsUsed, TurnView.CardUseLimit)));
+			FString::Printf(TEXT("카드 사용 %d / %d"), TurnView.CardsUsed, TurnView.CardUseLimit)));
 	}
 
 	if (Button_EndTurn)
