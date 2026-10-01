@@ -58,6 +58,20 @@ void UBGRewardSelectWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+void UBGRewardSelectWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	UBGCardWidget* Widgets[3] = { CardWidget0, CardWidget1, CardWidget2 };
+	for (UBGCardWidget* CardWidget : Widgets)
+	{
+		if (IsValid(CardWidget))
+		{
+			CardWidget->TickMotion(InDeltaTime);
+		}
+	}
+}
+
 void UBGRewardSelectWidget::HandleCard0Clicked()
 {
 	SelectSlot(0);
