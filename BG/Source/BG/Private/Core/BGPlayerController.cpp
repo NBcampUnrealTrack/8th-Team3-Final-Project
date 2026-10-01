@@ -971,6 +971,13 @@ void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 		return;
 	}
 
+	const ABGGameState* GS = GetBGGameState();
+	if (IsValid(GS) && GS->IsPvEEncounterClear())
+	{
+		HandleEncounterClearStage(Stage);
+		return;
+	}
+
 	//	⚠️ 늦게 들어온 클라는 중간 단계부터 받는다 — 각 단계는 앞 단계를 거쳤다고 가정하지 않는다.
 	switch (Stage)
 	{
@@ -1002,6 +1009,11 @@ void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 		ResetEndingPresentation();
 		break;
 	}
+}
+
+void ABGPlayerController::HandleEncounterClearStage(EBGMatchEndStage Stage)
+{
+	// TODO: PvE 조우 승리 연출 (위젯, 시퀀스, 결과 화면)
 }
 
 void ABGPlayerController::ShowVictoryWidget()

@@ -397,6 +397,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	FGameplayTag GetWinningRole() const { return WinningRoleTag; }
 
+	/** PvE 에서 보스가 아닌 조우를 깼는가. 이 경우에만 조우 승리 연출을 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Match")
+	bool IsPvEEncounterClear() const { return bPvEEncounterClear; }
+
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	bool IsMatchOver() const { return PhaseTag == GameOverPhaseTag(); }
 
@@ -739,6 +743,10 @@ protected:
 	UPROPERTY(Replicated)
 	FGameplayTag WinningRoleTag;
 
+	//	PvE 조우 승리(보스 아님) 여부. EndMatch 의 종료 연출이 시작되기 전에 정해진다.
+	UPROPERTY(Replicated)
+	bool bPvEEncounterClear = false;
+
 	//	종료 연출 단계. 이 값이 바뀌는 것이 곧 "승리했다 / 크레딧이다" 라는 통지다.
 	// ── 사망 처리 내부 ──
 	//
@@ -957,6 +965,10 @@ protected:
 	//	크레딧을 보여주는 시간. 이 뒤 로비로 복귀한다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Match", meta = (ClampMin = "0"))
 	float EndingCreditsSeconds = 60.f;
+
+	//	PvE 조우 승리 후 크레딧 단계에서 로비로 돌아가기까지의 대기 시간. 0 이하면 즉시 복귀한다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Match", meta = (ClampMin = "0"))
+	float EncounterClearCreditsSeconds = 0.f;
 
 	//	끄면 크레딧 화면에 머문다(연출 확인용). 켜면 자동으로 로비로 돌아간다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Match")
