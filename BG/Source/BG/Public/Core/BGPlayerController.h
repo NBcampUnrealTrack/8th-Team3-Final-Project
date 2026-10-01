@@ -433,6 +433,9 @@ protected:
 	UFUNCTION()
 	void HandleMatchEndStageChanged(EBGMatchEndStage Stage);
 
+	/** PvE 조우 승리 전용 종료 연출. 연출이 정해지면 여기를 채운다. */
+	void HandleEncounterClearStage(EBGMatchEndStage Stage);
+
 	/** 승리 진영에 맞는 시퀀스를 비동기로 받아 둔다. 이미 받고 있으면 아무것도 하지 않는다. */
 	void PrepareEndingSequence();
 

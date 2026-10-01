@@ -7,6 +7,9 @@
 #include "Engine/NetDriver.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Engine/LocalPlayer.h"
+#include "Engine/GameViewportClient.h"
+#include "Core/BGPlayerState.h"
 #include "TimerManager.h"
 #include "Ping/BGPingComponent.h"
 #include "Ping/BGPingTypes.h"
@@ -137,6 +140,128 @@ static FAutoConsoleCommandWithWorldAndArgs GBGPingWheelCmd(
 	TEXT("BG.PingWheel"),
 	TEXT("휠을 열어 본다. BG.PingWheel <대상 좌석|-1>"),
 	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&BGPingWheelExec));
+
+namespace
+{
+	//	지연 콜백마다 다시 찾는다 — PIE 종료·트래블 뒤의 뷰포트·월드를 붙잡지 않는다.
+	FViewport* FindClickViewport(const TWeakObjectPtr<ABGPlayerController>& WeakPC, const TWeakObjectPtr<UWorld>& WeakWorld)
+	{
+		ABGPlayerController* PC = WeakPC.Get();
+		if (!PC || !WeakWorld.IsValid() || PC->GetWorld() != WeakWorld.Get())
+		{
+			return nullptr;
+		}
+		ULocalPlayer* LP = PC->GetLocalPlayer();
+		return (LP && LP->ViewportClient) ? LP->ViewportClient->Viewport : nullptr;
+	}
+
+	void SimulateClick(ABGPlayerController* PC)
+	{
+		PC->InputKey(FInputKeyEventArgs::CreateSimulated(EKeys::LeftMouseButton, IE_Pressed, 1.f));
+		PC->InputKey(FInputKeyEventArgs::CreateSimulated(EKeys::LeftMouseButton, IE_Released, 0.f));
+	}
+}
+
+static void BGPingClickExec(const TArray<FString>& Args, UWorld* World)
+{
+	if (!World || Args.Num() < 1)
+	{
+		UE_LOG(LogBGPing, Warning, TEXT("[BGPing] 사용법: BG.PingClick <좌석> [dx dy] — 좌석 캐릭터 위로 커서를 옮겨 실제 좌클릭을 넣는다"));
+		return;
+	}
+
+	const int32 Seat = FCString::Atoi(*Args[0]);
+	const float Dx = Args.Num() > 2 ? FCString::Atof(*Args[1]) : 0.f;
+	const float Dy = Args.Num() > 2 ? FCString::Atof(*Args[2]) : 0.f;
+
+	ABGPlayerController* PC = Cast<ABGPlayerController>(GEngine->GetFirstLocalPlayerController(World));
+	ABGGameState* GS = World->GetGameState<ABGGameState>();
+	ABGPlayerState* PS = GS ? GS->GetPlayerStateBySeat(Seat) : nullptr;
+	APawn* Target = PS ? PS->GetPawn() : nullptr;
+	if (!PC || !Target)
+	{
+		UE_LOG(LogBGPing, Warning, TEXT("[BGPing] PingClick — 컨트롤러 또는 좌석 %d 캐릭터 없음"), Seat);
+		return;
+	}
+
+	TWeakObjectPtr<ABGPlayerController> WeakPC(PC);
+	TWeakObjectPtr<UWorld> WeakWorld(World);
+	TWeakObjectPtr<APawn> WeakTarget(Target);
+
+	//	다음 틱에 커서를 옮기고, 호버 판정이 갱신될 시간을 둔 뒤 눌렀다 뗀다.
+	World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(PC, [WeakPC, WeakWorld, WeakTarget, Dx, Dy, Seat]()
+	{
+		ABGPlayerController* P = WeakPC.Get();
+		APawn* T = WeakTarget.Get();
+		FViewport* Viewport = FindClickViewport(WeakPC, WeakWorld);
+		FVector2D Screen;
+		if (!Viewport || !T || !P->ProjectWorldLocationToScreen(T->GetActorLocation() + FVector(0.f, 0.f, 60.f), Screen))
+		{
+			return;
+		}
+
+		Viewport->SetMouse(FMath::RoundToInt(Screen.X), FMath::RoundToInt(Screen.Y));
+		UE_LOG(LogBGPing, Log, TEXT("[BGPing] PingClick — 좌석 %d 커서 (%.0f, %.0f)"), Seat, Screen.X, Screen.Y);
+
+		FTimerHandle PressHandle;
+		P->GetWorldTimerManager().SetTimer(PressHandle, FTimerDelegate::CreateWeakLambda(P, [WeakPC, WeakWorld, Screen, Dx, Dy]()
+		{
+			ABGPlayerController* P2 = WeakPC.Get();
+			if (!P2 || !FindClickViewport(WeakPC, WeakWorld))
+			{
+				return;
+			}
+			SimulateClick(P2);
+
+			//	휠이 열렸으면 끌 방향으로 커서를 옮긴 뒤 한 번 더 눌러 확정한다.
+			FTimerHandle ConfirmHandle;
+			P2->GetWorldTimerManager().SetTimer(ConfirmHandle, FTimerDelegate::CreateWeakLambda(P2, [WeakPC, WeakWorld, Screen, Dx, Dy]()
+			{
+				ABGPlayerController* P3 = WeakPC.Get();
+				FViewport* V = FindClickViewport(WeakPC, WeakWorld);
+				if (!P3 || !V)
+				{
+					return;
+				}
+				V->SetMouse(FMath::RoundToInt(Screen.X + Dx), FMath::RoundToInt(Screen.Y + Dy));
+				SimulateClick(P3);
+			}), 0.4f, false);
+		}), 0.3f, false);
+	}));
+}
+
+static void BGPingMouseExec(const TArray<FString>& Args, UWorld* World)
+{
+	if (!World || Args.Num() < 2)
+	{
+		UE_LOG(LogBGPing, Warning, TEXT("[BGPing] 사용법: BG.PingMouse <x> <y> [abs] — 뷰포트 커서를 상대(기본)·절대 좌표로 옮긴다"));
+		return;
+	}
+
+	ABGPlayerController* PC = Cast<ABGPlayerController>(GEngine->GetFirstLocalPlayerController(World));
+	FViewport* Viewport = FindClickViewport(PC, World);
+	if (!Viewport)
+	{
+		return;
+	}
+
+	const bool bAbsolute = Args.Num() > 2 && Args[2] == TEXT("abs");
+	const FIntPoint Now(Viewport->GetMouseX(), Viewport->GetMouseY());
+	const int32 X = FCString::Atoi(*Args[0]) + (bAbsolute ? 0 : Now.X);
+	const int32 Y = FCString::Atoi(*Args[1]) + (bAbsolute ? 0 : Now.Y);
+	Viewport->SetMouse(X, Y);
+	UE_LOG(LogBGPing, Log, TEXT("[BGPing] PingMouse — (%d, %d) → (%d, %d)"), Now.X, Now.Y, X, Y);
+}
+
+static FAutoConsoleCommandWithWorldAndArgs GBGPingMouseCmd(
+	TEXT("BG.PingMouse"),
+	TEXT("뷰포트 커서를 옮긴다(휠 하이라이트 캡처용). BG.PingMouse <x> <y> [abs]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&BGPingMouseExec));
+
+static FAutoConsoleCommandWithWorldAndArgs GBGPingClickCmd(
+	TEXT("BG.PingClick"),
+	TEXT("좌석 캐릭터 위를 실제 좌클릭 입력으로 누른다. BG.PingClick <좌석> [dx dy]"),
+	FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&BGPingClickExec));
 
 static FAutoConsoleCommandWithWorldAndArgs GBGPingCmd(
 	TEXT("BG.Ping"),

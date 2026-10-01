@@ -33,6 +33,10 @@ struct FBGChatEntry
 
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Chat")
 	int32 TargetSeat = INDEX_NONE;
+
+	/** 핑 줄 앞 색 점. 마커 띠와 같은 보낸 사람 색이다. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Chat")
+	FLinearColor SenderColor = FLinearColor::White;
 };
 
 UENUM(BlueprintType)
