@@ -34,9 +34,17 @@ public:
 	/** PlayerController 의 SetupInputComponent 가 부른다. 휠 버튼을 여기에 건다. */
 	void BindInput(UInputComponent* InInputComponent);
 
-	/** 휠이 열려 있으면 접는다(Esc·우클릭). 열려 있지 않으면 아무것도 하지 않는다. */
+	/** Esc·우클릭 — 진행 중인 핑 제스처(누름 대기·휠)를 모두 접는다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Ping")
 	void CancelWheel();
+
+	/** 공통 취소 경로. 누름 대기·휠·하이라이트·시점 잠금을 한 번에 정리한다. */
+	void CancelPingGesture(const TCHAR* Reason);
+
+	/** 아이콘 선로딩이 끝났다. 먼저 뜬 마커가 아이콘을 다시 받는다. */
+	FOnBGPingIconsLoaded OnIconsLoaded;
+
+	bool AreIconsLoaded() const { return bIconsLoaded; }
 
 	/** 입력 없이 휠을 열어 본다(콘솔 BG.PingWheel). 실제 입력과 같은 경로를 탄다. */
 	void DebugOpenWheel(int32 TargetSeat);
@@ -54,12 +62,17 @@ protected:
 	float ServerCooldownSec = 0.3f;
 
 	// ── 입력·휠 튜닝 ────────────────────────────────────────────
+	/** 캐릭터 위 좌클릭으로 휠을 연다. 카드 조준 중에는 조준 확정이 우선한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input")
-	FKey PingKey = EKeys::MiddleMouseButton;
+	FKey PingKey = EKeys::LeftMouseButton;
 
 	/** 비어 있으면 휠 없이 클릭(=공격)만 동작한다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input")
 	TSubclassOf<UBGPingWheelWidget> WheelWidgetClass;
+
+	/** 누른 뒤 이만큼(px) 움직였다 떼면 드래그로 보고 휠을 열지 않는다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "0.0"))
+	float ClickDragThresholdPx = 8.f;
 
 	/** 이 거리(px) 안에서 떼면 중앙 = 공격. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Ping|Input", meta = (ClampMin = "0.0"))
@@ -92,6 +105,33 @@ protected:
 
 private:
 	void HandlePingPressed();
+
+	/** 떼는 순간 — 드래그가 아니면 여기서 휠을 연다. */
+	void HandlePingReleased();
+
+	/** 카드 조준 확정·취소와 같은 클릭이면 핑을 열지 않는다. */
+	UFUNCTION()
+	void HandleTargetConfirmed(int32 SeatIndex, int32 ContextId);
+
+	UFUNCTION()
+	void HandleTargetCancelled(int32 ContextId);
+
+	/** 조준 컴포넌트 델리게이트를 건다. 컴포넌트가 바뀌었으면 옛것을 풀고 다시 건다. */
+	void TryBindTargeting();
+
+	/** 제스처를 계속할 수 없는 게임 상태(판 종료·사망·턴 변경·조준 시작)인가. */
+	bool ShouldAbortGesture(FString& OutReason) const;
+
+	/** 누름 대기를 시작한 순간의 턴 좌석. 턴이 넘어가면 제스처를 접는다. */
+	int32 GestureTurnSeat = INDEX_NONE;
+
+	/** 누르고 있는 동안 원점에서 가장 멀리 간 거리(px). */
+	float PressMaxDragPx = 0.f;
+
+	bool bIconsLoaded = false;
+
+	/** 조준 중이거나 이번 프레임에 조준이 끝났는가. */
+	bool IsTargetingClick() const;
 
 	/** 열린 휠에서 지금 가리키는 칸으로 발신하고 닫는다. */
 	void ConfirmWheelSelection();
@@ -151,6 +191,14 @@ private:
 
 	//	휠의 중심. 여기서 커서까지의 방향이 곧 선택이다.
 	FVector2D PressScreenPos = FVector2D::ZeroVector;
+
+	//	조준이 확정·취소된 프레임. 같은 좌클릭으로 휠이 열리는 것을 막는다.
+	uint64 LastTargetConfirmFrame = 0;
+
+	TWeakObjectPtr<class UBGWorldTargetingComponent> BoundTargeting;
+
+	//	눌렀지만 아직 떼지 않았다. 떼는 순간 드래그 여부를 보고 휠을 연다.
+	bool bPressPending = false;
 
 	double LastClientSendTime = -1000.0;
 	TArray<double> RecentSendTimes;

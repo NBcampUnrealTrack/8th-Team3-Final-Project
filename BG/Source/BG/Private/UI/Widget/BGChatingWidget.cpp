@@ -7,6 +7,8 @@
 #include "Components/ScrollBox.h"
 #include "Components/EditableTextBox.h"
 #include "Components/TextBlock.h"
+#include "Components/HorizontalBox.h"
+#include "Components/HorizontalBoxSlot.h"
 #include "Components/Button.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Core/BGPlayerController.h"
@@ -146,7 +148,28 @@ void UBGChatingWidget::AddEntryToLog(const FBGChatEntry& Entry)
 	//	기본 정책은 띄어쓰기에서만 끊는다 — 공백 없는 긴 채팅이 통째로 삐져나간다.
 	Line->SetWrappingPolicy(ETextWrappingPolicy::AllowPerCharacterWrapping);
 
-	ChatScrollBox->AddChild(Line);
+	//	핑 줄은 앞에 보낸 사람 색 점을 붙인다(마커 배지와 같은 좌석 색).
+	if (Entry.bPing)
+	{
+		UHorizontalBox* Row = NewObject<UHorizontalBox>(this);
+		UTextBlock* Dot = NewObject<UTextBlock>(this);
+		Dot->SetText(FText::FromString(TEXT("\u25CF ")));
+		Dot->SetFont(Font);
+		Dot->SetColorAndOpacity(FSlateColor(Entry.SenderColor));
+		Row->AddChildToHorizontalBox(Dot)->SetVerticalAlignment(VAlign_Top);
+
+		//	핑 줄은 한 덩어리로 두어 줄바꿈을 유지하고, 전체를 밝은 아이보리로 칠한다.
+		Line->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.95f, 0.82f)));
+		if (UHorizontalBoxSlot* LineSlot = Row->AddChildToHorizontalBox(Line))
+		{
+			LineSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+		ChatScrollBox->AddChild(Row);
+	}
+	else
+	{
+		ChatScrollBox->AddChild(Line);
+	}
 	ChatScrollBox->ScrollToEnd();
 
 	TrimOldMessages();
