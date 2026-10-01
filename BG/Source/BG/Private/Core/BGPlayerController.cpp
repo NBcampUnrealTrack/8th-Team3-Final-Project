@@ -971,24 +971,28 @@ void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 		return;
 	}
 
+	//	PvP·PvE 가 같은 흐름을 탄다. 다른 점은 PvE 조우 승리(보스 아님) 하나뿐이다 —
+	//	서버가 시퀀스 단계를 건너뛰고(Victory → Credits) 결과 표 없이 곧바로 다음 조우로 간다.
 	const ABGGameState* GS = GetBGGameState();
-	if (IsValid(GS) && GS->IsPvEEncounterClear())
-	{
-		HandleEncounterClearStage(Stage);
-		return;
-	}
+	const bool bEncounterClear = GS && GS->IsPvEEncounterClear();
 
 	//	⚠️ 늦게 들어온 클라는 중간 단계부터 받는다 — 각 단계는 앞 단계를 거쳤다고 가정하지 않는다.
 	switch (Stage)
 	{
 	case EBGMatchEndStage::FinalReveal:
 		//	시퀀스는 승리 위젯이 떠 있는 동안까지 여유가 있다 — 지금부터 받아 둔다.
-		PrepareEndingSequence();
+		if (!bEncounterClear)
+		{
+			PrepareEndingSequence();
+		}
 		break;
 
 	case EBGMatchEndStage::Victory:
-		//	HUD 는 아직 둔다 — 시퀀스로 컷될 때 닉네임과 함께 걷힌다.
-		PrepareEndingSequence();
+		//	HUD 는 아직 둔다 — 시퀀스로 컷될 때 걷힌다.
+		if (!bEncounterClear)
+		{
+			PrepareEndingSequence();
+		}
 		ShowVictoryWidget();
 		break;
 
@@ -999,6 +1003,12 @@ void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 		break;
 
 	case EBGMatchEndStage::Credits:
+		//	조우 승리는 결과 표 없이 곧바로 로비로 간다(EncounterClearCreditsSeconds) — 걷기만 한다.
+		if (bEncounterClear)
+		{
+			ResetEndingPresentation();
+			break;
+		}
 		//	시퀀스는 마지막 프레임에 멈춰 있다(bPauseAtEnd) — 결과 표의 배경으로 남긴다.
 		HideGameplayWidgetsForEnding();
 		HideVictoryWidget();
@@ -1006,26 +1016,6 @@ void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 		break;
 
 	default:
-		ResetEndingPresentation();
-		break;
-	}
-}
-
-//	조우 승리는 승리 위젯만 보여 주고 다음 조우로 넘어간다 — 시퀀스·결과 표가 없다.
-//	위젯은 DidIWin 으로 고르므로 승리/패배 둘 다 이 길로 온다. 패배(런 종료)는 일반 흐름을 탄다.
-void ABGPlayerController::HandleEncounterClearStage(EBGMatchEndStage Stage)
-{
-	switch (Stage)
-	{
-	case EBGMatchEndStage::Victory:
-		ShowVictoryWidget();
-		break;
-
-	case EBGMatchEndStage::FinalReveal:
-		break;   //	사망자를 비추는 중이다. 위젯은 다음 단계에서.
-
-	default:
-		//	Credits 는 곧바로 로비 복귀(EncounterClearCreditsSeconds) — 그 전에 걷는다.
 		ResetEndingPresentation();
 		break;
 	}

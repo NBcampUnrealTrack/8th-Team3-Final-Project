@@ -430,8 +430,6 @@ protected:
 	UFUNCTION()
 	void HandleMatchEndStageChanged(EBGMatchEndStage Stage);
 
-	/** PvE 조우 승리 전용 종료 연출. 연출이 정해지면 여기를 채운다. */
-	void HandleEncounterClearStage(EBGMatchEndStage Stage);
 
 	/** 승리 진영의 시퀀스. 맵 목록이 먼저, 없으면 EndingSequences. 폴백을 아직 안 받았으면 nullptr. */
 	class ULevelSequence* ResolveEndingSequence() const;
