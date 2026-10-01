@@ -12,6 +12,7 @@
 #include "Engine/World.h"
 #include "UI/Target/BGTargetHighlight.h"
 #include "UI/Target/BGSeatInfoDisplayComponent.h"
+#include "UI/Target/BGWorldTargetingComponent.h"
 #include "UI/Widget/BGPingWheelWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Components/InputComponent.h"
@@ -33,10 +34,113 @@ void UBGPingComponent::BeginPlay()
 	}
 
 	PreloadIcons();
+
+	TryBindTargeting();
+}
+
+void UBGPingComponent::TryBindTargeting()
+{
+	UBGWorldTargetingComponent* Current = GetOwner() ? GetOwner()->FindComponentByClass<UBGWorldTargetingComponent>() : nullptr;
+	if (BoundTargeting.Get() == Current)
+	{
+		return;
+	}
+
+	if (UBGWorldTargetingComponent* Old = BoundTargeting.Get())
+	{
+		Old->OnSeatSelected.RemoveDynamic(this, &UBGPingComponent::HandleTargetConfirmed);
+		Old->OnTargetSelectionCancelled.RemoveDynamic(this, &UBGPingComponent::HandleTargetCancelled);
+	}
+
+	BoundTargeting = Current;
+	if (Current)
+	{
+		Current->OnSeatSelected.AddUniqueDynamic(this, &UBGPingComponent::HandleTargetConfirmed);
+		Current->OnTargetSelectionCancelled.AddUniqueDynamic(this, &UBGPingComponent::HandleTargetCancelled);
+	}
+}
+
+void UBGPingComponent::HandleTargetConfirmed(int32 SeatIndex, int32 ContextId)
+{
+	//	이 버튼 제스처는 조준 입력이다 — 누름 대기까지 버린다.
+	LastTargetConfirmFrame = GFrameCounter;
+	CancelPingGesture(TEXT("조준 확정"));
+}
+
+void UBGPingComponent::HandleTargetCancelled(int32 ContextId)
+{
+	LastTargetConfirmFrame = GFrameCounter;
+	CancelPingGesture(TEXT("조준 취소"));
+}
+
+void UBGPingComponent::CancelPingGesture(const TCHAR* Reason)
+{
+	const bool bHadGesture = bPressPending || bWheelOpen;
+	bPressPending = false;
+	PressMaxDragPx = 0.f;
+
+	if (bWheelOpen)
+	{
+		CloseWheel();
+	}
+	else
+	{
+		SetLookInputBlocked(false);
+		SetTargetHighlight(INDEX_NONE, false);
+		SetComponentTickEnabled(false);
+	}
+
+	if (bHadGesture)
+	{
+		UE_LOG(LogBGPing, Log, TEXT("[BGPing] 핑 제스처 취소 — %s"), Reason);
+	}
+}
+
+bool UBGPingComponent::ShouldAbortGesture(FString& OutReason) const
+{
+	if (IsTargetingClick())
+	{
+		OutReason = TEXT("조준 시작");
+		return true;
+	}
+
+	const ABGGameState* GS = GetBGGameState();
+	const ABGPlayerController* PC = GetOwningPC();
+	const ABGPlayerState* PS = PC ? PC->GetPlayerState<ABGPlayerState>() : nullptr;
+	if (!GS || !PS)
+	{
+		OutReason = TEXT("게임 상태 없음");
+		return true;
+	}
+
+	const FGameplayTag Phase = GS->GetPhaseTag();
+	if (Phase == BG::Phase::GameOver.GetTag() || Phase == BG::Phase::Lobby.GetTag())
+	{
+		OutReason = TEXT("판 종료");
+		return true;
+	}
+	if (!GS->IsSeatAlive(PS->GetSeatIndex()))
+	{
+		OutReason = TEXT("사망");
+		return true;
+	}
+	if (GestureTurnSeat != INDEX_NONE && GS->GetCurrentSeat() != GestureTurnSeat)
+	{
+		OutReason = TEXT("턴 변경");
+		return true;
+	}
+	return false;
+}
+
+bool UBGPingComponent::IsTargetingClick() const
+{
+	const UBGWorldTargetingComponent* Targeting = GetOwner()->FindComponentByClass<UBGWorldTargetingComponent>();
+	return (Targeting && Targeting->IsTargeting()) || LastTargetConfirmFrame == GFrameCounter;
 }
 
 void UBGPingComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	CancelPingGesture(TEXT("EndPlay"));
 	SetLookInputBlocked(false);
 	SetTargetHighlight(INDEX_NONE, false);
 
@@ -66,10 +170,16 @@ void UBGPingComponent::PreloadIcons()
 
 	if (Paths.Num() == 0)
 	{
+		bIconsLoaded = true;
 		return;
 	}
 
-	IconPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(Paths);
+	IconPreloadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(Paths,
+		FStreamableDelegate::CreateWeakLambda(this, [this]()
+		{
+			bIconsLoaded = true;
+			OnIconsLoaded.Broadcast();
+		}));
 }
 
 ABGPlayerController* UBGPingComponent::GetOwningPC() const
@@ -201,6 +311,11 @@ void UBGPingComponent::HandleServerSendPing(FGameplayTag PingTag, int32 TargetSe
 	Event.TargetSeat = TargetSeat;
 	Event.PingTag = PingTag;
 	Event.ServerTime = GS->GetServerWorldTimeSeconds();
+	Event.SenderName = PS ? PS->GetPlayerName() : FString();
+	if (const ABGPlayerState* TargetPS = (TargetSeat != INDEX_NONE) ? GS->GetPlayerStateBySeat(TargetSeat) : nullptr)
+	{
+		Event.TargetName = TargetPS->GetPlayerName();
+	}
 
 	UE_LOG(LogBGPing, Log, TEXT("[BGPing] 발신 %d → %d : %s"),
 		SenderSeat, TargetSeat, *PingTag.ToString());
@@ -210,8 +325,7 @@ void UBGPingComponent::HandleServerSendPing(FGameplayTag PingTag, int32 TargetSe
 
 // ── 입력·휠 ─────────────────────────────────────────────────────
 //
-//	클릭으로 켜고 끈다. 휠 버튼을 한 번 누르면 커서 아래 캐릭터를 대상으로 휠이 열리고,
-//	마우스를 움직여 칸을 고른 뒤 한 번 더 누르면 그 칸으로 나간다.
+//	좌클릭으로 켜고 끈다. 캐릭터 위를 누르면 휠이 열리고, 칸을 고른 뒤 한 번 더 누르면 나간다.
 
 void UBGPingComponent::BindInput(UInputComponent* InInputComponent)
 {
@@ -221,6 +335,7 @@ void UBGPingComponent::BindInput(UInputComponent* InInputComponent)
 	}
 
 	InInputComponent->BindKey(PingKey, IE_Pressed, this, &UBGPingComponent::HandlePingPressed);
+	InInputComponent->BindKey(PingKey, IE_Released, this, &UBGPingComponent::HandlePingReleased);
 }
 
 bool UBGPingComponent::GetMouseScreenPos(FVector2D& OutPos) const
@@ -244,9 +359,26 @@ void UBGPingComponent::HandlePingPressed()
 		return;
 	}
 
-	//	이미 열려 있으면 이번 클릭은 확정이다.
+	TryBindTargeting();
+	bPressPending = false;
+
+	//	카드 조준 중(또는 이번 프레임에 끝난) 좌클릭은 조준 쪽 입력이다 — 휠이 열려 있으면 닫는다.
+	if (IsTargetingClick())
+	{
+		UE_LOG(LogBGPing, Log, TEXT("[BGPing] 조준 중 좌클릭 — 핑 생략"));
+		CancelPingGesture(TEXT("조준 중 좌클릭"));
+		return;
+	}
+
+	//	이미 열려 있으면 이번 클릭은 확정이다 — 틱보다 입력이 먼저 와도 상태를 한 번 더 본다.
 	if (bWheelOpen)
 	{
+		FString Reason;
+		if (ShouldAbortGesture(Reason))
+		{
+			CancelPingGesture(*Reason);
+			return;
+		}
 		ConfirmWheelSelection();
 		return;
 	}
@@ -267,6 +399,47 @@ void UBGPingComponent::HandlePingPressed()
 	}
 
 	PressScreenPos = MousePos;
+	PressMaxDragPx = 0.f;
+	bPressPending = true;
+
+	const ABGGameState* GS = GetBGGameState();
+	GestureTurnSeat = GS ? GS->GetCurrentSeat() : INDEX_NONE;
+
+	//	누르고 있는 동안 틱이 최대 이동량과 게임 상태를 본다.
+	SetComponentTickEnabled(true);
+}
+
+void UBGPingComponent::HandlePingReleased()
+{
+	if (!bPressPending)
+	{
+		return;
+	}
+	bPressPending = false;
+
+	//	커서를 못 읽으면 클릭으로 볼 근거가 없다 — 버린다.
+	FVector2D MousePos;
+	if (!GetMouseScreenPos(MousePos))
+	{
+		CancelPingGesture(TEXT("커서 조회 실패"));
+		return;
+	}
+
+	//	한 번이라도 멀리 끌었으면 원점에 돌아와 떼도 드래그다.
+	const float Moved = FMath::Max(PressMaxDragPx, static_cast<float>(FVector2D::Distance(MousePos, PressScreenPos)));
+	if (Moved >= ClickDragThresholdPx)
+	{
+		UE_LOG(LogBGPing, Log, TEXT("[BGPing] 드래그(%.0fpx) — 핑 생략"), Moved);
+		CancelPingGesture(TEXT("드래그"));
+		return;
+	}
+
+	FString Reason;
+	if (ShouldAbortGesture(Reason))
+	{
+		CancelPingGesture(*Reason);
+		return;
+	}
 
 	SetLookInputBlocked(true);
 	SetTargetHighlight(PressTargetSeat, true);
@@ -279,9 +452,33 @@ void UBGPingComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (!bWheelOpen)
+	if (!bWheelOpen && !bPressPending)
 	{
 		SetComponentTickEnabled(false);
+		return;
+	}
+
+	//	카드 조준 시작·판 종료·사망·턴 변경이면 제스처를 접는다.
+	FString Reason;
+	if (ShouldAbortGesture(Reason))
+	{
+		if (Reason == TEXT("조준 시작") && bWheelOpen)
+		{
+			UE_LOG(LogBGPing, Log, TEXT("[BGPing] 조준 시작 — 열린 휠 닫음"));
+		}
+		CancelPingGesture(*Reason);
+		return;
+	}
+
+	if (bPressPending)
+	{
+		FVector2D Now;
+		if (!GetMouseScreenPos(Now))
+		{
+			CancelPingGesture(TEXT("커서 조회 실패"));
+			return;
+		}
+		PressMaxDragPx = FMath::Max(PressMaxDragPx, static_cast<float>(FVector2D::Distance(Now, PressScreenPos)));
 		return;
 	}
 
@@ -298,6 +495,10 @@ void UBGPingComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 void UBGPingComponent::OpenWheel()
 {
 	bWheelOpen = true;
+	if (const ABGGameState* GS = GetBGGameState())
+	{
+		GestureTurnSeat = GS->GetCurrentSeat();
+	}
 
 	if (!WheelWidgetClass)
 	{
@@ -328,10 +529,11 @@ void UBGPingComponent::OpenWheel()
 	{
 		const FBGPingDef* Row = FindDef(Def.PingTag);
 		const FBGPingDef& Use = Row ? *Row : Def;
-		WheelWidget->SetSlotIcon(Use.WheelDirection, Use.Icon.Get(), Use.IconColor);
+		WheelWidget->SetSlotIcon(Use.WheelDirection, Use.Icon.Get(), Use.IconColor, Use.Label);
 	}
 
 	WheelWidget->Open(PressScreenPos, PressTargetSeat != INDEX_NONE);
+	PressScreenPos = WheelWidget->GetOpenedScreenPos();
 }
 
 int32 UBGPingComponent::FindSeatUnderCursor() const
@@ -436,13 +638,7 @@ void UBGPingComponent::CloseWheel()
 
 void UBGPingComponent::CancelWheel()
 {
-	if (!bWheelOpen)
-	{
-		return;
-	}
-
-	UE_LOG(LogBGPing, Log, TEXT("[BGPing] 휠 취소"));
-	CloseWheel();
+	CancelPingGesture(TEXT("취소 입력"));
 }
 
 EBGPingWheelDirection UBGPingComponent::DirectionFromDrag(const FVector2D& Delta) const

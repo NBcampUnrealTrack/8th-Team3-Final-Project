@@ -220,7 +220,7 @@ void ABGPlayerController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ABGPlayerController::CancelTargetSelection);
 	InputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &ABGPlayerController::HandleChatKeyPressed);
 
-	//	핑 입력(휠 버튼)은 발신 컴포넌트가 직접 건다. 취소는 위 우클릭·ESC 와 함께 간다.
+	//	핑 입력(좌클릭)은 발신 컴포넌트가 직접 건다. 취소는 위 우클릭·ESC 와 함께 간다.
 	if (Ping)
 	{
 		Ping->BindInput(InputComponent);

@@ -74,7 +74,16 @@ struct FBGPingEvent
 
 	UPROPERTY(BlueprintReadOnly)
 	float ServerTime = 0.f;
+
+	/** 서버가 채운 발신자·대상 표시 이름. 모든 머신이 같은 기록을 갖게 수신 쪽 조회를 쓰지 않는다. */
+	UPROPERTY(BlueprintReadOnly)
+	FString SenderName;
+
+	UPROPERTY(BlueprintReadOnly)
+	FString TargetName;
 };
+
+DECLARE_MULTICAST_DELEGATE(FOnBGPingIconsLoaded);
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGPingReceived, const FBGPingEvent& /*Event*/);
 
@@ -84,6 +93,9 @@ namespace BGPing
 	BG_API const TArray<FBGPingDef>& GetDefaultDefs();
 
 	BG_API const FBGPingDef* FindDefaultDef(FGameplayTag PingTag);
+
+	/** 좌석 고정 팔레트 색. 마커 배지·채팅 점이 모두 이 표를 쓴다. */
+	BG_API FLinearColor GetSeatColor(int32 Seat);
 
 	/** "Attack" 같은 짧은 이름이나 전체 태그 문자열을 Ping.* 태그로. 없으면 무효 태그. */
 	BG_API FGameplayTag ResolvePingTag(const FString& Name);
