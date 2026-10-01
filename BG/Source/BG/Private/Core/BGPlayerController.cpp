@@ -1011,9 +1011,24 @@ void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 	}
 }
 
+//	조우 승리는 승리 위젯만 보여 주고 다음 조우로 넘어간다 — 시퀀스·결과 표가 없다.
+//	위젯은 DidIWin 으로 고르므로 승리/패배 둘 다 이 길로 온다. 패배(런 종료)는 일반 흐름을 탄다.
 void ABGPlayerController::HandleEncounterClearStage(EBGMatchEndStage Stage)
 {
-	// TODO: PvE 조우 승리 연출 (위젯, 시퀀스, 결과 화면)
+	switch (Stage)
+	{
+	case EBGMatchEndStage::Victory:
+		ShowVictoryWidget();
+		break;
+
+	case EBGMatchEndStage::FinalReveal:
+		break;   //	사망자를 비추는 중이다. 위젯은 다음 단계에서.
+
+	default:
+		//	Credits 는 곧바로 로비 복귀(EncounterClearCreditsSeconds) — 그 전에 걷는다.
+		ResetEndingPresentation();
+		break;
+	}
 }
 
 void ABGPlayerController::ShowVictoryWidget()
