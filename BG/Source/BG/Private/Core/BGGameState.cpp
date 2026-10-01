@@ -2012,7 +2012,7 @@ void ABGGameState::DebugForceWin(FGameplayTag Winner)
 {
 	if (!HasAuthority() || !bMatchRunning)
 	{
-		UE_LOG(LogBGCard, Warning, TEXT("[Exec] 강제 승리 거부 — 판이 진행 중이 아닙니다(도입 연출 중이거나 이미 끝남)."));
+		UE_LOG(LogBGCard, Warning, TEXT("[Exec] 강제 승리 거부 — 판이 시작 전이거나 이미 끝났습니다."));
 		return;
 	}
 
@@ -2193,7 +2193,6 @@ void ABGGameState::HandleMatchEndStage()
 
 	case EBGMatchEndStage::Victory:
 		UE_LOG(LogBGCard, Log, TEXT("[Match] 승리 연출 시작 — 승리 진영 %s"), *WinningRoleTag.ToString());
-		OnMatchWon.Broadcast(WinningRoleTag);
 		break;
 
 	case EBGMatchEndStage::EndingSequence:
@@ -2202,7 +2201,6 @@ void ABGGameState::HandleMatchEndStage()
 
 	case EBGMatchEndStage::Credits:
 		UE_LOG(LogBGCard, Log, TEXT("[Match] 결과 화면 시작"));
-		OnEndingCredits.Broadcast();
 		break;
 
 	default:
@@ -2234,7 +2232,7 @@ bool ABGGameState::IsRoleWinner(FGameplayTag SeatRole) const
 		return false;
 	}
 
-	//	보안관 진영이 이기면 부관도 함께 승리로 본다(뱅 원작 규칙 — DidIWin 과 같은 판정이다).
+	//	보안관 진영이 이기면 부관도 함께 승리로 본다(뱅 원작 규칙). 승패 규칙은 여기 하나뿐이다.
 	if (WinningRoleTag == BG::Role::Sheriff.GetTag())
 	{
 		return SeatRole == BG::Role::Sheriff.GetTag() || SeatRole == BG::Role::Deputy.GetTag();

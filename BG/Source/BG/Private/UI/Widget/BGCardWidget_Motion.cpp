@@ -222,7 +222,8 @@ FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 	//	   전원이 같은 길이를 기다려야 게이지 착지와 월드 연출이 맞는다.
 	const UWorld* World = GetWorld();
 	const ABGGameState* GS = World ? World->GetGameState<ABGGameState>() : nullptr;
-	Center.RevealRemaining = GS ? GS->GetCardRevealSeconds() : 0.f;
+	//	판정 없는 해제(버리기·장비)는 서버가 기다려 주지 않는다 — 공개 구간도 없다.
+	Center.RevealRemaining = (GS && !Filled.bResolvedWithoutRoll) ? GS->GetCardRevealSeconds() : 0.f;
 
 	//	중앙에 서서 공개 시간이 끝나면 터뜨린다(TickDwelling). 날아가는 중이면 도착한 뒤다 —
 	//	날아가는 동안 재생하면 애니메이션이 중앙에 서기도 전에 끝나 버린다.

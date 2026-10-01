@@ -52,12 +52,6 @@ FGameplayTag UBGMatchResultWidget::GetWinningRole() const
 	return GS ? GS->GetWinningRole() : FGameplayTag();
 }
 
-bool UBGMatchResultWidget::DidIWin() const
-{
-	const ABGPlayerController* PC = Cast<ABGPlayerController>(GetOwningPlayer());
-	return PC && PC->DidIWin(GetWinningRole());
-}
-
 void UBGMatchResultWidget::RequestReturnToLobby()
 {
 	if (ABGPlayerController* PC = Cast<ABGPlayerController>(GetOwningPlayer()))

@@ -45,10 +45,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	FGameplayTag GetWinningRole() const;
 
-	/** 내가 이겼는가. 표의 강조나 배경 색을 가를 때 쓴다. */
-	UFUNCTION(BlueprintPure, Category = "BG|Match")
-	bool DidIWin() const;
-
 	/** "로비로 돌아가기". 서버가 전원을 함께 로비로 보낸다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Match")
 	void RequestReturnToLobby();
