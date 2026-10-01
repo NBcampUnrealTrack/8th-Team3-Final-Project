@@ -48,7 +48,7 @@ void UBGSeatInfoDisplayComponent::BeginPlay()
 
 	//	보는 사람 화면에만 있는 것이다. 서버가 남의 컨트롤러에 대해 돌릴 이유가 없다.
 	const ABGPlayerController* PC = GetOwningController();
-	if (!PC || !PC->IsLocalController())
+	if (!PC || !PC->HasLocalViewer())
 	{
 		SetComponentTickEnabled(false);
 		return;
@@ -95,7 +95,7 @@ void UBGSeatInfoDisplayComponent::SetDisplayEnabled(bool bEnabled)
 	bDisplayEnabled = bEnabled;
 
 	const ABGPlayerController* PC = GetOwningController();
-	const bool bLocal = PC && PC->IsLocalController();
+	const bool bLocal = PC && PC->HasLocalViewer();
 
 	SetComponentTickEnabled(bEnabled && bLocal);
 
@@ -452,8 +452,10 @@ void UBGSeatInfoDisplayComponent::HandleIntroStageChanged(EBGIntroStage Stage)
 
 bool UBGSeatInfoDisplayComponent::ShouldHidePlatesForEnding() const
 {
+	//	이름표는 승리 위젯부터 걷는다(HUD 는 시퀀스 전환 때 — ShouldHideGameplayUIForEnding).
+	//	머리 위에 떠 있어 승리 위젯과 겹쳐 보인다.
 	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
-	return GS && GS->ShouldHideGameplayUIForEnding();
+	return GS && GS->IsEndingPresentationActive();
 }
 
 void UBGSeatInfoDisplayComponent::HandleMatchEndStageChanged(EBGMatchEndStage /*Stage*/)

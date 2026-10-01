@@ -536,7 +536,11 @@ void ABGGameState::HandleCinematicStage()
 	//	── 카메라 연동 ──
 	//	연출 단계가 곧 "누구의 B 카메라를 비출 것인가" 다. 이 두 줄만 지우면
 	//	상태 관리는 그대로 두고 카메라만 직접 제어할 수 있다.
-	if (HasAuthority())
+	//	⚠️ 판을 끝낸 사망 연출이 닫힐 때는 되돌리지 않는다. 승패 판정(FinishDeathCinematic 안)이
+	//	   먼저 FinalReveal 샷을 걸어 두는데, 여기서 None 으로 덮으면 사망자를 비추자마자 풀린다.
+	const bool bEndingOwnsCamera = CinematicStage == EBGCinematicStage::None
+		&& MatchEndStage != EBGMatchEndStage::None;
+	if (HasAuthority() && !bEndingOwnsCamera)
 	{
 		//	단계 사이 이동 속도. None 단계면 Subject 가 nullptr → 각자 A 카메라로 복귀하며,
 		//	그때는 이 값이 아니라 CinematicExitBlendSeconds(뷰타깃 전환)가 체감을 결정한다.

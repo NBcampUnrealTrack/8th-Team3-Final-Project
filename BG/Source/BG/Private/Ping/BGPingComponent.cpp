@@ -354,7 +354,7 @@ bool UBGPingComponent::GetMouseScreenPos(FVector2D& OutPos) const
 void UBGPingComponent::HandlePingPressed()
 {
 	const ABGPlayerController* PC = GetOwningPC();
-	if (!PC || !PC->IsLocalController())
+	if (!PC || !PC->HasLocalViewer())
 	{
 		return;
 	}

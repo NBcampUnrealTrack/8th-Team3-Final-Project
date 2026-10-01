@@ -567,7 +567,7 @@ void ABGPlayerController::PlayResolveShake(const FBGCardPlayContext& Ctx)
 {
 	//	화면이 없는 쪽(데디 서버)에는 카메라 매니저가 없다. 애셋 미지정도 조용히 넘어간다 —
 	//	연출이 빠지는 것뿐이고 판정 자체는 이미 끝났으므로 무해하다.
-	if (!ResolveShakeClass || !PlayerCameraManager || !IsLocalController())
+	if (!ResolveShakeClass || !PlayerCameraManager || !HasLocalViewer())
 	{
 		return;
 	}
@@ -616,7 +616,7 @@ void ABGPlayerController::PlayResolveShake(const FBGCardPlayContext& Ctx)
 void ABGPlayerController::EnsureCinematicCamera()
 {
 	//	화면이 있는 쪽에서만 필요하다. 서버가 남의 몫까지 스폰하면 쓰지도 않을 액터가 인원수만큼 생긴다.
-	if (CinematicCamera || !IsLocalController())
+	if (CinematicCamera || !HasLocalViewer())
 	{
 		return;
 	}
@@ -655,7 +655,7 @@ void ABGPlayerController::HandleCameraShotChanged(const FBGCameraShot& Shot)
 		return;
 	}
 
-	if (!IsLocalController())
+	if (!HasLocalViewer())
 	{
 		return;   // 화면이 없는 컨트롤러에는 뷰타깃 개념이 없다.
 	}
@@ -816,7 +816,7 @@ void ABGPlayerController::SetSeatBoardWidget(UBGSeatBoardWidget* InSeatBoard)
 void ABGPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
-	if (IsLocalController())
+	if (HasLocalViewer())
 	{
 		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 		{
@@ -920,7 +920,7 @@ void ABGPlayerController::TryBindGameStateDelegates()
 //	   다른 UI(로딩·채팅)가 새어 나온다. 카메라 페이드는 화면 전체를 마지막에 덮는다.
 void ABGPlayerController::HandleIntroStageChanged(EBGIntroStage Stage)
 {
-	if (!IsLocalController() || !PlayerCameraManager)
+	if (!HasLocalViewer() || !PlayerCameraManager)
 	{
 		return;
 	}
@@ -966,7 +966,7 @@ void ABGPlayerController::BeginIntroFadeIn()
 
 void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 {
-	if (!IsLocalController())
+	if (!HasLocalViewer())
 	{
 		return;
 	}
@@ -1349,7 +1349,7 @@ void ABGPlayerController::RefreshTurnHighlight()
 	//	CustomDepth 는 복제되지 않는 순수 로컬 렌더 상태다. 리슨서버에서는 원격 클라이언트의
 	//	PC 프록시도 이 델리게이트를 받으므로, 가드가 없으면 호스트 화면의 캐릭터에 남의
 	//	시점 기준 하이라이트가 덧씌워진다.
-	if (!IsLocalController())
+	if (!HasLocalViewer())
 	{
 		return;
 	}

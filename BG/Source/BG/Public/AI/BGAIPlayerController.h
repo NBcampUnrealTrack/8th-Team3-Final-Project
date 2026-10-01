@@ -20,6 +20,9 @@ class BG_API ABGAIPlayerController : public ABGPlayerController
 public:
 	ABGAIPlayerController();
 
+	//	화면이 없다. Standalone 에서 IsLocalController 가 true 여도 UI 는 띄우지 않는다.
+	virtual bool HasLocalViewer() const override { return false; }
+
 private:
 	// 카드 사용 판단은 전부 이 컴포넌트가 맡는다 - PvE 전용 클래스라 여기 붙여도
 	// PvP 쪽에는 영향이 없다.

@@ -184,6 +184,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Turn")
 	int32 GetMySeatIndex() const;
 
+	/**
+	 * 이 컨트롤러로 사람이 화면을 보고 있는가. UI·카메라·이름표 같은 화면 쪽 코드는 이것으로 거른다.
+	 * ⚠️ IsLocalController 로 거르면 안 된다 — Standalone(PvE)에서는 엔진이 AI 컨트롤러까지 로컬로 쳐서,
+	 *    AI 마다 이름표·연출이 한 벌씩 더 떠 내 화면에 겹친다.
+	 */
+	virtual bool HasLocalViewer() const { return IsLocalController(); }
+
 	// 각 클라가 로컬로 "나는 이 판을 이겼나"를 판정한다. 규칙은 ABGGameState::IsRoleWinner 하나뿐이다.
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	bool DidIWin() const;
