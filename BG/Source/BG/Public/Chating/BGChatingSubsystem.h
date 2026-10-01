@@ -38,7 +38,8 @@ public:
 
 	/** 핑 한 줄을 로그에 남긴다. 표시 컴포넌트가 부른다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Chat")
-	void AddPingEntry(const FString& Message, FGameplayTag PingTag, int32 SenderSeat, int32 TargetSeat);
+	void AddPingEntry(const FString& Message, FGameplayTag PingTag, int32 SenderSeat, int32 TargetSeat,
+		FLinearColor SenderColor = FLinearColor::Transparent);
 	
 private:
 	

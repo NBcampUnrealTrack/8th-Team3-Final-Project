@@ -50,6 +50,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, PhaseTag);
 	DOREPLIFETIME(ABGGameState, CurrentSeat);
 	DOREPLIFETIME(ABGGameState, WinningRoleTag);
+	DOREPLIFETIME(ABGGameState, bPvEEncounterClear);
 	DOREPLIFETIME(ABGGameState, bMatchRunning);
 	DOREPLIFETIME(ABGGameState, MatchEndStage);
 	DOREPLIFETIME(ABGGameState, PendingRewardCandidates);
@@ -1943,12 +1944,13 @@ void ABGGameState::HandlePvERunWin()
 
 	if (GM && ClearedEncounter == GM->BossEncounterIndex)
 	{
+		bPvEEncounterClear = false;   // 보스 클리어는 PvP 와 같은 승리 연출을 쓴다
 		// TODO: 게임 클리어 연출
 		GI->ResetPvERun();   // 런 종료. 로비에서 시작 버튼 기다림(자동 시작 안 함)
 	}
 	else
 	{
-		// TODO: PvE 조우 승리 연출
+		bPvEEncounterClear = true;
 		GI->SetAutoStartNextPvEMatch(true);
 		GI->AdvancePvEEncounter();
 	}
@@ -2119,7 +2121,10 @@ void ABGGameState::SetMatchEndStage(EBGMatchEndStage NewStage)
 		break;
 
 	case EBGMatchEndStage::Victory:
-		AdvanceMatchEndStageAfter(EBGMatchEndStage::EndingSequence, VictoryWidgetSeconds);
+		//	조우 승리는 엔딩 시퀀스 단계를 건너뛰고 바로 Credits 로 간다.
+		AdvanceMatchEndStageAfter(
+			bPvEEncounterClear ? EBGMatchEndStage::Credits : EBGMatchEndStage::EndingSequence,
+			VictoryWidgetSeconds);
 		break;
 
 	case EBGMatchEndStage::EndingSequence:
@@ -2127,21 +2132,25 @@ void ABGGameState::SetMatchEndStage(EBGMatchEndStage NewStage)
 		break;
 
 	case EBGMatchEndStage::Credits:
+	{
 		if (!bReturnToLobbyAfterCredits)
 		{
 			UE_LOG(LogBGCard, Log, TEXT("[Match] 크레딧 — 로비 복귀 꺼짐(bReturnToLobbyAfterCredits=false)."));
 			break;
 		}
-		if (EndingCreditsSeconds > 0.f)
+
+		const float CreditsSeconds = bPvEEncounterClear ? EncounterClearCreditsSeconds : EndingCreditsSeconds;
+		if (CreditsSeconds > 0.f)
 		{
 			GetWorldTimerManager().SetTimer(MatchEndStageTimer, this,
-				&ABGGameState::ReturnToLobby, EndingCreditsSeconds, false);
+				&ABGGameState::ReturnToLobby, CreditsSeconds, false);
 		}
 		else
 		{
 			ReturnToLobby();
 		}
 		break;
+	}
 
 	default:
 		break;

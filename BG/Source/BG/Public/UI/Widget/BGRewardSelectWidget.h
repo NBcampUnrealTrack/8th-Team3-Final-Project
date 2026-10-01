@@ -25,6 +25,10 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
+	//	카드 위젯은 스스로 틱이 돌지 않는다(손패가 TickMotion 을 불러준다). 손패가 없는
+	//	이 화면에서는 여기서 대신 불러줘야 호버 확대와 글로우가 동작한다.
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> CardButton0;
 

@@ -3,6 +3,7 @@
 
 #include "BG/Public/Chating/BGChatingSubsystem.h"
 
+#include "Ping/BGPingTypes.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
@@ -140,7 +141,8 @@ void UBGChatingSubsystem::AddSystemMessage(const FString& Message)
 	UE_LOG(LogTemp, Warning, TEXT("[Chat] AddSystemMessage 호출: %s"), *Message);
 }
 
-void UBGChatingSubsystem::AddPingEntry(const FString& Message, FGameplayTag PingTag, int32 SenderSeat, int32 TargetSeat)
+void UBGChatingSubsystem::AddPingEntry(const FString& Message, FGameplayTag PingTag, int32 SenderSeat, int32 TargetSeat,
+	FLinearColor SenderColor)
 {
 	if (Message.IsEmpty())
 	{
@@ -155,6 +157,8 @@ void UBGChatingSubsystem::AddPingEntry(const FString& Message, FGameplayTag Ping
 	Entry.PingTag = PingTag;
 	Entry.SenderSeat = SenderSeat;
 	Entry.TargetSeat = TargetSeat;
+	//	색을 안 넘기면 좌석 팔레트에서 고른다 — 마커 배지와 같은 표.
+	Entry.SenderColor = (SenderColor.A > 0.f) ? SenderColor : BGPing::GetSeatColor(SenderSeat);
 
 	History.Add(Entry);
 

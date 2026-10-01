@@ -23,17 +23,40 @@ namespace BGPing
 	{
 		static const TArray<FBGPingDef> Defs = {
 			MakeDef(BG::Ping::Attack.GetTag(),  TEXT("공격"), true,
-				FLinearColor(0.90f, 0.15f, 0.15f), BG::Audio::Ping::Attack.GetTag(),  EBGPingWheelDirection::Center),
-			MakeDef(BG::Ping::Warning.GetTag(), TEXT("주의"), false,
-				FLinearColor(0.95f, 0.25f, 0.20f), BG::Audio::Ping::Warning.GetTag(), EBGPingWheelDirection::Up),
+				FLinearColor(FColor::FromHex(TEXT("EF6268"))), BG::Audio::Ping::Attack.GetTag(),  EBGPingWheelDirection::Center),
+			MakeDef(BG::Ping::Warning.GetTag(), TEXT("경고"), false,
+				FLinearColor(FColor::FromHex(TEXT("F5A623"))), BG::Audio::Ping::Warning.GetTag(), EBGPingWheelDirection::Up),
 			MakeDef(BG::Ping::Suspect.GetTag(), TEXT("의심"), true,
-				FLinearColor(0.97f, 0.58f, 0.10f), BG::Audio::Ping::Suspect.GetTag(), EBGPingWheelDirection::Right),
+				FLinearColor(FColor::FromHex(TEXT("F4D35E"))), BG::Audio::Ping::Suspect.GetTag(), EBGPingWheelDirection::Right),
 			MakeDef(BG::Ping::Protect.GetTag(), TEXT("보호"), true,
-				FLinearColor(0.23f, 0.51f, 0.96f), BG::Audio::Ping::Protect.GetTag(), EBGPingWheelDirection::Down),
+				FLinearColor(FColor::FromHex(TEXT("79B7F5"))), BG::Audio::Ping::Protect.GetTag(), EBGPingWheelDirection::Down),
 			MakeDef(BG::Ping::Heal.GetTag(),    TEXT("치유"), false,
-				FLinearColor(0.13f, 0.77f, 0.37f), BG::Audio::Ping::Heal.GetTag(),    EBGPingWheelDirection::Left)
+				FLinearColor(FColor::FromHex(TEXT("55D69A"))), BG::Audio::Ping::Heal.GetTag(),    EBGPingWheelDirection::Left)
 		};
 		return Defs;
+	}
+
+	FLinearColor GetSeatColor(int32 Seat)
+	{
+		//	좌석 8칸 모두 다른 색. 종류색 5개와 CIE76 ΔE 30 이상 떨어지게 골랐다(round5/palette-table.md).
+		static const FLinearColor Palette[8] = {
+			FLinearColor(FColor::FromHex(TEXT("FF5CCB"))), FLinearColor(FColor::FromHex(TEXT("3D7BFF"))),
+			FLinearColor(FColor::FromHex(TEXT("2FD9D9"))), FLinearColor(FColor::FromHex(TEXT("C6F03A"))),
+			FLinearColor(FColor::FromHex(TEXT("B070FF"))), FLinearColor(FColor::FromHex(TEXT("E6E6E6"))),
+			FLinearColor(FColor::FromHex(TEXT("FF3030"))), FLinearColor(FColor::FromHex(TEXT("2BD84F")))
+		};
+		if (Seat >= 0 && Seat < static_cast<int32>(UE_ARRAY_COUNT(Palette)))
+		{
+			return Palette[Seat];
+		}
+
+		static bool bWarned = false;
+		if (!bWarned && Seat != INDEX_NONE)
+		{
+			bWarned = true;
+			UE_LOG(LogBGPing, Warning, TEXT("[BGPing] 좌석 %d 는 팔레트 범위 밖 — 회색으로 표시"), Seat);
+		}
+		return FLinearColor(0.45f, 0.45f, 0.45f);
 	}
 
 	const FBGPingDef* FindDefaultDef(FGameplayTag PingTag)

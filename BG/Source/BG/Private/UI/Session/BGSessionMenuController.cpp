@@ -23,6 +23,10 @@ void UBGSessionMenuController::Initialize(FSubsystemCollectionBase& Collection)
 void UBGSessionMenuController::Deinitialize()
 {
 	FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadMapHandle);
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		GI->GetTimerManager().ClearTimer(RestoreTimer);
+	}
 	Super::Deinitialize();
 }
 
@@ -128,11 +132,33 @@ void UBGSessionMenuController::HandlePostLoadMap(UWorld* LoadedWorld)
 		return;
 	}
 
+	//	PostLoadMap 은 전역 통지라 PIE 에선 다른 인스턴스의 월드도 온다 — 내 GameInstance 월드만 받는다.
+	UGameInstance* GI = GetGameInstance();
+	if (!GI || LoadedWorld->GetGameInstance() != GI)
+	{
+		return;
+	}
+
 	//	PlayerController 와 GameState 가 올 때까지 짧게 재시도한다.
-	//	타이머를 건 월드를 그대로 넘긴다 — 다른 월드에서 지우면 해제되지 않는다.
+	//	타이머 매니저는 GameInstance 소유라 트래블 뒤에도 돈다 — 이전 요청은 먼저 끊고, 월드는 약참조로 잡는다.
+	GI->GetTimerManager().ClearTimer(RestoreTimer);
 	RestoreAttempts = 0;
-	LoadedWorld->GetTimerManager().SetTimer(RestoreTimer,
-		FTimerDelegate::CreateWeakLambda(this, [this, LoadedWorld]() { TryRestoreAfterTravel(LoadedWorld); }),
+	TWeakObjectPtr<UWorld> WeakWorld(LoadedWorld);
+	GI->GetTimerManager().SetTimer(RestoreTimer,
+		FTimerDelegate::CreateWeakLambda(this, [this, WeakWorld]()
+		{
+			UGameInstance* OwnerGI = GetGameInstance();
+			if (!OwnerGI)
+			{
+				return;
+			}
+			if (!WeakWorld.IsValid() || OwnerGI->GetWorld() != WeakWorld.Get())
+			{
+				OwnerGI->GetTimerManager().ClearTimer(RestoreTimer);
+				return;
+			}
+			TryRestoreAfterTravel(WeakWorld.Get());
+		}),
 		0.2f, /*bLoop=*/true);
 }
 

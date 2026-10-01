@@ -4,7 +4,7 @@
 #include "Components/Button.h"
 #include "Components/WidgetSwitcher.h"
 #include "Core/BGGameInstance.h"
-#include "UI/Widget/BGSettingsWidget.h"
+#include "UI/Widget/BGSystemMenuWidget.h"
 #include "Debug/BGNetLog.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "UI/Session/BGSessionMenuController.h"
@@ -92,13 +92,13 @@ void UBGMainMenuWidget::HandleSettings()
 	if (!SettingsWidgetClass)
 	{
 		UE_LOG(LogBGNet, Warning,
-			TEXT("[MainMenu] SettingsWidgetClass 미지정 — WBP_BGMainMenu 의 BG|UI 에서 WBP_BGSettings 를 고를 것."));
+			TEXT("[MainMenu] SettingsWidgetClass 미지정 — WBP_BGMainMenu 의 BG|UI 에서 WBP_BGSystemMenu 를 고를 것."));
 		return;
 	}
 
 	if (!SettingsWidgetInstance)
 	{
-		SettingsWidgetInstance = CreateWidget<UBGSettingsWidget>(GetOwningPlayer(), SettingsWidgetClass);
+		SettingsWidgetInstance = CreateWidget<UBGSystemMenuWidget>(GetOwningPlayer(), SettingsWidgetClass);
 		if (!SettingsWidgetInstance)
 		{
 			return;

@@ -339,7 +339,7 @@ void UBGTurnPanelWidget::RefreshVisual()
 	{
 		//	GDD §10: 턴 UI 에 "사용한 카드 수 / 현재 카드 사용 한도" 를 표시한다.
 		Text_CardUse->SetText(FText::FromString(
-			FString::Printf(TEXT("카드 %d / %d"), TurnView.CardsUsed, TurnView.CardUseLimit)));
+			FString::Printf(TEXT("카드 사용 %d / %d"), TurnView.CardsUsed, TurnView.CardUseLimit)));
 	}
 
 	if (Button_EndTurn)
@@ -385,7 +385,8 @@ void UBGTurnPanelWidget::SetLocalSeatInfo(const FBGSeatView& InView)
 		{
 			Text_Equipment->SetText(LocalSeatView.Equipment.IsEmpty()
 				? NSLOCTEXT("BG", "LocalNoEquipment", "장비 없음")
-				: FText::Join(NSLOCTEXT("BG", "LocalEquipSeparator", ", "), LocalSeatView.GetEquipmentNames()));
+				//	서로 다른 장비는 여러 개를 함께 낄 수 있다 — 한 줄에 이으면 패널 폭을 넘으므로 한 개씩 줄을 나눈다.
+				: FText::Join(NSLOCTEXT("BG", "LocalEquipSeparator", "\n"), LocalSeatView.GetEquipmentNames()));
 		}
 	}
 
