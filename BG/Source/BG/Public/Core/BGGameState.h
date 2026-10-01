@@ -30,8 +30,17 @@ enum class EBGMatchEndStage : uint8
 {
 	None    UMETA(DisplayName = "진행 중"),
 	Victory UMETA(DisplayName = "승리 연출"),
-	Credits UMETA(DisplayName = "엔딩 크레딧")
+	Credits UMETA(DisplayName = "결과 화면"),
+
+	//	⚠️ 값은 **끝에만** 추가할 것. 중간에 끼우면 기존 값의 번호가 밀려 BP 의 Switch 핀이 어긋난다.
+	//	   흐름 순서는 코드가 정한다 — 번호 순서와 무관하다.
+	FinalReveal UMETA(DisplayName = "마지막 정체 공개"),
+	EndingSequence UMETA(DisplayName = "엔딩 시퀀스")
 };
+//	흐름: FinalReveal(사망자 비춤) → Victory(승리/패배 위젯) → EndingSequence(성 시퀀스) → Credits(결과 표)
+
+/** 종료 연출 단계가 바뀌었다 — BP(HUD·엔딩 위젯)가 여기에 자기 연출을 건다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGMatchEndStageChangedBP, EBGMatchEndStage, Stage);
 
 /**
  * 연출의 단계 (아트 기획서 "전투 연출" / "사망 연출").
@@ -381,6 +390,9 @@ public:
 	/** 승패가 결정됐으면 Phase.GameOver 로 전환하고 true. */
 	bool CheckWinCondition();
 
+	/** 서버 전용 테스트용. 생존자와 무관하게 Winner 진영 승리로 판을 끝낸다(콘솔 BG_ForceWin). */
+	void DebugForceWin(FGameplayTag Winner);
+
 	/** 승리 진영(Role.*). 아직 미정이면 무효 태그. */
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	FGameplayTag GetWinningRole() const { return WinningRoleTag; }
@@ -388,7 +400,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	bool IsMatchOver() const { return PhaseTag == GameOverPhaseTag(); }
 
-	// ── 종료 연출 (승리 → 크레딧 → 로비 복귀) ──────────────────────
+	// ── 종료 연출 (정체 공개 → 승리 위젯 → 엔딩 시퀀스 → 결과 표 → 로비 복귀) ──
 	//
 	//  서버가 단계를 넘기고, 클라는 복제된 단계를 받아 델리게이트만 쏜다.
 	//  BP 바인딩 예) Get Game State → Cast To BGGameState → Bind Event to OnMatchWon
@@ -402,13 +414,53 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "BG|Match")
 	FOnBGEndingCredits OnEndingCredits;
 
+	/**
+	 * 단계 자체를 알려 준다. 승리·결과처럼 "무엇을 띄울지" 가 아니라 "지금 어느 구간인지" 가
+	 * 필요한 쪽(HUD 숨김·시퀀스 재생)이 쓴다.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "BG|Match")
+	FOnBGMatchEndStageChangedBP OnMatchEndStageChanged;
+
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	EBGMatchEndStage GetMatchEndStage() const { return MatchEndStage; }
 
+	/** 엔딩 화면(승리 위젯·시퀀스·결과 표)이 떠 있는가. 게임 UI 와 연출 카메라가 물러나야 하는 구간이다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Match")
+	bool IsEndingPresentationActive() const
+	{
+		return MatchEndStage == EBGMatchEndStage::Victory
+			|| MatchEndStage == EBGMatchEndStage::EndingSequence
+			|| MatchEndStage == EBGMatchEndStage::Credits;
+	}
+
 	/**
-	 * 서버 전용. 승리 연출을 앞당겨 끝내고 크레딧으로 넘어간다.
-	 * 연출 위젯의 애니메이션이 끝나는 시점에 부르면 VictorySequenceSeconds 를 기다리지 않는다.
-	 * Victory 단계가 아니면 아무것도 하지 않는다.
+	 * 게임 UI(HUD·닉네임)를 걷어야 하는가. 시퀀스로 컷되는 순간부터다.
+	 * 승리 위젯 단계에서는 판 화면을 그대로 둔 채 위젯만 얹는다.
+	 */
+	bool ShouldHideGameplayUIForEnding() const
+	{
+		return MatchEndStage == EBGMatchEndStage::EndingSequence
+			|| MatchEndStage == EBGMatchEndStage::Credits;
+	}
+
+	/**
+	 * 이 역할이 이번 판의 승자인가. 결과 화면이 좌석 줄마다 승/패를 찍을 때 쓴다.
+	 * 보안관 진영이 이기면 부관도 함께 승리다(뱅 원작 규칙).
+	 */
+	UFUNCTION(BlueprintPure, Category = "BG|Match")
+	bool IsRoleWinner(FGameplayTag SeatRole) const;
+
+	/**
+	 * 서버 전용. 결과 화면의 "로비로" 버튼이 부른다 — 전원이 함께 돌아간다.
+	 *
+	 * ⚠️ 결과 화면 단계에서만 받는다. 판이 도는 중에 들어오면 무시한다 —
+	 *    클라가 보낸 요청이라 시점을 믿을 수 없다.
+	 */
+	void RequestReturnToLobbyFromResult();
+
+	/**
+	 * 서버 전용. 엔딩 시퀀스를 앞당겨 끝내고 결과 화면으로 넘어간다.
+	 * EndingSequence 단계가 아니면 아무것도 하지 않는다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Match")
 	void StartEndingCredits();
@@ -474,7 +526,10 @@ public:
 
 	/** 판정 UI 에 주어진 시간. 클래스 기본값이라 클라에서도 서버와 같은 값이 나온다. */
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
-	float GetResolutionPresentationSeconds() const { return ResolutionPresentationSeconds; }
+	float GetResolutionPresentationSeconds() const { return ResolutionPresentationSeconds + CardRevealSeconds; }
+
+	/** 판정 연출 전에 카드를 중앙에 보여 주는 시간. 카드 위젯이 이만큼 기다린 뒤 연출을 터뜨린다. */
+	float GetCardRevealSeconds() const { return CardRevealSeconds; }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
@@ -546,6 +601,9 @@ protected:
 	//	서버 전용. 단계 전환의 유일한 입구다 (SetPhaseTag 와 같은 원칙).
 	//	값을 바꾸고, 서버 자신의 브로드캐스트와 다음 단계 예약까지 여기서 한다.
 	void SetMatchEndStage(EBGMatchEndStage NewStage);
+
+	//	Seconds 뒤 Next 단계로. 0 이하면 즉시 넘어간다. 타이머는 MatchEndStageTimer 하나만 쓴다.
+	void AdvanceMatchEndStageAfter(EBGMatchEndStage Next, float Seconds);
 
 	//	서버·클라 공통. 현재 단계에 맞는 델리게이트를 쏜다.
 	//	주의: 리슨서버 호스트는 자기 GameState 의 OnRep 을 받지 못한다 —
@@ -691,6 +749,9 @@ protected:
 	 * HandleSeatDeath 를 거치지 않으면 연출을 건너뛰고 결과부터 나온다.
 	 */
 	void ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat);
+
+	//	승자를 확정하고 종료 연출을 연다. 판정은 호출자 몫이다(CheckWinCondition / DebugForceWin).
+	void EndMatch(FGameplayTag Winner);
 
 	// ── PvE 런 승패 처리 (CheckWinCondition 전용, 다른 곳에서 부르지 말 것) ──
 
@@ -876,13 +937,26 @@ protected:
 
 	FTimerHandle MatchEndStageTimer;
 
-	//	승리 연출을 보여주는 시간. 이 뒤 크레딧으로 넘어간다.
+	//	마지막으로 정체가 공개된 좌석(= 판을 끝낸 사망자). 종료 연출 첫 단계가 이 좌석을 비춘다.
+	int32 LastRevealedSeat = INDEX_NONE;
+
+	//	마지막 사망자의 정체를 보여주는 시간. 이 뒤 승리 연출로 넘어간다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Match", meta = (ClampMin = "0"))
-	float VictorySequenceSeconds = 5.f;
+	float FinalRevealSeconds = 1.5f;
+
+	//	승리/패배 위젯을 보여주는 시간. 이 뒤 엔딩 시퀀스로 넘어간다.
+	//	⚠️ 위젯 등장 애니메이션보다 짧으면 애니메이션이 끝나기 전에 시퀀스로 잘린다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Match", meta = (ClampMin = "0"))
+	float VictoryWidgetSeconds = 3.f;
+
+	//	시퀀스만 보여 주는 시간. 이 뒤 결과 표가 뜨고, 시퀀스는 그 뒤에서 계속 재생된다.
+	//	⚠️ 시퀀스 전체 길이(75초)를 쓰면 안 된다 — 뒷부분은 결과 표 배경으로 깔리도록 만든 구간이다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Match", meta = (ClampMin = "0"))
+	float EndingSequenceSeconds = 6.f;
 
 	//	크레딧을 보여주는 시간. 이 뒤 로비로 복귀한다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Match", meta = (ClampMin = "0"))
-	float EndingCreditsSeconds = 10.f;
+	float EndingCreditsSeconds = 60.f;
 
 	//	끄면 크레딧 화면에 머문다(연출 확인용). 켜면 자동으로 로비로 돌아간다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Match")
@@ -945,7 +1019,7 @@ protected:
 	bool bPlayIntroInPvE = false;
 
 	//	단계별 길이(초). 0 이하면 그 단계를 건너뛴다 — 전부 0 이면 도입 연출이 통째로 꺼진다.
-	//	기획 수치: 야영지 2 · 역할 4 · 용사 2 · 첫 턴 2 = 10초.
+	//	야영지 2 · 역할 4 · 용사 1 · 첫 턴 1 = 8초. 용사·첫 턴은 둘 다 보안관만 비춰 기획(2·2)의 반으로 줄였다.
 
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
 	float IntroCampfireSeconds = 2.f;
@@ -955,10 +1029,10 @@ protected:
 	float IntroRoleRevealSeconds = 4.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
-	float IntroHeroRevealSeconds = 2.f;
+	float IntroHeroRevealSeconds = 1.f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Intro", meta = (ClampMin = "0.0", Units = "s"))
-	float IntroFirstTurnSeconds = 2.f;
+	float IntroFirstTurnSeconds = 1.f;
 
 	/**
 	 * 손패 상한. 이 장수를 넘기는 드로우는 넘는 만큼만 뽑히지 않는다.
@@ -1006,6 +1080,14 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0", Units = "s"))
 	float ResolutionPresentationSeconds = 2.5f;
+
+	/**
+	 * 판정 연출 전에 사용한 카드를 중앙에 보여 주는 시간. 남의 카드는 판정 순간에야 처음 날아오므로
+	 * 이게 없으면 무슨 카드인지 읽기도 전에 연출이 터진다.
+	 * ⚠️ 카드 위젯과 서버 판정 대기에 **같이** 들어간다 — 한쪽만 늘리면 게이지 착지 전에 월드 연출이 터진다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0", Units = "s"))
+	float CardRevealSeconds = 1.5f;
 
 public:
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")

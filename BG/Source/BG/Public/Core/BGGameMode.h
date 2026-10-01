@@ -155,6 +155,10 @@ public:
 	UFUNCTION(Exec)
 	void BG_DamageAllOutlaws(int32 Amount);
 
+	// 생존자와 무관하게 해당 진영 승리로 판을 끝낸다(엔딩 테스트). Side = Outlaw / Sheriff / Renegade.
+	UFUNCTION(Exec)
+	void BG_ForceWin(const FString& Side);
+
 
 	/** 레벨의 캠프파이어(좌석 "위치" 의 기준점). 없는 레벨이면 nullptr. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seating")

@@ -1,4 +1,4 @@
-#include "UI/Target/BGSeatInfoDisplayComponent.h"
+﻿#include "UI/Target/BGSeatInfoDisplayComponent.h"
 
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemGlobals.h"
@@ -151,11 +151,13 @@ void UBGSeatInfoDisplayComponent::BindDelegates()
 			this, &UBGSeatInfoDisplayComponent::HandleCinematicStageChanged);
 		IntroStageHandle = GS->OnIntroStageChanged.AddUObject(
 			this, &UBGSeatInfoDisplayComponent::HandleIntroStageChanged);
+		GS->OnMatchEndStageChanged.AddUniqueDynamic(this, &UBGSeatInfoDisplayComponent::HandleMatchEndStageChanged);
 		BoundGameState = GS;
 
 		//	연출 도중에 켜졌을 수 있다 — 통지를 기다리지 않고 지금 단계에 맞춘다.
 		HandleCinematicStageChanged(GS->GetCinematicStage(), GS->GetCinematicSubject());
 		HandleIntroStageChanged(GS->GetIntroStage());
+		HandleMatchEndStageChanged(GS->GetMatchEndStage());
 	}
 
 	//	HUD 가 걷히는 신호. 같은 PlayerController 에 붙어 있다.
@@ -192,6 +194,7 @@ void UBGSeatInfoDisplayComponent::UnbindDelegates()
 		GS->OnTurnStateChanged.RemoveDynamic(this, &UBGSeatInfoDisplayComponent::HandleTurnStateChanged);
 		GS->OnCinematicStageChanged.Remove(CinematicStageHandle);
 		GS->OnIntroStageChanged.Remove(IntroStageHandle);
+		GS->OnMatchEndStageChanged.RemoveDynamic(this, &UBGSeatInfoDisplayComponent::HandleMatchEndStageChanged);
 	}
 	CinematicStageHandle.Reset();
 	IntroStageHandle.Reset();
@@ -432,8 +435,42 @@ void UBGSeatInfoDisplayComponent::HandleIntroStageChanged(EBGIntroStage Stage)
 	UpdatePlateVisibility();
 }
 
+
+bool UBGSeatInfoDisplayComponent::ShouldHidePlatesForEnding() const
+{
+	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	return GS && GS->ShouldHideGameplayUIForEnding();
+}
+
+void UBGSeatInfoDisplayComponent::HandleMatchEndStageChanged(EBGMatchEndStage /*Stage*/)
+{
+	if (ShouldHidePlatesForEnding())
+	{
+		// World-attached plates bypass the viewport HUD. Hide before the camera cut,
+		// without fading distant nicknames over the castle shot.
+		HideDetail();
+		for (const auto& Pair : WidgetsBySeat)
+		{
+			PlateOpacityBySeat.Add(Pair.Key, 0.f);
+			ApplyPlateOpacity(Pair.Value, 0.f);
+		}
+		if (HoveredSeat != INDEX_NONE)
+		{
+			HoveredSeat = INDEX_NONE;
+			OnHoveredSeatChanged.Broadcast(HoveredSeat);
+		}
+	}
+	UpdatePlateVisibility();
+}
+
 float UBGSeatInfoDisplayComponent::GetTargetPlateOpacity(int32 SeatIndex) const
 {
+	// Also applies to plates created by late seat/character replication.
+	if (ShouldHidePlatesForEnding())
+	{
+		return 0.f;
+	}
+
 	if (bPlatesHidden)
 	{
 		return 0.f;   //	카드 연출 — 전원 걷는다.
@@ -870,6 +907,12 @@ void UBGSeatInfoDisplayComponent::HideDetail()
 
 void UBGSeatInfoDisplayComponent::UpdateHover()
 {
+	if (ShouldHidePlatesForEnding())
+	{
+		HideDetail();
+		return;
+	}
+
 	const ABGPlayerController* PC = GetOwningController();
 	if (!PC)
 	{

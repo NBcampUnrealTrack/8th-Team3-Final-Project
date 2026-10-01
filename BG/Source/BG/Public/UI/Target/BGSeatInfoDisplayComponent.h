@@ -1,4 +1,4 @@
-// BANG! 머리 위 정보 표시 — 판이 도는 동안 모든 캐릭터 위에 좌석 정보를 띄운다.
+﻿// BANG! 머리 위 정보 표시 — 판이 도는 동안 모든 캐릭터 위에 좌석 정보를 띄운다.
 // 마우스를 올린 하나만 상세로 넓어지고 나머지는 간략으로 남는다.
 //
 // 보는 사람에게만 있으면 되는 것이라 캐릭터가 아니라 PlayerController 에 붙는다.
@@ -13,6 +13,7 @@
 #include "UI/Widget/BGSeatDetailWidget.h"
 #include "UI/Widget/BGSeatInfoWidget.h"
 #include "UI/Presentation/BGPresentationTypes.h"   // FBGPresentationRequest — UFUNCTION 인자라 완전한 타입이 필요하다
+#include "Core/BGGameState.h"
 #include "Core/BGIntroStage.h"                     // EBGIntroStage
 #include "BGSeatInfoDisplayComponent.generated.h"
 
@@ -192,6 +193,12 @@ private:
 
 	/** 이 좌석의 이름표가 지금 떠 있어야 하는가(0 또는 1). */
 	float GetTargetPlateOpacity(int32 SeatIndex) const;
+
+	bool ShouldHidePlatesForEnding() const;
+
+	UFUNCTION()
+	void HandleMatchEndStageChanged(EBGMatchEndStage Stage);
+
 
 	/** 카드 연출이 시작됐다 — HUD 가 걷히는 신호와 같다. 이름표도 걷는다. */
 	UFUNCTION()

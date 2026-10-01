@@ -1,0 +1,28 @@
+{
+  "FileVersion": 3,
+  "Version": 1,
+  "VersionName": "1.0",
+  "FriendlyName": "BG Ending Asset Tools",
+  "CanContainContent": false,
+  "Modules": [
+    {
+      "Name": "BGEndingTools",
+      "Type": "Editor",
+      "LoadingPhase": "Default"
+    }
+  ],
+  "Plugins": [
+    {
+      "Name": "ChaosCaching",
+      "Enabled": true
+    },
+    {
+      "Name": "GeometryCollectionPlugin",
+      "Enabled": true
+    },
+    {
+      "Name": "Fracture",
+      "Enabled": true
+    }
+  ]
+}

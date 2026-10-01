@@ -70,6 +70,12 @@ struct FBGCardCenterRuntime
 
 	float DwellRemaining = 0.f;
 
+	/**
+	 * 판정 연출 전에 카드만 보여 주는 남은 시간(GameState 의 CardRevealSeconds). ReleaseHold 때 정해진다.
+	 * 0 보다 크면 판정 연출은 bPendingResolvedFX 로 밀려 있고, 대기(DwellRemaining)도 흐르지 않는다.
+	 */
+	float RevealRemaining = 0.f;
+
 	/** true 면 DwellRemaining 이 줄지 않는다 — ReleaseHold 가 올 때까지 무한 대기. */
 	bool bHolding = false;
 
@@ -101,5 +107,6 @@ struct FBGCardCenterRuntime
 	{
 		bPendingResolvedFX    = false;
 		bDwellFinishRequested = false;
+		RevealRemaining       = 0.f;
 	}
 };

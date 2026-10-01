@@ -29,6 +29,8 @@ public class BG : ModuleRules
 			"Slate", "SlateCore",
 			"OnlineSubsystemUtils",  // Online::GetSubsystem 헬퍼 (.cpp 전용)
 			"ApplicationCore",
+			"LevelSequence",         // 엔딩 연출 — 승리 진영별 성 시퀀스를 각 클라가 재생한다
+			"MovieScene",            // ULevelSequencePlayer 재생 설정
 			"CommonUI"               // UCommonTextStyle — 코드로 만드는 텍스트의 기본 서체
 		});
 

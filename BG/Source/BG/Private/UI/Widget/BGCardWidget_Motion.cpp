@@ -15,6 +15,8 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Curves/CurveFloat.h"
 #include "Debug/BGCardLog.h"
+#include "Core/BGGameState.h"
+#include "Engine/World.h"
 
 
 bool UBGCardWidget::IsLeavingHand() const
@@ -178,6 +180,13 @@ void UBGCardWidget::FinishDwell()
 		return;
 	}
 
+	//	공개 구간이라 판정 연출이 아직 안 터졌다 — 이 신호는 그 연출의 끝이 아니다.
+	//	받으면 연출 없이 카드가 사라진다.
+	if (Center.bPendingResolvedFX)
+	{
+		return;
+	}
+
 	Center.DwellRemaining = 0.f;
 	EnterExitPhase(Center.PendingExitPosition);
 }
@@ -207,20 +216,24 @@ FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 	//	효과를 볼 시간이 없다.
 	Center.DwellRemaining = DwellDuration;
 
-	//	아직 중앙으로 가는 중이면 연출은 도착한 뒤에 터뜨린다 —
+	//	판정 연출 전에 카드만 보여 주는 구간. 남이 낸 카드는 판정 순간에야 처음 날아오므로
+	//	이게 없으면 무슨 카드인지 읽기도 전에 연출이 터진다.
+	//	⚠️ 서버 판정 대기에도 같은 값이 더해져 있다(ABGGameState::GetResolutionPresentationSeconds) —
+	//	   전원이 같은 길이를 기다려야 게이지 착지와 월드 연출이 맞는다.
+	const UWorld* World = GetWorld();
+	const ABGGameState* GS = World ? World->GetGameState<ABGGameState>() : nullptr;
+	Center.RevealRemaining = GS ? GS->GetCardRevealSeconds() : 0.f;
+
+	//	중앙에 서서 공개 시간이 끝나면 터뜨린다(TickDwelling). 날아가는 중이면 도착한 뒤다 —
 	//	날아가는 동안 재생하면 애니메이션이 중앙에 서기도 전에 끝나 버린다.
-	if (MotionState == EBGCardMotionState::Presenting)
+	if (MotionState == EBGCardMotionState::Dwelling && Center.RevealRemaining <= 0.f)
 	{
-		Center.bPendingResolvedFX     = true;
-		Center.PendingResolvedContext = Filled;
+		PlayResolvedFX(Filled);
 		return Filled;
 	}
 
-	if (MotionState == EBGCardMotionState::Dwelling)
-	{
-		PlayResolvedFX(Filled);
-	}
-
+	Center.bPendingResolvedFX     = true;
+	Center.PendingResolvedContext = Filled;
 	return Filled;
 }
 
@@ -328,13 +341,15 @@ bool UBGCardWidget::IsHoverActive() const
 	//	⚠️ 보간값(HoverBlend)이 아니라 실제 마우스 상태를 본다 — 연출이 풀리는 동안에도
 	//	   위층에 남아 있으면 방금 떠난 카드가 새로 고른 카드를 잠깐 가린다.
 	//
-	//	⚠️ 억제 상태(잠금·드래그·등장/퇴장)에서는 false 여야 한다. bHovered 만 보면 손패가
-	//	   잠긴 동안 카드가 **떠오르지 않으면서 Z 순서만** 올라가는데, 부채꼴에서 앞뒤가
-	//	   바뀌면 커서 아래 카드가 뒤바뀌고 그게 다시 Z 순서를 바꿔 손패 전체가 깜빡인다.
+	//	⚠️ 억제 상태(드래그·등장/퇴장)에서는 false 여야 한다. bHovered 만 보면 카드가
+	//	   **떠오르지 않으면서 Z 순서만** 올라가는데, 부채꼴에서 앞뒤가 바뀌면 커서 아래 카드가
+	//	   뒤바뀌고 그게 다시 Z 순서를 바꿔 손패 전체가 깜빡인다.
+	//
+	//	잠금(bDragLocked)은 여기서 보지 않는다 — 남의 턴에도 카드를 들여다볼 수 있어야 한다.
+	//	잠금이 막는 것은 드래그뿐이다(NativeOnMouseButtonDown).
 	return bHovered
 		&& !bIsDragVisual
 		&& !bBeingDragged
-		&& !bDragLocked
 		&& !IsLeavingHand()
 		&& !Deal.bInProgress;
 }
@@ -501,6 +516,12 @@ void UBGCardWidget::TickPresenting(float DeltaTime)
 
 void UBGCardWidget::ConsumePendingPlaySignals()
 {
+	//	공개 구간이 남았으면 아직 터뜨리지 않는다. 끝나는 순간 TickDwelling 이 다시 부른다.
+	if (Center.RevealRemaining > 0.f)
+	{
+		return;
+	}
+
 	//	⚠️ 판정 연출이 먼저다 — 새 연출이 시작되면 밀려 있던 FinishDwell 은 무효가 된다
 	//	   (PlayResolvedFX 가 지운다). 순서가 뒤집히면 연출이 첫 프레임에 잘린다.
 	if (Center.bPendingResolvedFX)
@@ -536,10 +557,22 @@ void UBGCardWidget::TickDwelling(float DeltaTime)
 {
 	//	중앙에 가만히 서 있는다.
 	//	  잡혀 있는 동안(대상 선택 대기)   → 시간이 흐르지 않는다
-	//	  풀린 뒤(효과 발동됨)            → DwellDuration 만큼 더 보여 주고 사라진다
+	//	  풀린 뒤 공개 구간               → 카드만 보여 주고, 끝나면 판정 연출을 터뜨린다
+	//	  판정 연출 뒤                    → DwellDuration 만큼 더 보여 주고 사라진다
 	if (Center.bHolding)
 	{
 		return;   // 부수 효과는 계속 굴러야 기울기가 0 으로 되돌아온다
+	}
+
+	if (Center.RevealRemaining > 0.f)
+	{
+		Center.RevealRemaining -= DeltaTime;
+		if (Center.RevealRemaining <= 0.f)
+		{
+			Center.RevealRemaining = 0.f;
+			ConsumePendingPlaySignals();
+		}
+		return;   // 공개 구간은 대기 시간에 포함하지 않는다
 	}
 
 	//	애니메이션이 길이를 쥐는 모드에서도 시계는 돈다 — 그때 DwellDuration 은 연출 길이가

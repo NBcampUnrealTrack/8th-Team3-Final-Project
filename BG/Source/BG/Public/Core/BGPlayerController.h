@@ -13,6 +13,7 @@
 #include "Card/BGGameDataTypes.h"     // EBGDiceOutcome (ToResolutionTier 인자)
 #include "Core/BGIntroStage.h"        // EBGIntroStage — BP 델리게이트 인자라 완전한 타입이 필요하다
 #include "UI/Target/BGGameplayHudOwner.h"   // 조준 중 클릭 통과 대상 알려주기
+#include "Components/SlateWrapperTypes.h"
 #include "BGPlayerController.generated.h"   // 항상 마지막
 
 class UGameplayAbility;
@@ -184,9 +185,66 @@ public:
 	int32 GetMySeatIndex() const;
 
 	// 서버가 아니라 각 클라이언트가 로컬로 "나는 이 판을 이겼나"를 판정한다.
-	// OnMatchWon 이 넘겨주는 WinningRole 과 내 PlayerState 의 캐시된 역할을 비교한다.
+	// OnMatchWon 이 넘겨주는 WinningRole 과 내 역할을 비교한다 — 같은 승리 진영이라도
+	// 사람마다 답이 달라야 하므로 각자 자기 화면에서 판정한다.
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	bool DidIWin(FGameplayTag WinningRole) const;
+
+	/**
+	 * 지금 틀 시퀀스. 맵에 배치된 목록이 먼저고, 없으면 EndingSequences 로 돌아간다.
+	 * 폴백은 소프트 참조라 PrepareEndingSequence 로 받아 두기 전에는 nullptr 이다.
+	 */
+	class ULevelSequence* ResolveEndingSequence() const;
+
+	/**
+	 * 내 역할(Role.*). 승패 분기와 역할 표시에 쓴다. 아직 배정 전이면 무효 태그.
+	 *
+	 * ⚠️ 남의 역할은 이 경로로 알 수 없다 — 복제가 본인에게만 온다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "BG|Match")
+	FGameplayTag GetMyRoleTag() const;
+
+	/** 내 직업(Character.Job.*). 직업별로 다른 연출·초상화를 고를 때 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Match")
+	FGameplayTag GetMyJobTag() const;
+
+	// ── 엔딩 시퀀스 ──────────────────────────────────────────────
+	//
+	//  승리 진영마다 다른 성 시퀀스를 재생한다(무너진 왕국 / 지켜낸 새벽 / 빼앗긴 왕좌).
+	//
+	//  ⚠️ 시퀀스는 각 클라가 **로컬로** 재생한다. 서버는 "지금 승리 연출 단계다" 와
+	//     "승리 진영이 무엇이다" 만 복제하므로, 재생 중 화면은 각자 만든다.
+	//     한 명이 렉으로 늦어도 다음 단계는 서버 시각에 맞춰 넘어간다.
+
+	/**
+	 * 승리 진영(Role.*) → 재생할 레벨 시퀀스. **맵별 목록이 없을 때의 기본값**이다.
+	 *
+	 * 맵마다 다른 연출을 쓰려면 그 맵에 ABGEndingSequenceSet 을 배치할 것 — 그쪽이 우선이고,
+	 * 레벨과 함께 로드돼 기다릴 것도 없다.
+	 *
+	 * ⚠️ 여기 넣은 시퀀스는 소프트 참조라 미리 받아 둔다(마지막 정체 공개 1.5초 동안).
+	 *    무거운 시퀀스는 그 사이에 못 올 수 있다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Match|Ending")
+	TMap<FGameplayTag, TSoftObjectPtr<class ULevelSequence>> EndingSequences;
+
+	/**
+	 * 승리/패배 위젯. Victory 단계에 내 승패에 맞는 쪽을 띄우고, 시퀀스가 시작되면 내린다.
+	 * 등장 애니메이션은 위젯이 Construct 에서 스스로 재생한다. 비워 두면 그 단계에 아무것도 뜨지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Match|Ending")
+	TSubclassOf<UUserWidget> VictoryWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Match|Ending")
+	TSubclassOf<UUserWidget> DefeatWidgetClass;
+
+	/** 결과 화면(전원 정체·승패). 비워 두면 그 단계에 아무것도 뜨지 않는다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Match|Ending")
+	TSubclassOf<class UBGMatchResultWidget> MatchResultWidgetClass;
+
+	/** 결과 화면의 "로비로 돌아가기". 서버가 전원을 함께 보낸다. */
+	UFUNCTION(BlueprintCallable, Category = "BG|Match")
+	void RequestReturnToLobby();
 
 	/** 좌석이 확정됐다. 기본 동작으로 ServerRequestPlayCard 를 보낸다. */
 	UPROPERTY(BlueprintAssignable, Category = "BG|Target")
@@ -305,6 +363,9 @@ public:
 	// Logout 보다 이 시점이 빨라서, 여기서 잡지 않으면 캐릭터가 자리에서 사라진다.
 	virtual void Destroyed() override;
 
+	//	맵 이동(ServerTravel)은 Destroyed 가 아니라 EndPlay 만 부른다 — 타이머 정리는 여기서 한다.
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	// 서버: 검증 통과 후 실제 처리. 카드가 구동할 GA 를 부여+발동한다.
 	void HandlePlayCard(int32 InstanceId, int32 TargetSeat);
 
@@ -367,6 +428,39 @@ protected:
 
 	/** 역할 카드를 이 단계에 맞게 띄우거나 내린다. */
 	void UpdateIntroRoleCard(EBGIntroStage Stage);
+
+	/** 종료 연출 단계가 바뀌었다. 엔딩 시퀀스를 여기서 받아 두고 재생한다. */
+	UFUNCTION()
+	void HandleMatchEndStageChanged(EBGMatchEndStage Stage);
+
+	/** 승리 진영에 맞는 시퀀스를 비동기로 받아 둔다. 이미 받고 있으면 아무것도 하지 않는다. */
+	void PrepareEndingSequence();
+
+	/** 받아 둔 시퀀스를 재생한다. 아직 안 왔으면 도착하는 대로 재생한다. */
+	void PlayEndingSequence();
+
+	void StopEndingSequence();
+
+	/** 엔딩 연출을 전부 걷는다 — 시퀀스·엔딩 위젯을 내리고 숨겼던 게임 UI 를 되살린다. */
+	void ResetEndingPresentation();
+
+	/** 내 승패에 맞는 승리/패배 위젯을 띄운다. 이미 떠 있으면 아무것도 하지 않는다. */
+	void ShowVictoryWidget();
+	void HideVictoryWidget();
+
+	/** 결과 화면을 띄운다. 이미 떠 있으면 값만 다시 채운다. */
+	void ShowMatchResult();
+
+	/** 게임 UI(HUD·손패·채팅 등)를 숨긴다. 엔딩 위젯은 건드리지 않는다. 원래 가시성은 되살릴 때 쓴다. */
+	void HideGameplayWidgetsForEnding();
+
+	TMap<TWeakObjectPtr<UUserWidget>, ESlateVisibility> EndingHiddenWidgets;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> VictoryWidgetInstance;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UBGMatchResultWidget> MatchResultWidgetInstance;
 
 	/**
 	 * 검은 화면에 머무는 시간(초). 장작 소리만 들리는 구간이다.
@@ -515,6 +609,10 @@ protected:
 	UFUNCTION(Server, Reliable)
 	void ServerRequestSkipIntro();
 
+	/** 결과 화면에서 로비로. 판이 도는 중이면 서버가 무시한다. */
+	UFUNCTION(Server, Reliable)
+	void ServerRequestReturnToLobby();
+
 	UFUNCTION(Server, Reliable)
 	void ServerRequestStartPvEMatch();
 
@@ -606,6 +704,17 @@ private:
 
 	//	검은 화면에 머무는 동안 도는 타이머. ⚠️ Destroyed 에서 반드시 끊는다.
 	FTimerHandle IntroFadeTimer;
+
+	//	재생 중인 엔딩 시퀀스. 단계가 넘어가면 멈춘다.
+	UPROPERTY(Transient)
+	TObjectPtr<class ULevelSequencePlayer> EndingSequencePlayer;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class ALevelSequenceActor> EndingSequenceActor;
+
+	//	받아 두는 중인 시퀀스와 그 요청. 도착 전에 재생 시점이 오면 도착하는 대로 튼다.
+	TSharedPtr<struct FStreamableHandle> EndingSequenceHandle;
+	bool bEndingSequenceWantsPlay = false;
 	
 	void HandleChatKeyPressed();
 };

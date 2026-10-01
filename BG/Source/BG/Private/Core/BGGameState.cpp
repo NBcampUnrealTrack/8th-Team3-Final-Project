@@ -158,7 +158,7 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 
 			GetWorldTimerManager().SetTimer(ResolutionPresentationTimer, this,
 				&ABGGameState::FinishResolutionPresentation,
-				ResolutionPresentationSeconds, /*bLoop=*/false);
+				GetResolutionPresentationSeconds(), /*bLoop=*/false);
 			return;
 		}
 
@@ -643,7 +643,8 @@ void ABGGameState::BeginPlay()
 
 void ABGGameState::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	GetWorldTimerManager().ClearTimer(ResolutionPresentationTimer);
+	//	⚠️ 타이머가 다섯 개다(판정·연출·도입·종료·카드 큐). 하나씩 끊으면 새로 생긴 것을 빠뜨린다.
+	GetWorldTimerManager().ClearAllTimersForObject(this);
 	RemoveActiveCardGameplayCue();
 	RemoveActiveNonCinematicCardGameplayCue();
 	Super::EndPlay(EndPlayReason);
@@ -1159,6 +1160,11 @@ void ABGGameState::SetIntroStage(EBGIntroStage NewStage)
 
 void ABGGameState::AdvanceIntroStage()
 {
+	if (MatchEndStage != EBGMatchEndStage::None || WinningRoleTag.IsValid())
+	{
+		return;
+	}
+
 	if (!HasAuthority())
 	{
 		return;
@@ -1246,6 +1252,11 @@ void ABGGameState::DealInitialHands()
 //	판의 카드가 손에 들려 있게 된다.
 void ABGGameState::BeginFirstTurn()
 {
+	if (MatchEndStage != EBGMatchEndStage::None || WinningRoleTag.IsValid())
+	{
+		return;
+	}
+
 	if (!HasAuthority())
 	{
 		return;
@@ -1856,6 +1867,9 @@ void ABGGameState::ProcessSeatDeath(int32 DeadSeat, int32 KillerSeat)
 	RevealDeath(DeadSeat);
 	RevealDeadRole(DeadSeat);
 
+	//	이 사망이 판을 끝내면 종료 연출 첫 단계가 이 좌석을 비춘다.
+	LastRevealedSeat = DeadSeat;
+
 	if (ABGPlayerState* DeadPS = GetPlayerStateBySeat(DeadSeat))
 	{
 		//	걸려 있던 "다음 1회" 상태는 사라진다(발동될 다음 카드가 없다).
@@ -1990,6 +2004,42 @@ bool ABGGameState::CheckWinCondition()
 		return false;
 	}
 
+	EndMatch(Winner);
+	return true;
+}
+
+void ABGGameState::DebugForceWin(FGameplayTag Winner)
+{
+	if (!HasAuthority() || !bMatchRunning)
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[Exec] 강제 승리 거부 — 판이 진행 중이 아닙니다(도입 연출 중이거나 이미 끝남)."));
+		return;
+	}
+
+	//	⚠️ 재생 중인 사망은 대기열에서 이미 빠져 있다 — HasPendingDeaths 만으로는 못 거른다.
+	//	   겹치면 사망 연출 카메라와 종료 연출 카메라가 서로 덮어쓴다.
+	if (IsCinematicPlaying() || HasPendingDeaths())
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[Exec] 강제 승리 거부 — 연출 중입니다. 끝난 뒤 다시 누르세요."));
+		return;
+	}
+
+	UE_LOG(LogBGCard, Warning, TEXT("[Exec] 강제 승리 — %s"), *Winner.ToString());
+	EndMatch(Winner);
+}
+
+void ABGGameState::EndMatch(FGameplayTag Winner)
+{
+	// A debug/early victory can arrive before the intro finishes. Cancel, do not skip:
+	// SkipIntro starts the first turn and would reopen a completed match.
+	GetWorldTimerManager().ClearTimer(IntroStageTimer);
+	if (IsIntroPlaying())
+	{
+		SetIntroStage(EBGIntroStage::None);
+	}
+
+	const TArray<int32> Alive = GetAliveSeatsInTableOrder();
+
 	WinningRoleTag = Winner;
 
 	//	PvE 는 사람이 항상 Sheriff다. Sheriff 승리만 "이겼다"로 본다.
@@ -2033,9 +2083,9 @@ bool ABGGameState::CheckWinCondition()
 	UE_LOG(LogBGCard, Warning, TEXT("[Match] 판 종료 — 승리 진영 : %s / 생존 %d명 : %s"),
 		*Winner.ToString(), Alive.Num(), *FString::Join(AliveDesc, TEXT(", ")));
 
-	//	판정이 끝났으니 종료 연출을 연다. 승리 → 크레딧 → 로비 복귀는 전부 서버가 진행시킨다.
-	SetMatchEndStage(EBGMatchEndStage::Victory);
-	return true;
+	//	판정이 끝났으니 종료 연출을 연다.
+	//	정체 공개 → 승리 연출 → 결과 화면 → 로비 복귀는 전부 서버가 진행시킨다.
+	SetMatchEndStage(EBGMatchEndStage::FinalReveal);
 }
 
 void ABGGameState::SetMatchEndStage(EBGMatchEndStage NewStage)
@@ -2055,16 +2105,25 @@ void ABGGameState::SetMatchEndStage(EBGMatchEndStage NewStage)
 
 	switch (NewStage)
 	{
+	case EBGMatchEndStage::FinalReveal:
+		//	마지막 사망자를 계속 비춘다 — 사망 연출이 끝나며 카메라가 각자 시점으로 돌아간 뒤다.
+		if (const ABGPlayerState* LastDeadPS = GetPlayerStateBySeat(LastRevealedSeat))
+		{
+			if (ABGCharacter* LastDead = Cast<ABGCharacter>(LastDeadPS->GetPawn()))
+			{
+				SetCameraShot(LastDead, CinematicShotBlendSeconds);
+			}
+		}
+
+		AdvanceMatchEndStageAfter(EBGMatchEndStage::Victory, FinalRevealSeconds);
+		break;
+
 	case EBGMatchEndStage::Victory:
-		if (VictorySequenceSeconds > 0.f)
-		{
-			GetWorldTimerManager().SetTimer(MatchEndStageTimer, this,
-				&ABGGameState::StartEndingCredits, VictorySequenceSeconds, false);
-		}
-		else
-		{
-			StartEndingCredits();
-		}
+		AdvanceMatchEndStageAfter(EBGMatchEndStage::EndingSequence, VictoryWidgetSeconds);
+		break;
+
+	case EBGMatchEndStage::EndingSequence:
+		AdvanceMatchEndStageAfter(EBGMatchEndStage::Credits, EndingSequenceSeconds);
 		break;
 
 	case EBGMatchEndStage::Credits:
@@ -2089,11 +2148,24 @@ void ABGGameState::SetMatchEndStage(EBGMatchEndStage NewStage)
 	}
 }
 
+void ABGGameState::AdvanceMatchEndStageAfter(EBGMatchEndStage Next, float Seconds)
+{
+	if (Seconds <= 0.f)
+	{
+		SetMatchEndStage(Next);
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(MatchEndStageTimer,
+		FTimerDelegate::CreateWeakLambda(this, [this, Next]() { SetMatchEndStage(Next); }),
+		Seconds, false);
+}
+
 void ABGGameState::StartEndingCredits()
 {
-	if (!HasAuthority() || MatchEndStage != EBGMatchEndStage::Victory)
+	if (!HasAuthority() || MatchEndStage != EBGMatchEndStage::EndingSequence)
 	{
-		return;   // 아직 승리 연출 중이 아니거나 이미 넘어갔다.
+		return;   // 아직 시퀀스 단계가 아니거나 이미 넘어갔다.
 	}
 	SetMatchEndStage(EBGMatchEndStage::Credits);
 }
@@ -2115,19 +2187,60 @@ void ABGGameState::HandleMatchEndStage()
 
 	switch (MatchEndStage)
 	{
+	case EBGMatchEndStage::FinalReveal:
+		UE_LOG(LogBGCard, Log, TEXT("[Match] 마지막 정체 공개 — 좌석 %d"), LastRevealedSeat);
+		break;
+
 	case EBGMatchEndStage::Victory:
 		UE_LOG(LogBGCard, Log, TEXT("[Match] 승리 연출 시작 — 승리 진영 %s"), *WinningRoleTag.ToString());
 		OnMatchWon.Broadcast(WinningRoleTag);
 		break;
 
+	case EBGMatchEndStage::EndingSequence:
+		UE_LOG(LogBGCard, Log, TEXT("[Match] 엔딩 시퀀스 시작"));
+		break;
+
 	case EBGMatchEndStage::Credits:
-		UE_LOG(LogBGCard, Log, TEXT("[Match] 엔딩 크레딧 시작"));
+		UE_LOG(LogBGCard, Log, TEXT("[Match] 결과 화면 시작"));
 		OnEndingCredits.Broadcast();
 		break;
 
 	default:
 		break;
 	}
+
+	//	단계 자체를 원하는 쪽(시퀀스 재생·HUD 숨김)은 이 통지를 듣는다.
+	OnMatchEndStageChanged.Broadcast(MatchEndStage);
+}
+
+void ABGGameState::RequestReturnToLobbyFromResult()
+{
+	if (!HasAuthority() || MatchEndStage != EBGMatchEndStage::Credits)
+	{
+		return;
+	}
+
+	//	자동 복귀 타이머가 걸려 있으면 끊는다 — 트래블이 두 번 나가면 안 된다.
+	GetWorldTimerManager().ClearTimer(MatchEndStageTimer);
+
+	UE_LOG(LogBGCard, Log, TEXT("[Match] 결과 화면에서 로비 복귀 요청"));
+	ReturnToLobby();
+}
+
+bool ABGGameState::IsRoleWinner(FGameplayTag SeatRole) const
+{
+	if (!WinningRoleTag.IsValid() || !SeatRole.IsValid())
+	{
+		return false;
+	}
+
+	//	보안관 진영이 이기면 부관도 함께 승리로 본다(뱅 원작 규칙 — DidIWin 과 같은 판정이다).
+	if (WinningRoleTag == BG::Role::Sheriff.GetTag())
+	{
+		return SeatRole == BG::Role::Sheriff.GetTag() || SeatRole == BG::Role::Deputy.GetTag();
+	}
+
+	return SeatRole == WinningRoleTag;
 }
 
 void ABGGameState::ReturnToLobby()

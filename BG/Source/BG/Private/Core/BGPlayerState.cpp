@@ -38,6 +38,10 @@ void ABGPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(ABGPlayerState, PendingStatuses);
 	DOREPLIFETIME(ABGPlayerState, bDisconnected);
 	DOREPLIFETIME(ABGPlayerState, RopeStrikes);
+
+	//	본인에게만 간다. 은닉 정보라 전원에게 보내면 판 도중에 남의 역할이 드러난다(선언부 주석 참고).
+	DOREPLIFETIME_CONDITION(ABGPlayerState, CachedRoleTag, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ABGPlayerState, CachedJobTag,  COND_OwnerOnly);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
