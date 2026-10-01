@@ -180,7 +180,7 @@ private:
 	void HandleDisconnectChanged(int32 SeatIndex, bool bDisconnected);
 
 	/** 체력이 바뀌었다. 좌석마다 그 폰의 ASC 에 걸어 둔다. 피해든 회복이든 연출에 맞춰 드러나도록 표시를 붙잡는다. */
-	void HandleHealthChanged(const struct FOnAttributeChangeData& Data, int32 SeatIndex);
+	void HandleHealthChanged(const struct FOnAttributeChangeData& Data, TWeakObjectPtr<ABGCharacter> Character);
 
 	/** 최대 체력이 바뀌었다(직업 배정). 연출과 무관하므로 곧바로 반영한다. */
 	void HandleMaxHealthChanged(const struct FOnAttributeChangeData& Data);
@@ -229,7 +229,7 @@ private:
 	double GetNow() const;
 
 	/** 이 좌석 폰의 체력 통지를 구독한다. 이미 걸려 있으면 아무것도 하지 않는다. */
-	void BindHealthDelegate(class ABGCharacter* Character, int32 SeatIndex);
+	void BindHealthDelegate(class ABGCharacter* Character);
 
 	/** 모든 이름표에 최신 FBGSeatView 를 밀어넣고, 열려 있는 상세 패널도 갱신한다. */
 	void RefreshWidgets();
@@ -269,8 +269,8 @@ private:
 	//	미리 기억해 둔 좌석으로 되찾아 이름표를 계속 띄운다.
 	TMap<TWeakObjectPtr<ABGCharacter>, int32> SeatByCharacter;
 
-	//	체력 통지를 걸어 둔 ASC. 폰이 바뀌면 여기서 떼고 다시 건다.
-	TMap<int32, TWeakObjectPtr<class UAbilitySystemComponent>> BoundHealthASCs;
+	//	체력 통지를 걸어 둔 ASC. ASC 마다 한 번만 건다 — 좌석이 바뀌어도 그대로다.
+	TSet<TWeakObjectPtr<class UAbilitySystemComponent>> BoundHealthASCs;
 
 	//	구독해 둔 GameState. 중복 구독을 막는다.
 	TWeakObjectPtr<class ABGGameState> BoundGameState;
