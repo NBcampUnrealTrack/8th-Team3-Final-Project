@@ -452,10 +452,10 @@ void UBGSeatInfoDisplayComponent::HandleIntroStageChanged(EBGIntroStage Stage)
 
 bool UBGSeatInfoDisplayComponent::ShouldHidePlatesForEnding() const
 {
-	//	이름표는 승리 위젯부터 걷는다(HUD 는 시퀀스 전환 때 — ShouldHideGameplayUIForEnding).
-	//	머리 위에 떠 있어 승리 위젯과 겹쳐 보인다.
+	//	이름표는 판이 끝나는 순간(FinalReveal)부터 걷는다 — 사망자를 비추는 샷과 승리 위젯에 겹친다.
+	//	HUD 는 시퀀스 전환 때 걷는다(ShouldHideGameplayUIForEnding).
 	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
-	return GS && GS->IsEndingPresentationActive();
+	return GS && GS->GetMatchEndStage() != EBGMatchEndStage::None;
 }
 
 void UBGSeatInfoDisplayComponent::HandleMatchEndStageChanged(EBGMatchEndStage /*Stage*/)
