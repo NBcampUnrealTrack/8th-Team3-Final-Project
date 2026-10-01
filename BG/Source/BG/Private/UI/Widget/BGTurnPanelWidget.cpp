@@ -385,7 +385,8 @@ void UBGTurnPanelWidget::SetLocalSeatInfo(const FBGSeatView& InView)
 		{
 			Text_Equipment->SetText(LocalSeatView.Equipment.IsEmpty()
 				? NSLOCTEXT("BG", "LocalNoEquipment", "장비 없음")
-				: FText::Join(NSLOCTEXT("BG", "LocalEquipSeparator", ", "), LocalSeatView.GetEquipmentNames()));
+				//	서로 다른 장비는 여러 개를 함께 낄 수 있다 — 한 줄에 이으면 패널 폭을 넘으므로 한 개씩 줄을 나눈다.
+				: FText::Join(NSLOCTEXT("BG", "LocalEquipSeparator", "\n"), LocalSeatView.GetEquipmentNames()));
 		}
 	}
 
