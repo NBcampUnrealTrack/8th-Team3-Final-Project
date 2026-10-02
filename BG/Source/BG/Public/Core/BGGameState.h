@@ -517,10 +517,20 @@ public:
 
 	/** 판정 UI 에 주어진 시간. 클래스 기본값이라 클라에서도 서버와 같은 값이 나온다. */
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
-	float GetResolutionPresentationSeconds() const { return ResolutionPresentationSeconds + CardRevealSeconds; }
+	float GetResolutionPresentationSeconds() const
+	{
+		return (ResolutionPresentationSeconds + CardRevealSeconds) * GetPresentationTimeScale();
+	}
+
+	/**
+	 * 연출 시간 배율. PvE 면 PvEPresentationTimeScale, 아니면 1.
+	 * ⚠️ 서버 단계 타이머·카드 대기·판정 게이지가 **전부** 이 값을 곱한다 — 한쪽만 줄이면
+	 *    게이지가 착지하기 전에 월드 연출이 터진다. PvE 는 혼자 하는 판이라 화면 쪽도 같은 값을 읽는다.
+	 */
+	float GetPresentationTimeScale() const;
 
 	/** 판정 연출 전에 카드를 중앙에 보여 주는 시간. 카드 위젯이 이만큼 기다린 뒤 연출을 터뜨린다. */
-	float GetCardRevealSeconds() const { return CardRevealSeconds; }
+	float GetCardRevealSeconds() const { return CardRevealSeconds * GetPresentationTimeScale(); }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
@@ -1087,6 +1097,10 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0", Units = "s"))
 	float CardRevealSeconds = 1.5f;
+
+	/** PvE 연출 속도. 1 보다 작으면 빨라진다(0.7 = 30% 단축). 카드 연출·사망 연출·판정 UI 전부에 걸린다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float PvEPresentationTimeScale = 0.7f;
 
 public:
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")

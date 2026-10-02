@@ -490,8 +490,16 @@ void ABGGameState::RemoveActiveNonCinematicCardGameplayCue()
 	ActiveNonCinematicCardCueTag = FGameplayTag();
 }
 
+float ABGGameState::GetPresentationTimeScale() const
+{
+	return ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE ? PvEPresentationTimeScale : 1.f;
+}
+
 void ABGGameState::ScheduleCinematicStep(float DelaySeconds, TFunction<void()>&& Step)
 {
+	//	카드·사망 연출의 모든 단계가 여기를 지난다 — PvE 단축도 여기 한 곳에서 건다.
+	DelaySeconds *= GetPresentationTimeScale();
+
 	if (DelaySeconds > 0.f)
 	{
 		GetWorldTimerManager().SetTimer(CinematicStageTimer, MoveTemp(Step), DelaySeconds, /*bLoop=*/false);

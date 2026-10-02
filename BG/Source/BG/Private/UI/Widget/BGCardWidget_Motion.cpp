@@ -214,14 +214,13 @@ FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 
 	//	대기 시간은 "풀린 시점" 부터 센다. 도착 시점부터 세면 대상을 오래 고른 사람은
 	//	효과를 볼 시간이 없다.
-	Center.DwellRemaining = DwellDuration;
-
 	//	판정 연출 전에 카드만 보여 주는 구간. 남이 낸 카드는 판정 순간에야 처음 날아오므로
 	//	이게 없으면 무슨 카드인지 읽기도 전에 연출이 터진다.
 	//	⚠️ 서버 판정 대기에도 같은 값이 더해져 있다(ABGGameState::GetResolutionPresentationSeconds) —
-	//	   전원이 같은 길이를 기다려야 게이지 착지와 월드 연출이 맞는다.
+	//	   전원이 같은 길이를 기다려야 게이지 착지와 월드 연출이 맞는다. PvE 배율도 같은 이유로 곱한다.
 	const UWorld* World = GetWorld();
 	const ABGGameState* GS = World ? World->GetGameState<ABGGameState>() : nullptr;
+	Center.DwellRemaining = DwellDuration * (GS ? GS->GetPresentationTimeScale() : 1.f);
 	//	판정 없는 해제(버리기·장비)는 서버가 기다려 주지 않는다 — 공개 구간도 없다.
 	Center.RevealRemaining = (GS && !Filled.bResolvedWithoutRoll) ? GS->GetCardRevealSeconds() : 0.f;
 
@@ -681,15 +680,11 @@ void UBGCardWidget::ApplyMotionTransform()
 	//	배치가 정한 값 위에 부수 효과를 더한다. 순서가 아니라 합이다 —
 	//	배치와 호버가 독립적으로 계산돼야 서로를 지우지 않는다.
 	const FVector2D HoverOffset(0.f, HoverLift * HoverBlend);
-
-	//	커서가 카드 중심에서 벗어난 정도(-1~+1)에 응답 곡선을 먹인 값.
-	//	기울기와 비틀림이 같은 입력을 쓰므로 둘이 따로 놀지 않는다.
-	const FVector2D HoverResponse(
-		BGCardMotion::ShapeResponse(HoverLocalSmoothed.X, HoverResponseExponent),
-		BGCardMotion::ShapeResponse(HoverLocalSmoothed.Y, HoverResponseExponent));
-
-	const float HoverTilt = HoverResponse.X * HoverTiltMax * HoverBlend;
 	const float FinalScale = CurrentScale * FMath::Lerp(1.f, HoverScale, HoverBlend);
+
+	//	호버 중에는 정자세 — 부채꼴 각도와 흔들림을 HoverBlend 만큼 0 으로 푼다.
+	//	커서를 떼면 HoverBlend 가 줄며 같은 속도로 원래 각도에 돌아간다.
+	const float FinalAngle = FMath::Lerp(CurrentAngle + VelocityTilt, 0.f, HoverBlend);
 
 	//	'Slot' 은 UWidget 의 멤버명이라 지역 변수 이름을 달리한다 (C4458 은 에러로 승격됨).
 	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Slot))
@@ -698,14 +693,6 @@ void UBGCardWidget::ApplyMotionTransform()
 	}
 
 	//	캔버스가 아니면(구형 HorizontalBox 손패) 위치는 패널이 정한다 — 회전/크기만 반영된다.
-	SetRenderTransformAngle(CurrentAngle + VelocityTilt + HoverTilt);
+	SetRenderTransformAngle(FinalAngle);
 	SetRenderScale(FVector2D(FinalScale, FinalScale));
-
-	//	UMG 는 2D 라 진짜 3D 회전은 없지만, shear 로 커서 쪽으로 눕는 인상을 만들 수 있다.
-	if (HoverShearMax != 0.f)
-	{
-		SetRenderShear(FVector2D(
-			-HoverResponse.Y * HoverShearMax * HoverBlend,
-			 HoverResponse.X * HoverShearMax * HoverBlend));
-	}
 }
