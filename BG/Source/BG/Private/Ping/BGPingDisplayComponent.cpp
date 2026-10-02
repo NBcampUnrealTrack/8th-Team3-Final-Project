@@ -1,5 +1,7 @@
 #include "Ping/BGPingDisplayComponent.h"
 
+#include "Audio/BGAudioSubsystem.h"
+
 #include "Card/BGDataSubsystem.h"
 #include "Card/BGGameDataTypes.h"
 #include "Chating/BGChatingSubsystem.h"
@@ -106,6 +108,27 @@ void UBGPingDisplayComponent::HandlePingReceived(const FBGPingEvent& Event)
 
 	AddChatLine(Event);
 	ShowMarker(Event);
+	PlayPingSound(Event);
+}
+
+// 핑 사운드 재생
+void UBGPingDisplayComponent::PlayPingSound(const FBGPingEvent& Event) const
+{
+	const ABGPlayerController* PC = Cast<ABGPlayerController>(GetOwner());
+	if (!PC || !PC->IsLocalController() || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const UBGPingComponent* PingComp = PC->GetPingComponent();
+	const FBGPingDef* Def = PingComp ? PingComp->FindDef(Event.PingTag) : BGPing::FindDefaultDef(Event.PingTag);
+	if (Def && Def->AudioTag.IsValid())
+	{
+		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+		{
+			Audio->Play(Def->AudioTag);
+		}
+	}
 }
 
 void UBGPingDisplayComponent::AddChatLine(const FBGPingEvent& Event) const

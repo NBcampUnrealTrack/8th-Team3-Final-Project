@@ -61,6 +61,9 @@ private:
 
 	void HandlePingReceived(const FBGPingEvent& Event);
 
+	/** Accepted ping notification sound, played once on each local client. */
+	void PlayPingSound(const FBGPingEvent& Event) const;
+
 	/** 채팅 로그 한 줄. "3번 → 5번: 공격" */
 	void AddChatLine(const FBGPingEvent& Event) const;
 
