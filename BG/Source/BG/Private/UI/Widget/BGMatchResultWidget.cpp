@@ -199,7 +199,8 @@ void UBGMatchResultWidget::OnResultReady_Implementation(const TArray<FBGMatchRes
     {
         UBorder* Background=WidgetTree->ConstructWidget<UBorder>();
         Background->SetPadding(FMargin(16,8));
-        Background->SetBrushColor(Row.Seat.bIsLocalPlayer?FLinearColor(.16f,.105f,.21f,.85f):FLinearColor(.04f,.025f,.017f,.7f));
+        //	턴 패널과 같은 색 — 내 줄은 선택된 탭처럼 호박색으로, 나머지는 어두운 회색으로 둔다.
+        Background->SetBrushColor(Row.Seat.bIsLocalPlayer?FLinearColor(.10f,.055f,.012f,.85f):FLinearColor(.028f,.030f,.036f,.75f));
         UHorizontalBox* Line=WidgetTree->ConstructWidget<UHorizontalBox>();
         Background->SetContent(Line);
         const FText Values[]={Row.Seat.bIsLocalPlayer?FText::Format(NSLOCTEXT("BGEnding","Me","{0} · 나"),Row.Seat.PlayerName):Row.Seat.PlayerName,Row.Seat.JobName,Row.Seat.RoleName,
@@ -212,7 +213,7 @@ void UBGMatchResultWidget::OnResultReady_Implementation(const TArray<FBGMatchRes
             UTextBlock* Text=WidgetTree->ConstructWidget<UTextBlock>();Text->SetText(Values[Col]);
             FSlateFontInfo Font=ResultFont;Font.Size=18;Text->SetFont(Font);
             Text->SetAutoWrapText(true);Text->SetWrapTextAt(Widths[Col]-12);
-            Text->SetColorAndOpacity(FSlateColor(Col==4&&Row.bWinner?FLinearColor(.83f,.56f,.23f):FLinearColor(.83f,.77f,.65f)));
+            Text->SetColorAndOpacity(FSlateColor(Col==4&&Row.bWinner?FLinearColor(.745f,.479f,.162f):FLinearColor(.82f,.79f,.74f)));
             Cell->SetContent(Text);Line->AddChildToHorizontalBox(Cell)->SetVerticalAlignment(VAlign_Center);
         }
         Rows_Container->AddChildToVerticalBox(Background)->SetPadding(FMargin(0,0,0,2));

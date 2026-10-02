@@ -11,6 +11,7 @@
 #include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
+#include "Components/ScrollBoxSlot.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -31,7 +32,7 @@
 namespace
 {
 	// 구분선이 화면에서 차지해야 할 픽셀 두께. DPI 스케일과 무관하게 이 값으로 떨어진다.
-	//	⚠️ BGSettingsWidget.cpp 에도 같은 익명 상수가 있어 unity 빌드에서 충돌한다. 이름을 나눠 둔다.
+	//	⚠️ BGSystemMenuWidget.cpp 에도 같은 익명 상수가 있어 unity 빌드에서 충돌한다. 이름을 나눠 둔다.
 	constexpr float SessionMenuDividerPixels = 2.f;
 
 	void ApplySessionMenuFont(const UUserWidget* Owner, UTextBlock* Block)
@@ -517,14 +518,24 @@ void UBGSessionMenuWidget::HandleSessionListReady(const TArray<FBGSessionSearchR
 		UButton* Row = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
 		Row->OnClicked.AddDynamic(Handler, &UBGSessionRowHandler::HandleClicked);
 
+		//	코드로 만든 줄이라 WBP 에서 칠할 수 없다 — 새로고침 버튼의 스타일을 빌려 패널 톤에 맞춘다.
+		if (RefreshButton)
+		{
+			Row->SetStyle(RefreshButton->GetStyle());
+		}
+
 		UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
 		Text->SetText(FText::FromString(FString::Printf(TEXT("%s  (%d/%d)  %dms  %s"),
 			*Item.RoomName, Item.CurrentPlayers, Item.MaxPlayers, Item.PingMs,
 			Item.bCanJoin ? TEXT("[참여]") : TEXT("[입장 불가]"))));
 		Text->SetJustification(ETextJustify::Center);
 		ApplySessionMenuFont(this, Text);
+		Text->SetColorAndOpacity(FSlateColor(FLinearColor(0.94f, 0.90f, 0.82f)));
 		Row->AddChild(Text);
 
-		ResultList->AddChild(Row);
+		if (UScrollBoxSlot* RowSlot = Cast<UScrollBoxSlot>(ResultList->AddChild(Row)))
+		{
+			RowSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+		}
 	}
 }
