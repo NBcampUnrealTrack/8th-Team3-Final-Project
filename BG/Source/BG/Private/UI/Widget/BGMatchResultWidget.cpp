@@ -1,6 +1,9 @@
 #include "UI/Widget/BGMatchResultWidget.h"
 
 #include "BGGameplayTags.h"
+#include "Card/BGDataSubsystem.h"
+#include "Card/BGGameDataTypes.h"
+#include "Core/BGGameMode.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerController.h"
 #include "UI/View/BGSeatViewLibrary.h"
@@ -13,6 +16,7 @@
 #include "Components/SizeBox.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Engine/GameInstance.h"
 
 void UBGMatchResultWidget::NativeConstruct()
 {
@@ -185,6 +189,13 @@ void UBGMatchResultWidget::OnResultReady_Implementation(const TArray<FBGMatchRes
     if (Winner == BG::Role::Sheriff.GetTag()) { Title=NSLOCTEXT("BGEnding","Sheriff","보안관 진영 승리"); Reason=NSLOCTEXT("BGEnding","SheriffReason","무법자와 배신자가 모두 쓰러졌습니다."); }
     else if (Winner == BG::Role::Outlaw.GetTag()) { Title=NSLOCTEXT("BGEnding","Outlaw","무법자 진영 승리"); Reason=NSLOCTEXT("BGEnding","OutlawReason","보안관이 쓰러지고, 무법자가 승리했습니다."); }
     else if (Winner == BG::Role::Renegade.GetTag()) { Title=NSLOCTEXT("BGEnding","Renegade","배신자 단독 승리"); Reason=NSLOCTEXT("BGEnding","RenegadeReason","배신자가 마지막까지 살아남았습니다."); }
+    const UWorld* World = GetWorld();
+    const ABGGameState* GS = World ? World->GetGameState<ABGGameState>() : nullptr;
+    if (GS && ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
+    {
+        ShowPvERunRecords(*GS, InRows);
+        return;
+    }
     if (Text_ResultTitle) Text_ResultTitle->SetText(Title);
     if (Text_ResultReason) Text_ResultReason->SetText(Reason);
     if (!Rows_Container || !WidgetTree) return;
@@ -211,4 +222,114 @@ void UBGMatchResultWidget::OnResultReady_Implementation(const TArray<FBGMatchRes
         }
         Rows_Container->AddChildToVerticalBox(Background)->SetPadding(FMargin(0,0,0,2));
     }
+}
+
+FText UBGMatchResultWidget::GetJobDisplayName(const FGameplayTag& Job) const
+{
+	if (!Job.IsValid())
+	{
+		return FText::GetEmpty();
+	}
+
+	const UGameInstance* GI = GetGameInstance();
+	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	if (const FBGCharacterRow* Row = Data ? Data->GetCharacterRow(Job) : nullptr)
+	{
+		if (!Row->DisplayName.IsEmpty())
+		{
+			return Row->DisplayName;
+		}
+	}
+
+	//	DT 에 이름이 없으면 태그의 마지막 마디를 쓴다(좌석 표와 같은 폴백).
+	FString Leaf = Job.ToString();
+	int32 LastDot = INDEX_NONE;
+	if (Leaf.FindLastChar(TEXT('.'), LastDot))
+	{
+		Leaf = Leaf.RightChop(LastDot + 1);
+	}
+	return FText::FromString(Leaf);
+}
+
+void UBGMatchResultWidget::ShowPvERunRecords(const ABGGameState& GS, const TArray<FBGMatchResultRow>& InRows)
+{
+	const TArray<FBGPvEEncounterRecord>& Records = GS.GetPvERunRecords();
+	if (!ensureMsgf(!Records.IsEmpty(), TEXT("[PvE] 결과 화면에 표시할 런 기록이 비어 있습니다.")))
+	{
+		return;
+	}
+
+	const bool bCleared = GS.IsPvERunCleared();
+
+	//	부제에 이름을 붙인다. PvE 는 사람이 한 명이라 행마다 이름을 반복할 이유가 없다.
+	FText PlayerName;
+	for (const FBGMatchResultRow& Row : InRows)
+	{
+		if (Row.Seat.bIsLocalPlayer)
+		{
+			PlayerName = Row.Seat.PlayerName;
+			break;
+		}
+	}
+
+	FText Title;
+	FText Reason;
+	if (bCleared)
+	{
+		Title  = NSLOCTEXT("BGEnding", "PvEClear", "런 클리어");
+		Reason = FText::Format(NSLOCTEXT("BGEnding", "PvEClearReason", "{0}님이 모든 조우를 돌파했습니다."), PlayerName);
+	}
+	else
+	{
+		Title  = FText::Format(NSLOCTEXT("BGEnding", "PvEFail", "{0}조우에서 패배"), FText::AsNumber(Records.Last().EncounterIndex));
+		Reason = FText::Format(NSLOCTEXT("BGEnding", "PvEFailReason", "{0}님이 쓰러졌습니다."), PlayerName);
+	}
+	if (Text_ResultTitle) Text_ResultTitle->SetText(Title);
+	if (Text_ResultReason) Text_ResultReason->SetText(Reason);
+
+	//	헤더 5칸은 그대로 두고 라벨만 바꾼다. 행의 칸 폭이 PvP 와 같아 정렬이 유지된다.
+	if (Header_0) Header_0->SetText(NSLOCTEXT("BGEnding", "PvEHeaderEncounter", "조우"));
+	if (Header_1) Header_1->SetText(NSLOCTEXT("BGEnding", "PvEHeaderJob", "직업"));
+	if (Header_2) Header_2->SetText(NSLOCTEXT("BGEnding", "PvEHeaderMatchup", "대진"));
+	if (Header_3) Header_3->SetText(NSLOCTEXT("BGEnding", "PvEHeaderResult", "결과"));
+	if (Header_4) Header_4->SetText(NSLOCTEXT("BGEnding", "PvEHeaderTime", "플레이 시간"));
+
+	if (!Rows_Container || !WidgetTree) return;
+	Rows_Container->ClearChildren();
+
+	const float Widths[] = {190, 125, 130, 85, 100};
+	for (const FBGPvEEncounterRecord& Record : Records)
+	{
+		UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
+		Background->SetPadding(FMargin(16, 8));
+		Background->SetBrushColor(Record.bCleared ? FLinearColor(.04f, .025f, .017f, .7f) : FLinearColor(.2f, .06f, .05f, .8f));
+		UHorizontalBox* Line = WidgetTree->ConstructWidget<UHorizontalBox>();
+		Background->SetContent(Line);
+
+		const int32 Seconds = FMath::RoundToInt(Record.Seconds);
+		const FText Values[] = {
+			FText::Format(NSLOCTEXT("BGEnding", "PvEEncounterCell", "{0}조우"), FText::AsNumber(Record.EncounterIndex)),
+			GetJobDisplayName(Record.JobTag),
+			FText::Format(NSLOCTEXT("BGEnding", "PvEMatchupCell", "{0} 대 {1}"), FText::AsNumber(Record.AllyCount), FText::AsNumber(Record.EnemyCount)),
+			Record.bCleared ? NSLOCTEXT("BGEnding", "PvECleared", "클리어") : NSLOCTEXT("BGEnding", "PvEDefeated", "패배"),
+			FText::FromString(FString::Printf(TEXT("%02d:%02d"), Seconds / 60, Seconds % 60))};
+
+		for (int32 Col = 0; Col < 5; ++Col)
+		{
+			USizeBox* Cell = WidgetTree->ConstructWidget<USizeBox>();
+			Cell->SetWidthOverride(Widths[Col]);
+			Cell->SetMinDesiredHeight(34);
+			UTextBlock* Text = WidgetTree->ConstructWidget<UTextBlock>();
+			Text->SetText(Values[Col]);
+			FSlateFontInfo Font = ResultFont;
+			Font.Size = 18;
+			Text->SetFont(Font);
+			Text->SetAutoWrapText(true);
+			Text->SetWrapTextAt(Widths[Col] - 12);
+			Text->SetColorAndOpacity(FSlateColor(Col == 3 && Record.bCleared ? FLinearColor(.83f, .56f, .23f) : FLinearColor(.83f, .77f, .65f)));
+			Cell->SetContent(Text);
+			Line->AddChildToHorizontalBox(Cell)->SetVerticalAlignment(VAlign_Center);
+		}
+		Rows_Container->AddChildToVerticalBox(Background)->SetPadding(FMargin(0, 0, 0, 2));
+	}
 }

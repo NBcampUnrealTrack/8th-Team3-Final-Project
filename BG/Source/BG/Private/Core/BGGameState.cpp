@@ -51,6 +51,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, CurrentSeat);
 	DOREPLIFETIME(ABGGameState, WinningRoleTag);
 	DOREPLIFETIME(ABGGameState, bPvEEncounterClear);
+	DOREPLIFETIME(ABGGameState, PvERunRecords);
 	DOREPLIFETIME(ABGGameState, bMatchRunning);
 	DOREPLIFETIME(ABGGameState, MatchEndStage);
 	DOREPLIFETIME(ABGGameState, PendingRewardCandidates);
@@ -1063,6 +1064,19 @@ void ABGGameState::StartMatch()
 	//	   카드를 못 내는 것은 CanSeatPlayCards 가 IsIntroPlaying 으로 막는다.
 	SetMatchRunning(true);
 
+	//	조우 플레이 시간의 기준. 조우마다 맵이 새로 로드되므로 판 시작 시각을 여기서 잡는다.
+	MatchStartServerTime = GetServerWorldTimeSeconds();
+
+	//	PvE 첫 조우는 새 런의 시작이다. 지난 런의 기록을 비운다.
+	if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
+	{
+		UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
+		if (ensureMsgf(GI, TEXT("[PvE] GameInstance 가 UBGGameInstance 가 아닙니다.")) && GI->GetPvEEncounterIndex() == 1)
+		{
+			GI->ClearPvERunRecords();
+		}
+	}
+
 	//	도입 연출은 PvP 전용이다 — 방을 만들고 전원이 준비한 뒤 방장이 여는 그 판의 서두다.
 	//	PvE 는 조우를 연달아 도는 구조라 매 조우마다 12초를 붙이면 진행이 끊긴다.
 	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
@@ -1954,10 +1968,13 @@ void ABGGameState::HandlePvERunWin()
 	const int32 ClearedEncounter = GI->GetPvEEncounterIndex();
 	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
 
+	GI->AddPvEEncounterRecord(MakePvEEncounterRecord(ClearedEncounter, /*bCleared*/ true));
+
 	if (GM && ClearedEncounter == GM->BossEncounterIndex)
 	{
 		bPvEEncounterClear = false;   // 보스 클리어는 PvP 와 같은 승리 연출을 쓴다
 		// TODO: 게임 클리어 연출
+		FillPvERunSummary(*GI);   // 리셋보다 먼저
 		GI->ResetPvERun();   // 런 종료. 로비에서 시작 버튼 기다림(자동 시작 안 함)
 	}
 	else
@@ -1974,8 +1991,56 @@ void ABGGameState::HandlePvERunLoss()
 	UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
 	if (ensureMsgf(GI, TEXT("[PvE] GameInstance 가 UBGGameInstance 가 아닙니다.")))
 	{
+		GI->AddPvEEncounterRecord(MakePvEEncounterRecord(GI->GetPvEEncounterIndex(), /*bCleared*/ false));
+		FillPvERunSummary(*GI);   // 리셋보다 먼저
 		GI->ResetPvERun();
 	}
+}
+
+FBGPvEEncounterRecord ABGGameState::MakePvEEncounterRecord(int32 EncounterIndex, bool bCleared) const
+{
+	FBGPvEEncounterRecord Record;
+	Record.EncounterIndex = EncounterIndex;
+	Record.bCleared       = bCleared;
+	Record.Seconds        = GetServerWorldTimeSeconds() - MatchStartServerTime;
+
+	//	아군은 보안관 진영(보안관 + 부관), 나머지는 적이다. 판이 도는 동안 역할이 바뀌지 않고
+	//	죽은 좌석도 캐시된 역할이 남아 있어서, 결과를 낼 때 세어도 판 시작 구성과 같다.
+	for (const APlayerState* Base : PlayerArray)
+	{
+		const ABGPlayerState* PS = Cast<ABGPlayerState>(Base);
+		if (!IsValid(PS))
+		{
+			continue;
+		}
+
+		const FGameplayTag SeatRole = PS->GetCachedRole();
+		if (SeatRole == BG::Role::Sheriff.GetTag())
+		{
+			Record.JobTag = PS->GetCachedJob();   // 사람 플레이어는 항상 보안관이다
+			++Record.AllyCount;
+		}
+		else if (SeatRole == BG::Role::Deputy.GetTag())
+		{
+			++Record.AllyCount;
+		}
+		else if (SeatRole.IsValid())
+		{
+			++Record.EnemyCount;
+		}
+	}
+
+	//	PvE 는 사람이 항상 보안관이다. 못 찾았다면 역할 배정이 어긋난 것이라 결과 표가 비어 보인다.
+	ensureMsgf(Record.AllyCount > 0 && Record.JobTag.IsValid(),
+		TEXT("[PvE] 조우 %d 기록: 보안관 좌석을 찾지 못했습니다 (아군 %d, 직업 유효 %d)."),
+		EncounterIndex, Record.AllyCount, Record.JobTag.IsValid() ? 1 : 0);
+
+	return Record;
+}
+
+void ABGGameState::FillPvERunSummary(const UBGGameInstance& GI)
+{
+	PvERunRecords = GI.GetPvERunRecords();
 }
 
 bool ABGGameState::CheckWinCondition()

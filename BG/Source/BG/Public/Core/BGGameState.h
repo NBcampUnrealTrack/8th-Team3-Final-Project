@@ -7,10 +7,13 @@
 #include "Card/BGGameDataTypes.h"   // FBGCardResolution — 멀티캐스트 인자라 완전한 타입이 필요하다
 #include "Core/BGCinematicCamera.h" // FBGCameraShot — 복제 프로퍼티라 완전한 타입이 필요하다
 #include "Core/BGIntroStage.h"      // EBGIntroStage — 복제 프로퍼티라 완전한 타입이 필요하다
+#include "Core/BGPvERunRecord.h"    // FBGPvEEncounterRecord — 복제 프로퍼티라 완전한 타입이 필요하다
 #include "GameplayTagContainer.h"
 #include "Ping/BGPingTypes.h"   // FBGPingEvent — 멀티캐스트 인자라 완전한 타입이 필요하다
 #include "GameFramework/GameStateBase.h"
 #include "BGGameState.generated.h"
+
+class UBGGameInstance;
 
 /**
  *
@@ -395,6 +398,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	bool IsPvEEncounterClear() const { return bPvEEncounterClear; }
 
+	/** 조우 순서대로 쌓인 기록. 마지막 줄이 런이 끝난 조우다(클리어면 보스, 패배면 쓰러진 조우). */
+	UFUNCTION(BlueprintPure, Category = "BG|PvE")
+	const TArray<FBGPvEEncounterRecord>& GetPvERunRecords() const { return PvERunRecords; }
+
+	/** 런을 끝까지 깼는가. false면 도중에 패배했다. */
+	UFUNCTION(BlueprintPure, Category = "BG|PvE")
+	bool IsPvERunCleared() const { return !PvERunRecords.IsEmpty() && PvERunRecords.Last().bCleared; }
+
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	bool IsMatchOver() const { return PhaseTag == GameOverPhaseTag(); }
 
@@ -743,6 +754,20 @@ protected:
 	//	PvE 조우 승리(보스 아님) 여부. EndMatch 의 종료 연출이 시작되기 전에 정해진다.
 	UPROPERTY(Replicated)
 	bool bPvEEncounterClear = false;
+
+	//	PvE 런 기록. 런이 끝나는 순간(보스 클리어 또는 패배) 한 번 채우고, 결과 화면이 읽는다.
+	//	누적은 GameInstance 가 하고(맵이 새로 로드돼도 남는다), 여기는 표시용 사본이다.
+	UPROPERTY(Replicated)
+	TArray<FBGPvEEncounterRecord> PvERunRecords;
+
+	//	서버 전용. 이번 판을 시작한 서버 시각 - 조우 플레이 시간을 재는 기준이다.
+	float MatchStartServerTime = 0.f;
+
+	//	지금 끝나는 조우의 기록을 만든다. 시간은 판 시작부터 지금까지, 아군과 적은 좌석의 역할로 센다.
+	FBGPvEEncounterRecord MakePvEEncounterRecord(int32 EncounterIndex, bool bCleared) const;
+
+	//	PvE 런 종료 시 GameInstance 의 기록을 복제 배열로 옮긴다.
+	void FillPvERunSummary(const UBGGameInstance& GI);
 
 	//	종료 연출 단계. 이 값이 바뀌는 것이 곧 "승리했다 / 크레딧이다" 라는 통지다.
 	// ── 사망 처리 내부 ──
