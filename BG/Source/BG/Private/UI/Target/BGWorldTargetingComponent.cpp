@@ -42,7 +42,7 @@ void UBGWorldTargetingComponent::BeginPlay()
 	Super::BeginPlay();
 
 	const ABGPlayerController* PC = GetOwningController();
-	if (!PC || !PC->IsLocalController())
+	if (!PC || !PC->HasLocalViewer())
 	{
 		//	조준은 보는 사람 화면의 일이다. 서버가 남의 컨트롤러에 대해 돌릴 이유가 없다.
 		SetComponentTickEnabled(false);
@@ -67,7 +67,7 @@ void UBGWorldTargetingComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 void UBGWorldTargetingComponent::BeginTargeting(const FBGTargetRequest& Request)
 {
 	const ABGPlayerController* PC = GetOwningController();
-	if (!PC || !PC->IsLocalController())
+	if (!PC || !PC->HasLocalViewer())
 	{
 		return;
 	}

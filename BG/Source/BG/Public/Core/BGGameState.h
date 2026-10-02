@@ -98,12 +98,6 @@ struct FBGPendingDeath
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGCinematicStageChanged,
 	EBGCinematicStage /*Stage*/, class ABGCharacter* /*Subject*/);
 
-/** 승패가 확정됐다. WinningRole 과 자기 역할을 비교해 승/패를 표시하면 된다. */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGMatchWon, FGameplayTag, WinningRole);
-
-/** 승리 연출이 끝나고 엔딩 크레딧으로 넘어갔다. */
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGEndingCredits);
-
 /** 페이즈·현재 좌석·판 진행 여부 중 하나라도 바뀌었다. 턴 UI 가 구독한다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGTurnStateChanged);
 /** 판정 결과가 도착했다. 서버·클라 양쪽에서 불린다 (GDD §4.1 — 전원이 같은 결과를 본다). */
@@ -406,17 +400,10 @@ public:
 
 	// ── 종료 연출 (정체 공개 → 승리 위젯 → 엔딩 시퀀스 → 결과 표 → 로비 복귀) ──
 	//
-	//  서버가 단계를 넘기고, 클라는 복제된 단계를 받아 델리게이트만 쏜다.
-	//  BP 바인딩 예) Get Game State → Cast To BGGameState → Bind Event to OnMatchWon
+	//  서버가 단계를 넘기고, 클라는 복제된 단계를 받아 OnMatchEndStageChanged 만 쏜다.
+	//  화면(승리 위젯·시퀀스·결과 표)은 ABGPlayerController::HandleMatchEndStageChanged 가 맡는다.
 	//
-	//  주의: 위젯이 승리보다 늦게 만들어지면 이벤트를 놓친다. 바인딩 직후
-	// GetMatchEndStage() 를 한 번 확인해 이미 진행 중이면 즉시 처리할 것.
-
-	UPROPERTY(BlueprintAssignable, Category = "BG|Match")
-	FOnBGMatchWon OnMatchWon;
-
-	UPROPERTY(BlueprintAssignable, Category = "BG|Match")
-	FOnBGEndingCredits OnEndingCredits;
+	//  주의: 승리보다 늦게 구독하면 통지를 놓친다. 구독 직후 GetMatchEndStage() 로 한 번 맞출 것.
 
 	/**
 	 * 단계 자체를 알려 준다. 승리·결과처럼 "무엇을 띄울지" 가 아니라 "지금 어느 구간인지" 가
@@ -530,10 +517,20 @@ public:
 
 	/** 판정 UI 에 주어진 시간. 클래스 기본값이라 클라에서도 서버와 같은 값이 나온다. */
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
-	float GetResolutionPresentationSeconds() const { return ResolutionPresentationSeconds + CardRevealSeconds; }
+	float GetResolutionPresentationSeconds() const
+	{
+		return (ResolutionPresentationSeconds + CardRevealSeconds) * GetPresentationTimeScale();
+	}
+
+	/**
+	 * 연출 시간 배율. PvE 면 PvEPresentationTimeScale, 아니면 1.
+	 * ⚠️ 서버 단계 타이머·카드 대기·판정 게이지가 **전부** 이 값을 곱한다 — 한쪽만 줄이면
+	 *    게이지가 착지하기 전에 월드 연출이 터진다. PvE 는 혼자 하는 판이라 화면 쪽도 같은 값을 읽는다.
+	 */
+	float GetPresentationTimeScale() const;
 
 	/** 판정 연출 전에 카드를 중앙에 보여 주는 시간. 카드 위젯이 이만큼 기다린 뒤 연출을 터뜨린다. */
-	float GetCardRevealSeconds() const { return CardRevealSeconds; }
+	float GetCardRevealSeconds() const { return CardRevealSeconds * GetPresentationTimeScale(); }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
 	EBGCinematicStage GetCinematicStage() const { return CinematicStage; }
@@ -1100,6 +1097,10 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.0", Units = "s"))
 	float CardRevealSeconds = 1.5f;
+
+	/** PvE 연출 속도. 1 보다 작으면 빨라진다(0.7 = 30% 단축). 카드 연출·사망 연출·판정 UI 전부에 걸린다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float PvEPresentationTimeScale = 0.7f;
 
 public:
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")

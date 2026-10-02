@@ -22,9 +22,6 @@
 #include "AssetCompilingManager.h"
 #include "CoreGlobals.h"
 #include "Components/BoxComponent.h"
-#include "WidgetBlueprint.h"
-#include "Blueprint/WidgetTree.h"
-#include "Components/Widget.h"
 
 IMPLEMENT_MODULE(FDefaultModuleImpl, BGEndingTools)
 
@@ -149,49 +146,4 @@ void UBGEndingToolsLibrary::ConfigureCache(AChaosCacheManager* Manager,UGeometry
     Manager->Modify();Component->Modify();Manager->CacheCollection=Cache;Manager->CacheMode=ECacheMode::None;Manager->StartMode=EStartMode::Timed;Manager->bStartOnBeginPlay=false;
     Manager->FindOrAddObservedComponent(Component,TEXT("CastleUpper"));
     Component->SetSimulatePhysics(false);
-}
-void UBGEndingToolsLibrary::RepairWidgetGuids(UWidgetBlueprint* Blueprint)
-{
-    Blueprint->Modify();Blueprint->WidgetTree->ForEachWidget([Blueprint](UWidget* W){if(!Blueprint->WidgetVariableNameToGuidMap.Contains(W->GetFName()))Blueprint->WidgetVariableNameToGuidMap.Add(W->GetFName(),FGuid::NewGuid());});
-}
-
-void UBGEndingToolsLibrary::SetWidgetRoot(UWidgetBlueprint* Blueprint,UWidget* Root){Blueprint->Modify();Blueprint->WidgetTree->Modify();Blueprint->WidgetTree->RootWidget=Root;}
-
-
-
-
-#include "Blueprint/UserWidget.h"
-#include "Components/TextBlock.h"
-#include "Slate/WidgetRenderer.h"
-#include "Engine/TextureRenderTarget2D.h"
-#include "ImageUtils.h"
-#include "Serialization/BufferArchive.h"
-#include "Misc/FileHelper.h"
-#include "UObject/StructOnScope.h"
-#include "RenderingThread.h"
-
-bool UBGEndingToolsLibrary::RenderWidgetPreview(TSubclassOf<UUserWidget> WidgetClass,const FString& RowData,const FString& OutputPath)
-{
-    if(!WidgetClass)return false;
-    UUserWidget* Widget=NewObject<UUserWidget>(GetTransientPackage(),WidgetClass);
-    Widget->SetDesignerFlags(EWidgetDesignFlags::Designing);Widget->Initialize();
-    TSharedRef<SWidget> SlateWidget=Widget->TakeWidget();
-    if(UFunction* Function=Widget->FindFunction(TEXT("OnResultReady")))
-    {
-        FStructOnScope Params(Function);
-        FArrayProperty* Rows=FindFProperty<FArrayProperty>(Function,TEXT("InRows"));
-        if(!Rows || !Rows->ImportText_Direct(*RowData,Rows->ContainerPtrToValuePtr<void>(Params.GetStructMemory()),Widget,PPF_None))return false;
-        Widget->ProcessEvent(Function,Params.GetStructMemory());
-    }
-    if(UTextBlock* Title=Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_ResultTitle"))))Title->SetText(FText::FromString(TEXT("보안관 진영 승리")));
-    if(UTextBlock* Reason=Cast<UTextBlock>(Widget->GetWidgetFromName(TEXT("Text_ResultReason"))))Reason->SetText(FText::FromString(TEXT("무법자와 배신자가 모두 쓰러졌습니다.")));
-    // Designer previews ignore collapsed state; the result-only capture hides the victory banner explicitly.
-    if(UWidget* Banner=Widget->GetWidgetFromName(TEXT("Banner_Victory")))Banner->SetRenderOpacity(0.f);
-    FWidgetRenderer Renderer(true,true);
-    UTextureRenderTarget2D* Target=Renderer.DrawWidget(SlateWidget,FVector2D(1600,900));
-    FlushRenderingCommands();
-    FBufferArchive Buffer;
-    bool Saved=FImageUtils::ExportRenderTarget2DAsPNG(Target,Buffer) && FFileHelper::SaveArrayToFile(Buffer,*OutputPath);
-    Widget->ReleaseSlateResources(true);
-    return Saved;
 }

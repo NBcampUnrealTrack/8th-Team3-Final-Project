@@ -490,8 +490,16 @@ void ABGGameState::RemoveActiveNonCinematicCardGameplayCue()
 	ActiveNonCinematicCardCueTag = FGameplayTag();
 }
 
+float ABGGameState::GetPresentationTimeScale() const
+{
+	return ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE ? PvEPresentationTimeScale : 1.f;
+}
+
 void ABGGameState::ScheduleCinematicStep(float DelaySeconds, TFunction<void()>&& Step)
 {
+	//	카드·사망 연출의 모든 단계가 여기를 지난다 — PvE 단축도 여기 한 곳에서 건다.
+	DelaySeconds *= GetPresentationTimeScale();
+
 	if (DelaySeconds > 0.f)
 	{
 		GetWorldTimerManager().SetTimer(CinematicStageTimer, MoveTemp(Step), DelaySeconds, /*bLoop=*/false);
@@ -536,7 +544,11 @@ void ABGGameState::HandleCinematicStage()
 	//	── 카메라 연동 ──
 	//	연출 단계가 곧 "누구의 B 카메라를 비출 것인가" 다. 이 두 줄만 지우면
 	//	상태 관리는 그대로 두고 카메라만 직접 제어할 수 있다.
-	if (HasAuthority())
+	//	⚠️ 판을 끝낸 사망 연출이 닫힐 때는 되돌리지 않는다. 승패 판정(FinishDeathCinematic 안)이
+	//	   먼저 FinalReveal 샷을 걸어 두는데, 여기서 None 으로 덮으면 사망자를 비추자마자 풀린다.
+	const bool bEndingOwnsCamera = CinematicStage == EBGCinematicStage::None
+		&& MatchEndStage != EBGMatchEndStage::None;
+	if (HasAuthority() && !bEndingOwnsCamera)
 	{
 		//	단계 사이 이동 속도. None 단계면 Subject 가 nullptr → 각자 A 카메라로 복귀하며,
 		//	그때는 이 값이 아니라 CinematicExitBlendSeconds(뷰타깃 전환)가 체감을 결정한다.
@@ -2014,7 +2026,7 @@ void ABGGameState::DebugForceWin(FGameplayTag Winner)
 {
 	if (!HasAuthority() || !bMatchRunning)
 	{
-		UE_LOG(LogBGCard, Warning, TEXT("[Exec] 강제 승리 거부 — 판이 진행 중이 아닙니다(도입 연출 중이거나 이미 끝남)."));
+		UE_LOG(LogBGCard, Warning, TEXT("[Exec] 강제 승리 거부 — 판이 시작 전이거나 이미 끝났습니다."));
 		return;
 	}
 
@@ -2202,7 +2214,6 @@ void ABGGameState::HandleMatchEndStage()
 
 	case EBGMatchEndStage::Victory:
 		UE_LOG(LogBGCard, Log, TEXT("[Match] 승리 연출 시작 — 승리 진영 %s"), *WinningRoleTag.ToString());
-		OnMatchWon.Broadcast(WinningRoleTag);
 		break;
 
 	case EBGMatchEndStage::EndingSequence:
@@ -2211,12 +2222,6 @@ void ABGGameState::HandleMatchEndStage()
 
 	case EBGMatchEndStage::Credits:
 		UE_LOG(LogBGCard, Log, TEXT("[Match] 결과 화면 시작"));
-
-		//	조우 승리는 결과 화면 없이 바로 로비로 복귀하므로 통지하지 않는다.
-		if (!bPvEEncounterClear)
-		{
-			OnEndingCredits.Broadcast();
-		}
 		break;
 
 	default:
@@ -2248,7 +2253,7 @@ bool ABGGameState::IsRoleWinner(FGameplayTag SeatRole) const
 		return false;
 	}
 
-	//	보안관 진영이 이기면 부관도 함께 승리로 본다(뱅 원작 규칙 — DidIWin 과 같은 판정이다).
+	//	보안관 진영이 이기면 부관도 함께 승리로 본다(뱅 원작 규칙). 승패 규칙은 여기 하나뿐이다.
 	if (WinningRoleTag == BG::Role::Sheriff.GetTag())
 	{
 		return SeatRole == BG::Role::Sheriff.GetTag() || SeatRole == BG::Role::Deputy.GetTag();

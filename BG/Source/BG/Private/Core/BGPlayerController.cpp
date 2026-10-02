@@ -567,7 +567,7 @@ void ABGPlayerController::PlayResolveShake(const FBGCardPlayContext& Ctx)
 {
 	//	화면이 없는 쪽(데디 서버)에는 카메라 매니저가 없다. 애셋 미지정도 조용히 넘어간다 —
 	//	연출이 빠지는 것뿐이고 판정 자체는 이미 끝났으므로 무해하다.
-	if (!ResolveShakeClass || !PlayerCameraManager || !IsLocalController())
+	if (!ResolveShakeClass || !PlayerCameraManager || !HasLocalViewer())
 	{
 		return;
 	}
@@ -616,7 +616,7 @@ void ABGPlayerController::PlayResolveShake(const FBGCardPlayContext& Ctx)
 void ABGPlayerController::EnsureCinematicCamera()
 {
 	//	화면이 있는 쪽에서만 필요하다. 서버가 남의 몫까지 스폰하면 쓰지도 않을 액터가 인원수만큼 생긴다.
-	if (CinematicCamera || !IsLocalController())
+	if (CinematicCamera || !HasLocalViewer())
 	{
 		return;
 	}
@@ -655,7 +655,7 @@ void ABGPlayerController::HandleCameraShotChanged(const FBGCameraShot& Shot)
 		return;
 	}
 
-	if (!IsLocalController())
+	if (!HasLocalViewer())
 	{
 		return;   // 화면이 없는 컨트롤러에는 뷰타깃 개념이 없다.
 	}
@@ -816,7 +816,7 @@ void ABGPlayerController::SetSeatBoardWidget(UBGSeatBoardWidget* InSeatBoard)
 void ABGPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
-	if (IsLocalController())
+	if (HasLocalViewer())
 	{
 		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 		{
@@ -920,7 +920,7 @@ void ABGPlayerController::TryBindGameStateDelegates()
 //	   다른 UI(로딩·채팅)가 새어 나온다. 카메라 페이드는 화면 전체를 마지막에 덮는다.
 void ABGPlayerController::HandleIntroStageChanged(EBGIntroStage Stage)
 {
-	if (!IsLocalController() || !PlayerCameraManager)
+	if (!HasLocalViewer() || !PlayerCameraManager)
 	{
 		return;
 	}
@@ -966,29 +966,33 @@ void ABGPlayerController::BeginIntroFadeIn()
 
 void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 {
-	if (!IsLocalController())
+	if (!HasLocalViewer())
 	{
 		return;
 	}
 
+	//	PvP·PvE 가 같은 흐름을 탄다. 다른 점은 PvE 조우 승리(보스 아님) 하나뿐이다 —
+	//	서버가 시퀀스 단계를 건너뛰고(Victory → Credits) 결과 표 없이 곧바로 다음 조우로 간다.
 	const ABGGameState* GS = GetBGGameState();
-	if (IsValid(GS) && GS->IsPvEEncounterClear())
-	{
-		HandleEncounterClearStage(Stage);
-		return;
-	}
+	const bool bEncounterClear = GS && GS->IsPvEEncounterClear();
 
 	//	⚠️ 늦게 들어온 클라는 중간 단계부터 받는다 — 각 단계는 앞 단계를 거쳤다고 가정하지 않는다.
 	switch (Stage)
 	{
 	case EBGMatchEndStage::FinalReveal:
 		//	시퀀스는 승리 위젯이 떠 있는 동안까지 여유가 있다 — 지금부터 받아 둔다.
-		PrepareEndingSequence();
+		if (!bEncounterClear)
+		{
+			PrepareEndingSequence();
+		}
 		break;
 
 	case EBGMatchEndStage::Victory:
-		//	HUD 는 아직 둔다 — 시퀀스로 컷될 때 닉네임과 함께 걷힌다.
-		PrepareEndingSequence();
+		//	HUD 는 아직 둔다 — 시퀀스로 컷될 때 걷힌다.
+		if (!bEncounterClear)
+		{
+			PrepareEndingSequence();
+		}
 		ShowVictoryWidget();
 		break;
 
@@ -999,6 +1003,12 @@ void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 		break;
 
 	case EBGMatchEndStage::Credits:
+		//	조우 승리는 결과 표 없이 곧바로 로비로 간다(EncounterClearCreditsSeconds) — 걷기만 한다.
+		if (bEncounterClear)
+		{
+			ResetEndingPresentation();
+			break;
+		}
 		//	시퀀스는 마지막 프레임에 멈춰 있다(bPauseAtEnd) — 결과 표의 배경으로 남긴다.
 		HideGameplayWidgetsForEnding();
 		HideVictoryWidget();
@@ -1011,11 +1021,6 @@ void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 	}
 }
 
-void ABGPlayerController::HandleEncounterClearStage(EBGMatchEndStage Stage)
-{
-	// TODO: PvE 조우 승리 연출 (위젯, 시퀀스, 결과 화면)
-}
-
 void ABGPlayerController::ShowVictoryWidget()
 {
 	if (VictoryWidgetInstance || !GetLocalPlayer())
@@ -1023,9 +1028,7 @@ void ABGPlayerController::ShowVictoryWidget()
 		return;
 	}
 
-	const ABGGameState* GS = GetBGGameState();
-	const TSubclassOf<UUserWidget> WidgetClass =
-		(GS && DidIWin(GS->GetWinningRole())) ? VictoryWidgetClass : DefeatWidgetClass;
+	const TSubclassOf<UUserWidget> WidgetClass = DidIWin() ? VictoryWidgetClass : DefeatWidgetClass;
 	if (!WidgetClass)
 	{
 		return;
@@ -1076,45 +1079,34 @@ void ABGPlayerController::ShowMatchResult()
 	SetInputMode(FInputModeGameAndUI().SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock));
 }
 
-//	맵에 배치된 목록이 먼저다. 시퀀스는 그 맵의 성을 찍은 것이라 맵마다 다르기 때문이다.
-//	목록 액터가 없는 맵에서는 컨트롤러에 적어 둔 기본 목록으로 돌아간다.
+//	맵에 배치된 목록(ABGEndingSequenceSet)이 먼저다 — 시퀀스는 그 맵의 성을 찍은 것이라 맵마다 다르다.
+//	목록이 없는 맵에서는 EndingSequences 로 돌아간다. 이쪽은 소프트 참조라 받아 둔 뒤에야 값이 나온다.
 ULevelSequence* ABGPlayerController::ResolveEndingSequence() const
 {
 	const ABGGameState* GS = GetBGGameState();
-	if (!GS || !GS->GetWinningRole().IsValid())
+	if (!GS)
 	{
 		return nullptr;
 	}
 
 	if (const ABGEndingSequenceSet* MapSet = ABGEndingSequenceSet::Find(this))
 	{
-		//	레벨과 함께 이미 로드돼 있다 — 기다릴 것이 없다.
 		if (ULevelSequence* MapSequence = MapSet->FindSequence(GS->GetWinningRole()))
 		{
 			return MapSequence;
 		}
 	}
 
-	//	폴백은 소프트 참조라 받아 둔 뒤에야 값이 나온다.
-	const TSoftObjectPtr<ULevelSequence>* Fallback = EndingSequences.Find(GS->GetWinningRole());
-	return Fallback ? Fallback->Get() : nullptr;
+	const TSoftObjectPtr<ULevelSequence>* Found = EndingSequences.Find(GS->GetWinningRole());
+	return Found ? Found->Get() : nullptr;
 }
 
 void ABGPlayerController::PrepareEndingSequence()
 {
 	const ABGGameState* GS = GetBGGameState();
-	if (!GS || EndingSequenceHandle.IsValid())
+	if (!GS || EndingSequenceHandle.IsValid() || ResolveEndingSequence())
 	{
-		return;
-	}
-
-	//	맵에 배치된 것을 쓸 수 있으면 받아 올 것이 없다.
-	if (const ABGEndingSequenceSet* MapSet = ABGEndingSequenceSet::Find(this))
-	{
-		if (MapSet->FindSequence(GS->GetWinningRole()))
-		{
-			return;
-		}
+		return;   //	이미 받고 있거나 받아 둔 게 있다.
 	}
 
 	const TSoftObjectPtr<ULevelSequence>* Found = EndingSequences.Find(GS->GetWinningRole());
@@ -1347,7 +1339,7 @@ void ABGPlayerController::RefreshTurnHighlight()
 	//	CustomDepth 는 복제되지 않는 순수 로컬 렌더 상태다. 리슨서버에서는 원격 클라이언트의
 	//	PC 프록시도 이 델리게이트를 받으므로, 가드가 없으면 호스트 화면의 캐릭터에 남의
 	//	시점 기준 하이라이트가 덧씌워진다.
-	if (!IsLocalController())
+	if (!HasLocalViewer())
 	{
 		return;
 	}
@@ -2428,7 +2420,7 @@ FGameplayTag ABGPlayerController::GetMyJobTag() const
 	return MyCharacter ? MyCharacter->GetJobTag() : FGameplayTag();
 }
 
-bool ABGPlayerController::DidIWin(FGameplayTag WinningRole) const
+bool ABGPlayerController::DidIWin() const
 {
 	const FGameplayTag MyRole = GetMyRoleTag();
 	if (!MyRole.IsValid())
@@ -2439,13 +2431,8 @@ bool ABGPlayerController::DidIWin(FGameplayTag WinningRole) const
 		return false;
 	}
 
-	// 보안관 진영이 이기면 부관도 함께 승리로 본다(뱅 원작 규칙).
-	if (WinningRole == BG::Role::Sheriff.GetTag())
-	{
-		return MyRole == BG::Role::Sheriff.GetTag() || MyRole == BG::Role::Deputy.GetTag();
-	}
-
-	return MyRole == WinningRole;
+	const ABGGameState* GS = GetBGGameState();
+	return GS && GS->IsRoleWinner(MyRole);
 }
 
 bool ABGPlayerController::IsMyTurnToPlay() const

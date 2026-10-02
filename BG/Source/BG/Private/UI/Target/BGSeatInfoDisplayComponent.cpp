@@ -48,7 +48,7 @@ void UBGSeatInfoDisplayComponent::BeginPlay()
 
 	//	보는 사람 화면에만 있는 것이다. 서버가 남의 컨트롤러에 대해 돌릴 이유가 없다.
 	const ABGPlayerController* PC = GetOwningController();
-	if (!PC || !PC->IsLocalController())
+	if (!PC || !PC->HasLocalViewer())
 	{
 		SetComponentTickEnabled(false);
 		return;
@@ -95,7 +95,7 @@ void UBGSeatInfoDisplayComponent::SetDisplayEnabled(bool bEnabled)
 	bDisplayEnabled = bEnabled;
 
 	const ABGPlayerController* PC = GetOwningController();
-	const bool bLocal = PC && PC->IsLocalController();
+	const bool bLocal = PC && PC->HasLocalViewer();
 
 	SetComponentTickEnabled(bEnabled && bLocal);
 
@@ -208,9 +208,9 @@ void UBGSeatInfoDisplayComponent::UnbindDelegates()
 	BoundDirector = nullptr;
 
 	//	⚠️ 체력 구독도 떼야 한다. 목록만 비우면 다시 켤 때 같은 ASC 에 두 번 걸린다.
-	for (const TPair<int32, TWeakObjectPtr<UAbilitySystemComponent>>& Pair : BoundHealthASCs)
+	for (const TWeakObjectPtr<UAbilitySystemComponent>& Bound : BoundHealthASCs)
 	{
-		if (UAbilitySystemComponent* ASC = Pair.Value.Get())
+		if (UAbilitySystemComponent* ASC = Bound.Get())
 		{
 			ASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetHealthAttribute()).RemoveAll(this);
 			ASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetMaxHealthAttribute()).RemoveAll(this);
@@ -246,12 +246,26 @@ double UBGSeatInfoDisplayComponent::GetNow() const
 //	피해·회복은 연출보다 먼저 적용된다(규칙 → 판정 UI → 공격 → 피격 순). 그대로 그리면
 //	주사위가 굴러가는 동안 결과가 하트로 드러난다. 그래서 변화는 일단 붙잡고,
 //	피격 연출에 와서 푼다. 연출이 따라오지 않으면 유예 뒤에 곧장 푼다.
-void UBGSeatInfoDisplayComponent::HandleHealthChanged(const FOnAttributeChangeData& Data, int32 SeatIndex)
+void UBGSeatInfoDisplayComponent::HandleHealthChanged(const FOnAttributeChangeData& Data, TWeakObjectPtr<ABGCharacter> Character)
 {
 	//	⚠️ 값이 같은 통지는 무시해야 한다. 서버에서는 GE 적용 뒤 PostGameplayEffectExecute 의 클램프가
 	//	   한 번 더 통지할 수 있다 — 이걸 회복으로 치면 붙잡은 데미지가 풀린다.
 	if (FMath::IsNearlyEqual(Data.NewValue, Data.OldValue))
 	{
+		return;
+	}
+
+	//	지금 좌석을 읽는다. 컨트롤러가 떨어져 PlayerState 가 비면 기억해 둔 좌석으로.
+	int32 SeatIndex = INDEX_NONE;
+	if (const ABGCharacter* Owner = Character.Get())
+	{
+		const ABGPlayerState* PS = Owner->GetPlayerState<ABGPlayerState>();
+		const int32* Remembered = SeatByCharacter.Find(Character);
+		SeatIndex = PS ? PS->GetSeatIndex() : (Remembered ? *Remembered : INDEX_NONE);
+	}
+	if (SeatIndex == INDEX_NONE)
+	{
+		RefreshWidgets();
 		return;
 	}
 
@@ -438,8 +452,10 @@ void UBGSeatInfoDisplayComponent::HandleIntroStageChanged(EBGIntroStage Stage)
 
 bool UBGSeatInfoDisplayComponent::ShouldHidePlatesForEnding() const
 {
+	//	이름표는 판이 끝나는 순간(FinalReveal)부터 걷는다 — 사망자를 비추는 샷과 승리 위젯에 겹친다.
+	//	HUD 는 시퀀스 전환 때 걷는다(ShouldHideGameplayUIForEnding).
 	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
-	return GS && GS->ShouldHideGameplayUIForEnding();
+	return GS && GS->GetMatchEndStage() != EBGMatchEndStage::None;
 }
 
 void UBGSeatInfoDisplayComponent::HandleMatchEndStageChanged(EBGMatchEndStage /*Stage*/)
@@ -539,7 +555,7 @@ void UBGSeatInfoDisplayComponent::ApplyPlateOpacity(UWidgetComponent* Widget, fl
 	Widget->SetVisibility(Opacity > 0.f);
 }
 
-void UBGSeatInfoDisplayComponent::BindHealthDelegate(ABGCharacter* Character, int32 SeatIndex)
+void UBGSeatInfoDisplayComponent::BindHealthDelegate(ABGCharacter* Character)
 {
 	UAbilitySystemComponent* ASC =
 		UAbilitySystemGlobals::GetAbilitySystemComponentFromActor(Character);
@@ -548,27 +564,22 @@ void UBGSeatInfoDisplayComponent::BindHealthDelegate(ABGCharacter* Character, in
 		return;   //	폰은 있는데 ASC 가 아직 없다. 다음 구조 확인에서 다시 본다.
 	}
 
-	const TWeakObjectPtr<UAbilitySystemComponent> Previous = BoundHealthASCs.FindRef(SeatIndex);
-	if (Previous.Get() == ASC)
+	//	ASC 하나에 한 번만 건다. 좌석이 바뀌어도 다시 걸지 않는다.
+	//	⚠️ 예전에는 좌석 번호를 실어 걸었다 — 판 시작 재배정으로 두 좌석이 맞바뀌면 뒤쪽 재구독의
+	//	   RemoveAll 이 앞쪽에서 방금 건 구독까지 지워, 그 좌석 하트가 연출을 안 기다리고 깎였다.
+	if (BoundHealthASCs.Contains(ASC))
 	{
 		return;
 	}
 
-	//	같은 좌석에 폰이 바뀌었다(복귀·재스폰). 옛 ASC 에 남은 구독을 뗀다.
-	if (UAbilitySystemComponent* OldASC = Previous.Get())
-	{
-		OldASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetHealthAttribute()).RemoveAll(this);
-		OldASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetMaxHealthAttribute()).RemoveAll(this);
-	}
-
 	//	Health 와 MaxHealth 둘 다 본다. 최대치만 바뀌는 경우(직업 배정)도 표시가 달라진다.
-	//	Health 에는 좌석을 실어 보낸다 — 변화 전 값을 좌석별로 붙잡아야 한다.
+	//	좌석은 통지가 온 순간에 캐릭터에서 읽는다(HandleHealthChanged).
 	ASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetHealthAttribute())
-		.AddUObject(this, &UBGSeatInfoDisplayComponent::HandleHealthChanged, SeatIndex);
+		.AddUObject(this, &UBGSeatInfoDisplayComponent::HandleHealthChanged, TWeakObjectPtr<ABGCharacter>(Character));
 	ASC->GetGameplayAttributeValueChangeDelegate(UBGAttributeSet::GetMaxHealthAttribute())
 		.AddUObject(this, &UBGSeatInfoDisplayComponent::HandleMaxHealthChanged);
 
-	BoundHealthASCs.Add(SeatIndex, ASC);
+	BoundHealthASCs.Add(ASC);
 }
 
 void UBGSeatInfoDisplayComponent::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -778,7 +789,7 @@ void UBGSeatInfoDisplayComponent::SyncWidgets()
 		if (PS == LocalState)
 		{
 			//	그래도 체력은 듣는다 — 턴 패널의 내 하트도 피격 연출에 맞춰 깎여야 한다.
-			BindHealthDelegate(Character, PS->GetSeatIndex());
+			BindHealthDelegate(Character);
 			continue;
 		}
 
@@ -787,7 +798,7 @@ void UBGSeatInfoDisplayComponent::SyncWidgets()
 			LiveSeats.Add(PS->GetSeatIndex());
 
 			//	체력은 PlayerState 가 아니라 폰의 ASC 에 있다 — 좌석마다 따로 걸어야 한다.
-			BindHealthDelegate(Character, PS->GetSeatIndex());
+			BindHealthDelegate(Character);
 		}
 	}
 
@@ -817,7 +828,6 @@ void UBGSeatInfoDisplayComponent::SyncWidgets()
 			VisibleDetailSeat = INDEX_NONE;
 		}
 
-		BoundHealthASCs.Remove(GoneSeat);
 		PlateOpacityBySeat.Remove(GoneSeat);
 		It.RemoveCurrent();
 	}

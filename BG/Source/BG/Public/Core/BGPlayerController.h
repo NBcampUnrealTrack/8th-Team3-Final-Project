@@ -184,17 +184,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Turn")
 	int32 GetMySeatIndex() const;
 
-	// 서버가 아니라 각 클라이언트가 로컬로 "나는 이 판을 이겼나"를 판정한다.
-	// OnMatchWon 이 넘겨주는 WinningRole 과 내 역할을 비교한다 — 같은 승리 진영이라도
-	// 사람마다 답이 달라야 하므로 각자 자기 화면에서 판정한다.
-	UFUNCTION(BlueprintPure, Category = "BG|Match")
-	bool DidIWin(FGameplayTag WinningRole) const;
-
 	/**
-	 * 지금 틀 시퀀스. 맵에 배치된 목록이 먼저고, 없으면 EndingSequences 로 돌아간다.
-	 * 폴백은 소프트 참조라 PrepareEndingSequence 로 받아 두기 전에는 nullptr 이다.
+	 * 이 컨트롤러로 사람이 화면을 보고 있는가. UI·카메라·이름표 같은 화면 쪽 코드는 이것으로 거른다.
+	 * ⚠️ IsLocalController 로 거르면 안 된다 — Standalone(PvE)에서는 엔진이 AI 컨트롤러까지 로컬로 쳐서,
+	 *    AI 마다 이름표·연출이 한 벌씩 더 떠 내 화면에 겹친다.
 	 */
-	class ULevelSequence* ResolveEndingSequence() const;
+	virtual bool HasLocalViewer() const { return IsLocalController(); }
+
+	// 각 클라가 로컬로 "나는 이 판을 이겼나"를 판정한다. 규칙은 ABGGameState::IsRoleWinner 하나뿐이다.
+	UFUNCTION(BlueprintPure, Category = "BG|Match")
+	bool DidIWin() const;
 
 	/**
 	 * 내 역할(Role.*). 승패 분기와 역할 표시에 쓴다. 아직 배정 전이면 무효 태그.
@@ -217,13 +216,11 @@ public:
 	//     한 명이 렉으로 늦어도 다음 단계는 서버 시각에 맞춰 넘어간다.
 
 	/**
-	 * 승리 진영(Role.*) → 재생할 레벨 시퀀스. **맵별 목록이 없을 때의 기본값**이다.
+	 * 승리 진영(Role.*) → 재생할 레벨 시퀀스. **맵에 ABGEndingSequenceSet 이 없을 때의 기본값**이다.
+	 * 맵마다 다른 엔딩을 쓰려면 그 맵에 ABGEndingSequenceSet 을 배치할 것 — 그쪽이 우선이다.
 	 *
-	 * 맵마다 다른 연출을 쓰려면 그 맵에 ABGEndingSequenceSet 을 배치할 것 — 그쪽이 우선이고,
-	 * 레벨과 함께 로드돼 기다릴 것도 없다.
-	 *
-	 * ⚠️ 여기 넣은 시퀀스는 소프트 참조라 미리 받아 둔다(마지막 정체 공개 1.5초 동안).
-	 *    무거운 시퀀스는 그 사이에 못 올 수 있다.
+	 * ⚠️ 소프트 참조라 판이 끝나는 순간(FinalReveal)부터 받아 둔다. 재생은 승리 위젯 뒤라
+	 *    그 사이(약 4.5초)에 못 오는 무거운 시퀀스는 도착하는 대로 늦게 시작된다.
 	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Match|Ending")
 	TMap<FGameplayTag, TSoftObjectPtr<class ULevelSequence>> EndingSequences;
@@ -433,8 +430,9 @@ protected:
 	UFUNCTION()
 	void HandleMatchEndStageChanged(EBGMatchEndStage Stage);
 
-	/** PvE 조우 승리 전용 종료 연출. 연출이 정해지면 여기를 채운다. */
-	void HandleEncounterClearStage(EBGMatchEndStage Stage);
+
+	/** 승리 진영의 시퀀스. 맵 목록이 먼저, 없으면 EndingSequences. 폴백을 아직 안 받았으면 nullptr. */
+	class ULevelSequence* ResolveEndingSequence() const;
 
 	/** 승리 진영에 맞는 시퀀스를 비동기로 받아 둔다. 이미 받고 있으면 아무것도 하지 않는다. */
 	void PrepareEndingSequence();

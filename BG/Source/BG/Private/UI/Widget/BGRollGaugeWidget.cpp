@@ -175,7 +175,9 @@ void UBGRollGaugeWidget::StartRoll()
 	CursorEnd     = PlanCursorEnd(bForced ? ForcedRollPasses : RollPasses, ComputeLandingRatio());
 	Phase         = EBGRollGaugePhase::Rolling;
 	PhaseElapsed  = 0.f;
-	PhaseDuration = bForced ? ForcedRollSeconds : RollSeconds;
+	//	PvE 배율 — 서버 판정 대기가 같은 비율로 줄어 있다(ABGGameState::GetPresentationTimeScale).
+	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	PhaseDuration = (bForced ? ForcedRollSeconds : RollSeconds) * (GS ? GS->GetPresentationTimeScale() : 1.f);
 	SetLitSlot(INDEX_NONE);
 }
 

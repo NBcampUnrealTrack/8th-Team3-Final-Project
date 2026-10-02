@@ -5,7 +5,7 @@ public class BGEndingTools : ModuleRules
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
         PublicDependencyModuleNames.AddRange(new [] {"Core", "CoreUObject", "Engine"});
-        PrivateDependencyModuleNames.AddRange(new [] {"Slate", "SlateCore", "RenderCore", "RHI", "UMG", "UMGEditor", "UnrealEd", "AssetRegistry", "GeometryCollectionEngine", "GeometryCollectionEditor", "Chaos", "ChaosSolverEngine", "ChaosCaching", "FractureEngine", "PlanarCut", "DataflowCore", "PhysicsCore"});
+        PrivateDependencyModuleNames.AddRange(new [] {"UnrealEd", "AssetRegistry", "GeometryCollectionEngine", "GeometryCollectionEditor", "Chaos", "ChaosSolverEngine", "ChaosCaching", "FractureEngine", "PlanarCut", "DataflowCore", "PhysicsCore"});
     }
 }
 

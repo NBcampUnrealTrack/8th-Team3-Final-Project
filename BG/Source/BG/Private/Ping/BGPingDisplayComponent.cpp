@@ -98,7 +98,7 @@ void UBGPingDisplayComponent::TryBindGameState()
 	}
 
 	ABGPlayerController* PC = Cast<ABGPlayerController>(GetOwner());
-	if (!PC || !PC->IsLocalController())
+	if (!PC || !PC->HasLocalViewer())
 	{
 		return;
 	}

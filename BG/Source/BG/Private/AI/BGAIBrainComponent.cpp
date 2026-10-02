@@ -72,6 +72,7 @@ void UBGAIBrainComponent::HandleTurnStateChanged()
 
 	// 내 턴의 Play 페이즈로 새로 들어온 시점이다 — 이번 턴의 거부 기록을 비운다.
 	RejectedThisTurn.Empty();
+	GateOpenedTime = -1.0;
 
 	TryPlayNextCard();
 }
@@ -93,8 +94,24 @@ void UBGAIBrainComponent::TryPlayNextCard()
 	// 아직 내 턴이지만 연출(Cinematic) 재생 중이면 카드를 고르지 않는다.
 	if (!GS->CanSeatPlayCards(MySeat))
 	{
+		GateOpenedTime = -1.0;
 		GetWorld()->GetTimerManager().SetTimer(
-			ActionTimerHandle, this, &UBGAIBrainComponent::TryPlayNextCard, MinActionInterval, false);
+			ActionTimerHandle, this, &UBGAIBrainComponent::TryPlayNextCard, GatePollInterval, false);
+		return;
+	}
+
+	//	⚠️ 서버 연출이 끝나도 화면에는 꼬리(게이지 결과·HUD 복귀)가 남는다. 열리자마자 내면
+	//	   다음 카드가 그 위를 덮어 카드 공개 없이 판정부터 뜬다 — 열린 뒤 잠시 기다린다.
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (GateOpenedTime < 0.0)
+	{
+		GateOpenedTime = Now;
+	}
+	const double Wait = PostPresentationDelay - (Now - GateOpenedTime);
+	if (Wait > 0.0)
+	{
+		GetWorld()->GetTimerManager().SetTimer(
+			ActionTimerHandle, this, &UBGAIBrainComponent::TryPlayNextCard, static_cast<float>(Wait), false);
 		return;
 	}
 
