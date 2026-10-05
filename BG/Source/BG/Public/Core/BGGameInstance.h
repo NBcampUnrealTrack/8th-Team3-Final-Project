@@ -10,6 +10,7 @@
 #include "Interfaces/OnlineSessionInterface.h"
 #include "OnlineSessionSettings.h"
 #include "Session/BGSessionTypes.h"
+#include "Core/BGPvERunRecord.h"
 #include "BGGameInstance.generated.h"
 
 class UNetDriver;
@@ -76,6 +77,16 @@ public:
 	// ABGGameState 가 졌을 때(런 종료) 호출한다. 진행도를 1(조우1)로 되돌린다.
 	void ResetPvERun();
 
+	// 끝난 조우 한 건을 런 기록에 쌓는다. 이긴 조우와 진 조우 모두 쌓는다.
+	// 맵이 새로 로드돼도 남아야 해서 여기 둔다.
+	void AddPvEEncounterRecord(const FBGPvEEncounterRecord& Record) { PvERunRecords.Add(Record); }
+
+	// 지금까지 끝난 조우들의 기록. 결과 화면용이라 ResetPvERun 은 지우지 않는다.
+	const TArray<FBGPvEEncounterRecord>& GetPvERunRecords() const { return PvERunRecords; }
+
+	// 새 런의 첫 조우를 시작할 때 부른다. 지난 런의 기록을 비운다.
+	void ClearPvERunRecords() { PvERunRecords.Reset(); }
+
 	// 직전 조우를 이겨서(런이 안 끝나고) 이어서 왔는가. true면 새 월드에서 로비를
 	// 거치지 않고 시작 버튼 없이 바로 StartMatch() 한다. 한 번 읽으면 스스로 false로 되돌린다.
 	UFUNCTION(BlueprintPure, Category = "BG|PvE")
@@ -139,6 +150,9 @@ private:
 	// 지금 플레이 중인(또는 다음에 시작할) 조우 번호. 1-base — 조우1이 런의 첫 조우다.
 	// AdvancePvEEncounter/ResetPvERun 로만 바꾼다.
 	int32 PvEEncounterIndex = 1;
+
+	// 끝난 조우별 기록. AddPvEEncounterRecord/ClearPvERunRecords 참고.
+	TArray<FBGPvEEncounterRecord> PvERunRecords;
 
 	// ShouldAutoStartNextPvEMatch/SetAutoStartNextPvEMatch 참고.
 	bool bAutoStartNextPvEMatch = false;
