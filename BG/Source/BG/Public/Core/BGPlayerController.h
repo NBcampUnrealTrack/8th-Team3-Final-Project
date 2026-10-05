@@ -298,14 +298,7 @@ public:
 	class UBGChatingWidget* ChatWidgetInstance;
 
 	// PvE 로비("게임 시작" 버튼)는 여기서 들고 있지 않다 — WBP_BGHUD 안에 얹혀 있고
-	// 띄울지 말지는 UBGPvELobbyWidget 이 스스로 본다.
-
-	// PvE 조우 승리 보상 선택 위젯. 보상 후보가 있을 때만 스스로 나타난다(PvELobbyWidget과 짝).
-	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
-	TSubclassOf<class UBGRewardSelectWidget> RewardSelectWidgetClass;
-
-	UPROPERTY()
-	class UBGRewardSelectWidget* RewardSelectWidgetInstance;
+	// 띄울지 말지는 UBGPvELobbyWidget 이 스스로 본다. PvE 보상 선택(UBGRewardSelectWidget)도 같다.
 
 	/**
 	 * 서버가 카드 사용을 거부했다. 카드는 이미 손패로 되돌려 놓은 뒤에 발생한다 —

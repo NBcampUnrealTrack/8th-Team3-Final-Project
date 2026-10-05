@@ -2,7 +2,7 @@
 // WBP 에 아래 이름으로 위젯을 올리면 그쪽이 쓰이고, 없는 것만 C++ 이 만든다.
 //   HostButton RoomNameInput JoinCodeButton JoinCodeInput RefreshButton
 //   ReadyButton ReadyButtonText StartGameButton LeaveButton
-//   StatusText RoomCodeText LobbyText ResultList
+//   StatusText RoomCodeText LobbyText ResultList PlayerList(선택)
 //   Image_Div1 Image_Div2 Image_Div3
 
 #pragma once
@@ -79,6 +79,9 @@ private:
 	UFUNCTION()
 	void RefreshLobbyStatus();
 
+	// 같은 세션에 들어와 있는 사람을 한 줄씩 다시 그린다. RefreshLobbyStatus 가 부른다.
+	void RefreshPlayerList();
+
 	/**
 	 * 페이즈 통지를 구독한다. GameState 는 클라에 늦게 오므로 여러 진입점에서 재시도한다.
 	 * 준비 통지만으로는 부족하다 — 판이 시작되면 준비 상태가 더는 안 바뀌어
@@ -122,6 +125,10 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> LobbyText;
+
+	// 접속자 명단. 줄은 코드가 만든다 — 글꼴·색은 LobbyText 를 따른다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UVerticalBox> PlayerList;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> HostButton;

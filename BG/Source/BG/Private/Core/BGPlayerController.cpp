@@ -30,7 +30,6 @@
 #include "UI/Widget/BGSeatBoardWidget.h"
 #include "UI/Widget/BGTurnPanelWidget.h"
 #include "UI/Widget/BGResolutionWidget.h"
-#include "UI/Widget/BGRewardSelectWidget.h"
 #include "UI/Widget/BGIntroRoleCardWidget.h"
 #include "UI/Widget/BGMatchResultWidget.h"
 #include "Core/BGEndingSequenceSet.h"
@@ -828,19 +827,7 @@ void ABGPlayerController::BeginPlay()
 	//	PvE 전용 "게임 시작" 버튼은 여기서 띄우지 않는다 — WBP_BGHUD 안에 얹혀 있고,
 	//	PvE 인지·로비를 건너뛸 차례인지는 UBGPvELobbyWidget 이 스스로 본다.
 	//	따로 AddToViewport 하면 도움말·설정 패널 위로 버튼이 튀어나온다.
-
-	//	PvE 보상 선택 화면. 보여줄 후보가 이미 있을 때만 화면에 붙인다.
-	//	고르고 나면 스스로 없앤다(UBGRewardSelectWidget::HandleTurnStateChanged 참고).
-	const ABGGameState* GSForReward = GetBGGameState();
-	if (GetLocalPlayer() && RewardSelectWidgetClass && ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE
-		&& GSForReward && GSForReward->GetPendingRewardCandidates().Num() > 0)
-	{
-		RewardSelectWidgetInstance = CreateWidget<UBGRewardSelectWidget>(this, RewardSelectWidgetClass);
-		if (RewardSelectWidgetInstance)
-		{
-			RewardSelectWidgetInstance->AddToViewport();
-		}
-	}
+	//	PvE 보상 선택 화면도 같은 이유로 WBP_BGHUD 안에 얹혀 있다(UBGRewardSelectWidget 참고).
 
 	//	UI 주기 갱신은 위젯 연결과 무관하게 돌린다.
 	//	예전에는 SetSeatBoardWidget 안에서 타이머를 걸었는데, 그러면 좌석 보드를 연결하지

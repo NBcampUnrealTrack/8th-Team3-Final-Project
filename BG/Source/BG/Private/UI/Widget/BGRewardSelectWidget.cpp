@@ -128,7 +128,15 @@ void UBGRewardSelectWidget::RefreshCandidates()
 			RewardCard.InstanceId = -(i + 1);
 			RewardCard.CardId = Candidates[i];
 
-			Widgets[i]->SetCardView(UBGCardViewLibrary::MakeCardView(this, RewardCard));
+			//	보상 화면에서는 판정 확률을 보여주지 않는다 - 숫자는 bHasChances 로,
+			//	WBP_BGCard 에 고정으로 박힌 등급 라벨 줄은 이름으로 찾아 접는다.
+			FBGCardView View = UBGCardViewLibrary::MakeCardView(this, RewardCard);
+			View.bHasChances = false;
+			Widgets[i]->SetCardView(View);
+			if (UWidget* ChanceLabel = Widgets[i]->GetWidgetFromName(TEXT("ScrollBox_Chance")))
+			{
+				ChanceLabel->SetVisibility(ESlateVisibility::Collapsed);
+			}
 		}
 		else
 		{
@@ -154,17 +162,15 @@ void UBGRewardSelectWidget::HandleTurnStateChanged()
 	TryBindTurnStateDelegate();
 
 	const ABGGameState* GS = BoundGameState.Get();
-	if (!GS)
+	if (!GS || GS->IsMatchRunning() || GS->GetPendingRewardCandidates().Num() == 0)
 	{
+		//	PvP 이거나, 판이 시작됐거나, 이미 다 골랐다. 이 화면은 필요 없다.
+		//	떼어내지 않고 접는다 - HUD 캔버스의 자식이라 NativeConstruct 에서
+		//	RemoveFromParent 를 하면 부모가 슬롯을 만들고 있는 중에 슬롯이 사라진다.
+		SetVisibility(ESlateVisibility::Collapsed);
 		return;
 	}
 
-	if (GS->IsMatchRunning() || GS->GetPendingRewardCandidates().Num() == 0)
-	{
-		//	판이 시작됐거나 이미 다 골랐다. 이 화면은 더 필요 없다.
-		RemoveFromParent();
-		return;
-	}
-
+	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	RefreshCandidates();
 }

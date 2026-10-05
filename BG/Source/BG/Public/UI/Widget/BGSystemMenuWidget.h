@@ -112,6 +112,10 @@ private:
 	// 목록에 없는 해상도(창을 끌어서 만든 크기 등)를 가장 가까운 칸으로 돌려준다.
 	int32 FindClosestResolutionIndex(const FIntPoint& Target) const;
 
+	// 패널을 열어 둔 채 창을 다른 모니터로 옮긴 경우 — 펼치기 직전에 목록을 다시 만든다.
+	UFUNCTION()
+	void HandleResolutionComboOpening();
+
 	// 그래픽 설정은 즉시 적용하고 그대로 저장한다.
 	void ApplyAndSaveGraphics();
 
@@ -314,6 +318,9 @@ private:
 
 	// 콤보 목록에 넣은 순서 그대로의 해상도. 선택 인덱스로 바로 찾는다.
 	TArray<FIntPoint> ResolutionOptions;
+
+	// 해상도 목록을 만들 때 기준으로 삼은 모니터 해상도. 바뀌었을 때만 다시 만든다.
+	FIntPoint PopulatedMonitorResolution = FIntPoint::ZeroValue;
 
 	float MasterVolume = 1.f;
 	float MusicVolume  = 1.f;

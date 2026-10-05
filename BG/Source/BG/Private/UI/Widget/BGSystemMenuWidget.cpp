@@ -201,7 +201,11 @@ void UBGSystemMenuWidget::NativeConstruct()
 	if (Tab_Equips)      { Tab_Equips->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleEquipsTabClicked); }
 
 	if (WindowModeCombo)  { WindowModeCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleWindowModeChanged); }
-	if (ResolutionCombo)  { ResolutionCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleResolutionChanged); }
+	if (ResolutionCombo)
+	{
+		ResolutionCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleResolutionChanged);
+		ResolutionCombo->OnOpening.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleResolutionComboOpening);
+	}
 	if (QualityCombo)     { QualityCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleQualityChanged); }
 	if (FrameLimitCombo)  { FrameLimitCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleFrameLimitChanged); }
 	if (VSyncCheck)       { VSyncCheck->OnCheckStateChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleVSyncChanged); }
@@ -498,6 +502,7 @@ void UBGSystemMenuWidget::PopulateOptions()
 		// 그건 주 어댑터 기준이라 창을 다른 모니터로 옮겨도 그대로다. 지금 창이 올라가 있는
 		// 모니터를 찾아 그 네이티브 해상도로 잘라내고, 그 값 자체도 목록에 넣는다.
 		const FIntPoint Native = GetCurrentMonitorResolution();
+		PopulatedMonitorResolution = Native;
 
 		TArray<FIntPoint> Supported;
 		UKismetSystemLibrary::GetSupportedFullscreenResolutions(Supported);
@@ -861,6 +866,20 @@ void UBGSystemMenuWidget::HandleResolutionChanged(FString SelectedItem, ESelectI
 		Settings->SetScreenResolution(ResolutionOptions[Index]);
 		ApplyAndSaveGraphics();
 	}
+}
+
+void UBGSystemMenuWidget::HandleResolutionComboOpening()
+{
+	// 목록은 OpenSettings 에서 만든다. 패널을 연 채로 창을 옮기면 그 뒤로는 다시 만들 기회가
+	// 없어 옛 모니터 기준 목록이 그대로 펼쳐진다. 모니터가 같으면 손대지 않는다.
+	if (GetCurrentMonitorResolution() == PopulatedMonitorResolution)
+	{
+		return;
+	}
+
+	SyncSettingsToActualWindow();
+	PopulateOptions();
+	RefreshFromSettings();
 }
 
 void UBGSystemMenuWidget::HandleQualityChanged(FString SelectedItem, ESelectInfo::Type SelectionType)
