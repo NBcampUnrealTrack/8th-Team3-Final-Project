@@ -16,7 +16,45 @@
 #include "Components/SizeBox.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Engine/GameInstance.h"
+
+namespace
+{
+	//	행 첫 칸이 시작하는 x. Scroll_Rows 왼쪽(24) + 행 배경 안쪽 여백(16).
+	constexpr float ResultColumnStartX = 40.f;
+
+	//	열 폭. 합은 둘 다 638 = 행 폭 670 - 좌우 여백 16x2.
+	//	PvP 는 플레이어 이름이 길어 첫 칸을 넓히고 왼쪽 정렬한다.
+	//	PvE 는 값이 모두 짧아("1조우", "00:00") 고르게 나누고 가운데 정렬한다 — 왼쪽 정렬이면
+	//	헤더와 값의 길이 차이만큼 중심이 어긋나 보인다.
+	constexpr float PvPColumnWidths[] = {190.f, 125.f, 130.f, 85.f, 108.f};
+	constexpr float PvEColumnWidths[] = {128.f, 127.f, 128.f, 127.f, 128.f};
+	constexpr int32 ResultColumnCount = UE_ARRAY_COUNT(PvPColumnWidths);
+	static_assert(UE_ARRAY_COUNT(PvEColumnWidths) == ResultColumnCount, "열 수가 같아야 헤더 5칸을 함께 쓴다");
+}
+
+void UBGMatchResultWidget::LayoutHeaders(const float* Widths, bool bCenter)
+{
+	//	헤더는 WBP 캔버스에 있지만 위치는 여기서 열 폭으로 계산한다 — 행과 숫자가 따로 놀지 않게.
+	//	세로는 WBP 값(구분선과 행 사이 가운데)을 그대로 쓴다.
+	UTextBlock* Headers[] = {Header_0, Header_1, Header_2, Header_3, Header_4};
+	float X = ResultColumnStartX;
+	for (int32 Col = 0; Col < ResultColumnCount; ++Col)
+	{
+		if (UTextBlock* Header = Headers[Col])
+		{
+			Header->SetJustification(bCenter ? ETextJustify::Center : ETextJustify::Left);
+			if (UCanvasPanelSlot* HeaderSlot = Cast<UCanvasPanelSlot>(Header->Slot))
+			{
+				//	크기는 글자에 맞춰지므로(Size To Content) 가운데 정렬은 기준점을 열 중심에 둔다.
+				HeaderSlot->SetAlignment(FVector2D(bCenter ? 0.5f : 0.f, HeaderSlot->GetAlignment().Y));
+				HeaderSlot->SetPosition(FVector2D(bCenter ? X + Widths[Col] * 0.5f : X, HeaderSlot->GetPosition().Y));
+			}
+		}
+		X += Widths[Col];
+	}
+}
 
 void UBGMatchResultWidget::NativeConstruct()
 {
@@ -198,6 +236,7 @@ void UBGMatchResultWidget::OnResultReady_Implementation(const TArray<FBGMatchRes
     }
     if (Text_ResultTitle) Text_ResultTitle->SetText(Title);
     if (Text_ResultReason) Text_ResultReason->SetText(Reason);
+    LayoutHeaders(PvPColumnWidths, false);
     if (!Rows_Container || !WidgetTree) return;
     Rows_Container->ClearChildren();
     for (const FBGMatchResultRow& Row : InRows)
@@ -211,7 +250,7 @@ void UBGMatchResultWidget::OnResultReady_Implementation(const TArray<FBGMatchRes
         const FText Values[]={Row.Seat.bIsLocalPlayer?FText::Format(NSLOCTEXT("BGEnding","Me","{0} · 나"),Row.Seat.PlayerName):Row.Seat.PlayerName,Row.Seat.JobName,Row.Seat.RoleName,
             Row.Seat.bIsAlive?NSLOCTEXT("BGEnding","Alive","생존"):NSLOCTEXT("BGEnding","Dead","탈락"),
             !Row.Seat.RoleTag.IsValid()?NSLOCTEXT("BGEnding","Pending","확인 중"):Row.bWinner?NSLOCTEXT("BGEnding","Win","승리"):NSLOCTEXT("BGEnding","Lose","패배")};
-        const float Widths[]={190,125,130,85,100};
+        const float* Widths=PvPColumnWidths;
         for (int32 Col=0;Col<5;++Col)
         {
             USizeBox* Cell=WidgetTree->ConstructWidget<USizeBox>();Cell->SetWidthOverride(Widths[Col]);Cell->SetMinDesiredHeight(34);
@@ -288,17 +327,19 @@ void UBGMatchResultWidget::ShowPvERunRecords(const ABGGameState& GS, const TArra
 	if (Text_ResultTitle) Text_ResultTitle->SetText(Title);
 	if (Text_ResultReason) Text_ResultReason->SetText(Reason);
 
-	//	헤더 5칸은 그대로 두고 라벨만 바꾼다. 행의 칸 폭이 PvP 와 같아 정렬이 유지된다.
+	//	헤더 5칸을 그대로 쓰고 라벨과 열 배치만 PvE 용으로 바꾼다.
 	if (Header_0) Header_0->SetText(NSLOCTEXT("BGEnding", "PvEHeaderEncounter", "조우"));
 	if (Header_1) Header_1->SetText(NSLOCTEXT("BGEnding", "PvEHeaderJob", "직업"));
 	if (Header_2) Header_2->SetText(NSLOCTEXT("BGEnding", "PvEHeaderMatchup", "대진"));
 	if (Header_3) Header_3->SetText(NSLOCTEXT("BGEnding", "PvEHeaderResult", "결과"));
 	if (Header_4) Header_4->SetText(NSLOCTEXT("BGEnding", "PvEHeaderTime", "플레이 시간"));
 
+	LayoutHeaders(PvEColumnWidths, true);
+
 	if (!Rows_Container || !WidgetTree) return;
 	Rows_Container->ClearChildren();
 
-	const float Widths[] = {190, 125, 130, 85, 100};
+	const float* Widths = PvEColumnWidths;
 	for (const FBGPvEEncounterRecord& Record : Records)
 	{
 		UBorder* Background = WidgetTree->ConstructWidget<UBorder>();
@@ -327,6 +368,7 @@ void UBGMatchResultWidget::ShowPvERunRecords(const ABGGameState& GS, const TArra
 			Text->SetFont(Font);
 			Text->SetAutoWrapText(true);
 			Text->SetWrapTextAt(Widths[Col] - 12);
+			Text->SetJustification(ETextJustify::Center);
 			Text->SetColorAndOpacity(FSlateColor(Col == 3 && Record.bCleared ? FLinearColor(.83f, .56f, .23f) : FLinearColor(.83f, .77f, .65f)));
 			Cell->SetContent(Text);
 			Line->AddChildToHorizontalBox(Cell)->SetVerticalAlignment(VAlign_Center);

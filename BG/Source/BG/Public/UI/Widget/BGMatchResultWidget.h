@@ -118,6 +118,9 @@ private:
 	/** PvE 런 기록으로 제목, 부제, 헤더, 표를 채운다. 같은 WBP 에 내용만 바꿔 담는다. */
 	void ShowPvERunRecords(const class ABGGameState& GS, const TArray<FBGMatchResultRow>& InRows);
 
+	/** 헤더 5칸을 열 폭에 맞춰 놓는다. 행을 만들 때 쓰는 폭과 같은 배열을 넘길 것. */
+	void LayoutHeaders(const float* Widths, bool bCenter);
+
 	/** 직업 태그의 표시 이름. DT 의 DisplayName 이 우선이다. */
 	FText GetJobDisplayName(const FGameplayTag& Job) const;
 
