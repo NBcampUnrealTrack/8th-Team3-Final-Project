@@ -234,17 +234,17 @@ bool UBGGameInstance::StartListen()
 		return false;
 	}
 
-	const FString TargetMap = ToTravelPath(GameMap);
+	const FString CurrentMap = World->GetOutermost()->GetName();
+	const FString TargetMap = PickGameMap(CurrentMap);
 	if (TargetMap.IsEmpty())
 	{
 		//	BP 에서 맵을 안 골랐다. 조용히 넘어가면 호스트 버튼이 아무 반응도 없는 것처럼 보인다.
 		UE_LOG(LogBGNet, Warning,
-			TEXT("StartListen: GameMap 이 비어 있다 — BP_BGGameInstance 의 BG|맵 에서 게임 맵을 고를 것."));
+			TEXT("StartListen: GameMaps/GameMap 이 비어 있다 — BP_BGGameInstance 의 BG|맵 에서 게임 맵을 고를 것."));
 		return false;
 	}
 
 	// 메인메뉴에서 호스트하면 게임 맵으로 한 번 이동해야 한다. 이미 게임 맵이면 그대로 연다.
-	const FString CurrentMap = World->GetOutermost()->GetName();
 	if (CurrentMap == TargetMap)
 	{
 		return StartListenInPlace();
@@ -253,6 +253,25 @@ bool UBGGameInstance::StartListen()
 	UE_LOG(LogBGNet, Log, TEXT("StartListen: 게임 맵으로 이동 (%s → %s)"), *CurrentMap, *TargetMap);
 	World->ServerTravel(TargetMap + TEXT("?listen"), /*bAbsolute*/ true);
 	return true;
+}
+
+FString UBGGameInstance::PickGameMap(const FString& CurrentMap) const
+{
+	TArray<FString> Paths;
+	for (const FSoftObjectPath& Map : GameMaps)
+	{
+		const FString Path = ToTravelPath(Map);
+		if (Path.IsEmpty())
+		{
+			continue;
+		}
+		if (Path == CurrentMap)
+		{
+			return Path;
+		}
+		Paths.Add(Path);
+	}
+	return Paths.IsEmpty() ? ToTravelPath(GameMap) : Paths[FMath::RandRange(0, Paths.Num() - 1)];
 }
 
 FString UBGGameInstance::ToTravelPath(const FSoftObjectPath& Map)
@@ -616,11 +635,11 @@ bool UBGGameInstance::StartPvE()
 		return false;
 	}
 
-	const FString TargetMap = ToTravelPath(GameMap);
+	const FString TargetMap = PickGameMap(World->GetOutermost()->GetName());
 	if (TargetMap.IsEmpty())
 	{
 		UE_LOG(LogBGNet, Warning,
-			TEXT("StartPvE: GameMap 이 비어 있다 — BP_BGGameInstance 의 BG|맵 에서 게임 맵을 고를 것."));
+			TEXT("StartPvE: GameMaps/GameMap 이 비어 있다 — BP_BGGameInstance 의 BG|맵 에서 게임 맵을 고를 것."));
 		return false;
 	}
 

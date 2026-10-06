@@ -214,6 +214,17 @@ private:
 		meta = (AllowedClasses = "/Script/Engine.World", AllowPrivateAccess = "true"))
 	FSoftObjectPath GameMap = FSoftObjectPath(TEXT("/Game/GameSystem/TestMap.TestMap"));
 
+	/**
+	 * 게임 시작 때 이 중 하나가 랜덤으로 뽑힌다. 비어 있으면 GameMap 하나만 쓴다.
+	 * ⚠️ 이미 이 목록의 맵 안에 있으면(게임 맵에서 바로 호스트) 이동 없이 그 맵을 쓴다.
+	 */
+	UPROPERTY(Config, EditDefaultsOnly, BlueprintReadOnly, Category = "BG|맵",
+		meta = (AllowedClasses = "/Script/Engine.World", AllowPrivateAccess = "true"))
+	TArray<FSoftObjectPath> GameMaps;
+
+	/** GameMaps 에서 랜덤으로 하나 골라 이동 경로로 돌려준다. 현재 맵이 목록에 있으면 그대로 돌려준다. */
+	FString PickGameMap(const FString& CurrentMap) const;
+
 	/** 방을 나가면 돌아갈 메인메뉴 맵. 규약은 GameMap 과 같다. */
 	UPROPERTY(Config, EditDefaultsOnly, BlueprintReadOnly, Category = "BG|맵",
 		meta = (AllowedClasses = "/Script/Engine.World", AllowPrivateAccess = "true"))
