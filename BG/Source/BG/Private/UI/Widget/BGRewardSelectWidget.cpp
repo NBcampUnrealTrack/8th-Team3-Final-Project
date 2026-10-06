@@ -182,5 +182,14 @@ void UBGRewardSelectWidget::HandleTurnStateChanged()
 	{
 		bShown = true;
 		PopupAnim.Start(ScaleBox_Fit);
+
+		//	직전 조우의 승리 연출이 입력 모드를 GameOnly 로 바꿔 두었고, 그 캡처 설정은 맵을 넘어도
+		//	뷰포트에 남는다. 그대로면 마우스를 움직이는 것만으로 카메라가 돌고 UI 는 입력을 못 받아
+		//	한 번 클릭해야 카드를 고를 수 있다. 일반 플레이와 같은 모드로 되돌린다.
+		if (APlayerController* PC = GetOwningPlayer(); IsValid(PC))
+		{
+			PC->bShowMouseCursor = true;
+			PC->SetInputMode(FInputModeGameAndUI().SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock));
+		}
 	}
 }
