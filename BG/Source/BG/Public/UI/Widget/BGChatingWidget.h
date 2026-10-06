@@ -121,6 +121,9 @@ private:
 	void HandleInputCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
 	UFUNCTION()
+	void HandleInputChanged(const FText& Text);
+
+	UFUNCTION()
 	void HandleToggleButtonClicked();
 
 	void AddEntryToLog(const FBGChatEntry& Entry);
@@ -135,6 +138,8 @@ private:
 	TWeakObjectPtr<UBGChatingSubsystem> CachedSubsystem;
 	
 	uint64 LastClosedFrame = 0;
+	double LastTypingSoundTime = -1.0;
+	FString PreviousInputText;
 	
 	UFUNCTION() void HandleFilterAllClicked();
 	UFUNCTION() void HandleFilterPlayerClicked();

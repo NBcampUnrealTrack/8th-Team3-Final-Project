@@ -55,6 +55,10 @@ struct FBGPendingStatus
 {
 	GENERATED_BODY()
 
+	/** 이 상태를 만든 카드의 연출 번호. 규칙에는 영향 없음. */
+	UPROPERTY(BlueprintReadOnly)
+	int32 PresentationId = 0;
+
 	UPROPERTY(BlueprintReadOnly)
 	FGameplayTag Tag;
 

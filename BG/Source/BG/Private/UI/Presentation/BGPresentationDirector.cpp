@@ -2,6 +2,7 @@
 
 #include "Debug/BGCardLog.h"
 #include "Core/BGPlayerController.h"
+#include "Core/BGGameState.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
@@ -103,6 +104,12 @@ void UBGPresentationDirector::EnqueueCardPlay(const FBGCardPlayContext& Context)
 	Request.Kind               = EBGPresentationKind::CardPlay;
 	Request.Context            = Context;
 	Request.MinDurationSeconds = CardPlayMinDuration;
+	if (Context.Roll != INDEX_NONE)
+	{
+		const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+		Request.TimeoutSeconds = FMath::Max(Request.TimeoutSeconds,
+			(GS ? GS->GetResolutionPresentationSeconds() : 12.f) + 8.f);
+	}
 
 	Enqueue(Request);
 }

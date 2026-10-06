@@ -332,12 +332,17 @@ void ABGPlayerController::TryBindHandDelegate()
 
 void ABGPlayerController::SetResolutionWidget(UBGResolutionWidget* InResolutionWidget)
 {
+	if (ResolutionWidget)
+	{
+		ResolutionWidget->OnResolutionHiddenEvent.RemoveDynamic(this, &ABGPlayerController::HandleResolutionHidden);
+	}
 	ResolutionWidget = InResolutionWidget;
 
 	if (ResolutionWidget)
 	{
 		//	등록 직후에는 보여줄 판정이 없다. 켜진 채로 시작하면 빈 패널이 화면에 남는다.
 		ResolutionWidget->HideResolution();
+		ResolutionWidget->OnResolutionHiddenEvent.AddUniqueDynamic(this, &ABGPlayerController::HandleResolutionHidden);
 	}
 
 	TryBindGameStateDelegates();
@@ -397,6 +402,20 @@ void ABGPlayerController::HandleCardEquipped(int32 SeatIndex, FGameplayTag CardI
 
 void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution)
 {
+	// 리슨 서버의 원격 PC에도 GameState 델리게이트가 걸릴 수 있다. UI 완료는 실제 화면만 보낸다.
+	if (!IsLocalController()) return;
+	ActiveResolutionPresentationId = Resolution.PresentationId;
+	if (PresentationDirector && Resolution.PresentationId > LastWorldLogicFinishedId
+		&& Resolution.PresentationId > 0)
+	{
+		if (ServerWorldHoldPresentationId != Resolution.PresentationId)
+		{
+			ServerWorldHold.End(PresentationDirector);
+			ServerWorldHold.Begin(PresentationDirector, EBGPresentationTrack::ServerWorld);
+			ServerWorldHoldPresentationId = Resolution.PresentationId;
+		}
+	}
+	if (WorldTargeting) WorldTargeting->ClearSelectionEffectsForResolution();
 	//	Row 는 두 군데서 쓰인다 — 판정 위젯의 카드 이름, 그리고 손패 연출의 스텝 목록.
 	//	(카드 이름을 DT 에서 가져오는 이유: 태그 문자열을 그대로 띄우면 플레이어가 읽을 수 없다.)
 	const UBGDataSubsystem* Data = GetGameInstance()
@@ -443,6 +462,7 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 	//	맥락은 좌석과 무관하게 먼저 만든다. 손패 연출은 내 카드일 때만 쓰지만
 	//	카메라 셰이크는 남의 카드에도 필요하기 때문이다.
 	FBGCardPlayContext PlayContext;
+	PlayContext.PresentationId = Resolution.PresentationId;
 	PlayContext.Tier      = Tier;
 	PlayContext.Roll      = Resolution.Roll;
 	PlayContext.bForced   = Resolution.bForced;
@@ -493,6 +513,7 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 
 	if (!ResolutionWidget)
 	{
+		AcknowledgeResolutionPresentation();
 		return;   // HUD 가 위젯을 넘기지 않았다. 판정 자체는 이미 서버에서 끝났으므로 무해하다.
 	}
 
@@ -549,6 +570,66 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 	}
 
 	ResolutionWidget->ShowResolution(View);
+}
+
+// 판정 위젯이 실제로 숨겨지면 서버에 완료를 알린다.
+void ABGPlayerController::HandleResolutionHidden()
+{
+	AcknowledgeResolutionPresentation();
+}
+
+// 현재 판정 번호를 한 번만 서버에 보내 중복 완료 통지를 막는다.
+void ABGPlayerController::AcknowledgeResolutionPresentation()
+{
+	const int32 PresentationId = ActiveResolutionPresentationId;
+	ActiveResolutionPresentationId = 0;
+	if (PresentationId > 0)
+	{
+		ServerConfirmResolutionHidden(PresentationId);
+		if (!HandWidget || !PresentationDirector)
+		{
+			ServerConfirmCardPresentationFinished(PresentationId);
+		}
+	}
+}
+
+// 클라이언트의 UI 종료 통지를 서버 GameState에 전달한다.
+void ABGPlayerController::ServerConfirmResolutionHidden_Implementation(int32 PresentationId)
+{
+	if (ABGGameState* GS = GetBGGameState())
+	{
+		GS->NotifyResolutionPresentationFinished(this, PresentationId);
+	}
+}
+
+// 로컬 카드 연출의 모든 트랙이 끝나면 판정 번호를 서버에 전달한다.
+void ABGPlayerController::HandleCardPresentationFinished(const FBGPresentationRequest& Request)
+{
+	if (IsLocalController() && Request.Kind == EBGPresentationKind::CardPlay
+		&& Request.Context.PresentationId > 0)
+	{
+		ServerConfirmCardPresentationFinished(Request.Context.PresentationId);
+	}
+}
+
+// 서버가 같은 판정의 클라이언트 연출 완료만 수락하도록 중계한다.
+void ABGPlayerController::ServerConfirmCardPresentationFinished_Implementation(int32 PresentationId)
+{
+	if (ABGGameState* GS = GetBGGameState())
+	{
+		GS->NotifyCardPresentationFinished(this, PresentationId);
+	}
+}
+
+// 서버의 월드 단계 종료 신호를 받으면 로컬 전체 연출의 마지막 연결 표를 놓는다.
+void ABGPlayerController::ClientCardWorldLogicFinished_Implementation(int32 PresentationId)
+{
+	LastWorldLogicFinishedId = FMath::Max(LastWorldLogicFinishedId, PresentationId);
+	if (PresentationId == ServerWorldHoldPresentationId)
+	{
+		ServerWorldHold.End(PresentationDirector);
+		ServerWorldHoldPresentationId = 0;
+	}
 }
 
 // ======================================================================================
@@ -817,6 +898,11 @@ void ABGPlayerController::BeginPlay()
 	Super::BeginPlay();
 	if (HasLocalViewer())
 	{
+		if (PresentationDirector)
+		{
+			PresentationDirector->OnPresentationFinished.AddUniqueDynamic(
+				this, &ABGPlayerController::HandleCardPresentationFinished);
+		}
 		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 		{
 			Audio->PlayMusic(BG::Audio::Music::Gameplay.GetTag());
@@ -880,6 +966,10 @@ void ABGPlayerController::TryBindGameStateDelegates()
 		Previous->OnCinematicStageChanged.RemoveAll(this);
 		Previous->OnIntroStageChanged.RemoveAll(this);
 	}
+	ServerWorldHold.End(PresentationDirector);
+	ServerWorldHoldPresentationId = 0;
+	LastWorldLogicFinishedId = 0;
+	ActiveResolutionPresentationId = 0;
 
 	GS->OnCardResolved.AddUObject(this, &ABGPlayerController::HandleCardResolved);
 	GS->OnCardEquipped.AddUObject(this, &ABGPlayerController::HandleCardEquipped);
@@ -2209,7 +2299,13 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 		MyPS->LastCardEffectSummary.Reset();   // 앞 카드의 결과가 이 카드 통지에 섞이지 않게
 	}
 
+	ABGGameState* PresentationGS = GetBGGameState();
+	Resolution.PresentationId = PresentationGS ? PresentationGS->BeginCardRulesPresentation() : 0;
 	const FGameplayAbilitySpecHandle ActivatedHandle = ASC->GiveAbilityAndActivateOnce(Spec, &Payload);
+	if (PresentationGS)
+	{
+		Resolution.EquipmentProcs = PresentationGS->EndCardRulesPresentation(ActivatedHandle.IsValid());
+	}
 
 	if (MyPS)
 	{

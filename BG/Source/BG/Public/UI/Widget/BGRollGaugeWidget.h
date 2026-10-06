@@ -91,8 +91,7 @@ protected:
 	void OnResultShown(const FBGResolutionView& Shown);
 
 	// ── 시간 ─────────────────────────────────────────────────────────
-	//	⚠️ 판정 통지 → 착지까지가 ABGGameState::ResolutionPresentationSeconds 를 넘으면
-	//	   월드 연출이 먼저 터져 결과가 드러난다. 넘으면 착지 때 경고 로그가 남는다.
+	//	월드 연출은 판정 UI 종료 통지 뒤 시작한다. 통지 누락 때만 GameState 안전망이 작동한다.
 
 	/** 카드 퇴장 신호를 기다리는 상한. 넘으면 신호 없이 시작한다. 카드 대기 시간보다 길어야 한다. */
 	UPROPERTY(EditAnywhere, Category = "BG|RollGauge|Timing", meta = (ClampMin = "0.0", Units = "s"))

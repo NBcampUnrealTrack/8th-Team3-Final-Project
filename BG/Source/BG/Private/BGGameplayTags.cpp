@@ -11,6 +11,12 @@ namespace BG
 	{
 		namespace UI
 		{
+			namespace Chat
+			{
+				UE_DEFINE_GAMEPLAY_TAG(Typing, "Audio.UI.Chat.Typing")
+				UE_DEFINE_GAMEPLAY_TAG(Message, "Audio.UI.Chat.Message")
+			}
+
 			namespace Button
 			{
 				UE_DEFINE_GAMEPLAY_TAG(HoverBegin,    "Audio.UI.Button.Hover.Begin")

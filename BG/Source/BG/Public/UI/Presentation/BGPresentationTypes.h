@@ -29,7 +29,7 @@ enum class EBGPresentationTrack : uint8
 {
 	/**
 	 * 판정 UI 대기(주사위·결과 표시). 끝내는 주체: ABGPlayerController(복제된 대기 플래그).
-	 * ⚠️ 월드 연출은 이 대기가 끝난 **뒤에** 시작한다(ResolutionPresentationSeconds).
+	 * ⚠️ 월드 연출은 판정 UI 종료 통지 뒤에 시작한다. ResolutionPresentationSeconds는 안전망이다.
 	 *    이 트랙이 없으면 그 사이 잡힌 트랙이 하나도 없어 연출이 곧바로 끝난다.
 	 */
 	Resolution UMETA(DisplayName = "판정 대기"),
@@ -45,6 +45,9 @@ enum class EBGPresentationTrack : uint8
 
 	/** 위젯 연출. 끝내는 주체: BP(UMG 애니메이션 Finished). */
 	UI        UMETA(DisplayName = "UI"),
+
+	/** UI와 월드 FX 사이를 잇는다. 끝내는 주체: 서버의 카드 연출 종료 통지. */
+	ServerWorld UMETA(DisplayName = "서버 월드 연출"),
 };
 
 /**

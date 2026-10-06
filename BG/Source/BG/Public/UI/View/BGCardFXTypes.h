@@ -108,6 +108,10 @@ struct FBGCardPlayContext
 {
 	GENERATED_BODY()
 
+	/** 서버가 발급한 판정 연출 번호. 클라이언트의 전체 연출 완료 통지에 쓴다. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Card|FX")
+	int32 PresentationId = 0;
+
 	/** 판정 등급. 장비처럼 판정하지 않는 카드는 None. */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Card|FX")
 	EBGResolutionTier Tier = EBGResolutionTier::None;

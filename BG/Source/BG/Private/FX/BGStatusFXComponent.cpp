@@ -4,6 +4,7 @@
 #include "Card/BGCardType.h"
 #include "Card/BGDataSubsystem.h"
 #include "Core/BGPlayerState.h"
+#include "Core/BGGameState.h"
 #include "Debug/BGCardLog.h"
 
 #include "GameFramework/Character.h"
@@ -50,6 +51,10 @@ void UBGStatusFXComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		ABGPlayerState::OnAnySeatPublicInfoChanged.Remove(PublicInfoHandle);
 		PublicInfoHandle.Reset();
 	}
+	if (ABGGameState* GS = BoundPresentationGameState.Get())
+	{
+		GS->OnStatusVisualsReleased.Remove(PresentationReleaseHandle);
+	}
 
 	if (UWorld* World = GetWorld())
 	{
@@ -72,13 +77,14 @@ void UBGStatusFXComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void UBGStatusFXComponent::PollPlayerState()
 {
+	BindPresentationRelease();
 	UWorld* World = GetWorld();
 	if (!World)
 	{
 		return;
 	}
 
-	if (GetOwnerPlayerState())
+	if (GetOwnerPlayerState() && BoundPresentationGameState.IsValid())
 	{
 		World->GetTimerManager().ClearTimer(PlayerStateWaitTimer);
 		RefreshStatusFX();
@@ -90,6 +96,17 @@ void UBGStatusFXComponent::PollPlayerState()
 		World->GetTimerManager().SetTimer(PlayerStateWaitTimer, this,
 			&UBGStatusFXComponent::PollPlayerState, PlayerStateWaitInterval, /*bLoop=*/true);
 	}
+}
+
+// GameState의 연출 해제 통지에 구독해 보류한 상태 FX를 갱신한다.
+void UBGStatusFXComponent::BindPresentationRelease()
+{
+	if (BoundPresentationGameState.IsValid()) return;
+	ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
+	if (!GS) return;
+	BoundPresentationGameState = GS;
+	PresentationReleaseHandle = GS->OnStatusVisualsReleased.AddUObject(this, &UBGStatusFXComponent::RefreshStatusFX);
+	RefreshStatusFX();
 }
 
 void UBGStatusFXComponent::HandleSeatPublicInfoChanged(int32 ChangedSeat)
@@ -133,7 +150,9 @@ void UBGStatusFXComponent::BuildDesiredKeys(TSet<FName>& OutKeys) const
 
 	for (const FBGPendingStatus& Status : PS->GetPendingStatuses())
 	{
-		if (Status.Tag.IsValid())
+		const ABGGameState* GS = BoundPresentationGameState.Get();
+		if (Status.Tag.IsValid() && (Status.PresentationId == 0
+			|| (GS && GS->IsStatusVisualReleased(Status.PresentationId))))
 		{
 			OutKeys.Add(Status.Tag.GetTagName());   //	"Status.*"
 		}

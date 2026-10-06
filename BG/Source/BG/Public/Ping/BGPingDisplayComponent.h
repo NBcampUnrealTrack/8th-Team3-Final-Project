@@ -127,6 +127,10 @@ private:
 	/** 선로딩이 끝나면 아이콘 없이 떠 있던 마커를 채운다. */
 	void HandleIconsLoaded();
 
+	
+	/** Accepted ping notification sound, played once on each local client. */
+	void PlayPingSound(const FBGPingEvent& Event) const;
+
 	/** 채팅 로그 한 줄. "P7 이름 → P5 이름 : 보호" */
 	void AddChatLine(const FBGPingEvent& Event) const;
 

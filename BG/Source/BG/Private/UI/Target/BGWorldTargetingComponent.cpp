@@ -413,6 +413,8 @@ void UBGWorldTargetingComponent::StopTargetSelectionEffect(bool bPlayEndAnimatio
 	}
 
 	const TWeakObjectPtr<UNiagaraComponent> WeakEffect = Effect;
+	EndingSelectionEffects.RemoveAll([](const TWeakObjectPtr<UNiagaraComponent>& Item) { return !Item.IsValid(); });
+	EndingSelectionEffects.Add(WeakEffect);
 	FTimerHandle CleanupTimer;
 	GetWorld()->GetTimerManager().SetTimer(
 		CleanupTimer,
@@ -425,6 +427,17 @@ void UBGWorldTargetingComponent::StopTargetSelectionEffect(bool bPlayEndAnimatio
 		}),
 		EndDelay,
 		false);
+}
+
+// 판정 UI가 시작되면 남은 대상 선택 종료 이펙트를 즉시 정리한다.
+void UBGWorldTargetingComponent::ClearSelectionEffectsForResolution()
+{
+	StopTargetSelectionEffect(false);
+	for (const TWeakObjectPtr<UNiagaraComponent>& WeakEffect : EndingSelectionEffects)
+	{
+		if (UNiagaraComponent* Effect = WeakEffect.Get()) Effect->DestroyComponent();
+	}
+	EndingSelectionEffects.Reset();
 }
 
 void UBGWorldTargetingComponent::UpdateEdgePan(float DeltaTime)

@@ -34,6 +34,8 @@ public:
 	/** 진행 중인 조준을 접는다. OnTargetSelectionCancelled 가 발생한다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Target")
 	void CancelTargeting();
+	/** 판정 UI가 시작되면 남아 있는 대상선 종료 연출을 즉시 정리한다. */
+	void ClearSelectionEffectsForResolution();
 
 	UFUNCTION(BlueprintPure, Category = "BG|Target")
 	bool IsTargeting() const { return bTargeting; }
@@ -141,6 +143,7 @@ private:
 	/** 현재 조준 세션의 로컬 전용 대상선. 서버/다른 클라이언트에는 복제하지 않는다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> TargetSelectionEffect;
+	TArray<TWeakObjectPtr<UNiagaraComponent>> EndingSelectionEffects;
 
 	bool bTargeting = false;
 

@@ -69,8 +69,8 @@ public:
 	void GetAllCardRowNames(TArray<FName>& OutNames) const;
 
 	/**
-	 * 지속 이펙트 Row 조회. Key 는 장비 CardId 이거나 상태 태그 이름이다 — 둘 다 FName 이라
-	 * 표 하나로 받는다 (FBGStatusFXRow 주석 참고).
+	 * 장비·상태 FX Row 조회. Key 는 장비 CardId, 상태 태그, 단발 발동 FXRowKey 중 하나다.
+	 * 같은 표를 쓰되 지속 오라와 단발 발동은 서로 다른 재생 경로가 맡는다.
 	 *
 	 * 없으면 nullptr 이고 그게 정상이다. 이펙트를 안 만든 장비·상태가 훨씬 많으므로
 	 * 못 찾았다고 경고하지 않는다.

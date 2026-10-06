@@ -12,6 +12,7 @@
 #include "Audio/BGAudioSubsystem.h"
 #include "BGGameplayTags.h"
 #include "Core/BGPlayerState.h"
+#include "Core/BGPlayerController.h"
 #include "Core/BGCharacter.h"
 #include "GAS/BGAttributeSet.h"
 #include "Core/BGGameInstance.h"
@@ -26,6 +27,13 @@
 #include "Net/UnrealNetwork.h"
 #include "AI/BGAIPlayerController.h"
 #include "Core/BGGameMode.h"
+#include "FX/BGStatusFXTypes.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "Components/SceneComponent.h"
+#include "GameFramework/Character.h"
+#include "UI/Presentation/BGPresentationDirector.h"
 
 ABGGameState::ABGGameState()
 {
@@ -63,6 +71,8 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, CinematicResolution);
 	DOREPLIFETIME(ABGGameState, bResolutionPresentationActive);
 	DOREPLIFETIME(ABGGameState, bPresentationDoubleSpeed);
+	DOREPLIFETIME(ABGGameState, bCardWorldPresentationActive);
+	DOREPLIFETIME(ABGGameState, ReleasedPresentationId);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -121,6 +131,45 @@ void ABGGameState::BeginCardCinematic(ABGCharacter* Caster, ABGCharacter* Victim
 	SetCinematicStage(EBGCinematicStage::Primary);
 }
 
+// 카드 효과 실행 전 연출 번호를 발급해 새 상태 FX의 표시 시점을 묶는다.
+int32 ABGGameState::BeginCardRulesPresentation()
+{
+	if (!HasAuthority()) return 0;
+	RulesEquipmentProcs.Reset();
+	RulesPresentationId = ++NextPresentationId;
+	return RulesPresentationId;
+}
+
+// 카드 효과 실행을 마치고 발동 실패 시 보류한 상태 FX 표시를 해제한다.
+TArray<FBGEquipmentProcEvent> ABGGameState::EndCardRulesPresentation(bool bActivated)
+{
+	if (!HasAuthority()) return {};
+	if (!bActivated && RulesPresentationId > ReleasedPresentationId)
+	{
+		ReleasedPresentationId = RulesPresentationId;
+		OnStatusVisualsReleased.Broadcast();
+	}
+	RulesPresentationId = 0;
+	TArray<FBGEquipmentProcEvent> Result = bActivated ? MoveTemp(RulesEquipmentProcs) : TArray<FBGEquipmentProcEvent>();
+	RulesEquipmentProcs.Reset();
+	return Result;
+}
+
+// 서버가 확정한 장비 발동을 현재 카드의 결과 연출 목록에 쌓는다.
+void ABGGameState::RecordEquipmentProc(const FBGEquipmentProcEvent& Event)
+{
+	if (HasAuthority() && RulesPresentationId > 0 && !Event.FXRowKey.IsNone() && Event.Target)
+	{
+		RulesEquipmentProcs.Add(Event);
+	}
+}
+
+// 연출 해제 번호가 복제되면 클라이언트의 상태 FX를 다시 맞춘다.
+void ABGGameState::OnRep_ReleasedPresentationId()
+{
+	OnStatusVisualsReleased.Broadcast();
+}
+
 // 시네마틱과 재생할지 시네마틱 없이 재생할지 확인하는 분기 함수
 void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharacter* Target,
 	const FBGCardResolution& Resolution)
@@ -142,9 +191,20 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 			return;
 		}
 
-		if (ResolutionPresentationSeconds > 0.f)
+		if (GetResolutionPresentationSeconds() > 0.f)
 		{
+			PendingPresentationObservers.Reset();
+			for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+			{
+				if (ABGPlayerController* PC = Cast<ABGPlayerController>(It->Get());
+					PC && !PC->IsA<ABGAIPlayerController>())
+				{
+					PendingPresentationObservers.Add(PC);
+				}
+			}
 			bResolutionPresentationActive = true;
+			UE_LOG(LogBGCard, Log, TEXT("[CardPresentation] 판정 UI 대기: %s / %d명 / ID=%d"),
+				*Resolution.CardId.ToString(), PendingPresentationObservers.Num(), Resolution.PresentationId);
 			PendingPresentationCaster = Caster;
 			PendingPresentationTarget = Target;
 			PendingPresentationResolution = Resolution;
@@ -162,13 +222,147 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 			GetWorldTimerManager().SetTimer(ResolutionPresentationTimer, this,
 				&ABGGameState::FinishResolutionPresentation,
 				GetResolutionPresentationSeconds(), /*bLoop=*/false);
+			if (PendingPresentationObservers.IsEmpty()) FinishResolutionPresentation();
 			return;
 		}
 
-		Multicast_CardResolved(Resolution);
 	}
 
+	BeginCardWorldPresentation(Resolution);
+	ReleasedPresentationId = FMath::Max(ReleasedPresentationId, Resolution.PresentationId);
+	OnStatusVisualsReleased.Broadcast();
 	PlayResolvedCardPresentationNow(Caster, Target, Resolution);
+	if (!IsCinematicPlaying() && !bWaitingForNonCinematicCueEnd) MarkCardWorldLogicFinished();
+}
+
+// 플레이어의 판정 UI 종료를 기록하고 전원 완료 시 월드 연출을 시작한다.
+void ABGGameState::NotifyResolutionPresentationFinished(ABGPlayerController* Controller, int32 PresentationId)
+{
+	if (!HasAuthority() || !bResolutionPresentationActive || !Controller
+		|| PresentationId != PendingPresentationResolution.PresentationId) return;
+	if (PendingPresentationObservers.Remove(TWeakObjectPtr<ABGPlayerController>(Controller)) == 0) return;
+	UE_LOG(LogBGCard, Log, TEXT("[CardPresentation] 판정 UI 완료: %s / 남은 %d명 / ID=%d"),
+		*PendingPresentationResolution.CardId.ToString(), PendingPresentationObservers.Num(), PresentationId);
+	if (PendingPresentationObservers.IsEmpty()) FinishResolutionPresentation();
+}
+
+// 클라이언트 카드 연출의 모든 트랙이 끝났다는 통지를 판정 번호별로 모은다.
+void ABGGameState::NotifyCardPresentationFinished(ABGPlayerController* Controller, int32 PresentationId)
+{
+	if (!HasAuthority() || !bCardWorldPresentationActive || !Controller
+		|| PresentationId != ActiveCardWorldPresentationId) return;
+	if (PendingCardWorldObservers.Remove(TWeakObjectPtr<ABGPlayerController>(Controller)) == 0) return;
+	UE_LOG(LogBGCard, Log, TEXT("[CardPresentation] 화면 연출 완료: ID=%d / 남은 %d명"),
+		PresentationId, PendingCardWorldObservers.Num());
+	TryFinishCardWorldPresentation();
+}
+
+// 월드 연출 잠금을 열고 각 플레이어 화면의 완료 통지를 기다린다.
+void ABGGameState::BeginCardWorldPresentation(const FBGCardResolution& Resolution)
+{
+	if (!HasAuthority()) return;
+	bCardWorldPresentationActive = true;
+	++CardWorldPresentationSerial;
+	bCardWorldLogicFinished = false;
+	bWaitingForNonCinematicCueEnd = false;
+	bCardWorldFinishScheduled = false;
+	bCardWorldPausedRope = Resolution.Roll != INDEX_NONE;
+	ActiveCardWorldPresentationId = Resolution.PresentationId;
+	PendingCardWorldObservers.Reset();
+	if (Resolution.PresentationId > 0)
+	{
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			if (ABGPlayerController* PC = Cast<ABGPlayerController>(It->Get());
+				PC && !PC->IsA<ABGAIPlayerController>())
+			{
+				PendingCardWorldObservers.Add(PC);
+			}
+		}
+	}
+	if (Rope && bCardWorldPausedRope) Rope->PauseRope(BGRopePause::Resolution);
+	GetWorldTimerManager().SetTimer(CardWorldPresentationTimer, this,
+		&ABGGameState::HandleCardWorldPresentationTimeout,
+		FMath::Max(1.f, CardWorldPresentationTimeoutSeconds), false);
+	BroadcastTurnState();
+}
+
+// 서버의 Cue 또는 시네마틱 종료와 클라이언트 완료가 모두 모였는지 확인한다.
+void ABGGameState::MarkCardWorldLogicFinished()
+{
+	if (!HasAuthority() || !bCardWorldPresentationActive) return;
+	if (bCardWorldLogicFinished) return;
+	bCardWorldLogicFinished = true;
+	if (ActiveCardWorldPresentationId > 0)
+	{
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			if (ABGPlayerController* PC = Cast<ABGPlayerController>(It->Get());
+				PC && !PC->IsA<ABGAIPlayerController>())
+			{
+				PC->ClientCardWorldLogicFinished(ActiveCardWorldPresentationId);
+			}
+		}
+	}
+	TryFinishCardWorldPresentation();
+}
+
+// 카드 처리 호출 스택이 끝난 다음 틱에 잠금을 풀어 AI의 재진입을 막는다.
+void ABGGameState::TryFinishCardWorldPresentation()
+{
+	for (auto It = PendingCardWorldObservers.CreateIterator(); It; ++It)
+	{
+		if (!It->IsValid()) It.RemoveCurrent();
+	}
+	if (!bCardWorldPresentationActive || !bCardWorldLogicFinished
+		|| !PendingCardWorldObservers.IsEmpty() || bCardWorldFinishScheduled) return;
+	bCardWorldFinishScheduled = true;
+	const int32 Serial = CardWorldPresentationSerial;
+	GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this, Serial]()
+	{
+		if (CardWorldPresentationSerial != Serial) return;
+		bCardWorldFinishScheduled = false;
+		if (bCardWorldPresentationActive && bCardWorldLogicFinished
+			&& PendingCardWorldObservers.IsEmpty()) FinishCardWorldPresentation();
+	}));
+}
+
+// 카드 연출을 닫고 밀린 사망 처리 뒤에 카드 사용과 턴 종료를 다시 허용한다.
+void ABGGameState::FinishCardWorldPresentation()
+{
+	if (!HasAuthority() || !bCardWorldPresentationActive) return;
+	if (!bCardWorldLogicFinished && ActiveCardWorldPresentationId > 0)
+	{
+		for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+		{
+			if (ABGPlayerController* PC = Cast<ABGPlayerController>(It->Get());
+				PC && !PC->IsA<ABGAIPlayerController>())
+			{
+				PC->ClientCardWorldLogicFinished(ActiveCardWorldPresentationId);
+			}
+		}
+	}
+	UE_LOG(LogBGCard, Log, TEXT("[CardPresentation] 카드 연출 종료: ID=%d"),
+		ActiveCardWorldPresentationId);
+	GetWorldTimerManager().ClearTimer(CardWorldPresentationTimer);
+	bCardWorldPresentationActive = false;
+	bCardWorldLogicFinished = false;
+	bWaitingForNonCinematicCueEnd = false;
+	ActiveCardWorldPresentationId = 0;
+	PendingCardWorldObservers.Reset();
+	if (!IsCinematicPlaying()) TryBeginNextDeathCinematic();
+	if (Rope && bCardWorldPausedRope) Rope->ResumeRope(BGRopePause::Resolution);
+	bCardWorldPausedRope = false;
+	BroadcastTurnState();
+}
+
+// 완료 이벤트가 누락되면 경고를 남기고 안전망 시간에 잠금을 해제한다.
+void ABGGameState::HandleCardWorldPresentationTimeout()
+{
+	if (!bCardWorldPresentationActive) return;
+	UE_LOG(LogBGCard, Warning, TEXT("[CardPresentation] 월드 연출 대기 초과: ID=%d / 남은 화면 %d / 서버 완료 %d"),
+		ActiveCardWorldPresentationId, PendingCardWorldObservers.Num(), bCardWorldLogicFinished);
+	FinishCardWorldPresentation();
 }
 
 void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGCharacter* Target,
@@ -178,6 +372,7 @@ void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGChar
 	{
 		return;
 	}
+	PlayEquipmentProcs(Resolution, EBGEquipmentProcPhase::AfterResolution);
 
 	const UGameInstance* GI = GetGameInstance();
 	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
@@ -192,6 +387,7 @@ void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGChar
 		: Presentation->FailureEffect).IsNull();
 	if (!CardRow || (!FXRow && !(bFailed && bHasFailureEffect)))
 	{
+		PlayEquipmentProcs(Resolution, EBGEquipmentProcPhase::Impact);
 		return; // 성공 계열은 카드 FX Row, 실패 계열은 Presentation 전역 FX가 있어야 한다.
 	}
 
@@ -209,6 +405,27 @@ void ABGGameState::PlayResolvedCardPresentationNow(ABGCharacter* Caster, ABGChar
 		? Presentation->FailureCueSeconds
 		: FXRow->NonCinematicCueSeconds;
 	AddNonCinematicCardGameplayCue(Caster, Target, Resolution, ActiveSeconds);
+	PlayEquipmentProcs(Resolution, EBGEquipmentProcPhase::Impact);
+}
+
+// 지정한 연출 단계의 장비 발동을 기록 순서대로 모든 화면에 전달한다.
+void ABGGameState::PlayEquipmentProcs(const FBGCardResolution& Resolution, EBGEquipmentProcPhase Phase)
+{
+	if (!HasAuthority()) return;
+	for (const FBGEquipmentProcEvent& Event : Resolution.EquipmentProcs)
+	{
+		if (Event.Phase == Phase) Multicast_PlayEquipmentProc(Event);
+	}
+}
+
+// 장비 발동이 일반 피격 연출을 대체해야 하는지 확인한다.
+bool ABGGameState::ReplacesDefaultImpact(const FBGCardResolution& Resolution)
+{
+	for (const FBGEquipmentProcEvent& Event : Resolution.EquipmentProcs)
+	{
+		if (Event.Phase == EBGEquipmentProcPhase::Impact && Event.bReplaceDefaultImpact) return true;
+	}
+	return false;
 }
 
 void ABGGameState::FinishResolutionPresentation()
@@ -218,6 +435,12 @@ void ABGGameState::FinishResolutionPresentation()
 		return;
 	}
 
+	if (!bResolutionPresentationActive) return;
+	if (!PendingPresentationObservers.IsEmpty())
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[CardPresentation] 판정 UI 통지 대기 초과: %d명"),
+			PendingPresentationObservers.Num());
+	}
 	GetWorldTimerManager().ClearTimer(ResolutionPresentationTimer);
 
 	ABGCharacter* Caster = PendingPresentationCaster.Get();
@@ -227,11 +450,16 @@ void ABGGameState::FinishResolutionPresentation()
 	PendingPresentationCaster = nullptr;
 	PendingPresentationTarget = nullptr;
 	PendingPresentationResolution = FBGCardResolution();
+	PendingPresentationObservers.Reset();
+	BeginCardWorldPresentation(Resolution);
 	bResolutionPresentationActive = false;
 	BroadcastTurnState();
+	ReleasedPresentationId = FMath::Max(ReleasedPresentationId, Resolution.PresentationId);
+	OnStatusVisualsReleased.Broadcast();
+	UE_LOG(LogBGCard, Log, TEXT("[CardPresentation] 결과 월드 FX 시작: %s / ID=%d"),
+		*Resolution.CardId.ToString(), Resolution.PresentationId);
 
-	// 먼저 월드 연출을 열어 Cinematic pause holder를 잡는다. 그 뒤 Resolution holder를
-	// 놓아야 두 단계 사이에 밧줄이 잠깐 재개되지 않는다.
+	// 월드 연출과 화면 완료 통지가 끝날 때까지 Resolution 밧줄 정지 사유를 유지한다.
 	PlayResolvedCardPresentationNow(Caster, Target, Resolution);
 	if (Rope)
 	{
@@ -246,6 +474,7 @@ void ABGGameState::FinishResolutionPresentation()
 
 	//	비시네마틱 카드는 여기서 연출이 끝난다. 시네마틱이나 사망 연출이 이어졌다면 그쪽이 끝날 때 적용한다.
 	TryApplyPendingDoubleSpeed();
+	if (!IsCinematicPlaying() && !bWaitingForNonCinematicCueEnd) MarkCardWorldLogicFinished();
 }
 
 void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
@@ -306,6 +535,10 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 	// 서버 ASC에 추가하면 ActiveGameplayCues가 모든 클라이언트로 복제된다.
 	// ExecuteGameplayCue를 쓰지 않아 늦게 들어온 클라이언트도 WhileActive를 복원한다.
 	AddCardGameplayCueForStage(NewStage);
+	if (NewStage == EBGCinematicStage::Secondary)
+	{
+		PlayEquipmentProcs(CinematicResolution, EBGEquipmentProcPhase::Impact);
+	}
 
 	//	서버는 자기 OnRep 을 받지 못한다 — 여기서 직접 부르지 않으면 리슨서버 호스트만 연출이 안 뜬다.
 	HandleCinematicStage();
@@ -347,6 +580,10 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 void ABGGameState::AddCardGameplayCueForStage(EBGCinematicStage Stage)
 {
 	if (!HasAuthority() || (Stage != EBGCinematicStage::Primary && Stage != EBGCinematicStage::Secondary))
+	{
+		return;
+	}
+	if (Stage == EBGCinematicStage::Secondary && ReplacesDefaultImpact(CinematicResolution))
 	{
 		return;
 	}
@@ -443,6 +680,11 @@ void ABGGameState::AddNonCinematicCardGameplayCue(ABGCharacter* Caster, ABGChara
 	{
 		return;
 	}
+	if (ReplacesDefaultImpact(Resolution) && Target && FXRow
+		&& FXRow->PrimaryAnchor == EBGCardFXAnchor::Target)
+	{
+		return; // 대상 기준 단발 Cue라면 장비 발동 연출이 대신한다.
+	}
 	ABGCharacter* CueTarget = !bFailed
 		&& FXRow->PrimaryAnchor == EBGCardFXAnchor::Target && Target
 		? Target
@@ -469,6 +711,7 @@ void ABGGameState::AddNonCinematicCardGameplayCue(ABGCharacter* Caster, ABGChara
 	ASC->AddGameplayCue(CueTag, Parameters);
 	ActiveNonCinematicCardCueASC = ASC;
 	ActiveNonCinematicCardCueTag = CueTag;
+	bWaitingForNonCinematicCueEnd = true;
 
 	const UBGPresentationDataAsset* Presentation = Data ? Data->GetPresentationData() : nullptr;
 	const float CueSeconds = bFailed && Presentation
@@ -495,6 +738,11 @@ void ABGGameState::RemoveActiveNonCinematicCardGameplayCue()
 	}
 	ActiveNonCinematicCardCueASC.Reset();
 	ActiveNonCinematicCardCueTag = FGameplayTag();
+	if (bWaitingForNonCinematicCueEnd)
+	{
+		bWaitingForNonCinematicCueEnd = false;
+		MarkCardWorldLogicFinished();
+	}
 }
 
 float ABGGameState::GetPresentationTimeScale() const
@@ -566,10 +814,12 @@ void ABGGameState::EndCardCinematic()
 	//	이번 카드로 죽은 사람이 있으면 화면을 돌려주지 않고 곧장 사망 연출로 넘어간다.
 	if (TryBeginNextDeathCinematic())
 	{
+		MarkCardWorldLogicFinished();
 		return;
 	}
 
 	SetCinematicStage(EBGCinematicStage::None);
+	MarkCardWorldLogicFinished();
 }
 
 void ABGGameState::OnRep_CinematicStage()
@@ -659,6 +909,62 @@ void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution
 	OnCardResolved.Broadcast(Resolution);
 }
 
+// 기존 상태 FX 표의 발동 행을 읽어 대상 화면에 단발 Niagara를 재생한다.
+void ABGGameState::Multicast_PlayEquipmentProc_Implementation(const FBGEquipmentProcEvent& Event)
+{
+	if (GetNetMode() == NM_DedicatedServer || !Event.Target || Event.FXRowKey.IsNone()) return;
+	const UBGDataSubsystem* Data = GetGameInstance()
+		? GetGameInstance()->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	const FBGStatusFXRow* Row = Data ? Data->GetStatusFXRow(Event.FXRowKey) : nullptr;
+	if (!Row || Row->Effect.IsNull())
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[EquipmentProc] FX 행 또는 Effect 없음: %s"), *Event.FXRowKey.ToString());
+		return;
+	}
+	UNiagaraSystem* System = Row->Effect.LoadSynchronous();
+	AActor* Target = Event.Target.Get();
+	USceneComponent* AttachTo = nullptr;
+	if (ACharacter* Character = Cast<ACharacter>(Target)) AttachTo = Character->GetMesh();
+	if (!AttachTo) AttachTo = Target->GetRootComponent();
+	if (!System || !AttachTo) return;
+
+	const FTransform SocketWorld = AttachTo->GetSocketTransform(Row->AttachSocket, RTS_World);
+	const USceneComponent* Root = Target->GetRootComponent();
+	const FVector BaseLocation = !Row->AttachSocket.IsNone() || !Root
+		? SocketWorld.GetLocation() : Root->GetComponentLocation();
+	const FVector SpawnLocation = BaseLocation + SocketWorld.TransformVector(Row->LocationOffset);
+	UNiagaraComponent* FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		System, AttachTo, Row->AttachSocket, SpawnLocation, SocketWorld.Rotator(),
+		EAttachLocation::KeepWorldPosition, /*bAutoDestroy=*/true, /*bAutoActivate=*/false);
+	if (FX)
+	{
+		if (UBGPresentationDirector* Director = UBGPresentationDirector::Get(this))
+		{
+			const FBGPresentationHandle Hold = Director->Hold(EBGPresentationTrack::WorldFX);
+			EquipmentProcHolds.Add(FX, Hold);
+			FX->OnSystemFinished.AddUniqueDynamic(this, &ABGGameState::HandleEquipmentProcSystemFinished);
+		}
+		FX->AddWorldOffset(FVector::UpVector * Data->GetGlobalFXSpawnZOffset());
+		FX->SetRelativeScale3D(FVector(Row->Scale));
+		FX->Activate(true);
+	}
+}
+
+// 단발 장비 Niagara가 끝나면 클라이언트의 월드 FX 트랙을 놓는다.
+void ABGGameState::HandleEquipmentProcSystemFinished(UNiagaraComponent* FinishedSystem)
+{
+	if (!FinishedSystem) return;
+	const FBGPresentationHandle* Hold = EquipmentProcHolds.Find(FinishedSystem);
+	if (Hold)
+	{
+		if (UBGPresentationDirector* Director = UBGPresentationDirector::Get(this))
+		{
+			Director->Release(*Hold);
+		}
+		EquipmentProcHolds.Remove(FinishedSystem);
+	}
+}
+
 void ABGGameState::Multicast_ChatMessage_Implementation(const FString& SenderName, const FString& Message)
 {
 	OnChatMessageReceived.Broadcast(SenderName, Message);
@@ -712,6 +1018,8 @@ void ABGGameState::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	//	⚠️ 타이머가 다섯 개다(판정·연출·도입·종료·카드 큐). 하나씩 끊으면 새로 생긴 것을 빠뜨린다.
 	GetWorldTimerManager().ClearAllTimersForObject(this);
+	GetWorldTimerManager().ClearTimer(ResolutionPresentationTimer);
+	GetWorldTimerManager().ClearTimer(CardWorldPresentationTimer);
 	RemoveActiveCardGameplayCue();
 	RemoveActiveNonCinematicCardGameplayCue();
 	Super::EndPlay(EndPlayReason);
@@ -1595,6 +1903,7 @@ bool ABGGameState::CanSeatPlayCards(int32 Seat) const
 	return bMatchRunning
 		&& !IsIntroPlaying()       // 도입 연출 중에는 아직 판이 열리지 않았다
 		&& !bResolutionPresentationActive
+		&& !bCardWorldPresentationActive
 		&& !IsCinematicPlaying()   // 판정 UI 및 월드 연출 중에는 전원 조작 불가
 		&& Seat != INDEX_NONE
 		&& Seat == CurrentSeat
@@ -1604,6 +1913,8 @@ bool ABGGameState::CanSeatPlayCards(int32 Seat) const
 bool ABGGameState::CanSeatDiscard(int32 Seat) const
 {
 	return bMatchRunning
+		&& !bResolutionPresentationActive
+		&& !bCardWorldPresentationActive
 		&& !IsCinematicPlaying()   // 연출 중에는 전원 조작 불가
 		&& Seat != INDEX_NONE
 		&& Seat == CurrentSeat
@@ -1619,7 +1930,7 @@ void ABGGameState::RequestEndTurn(int32 RequestingSeat)
 
 	//	연출 중에는 턴을 넘기지 않는다. 이 함수는 CanSeatPlayCards 를 거치지 않고
 	//	직접 검사하므로 거기 넣은 연출 차단이 여기에는 적용되지 않는다 — 따로 막아야 한다.
-	if (bResolutionPresentationActive || IsCinematicPlaying())
+	if (bResolutionPresentationActive || bCardWorldPresentationActive || IsCinematicPlaying())
 	{
 		UE_LOG(LogBGCard, Log, TEXT("[Turn] EndTurn 보류 — 연출 재생 중"));
 		return;
@@ -1660,6 +1971,11 @@ void ABGGameState::ForceEndTurn(int32 Seat, const FString& Reason)
 {
 	if (!HasAuthority() || !bMatchRunning)
 	{
+		return;
+	}
+	if (bResolutionPresentationActive || bCardWorldPresentationActive || IsCinematicPlaying())
+	{
+		UE_LOG(LogBGCard, Log, TEXT("[Turn] 강제 종료 보류 — 연출 재생 중"));
 		return;
 	}
 
@@ -1776,7 +2092,7 @@ void ABGGameState::HandleSeatDeath(int32 DeadSeat, int32 KillerSeat)
 	}
 
 	//	연출 중이면 그 연출이 끝나는 자리에서 이어서 재생된다(EndCardCinematic / FinishDeathCinematic).
-	if (bResolutionPresentationActive || IsCinematicPlaying())
+	if (bResolutionPresentationActive || bCardWorldPresentationActive || IsCinematicPlaying())
 	{
 		return;
 	}
@@ -1795,7 +2111,8 @@ void ABGGameState::HandleSeatDeath(int32 DeadSeat, int32 KillerSeat)
 		World->GetTimerManager().SetTimerForNextTick(
 			FTimerDelegate::CreateWeakLambda(this, [this]()
 			{
-				if (!bResolutionPresentationActive && !IsCinematicPlaying())
+				if (!bResolutionPresentationActive && !bCardWorldPresentationActive
+					&& !IsCinematicPlaying())
 				{
 					TryBeginNextDeathCinematic();
 				}
