@@ -10,6 +10,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UI/Widget/BGPopupOpenAnim.h"
 #include "BGRewardSelectWidget.generated.h"
 
 class UButton;
@@ -47,6 +48,11 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBGCardWidget> CardWidget2;
 
+	// 카드 세 장을 감싼 상자. 나타날 때 이것을 펼친다 — 카드 위젯은 렌더 트랜스폼을 스스로 쓰므로
+	// 카드에 직접 걸면 서로 덮어쓴다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> ScaleBox_Fit;
+
 private:
 	UFUNCTION()
 	void HandleCard0Clicked();
@@ -70,4 +76,9 @@ private:
 
 	/** 슬롯 순서대로 채운 후보 CardId - 버튼 클릭 시 어떤 카드인지 알아야 한다. */
 	TArray<FName> SlotCardIds;
+
+	/** 지금 화면에 보이는 중인가. 접혀 있다가 처음 펼 때만 연출을 건다. */
+	bool bShown = false;
+
+	FBGPopupOpenAnim PopupAnim;
 };

@@ -4,7 +4,7 @@
 // WBP_BGSystemMenu 에 아래 이름으로 위젯을 올리면 C++ 이 이름으로 찾아 붙는다.
 //
 // ── 설정 ──
-//   SettingsButton SettingsPanel CloseButton ResetButton MainMenuButton
+//   SettingsButton SettingsPanel Size_Popup CloseButton ResetButton MainMenuButton
 //   WindowModeCombo ResolutionCombo QualityCombo FrameLimitCombo VSyncCheck
 //   ShadowCombo TextureCombo EffectsCombo AntiAliasingCombo PostProcessCombo GlobalIlluminationCombo
 //   MasterVolumeSlider MasterVolumeText
@@ -20,7 +20,7 @@
 //   장비는 계속 는다) 한 화면에 나란히 두면 열 높이가 들쭉날쭉해진다. 탭 안에서는 행을
 //   Columns 열 격자로 왼쪽→오른쪽, 위→아래 순서로 채운다 — 항목이 늘면 줄만 늘어난다.
 //
-//   HelpButton HelpPanel HelpCloseButton
+//   HelpButton HelpPanel Help_Size_Popup HelpCloseButton
 //   Tab_Jobs Tab_Roles Tab_Equips                 — 탭 버튼(Button)
 //   Tab_Jobs_Text Tab_Roles_Text Tab_Equips_Text  — 탭 글자(TextBlock, 선택 색을 여기서 바꾼다)
 //   Grid_Jobs Grid_Roles Grid_Equips — UniformGridPanel. 행이 여기에 쌓인다
@@ -36,6 +36,7 @@
 #include "Blueprint/UserWidget.h"
 #include "GameplayTagContainer.h"
 #include "Templates/SubclassOf.h"
+#include "UI/Widget/BGPopupOpenAnim.h"
 #include "BGSystemMenuWidget.generated.h"
 
 class UBGHelpRowWidget;
@@ -223,6 +224,10 @@ private:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> SettingsPanel;
 
+	// 블러 배경을 뺀 가운데 상자. 열 때 이것만 펼쳐진다(FBGPopupOpenAnim).
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Size_Popup;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> CloseButton;
 
@@ -322,6 +327,9 @@ private:
 	// 해상도 목록을 만들 때 기준으로 삼은 모니터 해상도. 바뀌었을 때만 다시 만든다.
 	FIntPoint PopulatedMonitorResolution = FIntPoint::ZeroValue;
 
+	// 설정·도움말은 한 번에 하나만 열리므로 연출도 하나로 돌린다.
+	FBGPopupOpenAnim PopupAnim;
+
 	float MasterVolume = 1.f;
 	float MusicVolume  = 1.f;
 	float SFXVolume    = 1.f;
@@ -342,6 +350,10 @@ private:
 	// 패널 루트. 어떤 위젯이든 되도록 UWidget 으로 받는다.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UWidget> HelpPanel;
+
+	// 블러 배경을 뺀 가운데 상자. 열 때 이것만 펼쳐진다(FBGPopupOpenAnim).
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Help_Size_Popup;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> HelpCloseButton;

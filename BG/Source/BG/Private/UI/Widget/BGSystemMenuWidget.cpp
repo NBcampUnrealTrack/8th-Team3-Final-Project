@@ -288,6 +288,7 @@ void UBGSystemMenuWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaT
 		RefreshDividerThickness();
 	}
 
+	PopupAnim.Tick(InDeltaTime);
 	RefreshInteractiveAudioHover();
 }
 
@@ -731,6 +732,7 @@ void UBGSystemMenuWidget::OpenSettings()
 	{
 		SettingsPanel->SetVisibility(ESlateVisibility::Visible);
 	}
+	PopupAnim.Start(Size_Popup);
 }
 
 void UBGSystemMenuWidget::SetStandaloneMode(bool bStandalone)
@@ -1159,6 +1161,7 @@ void UBGSystemMenuWidget::OpenHelp()
 	{
 		HelpPanel->SetVisibility(ESlateVisibility::Visible);
 	}
+	PopupAnim.Start(Help_Size_Popup);
 }
 
 void UBGSystemMenuWidget::CloseHelp()

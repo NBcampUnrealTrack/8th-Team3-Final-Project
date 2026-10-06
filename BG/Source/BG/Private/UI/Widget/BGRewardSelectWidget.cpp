@@ -70,6 +70,8 @@ void UBGRewardSelectWidget::NativeTick(const FGeometry& MyGeometry, float InDelt
 			CardWidget->TickMotion(InDeltaTime);
 		}
 	}
+
+	PopupAnim.Tick(InDeltaTime);
 }
 
 void UBGRewardSelectWidget::HandleCard0Clicked()
@@ -168,9 +170,17 @@ void UBGRewardSelectWidget::HandleTurnStateChanged()
 		//	떼어내지 않고 접는다 - HUD 캔버스의 자식이라 NativeConstruct 에서
 		//	RemoveFromParent 를 하면 부모가 슬롯을 만들고 있는 중에 슬롯이 사라진다.
 		SetVisibility(ESlateVisibility::Collapsed);
+		bShown = false;
 		return;
 	}
 
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	RefreshCandidates();
+
+	//	턴 상태 통지는 보이는 동안에도 여러 번 온다 — 접혀 있다가 펼 때만 연출을 건다.
+	if (!bShown)
+	{
+		bShown = true;
+		PopupAnim.Start(ScaleBox_Fit);
+	}
 }

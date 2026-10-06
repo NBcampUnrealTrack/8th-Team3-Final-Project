@@ -18,7 +18,9 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
+#include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerState.h"
 #include "TimerManager.h"
 #include "Debug/BGNetLog.h"
 #include "Session/BGSessionFlow.h"
@@ -244,6 +246,9 @@ void UBGSessionMenuWidget::NativeConstruct()
 	Dividers = { Image_Div1, Image_Div2, Image_Div3 };
 	RefreshDividerThickness();
 
+	//	메뉴는 열 때마다 새로 만들어진다(UBGSessionMenuController::Open) — 여기가 곧 "열림" 이다.
+	PopupAnim.Start(Size_Popup);
+
 	BindButtonEvents();
 
 	if (IBGSessionInterface* Session = GetSession())
@@ -276,6 +281,8 @@ void UBGSessionMenuWidget::NativeTick(const FGeometry& MyGeometry, float InDelta
 	{
 		RefreshDividerThickness();
 	}
+
+	PopupAnim.Tick(InDeltaTime);
 }
 
 void UBGSessionMenuWidget::RefreshDividerThickness()
@@ -342,6 +349,8 @@ void UBGSessionMenuWidget::RefreshLobbyStatus()
 				Status.CurrentPlayers, *Need, Status.ReadyPlayers)));
 	}
 
+	RefreshPlayerList();
+
 	// 페이즈가 로비를 벗어나면 로비 UI 는 물러난다. 파괴는 한 프레임 뒤로 미룬다.
 	const ABGGameState* GS = GetWorld() ? GetWorld()->GetGameState<ABGGameState>() : nullptr;
 	const FGameplayTag Phase = GS ? GS->GetPhaseTag() : FGameplayTag();
@@ -383,6 +392,61 @@ void UBGSessionMenuWidget::RefreshLobbyStatus()
 	{
 		StartGameButton->SetVisibility(bHost ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		StartGameButton->SetIsEnabled(bCanStart);
+	}
+}
+
+void UBGSessionMenuWidget::RefreshPlayerList()
+{
+	if (!PlayerList)
+	{
+		return;
+	}
+
+	PlayerList->ClearChildren();
+
+	//	PlayerState 와 준비 컴포넌트는 전원에게 복제된다 — 클라에서도 명단 전체가 보인다.
+	//	걸러내는 기준은 인원 수(UBGReadyComponent::CountLobby)와 같게 둬야 숫자와 줄 수가 맞는다.
+	const AGameStateBase* GS = GetWorld() ? GetWorld()->GetGameState() : nullptr;
+	if (!GS)
+	{
+		return;
+	}
+
+	const APlayerState* LocalPS = GetOwningPlayerState();
+	for (const APlayerState* PS : GS->PlayerArray)
+	{
+		if (!PS || PS->IsOnlyASpectator())
+		{
+			continue;
+		}
+
+		const UBGReadyComponent* Ready = UBGReadyComponent::Find(PS);
+		const bool bReady = Ready && Ready->IsReady();
+
+		UTextBlock* Row = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		Row->SetText(FText::FromString(FString::Printf(TEXT("%s%s  ·  %s"),
+			*PS->GetPlayerName(),
+			PS == LocalPS ? TEXT(" (나)") : TEXT(""),
+			bReady ? TEXT("준비 완료") : TEXT("대기"))));
+
+		if (LobbyText)
+		{
+			Row->SetFont(LobbyText->GetFont());
+		}
+		else
+		{
+			ApplySessionMenuFont(this, Row);
+		}
+
+		//	준비한 사람은 패널의 강조색(주황)으로, 아직인 사람은 본문색으로 둔다.
+		Row->SetColorAndOpacity(FSlateColor(bReady
+			? FLinearColor(0.745f, 0.479f, 0.162f)
+			: FLinearColor(0.75f, 0.72f, 0.66f)));
+
+		if (UVerticalBoxSlot* RowSlot = PlayerList->AddChildToVerticalBox(Row))
+		{
+			RowSlot->SetPadding(FMargin(0.f, 2.f));
+		}
 	}
 }
 

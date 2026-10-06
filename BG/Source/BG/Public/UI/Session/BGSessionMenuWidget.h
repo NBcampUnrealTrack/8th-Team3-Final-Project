@@ -10,6 +10,7 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "Session/BGSessionTypes.h"
+#include "UI/Widget/BGPopupOpenAnim.h"
 #include "BGSessionMenuWidget.generated.h"
 
 class IBGSessionInterface;
@@ -178,6 +179,12 @@ private:
 
 	// 마지막으로 두께를 맞춘 DPI 스케일. 달라졌을 때만 다시 계산한다.
 	float LastViewportScale = -1.f;
+
+	// 블러 배경을 뺀 가운데 상자. 열릴 때 이것만 펼쳐진다 — 폴백 트리에는 없어서 연출도 없다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> Size_Popup;
+
+	FBGPopupOpenAnim PopupAnim;
 
 	// 목록 행 핸들러 — 목록을 다시 만들 때까지 살아 있어야 클릭이 동작한다.
 	UPROPERTY(Transient)
