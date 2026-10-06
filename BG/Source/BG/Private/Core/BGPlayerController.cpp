@@ -2489,6 +2489,25 @@ void ABGPlayerController::ServerRequestStartPvEMatch_Implementation()
 	}
 }
 
+void ABGPlayerController::RequestSetPresentationDoubleSpeed(bool bEnable)
+{
+	ServerRequestSetPresentationDoubleSpeed(bEnable);
+}
+
+bool ABGPlayerController::IsPresentationDoubleSpeed() const
+{
+	const ABGGameState* GS = GetBGGameState();
+	return IsValid(GS) && GS->IsPresentationDoubleSpeed();
+}
+
+void ABGPlayerController::ServerRequestSetPresentationDoubleSpeed_Implementation(bool bEnable)
+{
+	if (ABGGameState* GS = GetBGGameState(); IsValid(GS))
+	{
+		GS->SetPresentationDoubleSpeed(bEnable);
+	}
+}
+
 void ABGPlayerController::RequestSelectPvEReward(FName CardId)
 {
 	ServerRequestSelectPvEReward(CardId);

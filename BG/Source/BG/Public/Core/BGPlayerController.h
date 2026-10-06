@@ -168,6 +168,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|PvE")
 	void RequestStartPvEMatch();
 
+	/** 연출 2배속 토글 위젯이 부른다. 서버가 PvE 일 때만 받아 준다. */
+	UFUNCTION(BlueprintCallable, Category = "BG|Cinematic")
+	void RequestSetPresentationDoubleSpeed(bool bEnable);
+
+	/** 현재 연출 2배속 상태. 버튼 표시용. GameState 가 없으면 false. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	bool IsPresentationDoubleSpeed() const;
+
 	// PvE 보상 선택 화면의 카드 버튼이 부른다. CardId 는 DT_BGCard 의 Row 이름.
 	UFUNCTION(BlueprintCallable, Category = "BG|PvE")
 	void RequestSelectPvEReward(FName CardId);
@@ -609,6 +617,9 @@ protected:
 
 	UFUNCTION(Server, Reliable)
 	void ServerRequestStartPvEMatch();
+
+	UFUNCTION(Server, Reliable)
+	void ServerRequestSetPresentationDoubleSpeed(bool bEnable);
 
 	UFUNCTION(Server, Reliable)
 	void ServerRequestSelectPvEReward(FName CardId);

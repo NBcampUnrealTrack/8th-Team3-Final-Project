@@ -25,6 +25,8 @@
 #include "Session/BGSessionFlow.h"
 #include "Session/BGSessionInterface.h"
 #include "Widgets/SWindow.h"
+#include "Core/BGGameInstance.h"
+#include "Core/BGGameMode.h"
 #include "Core/BGPlayerController.h"
 #include "UI/Target/BGWorldTargetingComponent.h"
 #include "UI/View/BGInfoTooltipRow.h"
@@ -209,6 +211,8 @@ void UBGSystemMenuWidget::NativeConstruct()
 	if (QualityCombo)     { QualityCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleQualityChanged); }
 	if (FrameLimitCombo)  { FrameLimitCombo->OnSelectionChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleFrameLimitChanged); }
 	if (VSyncCheck)       { VSyncCheck->OnCheckStateChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleVSyncChanged); }
+	if (DoubleSpeedCheck) { DoubleSpeedCheck->OnCheckStateChanged.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleDoubleSpeedChanged); }
+	RefreshDoubleSpeedCheck();
 
 	// 세부 품질 — 선언 순서 그대로 담고, 같은 자리의 게터/세터와 짝이 된다.
 	DetailCombos = { ShadowCombo, TextureCombo, EffectsCombo,
@@ -741,6 +745,46 @@ void UBGSystemMenuWidget::SetStandaloneMode(bool bStandalone)
 	if (SettingsButton) { SettingsButton->SetVisibility(Mode); }
 	if (MainMenuButton) { MainMenuButton->SetVisibility(Mode); }
 	if (HelpButton)     { HelpButton->SetVisibility(Mode); }
+
+	//	HUD 가 없는 곳에서는 2배속 토글도 의미가 없다. 돌아오면 PvE 여부로 다시 정한다.
+	if (bStandalone)
+	{
+		if (DoubleSpeedCheck) { DoubleSpeedCheck->SetVisibility(ESlateVisibility::Collapsed); }
+	}
+	else
+	{
+		RefreshDoubleSpeedCheck();
+	}
+}
+
+void UBGSystemMenuWidget::RefreshDoubleSpeedCheck()
+{
+	if (!DoubleSpeedCheck)
+	{
+		return;
+	}
+
+	const bool bPvE = ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE;
+	DoubleSpeedCheck->SetVisibility(bPvE ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+
+	//	체크 표시를 바꾸는 통지가 다시 RPC 를 보내지 않게 막는다.
+	TGuardValue<bool> Guard(bRefreshing, true);
+	//	GameInstance 값을 읽는다. 위젯이 GameState 복제보다 먼저 만들어져도 조우 사이에 선택이 유지된다.
+	const UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
+	DoubleSpeedCheck->SetIsChecked(IsValid(GI) && GI->IsPresentationDoubleSpeed());
+}
+
+void UBGSystemMenuWidget::HandleDoubleSpeedChanged(bool bIsChecked)
+{
+	if (bRefreshing)
+	{
+		return;
+	}
+
+	if (ABGPlayerController* PC = Cast<ABGPlayerController>(GetOwningPlayer()); IsValid(PC))
+	{
+		PC->RequestSetPresentationDoubleSpeed(bIsChecked);
+	}
 }
 
 void UBGSystemMenuWidget::CloseSettings()

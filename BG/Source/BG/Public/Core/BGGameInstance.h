@@ -94,6 +94,13 @@ public:
 
 	void SetAutoStartNextPvEMatch(bool bAutoStart) { bAutoStartNextPvEMatch = bAutoStart; }
 
+	// 연출 2배속 선택. 조우가 바뀌어 GameState 가 새로 만들어져도 유지돼야 해서 여기 둔다.
+	// ABGGameState::BeginPlay 가 이 값을 읽어 복제 변수를 채운다.
+	UFUNCTION(BlueprintPure, Category = "BG|PvE")
+	bool IsPresentationDoubleSpeed() const { return bPresentationDoubleSpeed; }
+
+	void SetPresentationDoubleSpeed(bool bEnable) { bPresentationDoubleSpeed = bEnable; }
+
 	// ── 조회 ──
 
 	// 호스트가 광고 중인 방 코드. 호스트가 아니면 빈 문자열.
@@ -156,6 +163,9 @@ private:
 
 	// ShouldAutoStartNextPvEMatch/SetAutoStartNextPvEMatch 참고.
 	bool bAutoStartNextPvEMatch = false;
+
+	// IsPresentationDoubleSpeed/SetPresentationDoubleSpeed 참고.
+	bool bPresentationDoubleSpeed = false;
 
 	// 세션 인터페이스 핸들(없으면 유효하지 않은 포인터).
 	IOnlineSessionPtr GetSessionInterface() const;

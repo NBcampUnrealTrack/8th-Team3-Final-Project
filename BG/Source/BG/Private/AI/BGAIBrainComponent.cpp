@@ -107,7 +107,7 @@ void UBGAIBrainComponent::TryPlayNextCard()
 	{
 		GateOpenedTime = Now;
 	}
-	const double Wait = PostPresentationDelay - (Now - GateOpenedTime);
+	const double Wait = PostPresentationDelay * GS->GetUserPresentationSpeedScale() - (Now - GateOpenedTime);
 	if (Wait > 0.0)
 	{
 		GetWorld()->GetTimerManager().SetTimer(
@@ -137,7 +137,7 @@ void UBGAIBrainComponent::TryPlayNextCard()
 		ActionTimerHandle,
 		this,
 		&UBGAIBrainComponent::TryPlayNextCard,
-		MinActionInterval,
+		MinActionInterval * GS->GetUserPresentationSpeedScale(),
 		false
 	);
 }

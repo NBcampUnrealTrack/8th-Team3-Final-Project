@@ -62,6 +62,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, CinematicTarget);
 	DOREPLIFETIME(ABGGameState, CinematicResolution);
 	DOREPLIFETIME(ABGGameState, bResolutionPresentationActive);
+	DOREPLIFETIME(ABGGameState, bPresentationDoubleSpeed);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════
@@ -242,6 +243,9 @@ void ABGGameState::FinishResolutionPresentation()
 	{
 		TryBeginNextDeathCinematic();
 	}
+
+	//	비시네마틱 카드는 여기서 연출이 끝난다. 시네마틱이나 사망 연출이 이어졌다면 그쪽이 끝날 때 적용한다.
+	TryApplyPendingDoubleSpeed();
 }
 
 void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
@@ -334,6 +338,8 @@ void ABGGameState::SetCinematicStage(EBGCinematicStage NewStage)
 		break;
 
 	case EBGCinematicStage::None:
+		//	연출이 모두 끝났다. 도중에 받아 둔 2배속 변경을 이제 적용한다.
+		TryApplyPendingDoubleSpeed();
 		break;
 	}
 }
@@ -493,7 +499,51 @@ void ABGGameState::RemoveActiveNonCinematicCardGameplayCue()
 
 float ABGGameState::GetPresentationTimeScale() const
 {
-	return ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE ? PvEPresentationTimeScale : 1.f;
+	const bool bPvE = ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE;
+	const float BaseScale = bPvE ? PvEPresentationTimeScale : 1.f;
+	return BaseScale * GetUserPresentationSpeedScale();
+}
+
+void ABGGameState::SetPresentationDoubleSpeed(bool bEnable)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	//	PvP 는 방장 권한 설계가 끝나기 전까지 막아 둔다.
+	if (ABGGameMode::GetPlayMode(this) != EBGPlayMode::PvE)
+	{
+		return;
+	}
+
+	//	선택 자체는 바로 기록한다. 다음 조우나 설정창 표시는 이 값을 따른다.
+	if (UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()); IsValid(GI))
+	{
+		GI->SetPresentationDoubleSpeed(bEnable);
+	}
+
+	//	연출 도중에 배율을 바꾸면 이미 예약된 서버 타이머와 지금 읽는 위젯 길이가 어긋난다.
+	//	연출이 끝날 때까지 보류한다.
+	bHasPendingDoubleSpeed = true;
+	bPendingDoubleSpeed = bEnable;
+	TryApplyPendingDoubleSpeed();
+}
+
+void ABGGameState::TryApplyPendingDoubleSpeed()
+{
+	if (!HasAuthority() || !bHasPendingDoubleSpeed)
+	{
+		return;
+	}
+
+	if (bResolutionPresentationActive || IsCinematicPlaying())
+	{
+		return;
+	}
+
+	bPresentationDoubleSpeed = bPendingDoubleSpeed;
+	bHasPendingDoubleSpeed = false;
 }
 
 void ABGGameState::ScheduleCinematicStep(float DelaySeconds, TFunction<void()>&& Step)
@@ -553,7 +603,7 @@ void ABGGameState::HandleCinematicStage()
 	{
 		//	단계 사이 이동 속도. None 단계면 Subject 가 nullptr → 각자 A 카메라로 복귀하며,
 		//	그때는 이 값이 아니라 CinematicExitBlendSeconds(뷰타깃 전환)가 체감을 결정한다.
-		SetCameraShot(Subject, CinematicShotBlendSeconds);
+		SetCameraShot(Subject, GetCinematicShotBlendSeconds());
 	}
 
 	OnCinematicStageChanged.Broadcast(CinematicStage, Subject);
@@ -647,6 +697,9 @@ void ABGGameState::BeginPlay()
 			if (const UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
 			{
 				EncounterIndex = GI->GetPvEEncounterIndex();
+
+				//	2배속 선택도 GameInstance 에서 이어받는다. 안 그러면 조우마다 꺼진다.
+				bPresentationDoubleSpeed = GI->IsPresentationDoubleSpeed();
 			}
 		}
 

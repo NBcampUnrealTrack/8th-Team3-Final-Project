@@ -540,6 +540,26 @@ public:
 	 */
 	float GetPresentationTimeScale() const;
 
+	/** 연출 2배속 여부. 복제되므로 클라 위젯도 같은 값을 읽는다. */
+	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
+	bool IsPresentationDoubleSpeed() const { return bPresentationDoubleSpeed; }
+
+	/**
+	 * 사용자 배속만 반영한 배율. 2배속이면 PresentationDoubleSpeedScale, 아니면 1.
+	 * GetPresentationTimeScale 을 지나지 않는 값(카메라 블렌드, Cue 지연, AI 대기)은 이걸 곱한다.
+	 * PvE 기본 단축(0.7)까지 섞으면 배속을 끈 상태의 기존 동작이 달라지므로 따로 둔다.
+	 */
+	float GetUserPresentationSpeedScale() const
+	{
+		return bPresentationDoubleSpeed ? PresentationDoubleSpeedScale : 1.f;
+	}
+
+	/**
+	 * 서버 전용. 연출 2배속을 켜고 끈다. PvE 에서만 받는다(PvP 는 이후 방장 권한으로 확장).
+	 * 판정 연출이나 시네마틱이 도는 중이면 그 연출이 끝난 뒤에 적용된다.
+	 */
+	void SetPresentationDoubleSpeed(bool bEnable);
+
 	/** 판정 연출 전에 카드를 중앙에 보여 주는 시간. 카드 위젯이 이만큼 기다린 뒤 연출을 터뜨린다. */
 	float GetCardRevealSeconds() const { return CardRevealSeconds * GetPresentationTimeScale(); }
 
@@ -592,13 +612,13 @@ public:
 	//    종료 : 연출 카메라 → 자기 시점     (뷰타깃 전환)
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
-	float GetCinematicEnterBlendSeconds() const { return CinematicEnterBlendSeconds; }
+	float GetCinematicEnterBlendSeconds() const { return CinematicEnterBlendSeconds * GetUserPresentationSpeedScale(); }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
-	float GetCinematicExitBlendSeconds() const { return CinematicExitBlendSeconds; }
+	float GetCinematicExitBlendSeconds() const { return CinematicExitBlendSeconds * GetUserPresentationSpeedScale(); }
 
 	UFUNCTION(BlueprintPure, Category = "BG|Cinematic")
-	float GetCinematicShotBlendSeconds() const { return CinematicShotBlendSeconds; }
+	float GetCinematicShotBlendSeconds() const { return CinematicShotBlendSeconds * GetUserPresentationSpeedScale(); }
 
 	/** 좌석의 현재 Health. ASC 를 못 찾으면 0. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seat")
@@ -1126,6 +1146,24 @@ protected:
 	/** PvE 연출 속도. 1 보다 작으면 빨라진다(0.7 = 30% 단축). 카드 연출·사망 연출·판정 UI 전부에 걸린다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.1", ClampMax = "1.0"))
 	float PvEPresentationTimeScale = 0.7f;
+
+	/** 2배속일 때 연출 배율에 곱하는 값. 0.5 = 두 배 빠르게. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Cinematic", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float PresentationDoubleSpeedScale = 0.5f;
+
+	/** 연출 2배속 토글. 서버가 정하고 클라가 읽는다(위젯 길이도 같은 배율을 써야 하므로 복제한다). */
+	UPROPERTY(Replicated)
+	bool bPresentationDoubleSpeed = false;
+
+	/**
+	 * 연출 도중에 받은 배속 변경. 서버 타이머와 클라 위젯이 한 연출 안에서 서로 다른 배율을
+	 * 읽지 않도록, 연출이 끝난 뒤에 적용한다(TryApplyPendingDoubleSpeed).
+	 */
+	bool bHasPendingDoubleSpeed = false;
+	bool bPendingDoubleSpeed = false;
+
+	/** 보류된 배속 변경을 연출이 모두 끝났을 때만 적용한다. */
+	void TryApplyPendingDoubleSpeed();
 
 public:
 	UFUNCTION(BlueprintPure, Category = "BG|Rope")

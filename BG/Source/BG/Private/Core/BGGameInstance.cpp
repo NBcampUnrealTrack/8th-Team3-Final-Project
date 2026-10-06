@@ -283,6 +283,9 @@ FString UBGGameInstance::ToTravelPath(const FSoftObjectPath& Map)
 
 void UBGGameInstance::ReturnToMainMenu()
 {
+	//	연출 2배속 선택은 메인메뉴로 나가면 끈다. 로비로 돌아갈 때는 유지한다.
+	bPresentationDoubleSpeed = false;
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{

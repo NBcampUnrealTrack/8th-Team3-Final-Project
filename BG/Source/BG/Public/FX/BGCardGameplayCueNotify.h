@@ -48,6 +48,9 @@ private:
 		bool bAllowSpawnDelay = true);
 	void FinishCueRemoval();
 
+	/** 사용자 연출 배속 배율. GameState 가 없으면 1. 스폰/종료 지연을 단계 길이와 같은 비율로 줄인다. */
+	float GetUserSpeedScale() const;
+
 	// ── 월드FX 트랙 ────────────────────────────────────────────────
 	//	이 Cue 가 사는 동안 표를 쥔다. 시네마틱 여부는 따지지 않는다 —
 	//	시네마틱이 도는 동안은 그쪽 트랙이 따로 표를 쥐고 있다.

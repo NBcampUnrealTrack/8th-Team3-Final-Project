@@ -3,6 +3,9 @@
 // 한쪽을 열면 다른 쪽은 닫힌다. ESC 는 도움말이 열려 있으면 도움말을 닫고, 아니면 설정을 토글한다.
 // WBP_BGSystemMenu 에 아래 이름으로 위젯을 올리면 C++ 이 이름으로 찾아 붙는다.
 //
+// ── 연출 2배속 ──
+//   DoubleSpeedCheck  — 패널 밖, 오른쪽 위 아이콘 줄(도움말 왼쪽)에 둔다. PvE 에서만 보인다.
+//
 // ── 설정 ──
 //   SettingsButton SettingsPanel Size_Popup CloseButton ResetButton MainMenuButton
 //   WindowModeCombo ResolutionCombo QualityCombo FrameLimitCombo VSyncCheck
@@ -174,6 +177,12 @@ private:
 	void HandleVSyncChanged(bool bIsChecked);
 
 	UFUNCTION()
+	void HandleDoubleSpeedChanged(bool bIsChecked);
+
+	/** PvE 에서만 토글을 보이고, 현재 배속 상태를 체크 표시에 맞춘다. */
+	void RefreshDoubleSpeedCheck();
+
+	UFUNCTION()
 	void HandleMasterVolumeChanged(float Value);
 
 	UFUNCTION()
@@ -278,6 +287,10 @@ private:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UCheckBox> VSyncCheck;
+
+	// 연출 2배속. 설정 패널 안이 아니라 아이콘 줄에 둔다. PvE 가 아니면 접는다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UCheckBox> DoubleSpeedCheck;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<USlider> MasterVolumeSlider;

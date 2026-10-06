@@ -7,6 +7,7 @@
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Core/BGCharacter.h"
+#include "Core/BGGameState.h"
 #include "UI/Presentation/BGPresentationDirector.h"
 #include "Debug/BGCardLog.h"
 #include "FX/BGCardNiagaraTypes.h"
@@ -101,6 +102,13 @@ bool ABGCardGameplayCueNotify::OnActive_Implementation(AActor* MyTarget,
 	return true;
 }
 
+float ABGCardGameplayCueNotify::GetUserSpeedScale() const
+{
+	const UWorld* World = GetWorld();
+	const ABGGameState* GS = IsValid(World) ? World->GetGameState<ABGGameState>() : nullptr;
+	return IsValid(GS) ? GS->GetUserPresentationSpeedScale() : 1.f;
+}
+
 //활성화 되어 있으면 나이아가라 이펙트 스폰
 bool ABGCardGameplayCueNotify::WhileActive_Implementation(AActor* MyTarget,
 	const FGameplayCueParameters& Parameters)
@@ -128,7 +136,7 @@ bool ABGCardGameplayCueNotify::OnRemove_Implementation(AActor* MyTarget,
 	if (SpawnedEffect && !EndBoolParameter.IsNone() && EndDelaySeconds > 0.f && GetWorld())
 	{
 		GetWorldTimerManager().SetTimer(EndTimer, this,
-			&ABGCardGameplayCueNotify::FinishCueRemoval, EndDelaySeconds, false);
+			&ABGCardGameplayCueNotify::FinishCueRemoval, EndDelaySeconds * GetUserSpeedScale(), false);
 	}
 	else
 	{
@@ -242,11 +250,11 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 		return;
 	}
 
-	const float SpawnDelaySeconds = bGlobalFailure && Presentation
+	const float SpawnDelaySeconds = (bGlobalFailure && Presentation
 		? Presentation->FailureSpawnDelaySeconds
 		: bPrimary
 		? Row->PrimarySpawnDelaySeconds
-		: Row->SecondarySpawnDelaySeconds;
+		: Row->SecondarySpawnDelaySeconds) * GetUserSpeedScale();
 
 	if (bAllowSpawnDelay && SpawnDelaySeconds > 0.f && GetWorld())
 	{
