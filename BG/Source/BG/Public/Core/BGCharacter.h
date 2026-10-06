@@ -339,16 +339,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Anim")
 	TObjectPtr<UStaticMeshComponent> RevealMeshComponent;
 
-	/** 직업의 무기(FBGCharacterRow::WeaponMesh). WeaponSocketName 소켓에 붙어 있다. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Visual")
-	TObjectPtr<UStaticMeshComponent> WeaponMeshComponent;
-
 	/**
-	 * 무기를 붙일 소켓 이름. 공용 스켈레톤(아트 기획서)이라 직업이 바뀌어도 소켓 위치는
-	 * 같다 — 직업별로 달라지는 것은 소켓 위치가 아니라 거기 꽂히는 메시(WeaponMesh)뿐이다.
+	 * 직업의 무기/장비 메시들(FBGCharacterRow::WeaponAttachments). 항목 수만큼 런타임에
+	 * 만들어진다 — 생성자에서 고정 개수로 만들 수 없다(직업마다 몇 개가 필요한지 다르다).
+	 * ApplyJobVisual 이 매번 전부 파괴하고 새로 만든다(직업 배정은 판마다 1회뿐이라 문제없다).
 	 */
-	UPROPERTY(EditDefaultsOnly, Category = "BG|Visual")
-	FName WeaponSocketName = TEXT("WeaponSocket");
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "BG|Visual")
+	TArray<TObjectPtr<UStaticMeshComponent>> EquipmentMeshComponents;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Camera")
 	TObjectPtr<UCameraComponent> PrimaryCamera;

@@ -266,6 +266,37 @@ struct FBGOutcomeTexts
 	}
 };
 
+/**
+ * 캐릭터에 붙는 무기/장비 메시 1개.
+ *
+ * SocketName 은 소켓 이름과 뼈(Bone) 이름을 둘 다 받는다 — AttachToComponent 가 소켓이
+ * 있으면 그 소켓의 보정된 트랜스폼을, 없으면 그냥 그 이름의 뼈 트랜스폼을 쓰기 때문이다.
+ * 자주 쓰고 정밀하게 맞춰야 하는 부위(양손 등)는 스켈레톤에 소켓을 만들어 쓰고, 당장 쓸지
+ * 불확실한 부위는 소켓 없이 뼈 이름을 바로 적어 쓰면 된다 — 나중에 소켓으로 승격해도
+ * 이름이 같으면 이 데이터는 그대로 유효하다.
+ *
+ * LocationOffset/RotationOffset 은 그 소켓/뼈 기준 로컬 공간이다(월드나 캐릭터 기준이 아니다).
+ * 뼈에 직접 붙이는 경우 보정 없는 기본값(0)은 거의 항상 어색하다 — 소켓이 주는 "미리 맞춰둔
+ * 축"이 없기 때문이다. 손잡이 위치·쥐는 각도는 메시를 고치지 않고 이 값으로 흡수한다.
+ */
+USTRUCT(BlueprintType)
+struct FBGWeaponAttachment
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	TSoftObjectPtr<UStaticMesh> Mesh;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	FName SocketName = TEXT("WeaponSocket_R");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	FVector LocationOffset = FVector::ZeroVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
+	FRotator RotationOffset = FRotator::ZeroRotator;
+};
+
 /** 직업별 기본 공격과 판정 결과 Niagara 세트. */
 USTRUCT(BlueprintType)
 struct FBGCharacterAttackFX
@@ -293,7 +324,7 @@ struct FBGCharacterAttackFX
  *   PassiveEffects      : 직업 정체성 패시브 GE(Infinite).
  *   GrantedAbilities    : 직업 고유 능동 GA.
  *   SkeletalMesh        : 직업 외형.
- *   WeaponMesh          : 직업이 손에 쥐는 무기. 비우면 맨손.
+ *   WeaponAttachments   : 직업이 손에 쥐는(또는 몸에 붙는) 무기/장비 메시 목록. 비우면 맨손.
  *   AttackFX            : CharacterAttack 정책 카드가 공유하는 직업별 Niagara 세트.
  */
 USTRUCT(BlueprintType)
@@ -347,10 +378,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
 	TSubclassOf<UAnimInstance> AnimClass;
 
-	// 손에 쥐는 무기 메시. ABGCharacter 가 WeaponSocketName 소켓에 붙인다(공용 스켈레톤이라
-	// 소켓 위치는 직업과 무관하게 같다). 비워 두면 무기 없이 맨손 — 정상 상태다(수도사 등).
+	// 손에 쥐는(또는 몸에 붙는) 무기/장비 메시들. 항목 하나가 메시+소켓(또는 뼈)+오프셋 1벌이다.
+	// 비워 두면 맨손 — 정상 상태다(수도사 등). 듀얼 웨폰·무기+방패처럼 여러 개를 동시에
+	// 붙여야 하면 항목을 그만큼 추가하면 된다 — ABGCharacter 가 항목 수만큼 컴포넌트를 만든다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual")
-	TSoftObjectPtr<UStaticMesh> WeaponMesh;
+	TArray<FBGWeaponAttachment> WeaponAttachments;
 
 	/** Bang·QuickStrike 등 CharacterAttack 정책 카드가 공유하는 직업별 연출. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Visual|AttackFX")

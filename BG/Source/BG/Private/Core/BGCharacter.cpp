@@ -45,11 +45,8 @@ ABGCharacter::ABGCharacter()
 	RevealMeshComponent->SetVisibility(false);
 	RevealMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-	//	메시(GetMesh())의 소켓에 붙인다 — 스켈레톤은 공용이라 직업이 바뀌어도 소켓은 그대로다.
-	//	ApplyJobVisual 이 직업 Row 의 WeaponMesh 를 채운다(비어 있으면 맨손 그대로).
-	WeaponMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("WeaponMeshComponent"));
-	WeaponMeshComponent->SetupAttachment(GetMesh(), WeaponSocketName);
-	WeaponMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	//	무기/장비 메시 컴포넌트는 여기서 만들지 않는다 — 직업마다 개수가 달라
+	//	ApplyJobVisual 이 Row 의 WeaponAttachments 를 보고 런타임에 그만큼 만든다.
 
 	//	── 카메라 (구 ABGPlayerBase 에서 통합) ──
 	//	ACharacter 는 CapsuleComponent 를 루트로 하드코딩한다. 별도의 씬 루트를 둘 수 없으므로
@@ -905,27 +902,49 @@ void ABGCharacter::ApplyJobVisual()
 			bAnimChanged ? *Row->AnimClass->GetName() : TEXT("그대로"));
 	}
 
-	// ── 무기 ──
-	//	메쉬/ABP 와 독립 판단한다 — 무기가 없는 직업(맨손, 수도사 등)도 정상 상태라
-	//	위 둘처럼 "비어 있으면 건너뛴다" 로 묶으면 이전 직업의 무기가 손에 남는다.
-	if (WeaponMeshComponent)
+	// ── 무기/장비 ──
+	//	메쉬/ABP 와 독립 판단한다 — 무기가 없는 직업(맨손, 수도사 등)도 정상 상태다.
+	//
+	//	항목 수가 직업마다 달라 고정 컴포넌트를 재사용할 수 없다 — 매번 전부 지우고
+	//	Row 가 요구하는 개수만큼 새로 만든다. 직업 배정은 판마다 1회뿐이라 비용 문제는 없다.
+	for (UStaticMeshComponent* Equipment : EquipmentMeshComponents)
 	{
-		UStaticMesh* NewWeapon = nullptr;
-		if (!Row->WeaponMesh.IsNull())
+		if (Equipment)
 		{
-			NewWeapon = Row->WeaponMesh.LoadSynchronous();
-			if (!NewWeapon)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[BG] 직업 무기 메시 로드 실패 — %s (%s)"),
-					*JobTag.ToString(), *Row->WeaponMesh.ToString());
-			}
+			Equipment->DestroyComponent();
+		}
+	}
+	EquipmentMeshComponents.Reset();
+
+	for (const FBGWeaponAttachment& Attachment : Row->WeaponAttachments)
+	{
+		if (Attachment.Mesh.IsNull())
+		{
+			continue;   // 이 항목은 메시가 아예 없다 — 컴포넌트를 만들 이유가 없다.
 		}
 
-		if (WeaponMeshComponent->GetStaticMesh() != NewWeapon)
+		UStaticMesh* LoadedMesh = Attachment.Mesh.LoadSynchronous();
+		if (!LoadedMesh)
 		{
-			WeaponMeshComponent->SetStaticMesh(NewWeapon);
-			UE_LOG(LogTemp, Log, TEXT("[BG] 직업 무기 적용 — %s (%s) 무기=%s"),
-				*GetName(), *JobTag.ToString(), NewWeapon ? *NewWeapon->GetName() : TEXT("맨손"));
+			UE_LOG(LogTemp, Warning, TEXT("[BG] 직업 무기 메시 로드 실패 — %s (%s, 소켓=%s)"),
+				*JobTag.ToString(), *Attachment.Mesh.ToString(), *Attachment.SocketName.ToString());
+			continue;
 		}
+
+		UStaticMeshComponent* NewComponent = NewObject<UStaticMeshComponent>(this);
+		NewComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		NewComponent->RegisterComponent();
+
+		//	SocketName 은 소켓이든 그냥 뼈 이름이든 받는다 — AttachToComponent 가 소켓이
+		//	있으면 그 보정된 트랜스폼을, 없으면 뼈 트랜스폼을 그대로 쓴다.
+		NewComponent->AttachToComponent(MeshComp,
+			FAttachmentTransformRules::SnapToTargetNotIncludingScale, Attachment.SocketName);
+		NewComponent->SetStaticMesh(LoadedMesh);
+		NewComponent->SetRelativeLocationAndRotation(Attachment.LocationOffset, Attachment.RotationOffset);
+
+		EquipmentMeshComponents.Add(NewComponent);
+
+		UE_LOG(LogTemp, Log, TEXT("[BG] 직업 무기 적용 — %s (%s) 무기=%s 소켓=%s"),
+			*GetName(), *JobTag.ToString(), *LoadedMesh->GetName(), *Attachment.SocketName.ToString());
 	}
 }
