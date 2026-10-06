@@ -76,6 +76,22 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<class UTextBlock> Text_ResultReason;
 
+	//	표 헤더 5칸(플레이어, 직업, 정체, 상태, 결과). PvE 에서는 라벨만 바꾼다. 없으면 건드리지 않는다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<class UTextBlock> Header_0;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<class UTextBlock> Header_1;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<class UTextBlock> Header_2;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<class UTextBlock> Header_3;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<class UTextBlock> Header_4;
+
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<class UVerticalBox> Rows_Container;
 
@@ -99,6 +115,12 @@ protected:
 	float RetryInterval = 0.2f;
 
 private:
+	/** PvE 런 기록으로 제목, 부제, 헤더, 표를 채운다. 같은 WBP 에 내용만 바꿔 담는다. */
+	void ShowPvERunRecords(const class ABGGameState& GS, const TArray<FBGMatchResultRow>& InRows);
+
+	/** 직업 태그의 표시 이름. DT 의 DisplayName 이 우선이다. */
+	FText GetJobDisplayName(const FGameplayTag& Job) const;
+
 	/** 지금 읽을 수 있는 값으로 줄을 다시 만든다. 전원의 정체까지 채워졌으면 true. */
 	bool RefreshRows();
 
