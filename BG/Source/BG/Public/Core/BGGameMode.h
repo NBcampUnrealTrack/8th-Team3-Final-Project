@@ -178,7 +178,7 @@ public:
 	
 	// 보스 조우 번호(1-base). 이 조우를 이기면 런이 끝난다(HandlePvERunWin 참고).
 	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
-	int32 BossEncounterIndex = 6;
+	int32 BossEncounterIndex = 5;
 	
 protected:
 	// 모드는 여기서 확정한다 — 첫 로그인보다 먼저라 좌석·역할 배정이 모드를 볼 수 있다.

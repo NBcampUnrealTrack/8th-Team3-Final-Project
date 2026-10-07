@@ -313,9 +313,9 @@ TArray<FGameplayTag> ABGGameMode::BuildAllowedEnemyJobPool(int32 EncounterIndex)
 		{ Knight.GetTag(),     Scout.GetTag()    },   // 조우1
 		{ Priest.GetTag(),     Healer.GetTag()   },   // 조우2
 		{ Diviner.GetTag(),    Thief.GetTag()    },   // 조우3
-		{ Hunter.GetTag(),     Mage.GetTag()     },   // 조우4
-		{ Monk.GetTag(),       Brawler.GetTag()  },   // 조우5
-		{ Mercenary.GetTag(),  Assassin.GetTag() },   // 조우6(보스)
+		{ Hunter.GetTag(),     Mage.GetTag(),
+		  Monk.GetTag(),       Brawler.GetTag()  },   // 조우4
+		{ Mercenary.GetTag(),  Assassin.GetTag() },   // 조우5(보스)
 	};
 
 	TArray<FGameplayTag> Pool;

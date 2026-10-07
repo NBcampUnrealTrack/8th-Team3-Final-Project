@@ -116,13 +116,9 @@ int32 UBGMatchStartComponent::ComputeTargetSeatsForEncounter(int32 EncounterInde
 		{
 			return 5;   // 조우3: 2대3 (부관 등장)
 		}
-	case 4:
-		{
-			return 6;   // 조우4: 2대4
-		}
 	default:
 		{
-			return 7;   // 조우5+: 3대4
+			return 7;   // 조우4+: 3대4 (조우5가 보스전)
 		}
 	}
 }
