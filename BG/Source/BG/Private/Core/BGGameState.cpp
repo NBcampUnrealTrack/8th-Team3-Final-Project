@@ -2705,31 +2705,39 @@ void ABGGameState::ReturnToLobby()
 	}
 
 	UWorld* World = GetWorld();
-	if (!World)
+	if (!World || bLobbyTravelStarted)
 	{
 		return;
 	}
+	bLobbyTravelStarted = true;
 
 	//	제자리에서 상태를 하나씩 되돌리지 않는 이유:
 	//	  로비와 게임이 같은 맵이라(BGGameInstance 의 "단일 맵" 주석 참고) 판을 끝내면
 	//	  덱·손패·장비 GE·역할/직업 태그·좌석·사망 플래그·어트리뷰트가 전부 남는다.
 	//	  하나라도 빠뜨리면 "두 번째 판에서만" 나오는 버그가 되고 추적이 매우 어렵다.
-	//	  같은 맵을 다시 열면 월드가 통째로 새로 만들어져 지울 목록이라는 개념 자체가 사라진다.
+	//	  맵을 새로 열면 월드가 통째로 새로 만들어져 지울 목록이라는 개념 자체가 사라진다.
 	//	  클라이언트는 서버를 따라 함께 이동하므로 접속은 유지된다.
 
 	//	주의: GameInstance 는 트래블을 넘어 살아남는다 — 여기만 직접 되돌려야 한다.
 	// 빠뜨리면 새 로비가 난입 차단 상태로 열려 아무도 들어오지 못한다.
-	if (UBGGameInstance* GI = GetGameInstance<UBGGameInstance>())
+	UBGGameInstance* GI = GetGameInstance<UBGGameInstance>();
+	if (GI)
 	{
 		GI->SetAllowJoinInProgress(true);
+
+		//	다른 맵으로 갈 수 있으면 거기서 끝이다(PvP·PvE·PvE 조우 승리 공통).
+		if (GI->TravelToNextGameMap(ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE))
+		{
+			return;
+		}
 	}
 
-	UE_LOG(LogBGCard, Warning, TEXT("[Match] 로비 복귀 — 같은 맵 재시작(ServerTravel)"));
-
+	//	목록에 맵이 하나뿐이면 같은 맵을 다시 연다.
 	//	"?Restart" 는 "맵 이름 없이 현재 맵을 다시 연다" 는 엔진 규약이다.
 	//	AGameMode::RestartGame() 이 쓰는 것과 같은 경로 — 다만 이 프로젝트는 AGameModeBase
 	//	상속이라 그 함수가 없어 직접 부른다. 맵 이름을 문자열로 짜 넣지 않으므로
 	//	맵을 옮기거나 이름을 바꿔도 깨지지 않는다.
+	UE_LOG(LogBGCard, Warning, TEXT("[Match] 로비 복귀 — 같은 맵 재시작(ServerTravel)"));
 	World->ServerTravel(TEXT("?Restart"), /*bAbsolute=*/false);
 }
 

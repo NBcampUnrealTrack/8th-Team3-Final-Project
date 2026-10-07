@@ -1062,6 +1062,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Match")
 	bool bReturnToLobbyAfterCredits = true;
 
+	//	ReturnToLobby 가 이미 트래블을 걸었다. 크레딧 타이머와 결과 화면 버튼이 겹쳐 두 번 불려도
+	//	맵 추첨이 두 번 돌아 서로 다른 맵으로 덮어쓰지 않게 한다. 복제하지 않는다 — 트래블하면 GameState 가 새로 선다.
+	bool bLobbyTravelStarted = false;
+
 	//	무법자를 사살했을 때 가해자가 뽑는 장수 (뱅 원작 3장).
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Rule", meta = (ClampMin = "0"))
 	int32 OutlawKillReward = 3;

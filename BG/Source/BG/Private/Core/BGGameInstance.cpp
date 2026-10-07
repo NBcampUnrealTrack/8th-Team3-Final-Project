@@ -255,7 +255,7 @@ bool UBGGameInstance::StartListen()
 	return true;
 }
 
-FString UBGGameInstance::PickGameMap(const FString& CurrentMap) const
+FString UBGGameInstance::PickGameMap(const FString& CurrentMap, bool bExcludeCurrent) const
 {
 	TArray<FString> Paths;
 	for (const FSoftObjectPath& Map : GameMaps)
@@ -267,11 +267,51 @@ FString UBGGameInstance::PickGameMap(const FString& CurrentMap) const
 		}
 		if (Path == CurrentMap)
 		{
-			return Path;
+			if (!bExcludeCurrent)
+			{
+				return Path;
+			}
+			continue;
 		}
 		Paths.Add(Path);
 	}
-	return Paths.IsEmpty() ? ToTravelPath(GameMap) : Paths[FMath::RandRange(0, Paths.Num() - 1)];
+
+	if (Paths.IsEmpty())
+	{
+		return bExcludeCurrent ? CurrentMap : ToTravelPath(GameMap);
+	}
+	return Paths[FMath::RandRange(0, Paths.Num() - 1)];
+}
+
+bool UBGGameInstance::TravelToNextGameMap(bool bPvE)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	//	PIE 는 패키지 이름에 UEDPIE_n_ 접두가 붙어 목록의 경로와 안 맞는다 — 떼지 않으면 "현재 맵 제외" 가 먹지 않는다.
+	const FString CurrentMap = UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
+	const FString NextMap    = PickGameMap(CurrentMap, /*bExcludeCurrent*/ true);
+	if (NextMap.IsEmpty() || NextMap == CurrentMap)
+	{
+		return false;
+	}
+
+	FString Options;
+	if (bPvE)
+	{
+		Options += TEXT("?PlayMode=PvE");
+	}
+	if (World->GetNetMode() == NM_ListenServer)
+	{
+		Options += TEXT("?listen");
+	}
+
+	UE_LOG(LogBGNet, Log, TEXT("TravelToNextGameMap: %s → %s%s"), *CurrentMap, *NextMap, *Options);
+	World->ServerTravel(NextMap + Options, /*bAbsolute*/ true);
+	return true;
 }
 
 FString UBGGameInstance::ToTravelPath(const FSoftObjectPath& Map)

@@ -153,6 +153,19 @@ public:
 
 	//	덱 관련 exec 는 ABGGameMode 로
 
+	/**
+	 * GameMaps 에서 랜덤으로 하나 골라 이동 경로로 돌려준다. 현재 맵이 목록에 있으면 그대로 돌려준다.
+	 * bExcludeCurrent 면 현재 맵을 뺀 나머지에서 뽑는다 — 판이 끝난 뒤 다른 맵으로 가려는 용도.
+	 * 뺄 맵이 없으면(목록이 한 개뿐) 현재 맵을 돌려준다.
+	 */
+	FString PickGameMap(const FString& CurrentMap, bool bExcludeCurrent = false) const;
+
+	/**
+	 * 현재 맵이 아닌 다른 게임 맵으로 서버 트래블한다. 갈 맵이 없으면(목록이 하나뿐) false — 부르는 쪽이 폴백한다.
+	 * ⚠️ 절대 경로 이동은 URL 옵션을 버린다. PvE 모드(?PlayMode=PvE)와 리슨 여부(?listen)를 여기서 다시 붙인다.
+	 */
+	bool TravelToNextGameMap(bool bPvE);
+
 private:
 	// 지금 플레이 중인(또는 다음에 시작할) 조우 번호. 1-base — 조우1이 런의 첫 조우다.
 	// AdvancePvEEncounter/ResetPvERun 로만 바꾼다.
@@ -231,9 +244,6 @@ private:
 	UPROPERTY(Config, EditDefaultsOnly, BlueprintReadOnly, Category = "BG|맵",
 		meta = (AllowedClasses = "/Script/Engine.World", AllowPrivateAccess = "true"))
 	TArray<FSoftObjectPath> GameMaps;
-
-	/** GameMaps 에서 랜덤으로 하나 골라 이동 경로로 돌려준다. 현재 맵이 목록에 있으면 그대로 돌려준다. */
-	FString PickGameMap(const FString& CurrentMap) const;
 
 	/** 방을 나가면 돌아갈 메인메뉴 맵. 규약은 GameMap 과 같다. */
 	UPROPERTY(Config, EditDefaultsOnly, BlueprintReadOnly, Category = "BG|맵",
