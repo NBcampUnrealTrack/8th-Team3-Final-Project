@@ -112,6 +112,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG")
 	void ApplySheriffBonusIfNeeded();
 
+	// PvE 조우 승리 보상. 이긴 조우 수만큼 보안관의 최대 체력과 현재 체력을 +2 씩 올린다.
+	// SetRoleTag 가 부른다. 보안관이 아니거나 PvE 가 아니거나 아직 이긴 조우가 없으면 아무 일도 안 한다.
+	void ApplyEncounterHealthBonusIfNeeded();
+
+	// 위 보상으로 올라간 체력 총량(서버 전용). 시작 손패 장수처럼 "보상 전 체력" 이 필요한 계산이 뺄 때 쓴다.
+	int32 GetEncounterHealthBonus() const { return EncounterHealthBonus; }
+
 	// 이 캐릭터의 직업 태그 (Character.Job.*). 공개 정보라 전원에게 복제된다.
 	UFUNCTION(BlueprintPure, Category = "BG")
 	FGameplayTag GetJobTag() const { return JobTag; }
@@ -367,6 +374,9 @@ protected:
 	// 승리 조건 판정용. DT 를 조회하지 않는다 — 이 태그로 부여되는 스탯/능력은 없다.
 	UPROPERTY(EditDefaultsOnly, ReplicatedUsing = OnRep_RoleTag, Category = "BG")
 	FGameplayTag RoleTag;
+
+	// ApplyEncounterHealthBonusIfNeeded 로 올라간 체력 총량. 서버만 쓴다(복제하지 않는다).
+	int32 EncounterHealthBonus = 0;
 
 	UFUNCTION()
 	void OnRep_RoleTag();
