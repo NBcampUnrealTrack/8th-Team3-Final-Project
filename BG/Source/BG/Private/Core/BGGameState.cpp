@@ -1619,7 +1619,12 @@ void ABGGameState::DealInitialHands()
 			continue;
 		}
 
-		const int32 Count = (InitialHandSize > 0) ? InitialHandSize : FMath::Max(1, GetSeatHealth(Seat));
+		//	PvE 조우 보상으로 올라간 체력은 손패 장수에 넣지 않는다. 안 빼면 조우를 이길수록 시작 손패가 늘어난다.
+		const ABGCharacter* SeatCharacter = Cast<ABGCharacter>(PS->GetPawn());
+		const int32 BonusHealth = IsValid(SeatCharacter) ? SeatCharacter->GetEncounterHealthBonus() : 0;
+		const int32 Count = (InitialHandSize > 0)
+			? InitialHandSize
+			: FMath::Max(1, GetSeatHealth(Seat) - BonusHealth);
 		DrawCardsToHand(PS, Count);
 
 		//	PvE 조우 보상은 보안관(사람)한테만 간다 - 부관도 무법자도 이 분기를 안 탄다.

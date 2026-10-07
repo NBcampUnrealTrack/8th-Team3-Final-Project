@@ -10,8 +10,11 @@
 #include "Card/BGDiceComponent.h"
 #include "GAS/Effect/GE_BGDamage.h"
 #include "GAS/Effect/GE_BGSheriffBonus.h"
+#include "GAS/Effect/GE_BGEncounterHealthBonus.h"
 #include "AbilitySystemGlobals.h"
 #include "BGGameplayTags.h"
+#include "Core/BGGameInstance.h"
+#include "Core/BGGameMode.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerState.h"
 #include "Engine/World.h"
@@ -424,6 +427,47 @@ void ABGCharacter::SetRoleTag(const FGameplayTag& NewTag)
 	// 여기서 같이 적용한다(ApplySheriffBonusIfNeeded 참고).
 	RefreshLooseTags();
 	ApplySheriffBonusIfNeeded();
+	ApplyEncounterHealthBonusIfNeeded();
+}
+
+void ABGCharacter::ApplyEncounterHealthBonusIfNeeded()
+{
+	//	PvE 조우 보상은 보안관(사람)한테만 간다. 카드 보상과 같은 대상이다.
+	if (!HasAuthority() || !AbilitySystemComponent || RoleTag != BG::Role::Sheriff.GetTag()
+		|| ABGGameMode::GetPlayMode(this) != EBGPlayMode::PvE)
+	{
+		return;
+	}
+
+	//	이긴 조우 수만큼 쌓는다. 진행도는 1-base 라서 조우1(아직 이긴 적 없음)은 0번이다.
+	//	진행도는 GameInstance 가 들고 있어 맵을 넘어도 남고, 런이 끝나면 1로 돌아간다.
+	const UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
+	const int32 Stacks = IsValid(GI) ? GI->GetPvEEncounterIndex() - 1 : 0;
+	if (Stacks <= 0)
+	{
+		return;
+	}
+
+	for (int32 i = 0; i < Stacks; ++i)
+	{
+		FGameplayEffectContextHandle Context = AbilitySystemComponent->MakeEffectContext();
+		Context.AddSourceObject(this);
+
+		const FGameplayEffectSpecHandle Spec =
+			AbilitySystemComponent->MakeOutgoingSpec(UGE_BGEncounterHealthBonus::StaticClass(), 1.f, Context);
+		if (!Spec.IsValid())
+		{
+			UE_LOG(LogTemp, Error, TEXT("[BG] 조우 보상 체력 GE 적용 실패. %s (Spec 무효)"), *GetName());
+			return;
+		}
+
+		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*Spec.Data.Get());
+	}
+
+	EncounterHealthBonus = static_cast<int32>(UGE_BGEncounterHealthBonus::HealthPerStack) * Stacks;
+
+	UE_LOG(LogTemp, Log, TEXT("[BG] 조우 보상 체력 적용. %s 최대 체력 +%d (%d회)"),
+		*GetName(), EncounterHealthBonus, Stacks);
 }
 
 void ABGCharacter::ApplySheriffBonusIfNeeded()
