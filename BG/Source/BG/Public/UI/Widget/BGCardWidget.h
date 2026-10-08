@@ -737,6 +737,7 @@ protected:
 
 private:
 	void RefreshVisual();
+	void NotifyDealStarted();
 
 	/** 시각 Hover와 독립된 루프 사운드 세션. 드래그 중에는 시각 Hover만 꺼지고 사운드는 유지한다. */
 	void StartHoverAudio();

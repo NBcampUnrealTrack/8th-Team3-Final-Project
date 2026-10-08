@@ -13,6 +13,17 @@ class USoundMix;
 class UUserWidget;
 struct FBGSystemAudioRow;
 
+/** 버튼 클릭의 의미에 따라 누름 소리만 구분한다. 호버/뗌 소리는 공통이다. */
+UENUM(BlueprintType)
+enum class EBGUIButtonSoundGroup : uint8
+{
+	Default,
+	Confirm,
+	Navigation,
+	Selection,
+	Exit
+};
+
 /**
  * UI·시스템·BGM 전용 2D 오디오 관리자.
  * 위치 기반 효과음은 Niagara, 캐릭터 동작음은 Montage가 담당한다.
@@ -47,6 +58,10 @@ public:
 	/** 기존 UButton 교체 없이 Hover 시작/종료, Press 시작/종료 네 종류를 연결한다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Audio")
 	void BindDefaultButtonSounds(UButton* Button);
+
+	/** 기존 공통 바인딩의 누름 소리를 역할별 소리로 교체한다. */
+	UFUNCTION(BlueprintCallable, Category = "BG|Audio")
+	void BindButtonSoundGroup(UButton* Button, EBGUIButtonSoundGroup Group);
 
 	/** 현재 WidgetTree에 들어 있는 모든 기존 UButton을 교체 없이 연결한다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Audio")
@@ -103,6 +118,18 @@ private:
 
 	UFUNCTION()
 	void HandleButtonPressBegin();
+
+	UFUNCTION()
+	void HandleConfirmButtonPress();
+
+	UFUNCTION()
+	void HandleNavigationButtonPress();
+
+	UFUNCTION()
+	void HandleSelectionButtonPress();
+
+	UFUNCTION()
+	void HandleExitButtonPress();
 
 	UFUNCTION()
 	void HandleButtonPressEnd();

@@ -13,6 +13,7 @@ void UBGPvELobbyWidget::NativeConstruct()
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
 		Audio->BindDefaultButtonsInWidget(this);
+		Audio->BindButtonSoundGroup(StartButton, EBGUIButtonSoundGroup::Confirm);
 	}
 
 	//	HUD 는 모드를 가리지 않고 뜨므로 여기서 걸러낸다 — PvP 에 "게임 시작" 버튼이

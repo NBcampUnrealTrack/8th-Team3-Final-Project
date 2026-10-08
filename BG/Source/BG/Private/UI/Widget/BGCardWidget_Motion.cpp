@@ -11,6 +11,7 @@
 
 #include "UI/Widget/BGCardWidget.h"
 #include "UI/Widget/BGCardWidgetMotionMath.h"
+#include "UI/Widget/BGHandWidget.h"
 
 #include "Components/CanvasPanelSlot.h"
 #include "Curves/CurveFloat.h"
@@ -67,6 +68,15 @@ void UBGCardWidget::SetMotionPosition(const FVector2D& InPosition)
 	ApplyMotionTransform();
 }
 
+void UBGCardWidget::NotifyDealStarted()
+{
+	// 카드가 실제 출발한 시점을 손패에 알려 배분 연출 단위로 사운드를 제어한다.
+	if (UBGHandWidget* Hand = OwningHand.Get())
+	{
+		Hand->NotifyCardDealStarted();
+	}
+}
+
 void UBGCardWidget::BeginDeal(const FVector2D& FromPosition, float Delay, const FBGCardDealContext& Context)
 {
 	CurrentPosition = FromPosition;
@@ -92,6 +102,7 @@ void UBGCardWidget::BeginDeal(const FVector2D& FromPosition, float Delay, const 
 		MotionState = (DealFlightDuration > 0.f)
 			? EBGCardMotionState::Dealing
 			: EBGCardMotionState::Moving;
+		NotifyDealStarted();
 		OnDealt(Deal.Context);
 		return;
 	}
@@ -407,6 +418,7 @@ bool UBGCardWidget::TickPending(float DeltaTime)
 	MotionState = (DealFlightDuration > 0.f)
 		? EBGCardMotionState::Dealing
 		: EBGCardMotionState::Moving;
+	NotifyDealStarted();
 	OnDealt(Deal.Context);
 
 	return true;

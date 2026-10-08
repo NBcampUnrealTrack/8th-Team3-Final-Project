@@ -15,6 +15,11 @@ void UBGMainMenuWidget::NativeConstruct()
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
 		Audio->BindDefaultButtonsInWidget(this);
+		for (UButton* Button : {Btn_PvE.Get(), Btn_PvP.Get(), Btn_Host.Get(), Btn_Join.Get(),
+			Btn_Settings.Get(), Btn_Back.Get(), Btn_Quit.Get()})
+		{
+			Audio->BindButtonSoundGroup(Button, EBGUIButtonSoundGroup::Confirm);
+		}
 	}
 
 	if (Btn_PvE)      { Btn_PvE->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandlePvE); }

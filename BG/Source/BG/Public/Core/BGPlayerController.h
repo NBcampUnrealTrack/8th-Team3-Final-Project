@@ -458,6 +458,9 @@ protected:
 	/** 받아 둔 시퀀스를 재생한다. 아직 안 왔으면 도착하는 대로 재생한다. */
 	void PlayEndingSequence();
 
+	/** 내 승패 테마를 한 번 재생하고 게임 BGM을 정리한다. */
+	void PlayEndResultAudio();
+
 	void StopEndingSequence();
 
 	/** 엔딩 연출을 전부 걷는다 — 시퀀스·엔딩 위젯을 내리고 숨겼던 게임 UI 를 되살린다. */
@@ -737,6 +740,7 @@ private:
 	//	받아 두는 중인 시퀀스와 그 요청. 도착 전에 재생 시점이 오면 도착하는 대로 튼다.
 	TSharedPtr<struct FStreamableHandle> EndingSequenceHandle;
 	bool bEndingSequenceWantsPlay = false;
+	bool bEndResultAudioPlayed = false;
 	
 	void HandleChatKeyPressed();
 };
