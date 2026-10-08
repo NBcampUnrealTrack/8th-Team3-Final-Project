@@ -11,6 +11,12 @@ namespace BG
 	{
 		namespace UI
 		{
+			namespace MatchResult
+			{
+				UE_DEFINE_GAMEPLAY_TAG(Victory, "Audio.UI.MatchResult.Victory")
+				UE_DEFINE_GAMEPLAY_TAG(Defeat, "Audio.UI.MatchResult.Defeat")
+			}
+
 			namespace Chat
 			{
 				UE_DEFINE_GAMEPLAY_TAG(Typing, "Audio.UI.Chat.Typing")
@@ -23,6 +29,10 @@ namespace BG
 				UE_DEFINE_GAMEPLAY_TAG(HoverEnd,      "Audio.UI.Button.Hover.End")
 				UE_DEFINE_GAMEPLAY_TAG(PressBegin,    "Audio.UI.Button.Press.Begin")
 				UE_DEFINE_GAMEPLAY_TAG(PressEnd,      "Audio.UI.Button.Press.End")
+				UE_DEFINE_GAMEPLAY_TAG(Confirm,       "Audio.UI.Button.Confirm")
+				UE_DEFINE_GAMEPLAY_TAG(Navigation,    "Audio.UI.Button.Navigation")
+				UE_DEFINE_GAMEPLAY_TAG(Selection,     "Audio.UI.Button.Selection")
+				UE_DEFINE_GAMEPLAY_TAG(Exit,          "Audio.UI.Button.Exit")
 			}
 
 			namespace Card
@@ -77,6 +87,7 @@ namespace BG
 		{
 			UE_DEFINE_GAMEPLAY_TAG(MainMenu, "Audio.Music.MainMenu")
 			UE_DEFINE_GAMEPLAY_TAG(Gameplay, "Audio.Music.Gameplay")
+			UE_DEFINE_GAMEPLAY_TAG(Ending, "Audio.Music.Ending")
 		}
 
 		namespace Ping

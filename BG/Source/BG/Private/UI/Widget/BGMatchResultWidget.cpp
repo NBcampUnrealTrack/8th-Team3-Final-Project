@@ -1,6 +1,7 @@
 #include "UI/Widget/BGMatchResultWidget.h"
 
 #include "BGGameplayTags.h"
+#include "Audio/BGAudioSubsystem.h"
 #include "Card/BGDataSubsystem.h"
 #include "Card/BGGameDataTypes.h"
 #include "Core/BGGameMode.h"
@@ -59,6 +60,10 @@ void UBGMatchResultWidget::LayoutHeaders(const float* Widths, bool bCenter)
 void UBGMatchResultWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->BindButtonSoundGroup(Button_Return, EBGUIButtonSoundGroup::Navigation);
+	}
 	if (Button_Return) Button_Return->OnClicked.AddUniqueDynamic(this, &UBGMatchResultWidget::RequestReturnToLobby);
 
 	bWaitingForValues = !RefreshRows();
