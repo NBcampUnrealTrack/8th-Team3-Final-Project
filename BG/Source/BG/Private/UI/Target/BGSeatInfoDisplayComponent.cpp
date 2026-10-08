@@ -31,10 +31,6 @@ UBGSeatInfoDisplayComponent::UBGSeatInfoDisplayComponent()
 	static ConstructorHelpers::FClassFinder<UBGSeatInfoWidget>
 		InfoBP(TEXT("/Game/UI/WBP_BGSeatPlate"));
 	if (InfoBP.Succeeded()) { InfoWidgetClass = InfoBP.Class; }
-
-	static ConstructorHelpers::FClassFinder<UBGSeatDetailWidget>
-		DetailBP(TEXT("/Game/UI/WBP_BGDetailPanel"));
-	if (DetailBP.Succeeded()) { DetailWidgetClass = DetailBP.Class; }
 }
 
 ABGPlayerController* UBGSeatInfoDisplayComponent::GetOwningController() const
@@ -670,13 +666,16 @@ UWidgetComponent* UBGSeatInfoDisplayComponent::EnsureWidgetFor(ABGCharacter* Cha
 		? Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
 		: 0.f;
 
-	//	둘 다 같은 월드 지점에 걸고 위아래는 픽셀로 나눈다. Pivot.Y=1 이면 아래 끝이 그 지점이다.
+	//	Pivot.Y=1 이면 아래 끝이 그 지점이다. 펼쳐도 아래 끝은 그대로고 위로 자란다.
 	const float AnchorZ = CapsuleTop + HeightAboveCapsule;
 
 	//	이름표도 가로로 밀 수 있게 한다. Pivot.X 를 줄이면 오른쪽으로 간다.
 	const float PlateShift = WidgetDrawSize.X > 0.f ? PlateScreenOffsetX / WidgetDrawSize.X : 0.f;
 
-	UWidgetComponent* Widget = MakeWidgetOn(Character, InfoWidgetClass, WidgetDrawSize,
+	//	펼친 크기로 처음부터 잡는다. 펼치고 접는 애니메이션 도중에 영역이 바뀌면 잘린다.
+	const FVector2D DrawSize(WidgetDrawSize.X, FMath::Max(WidgetDrawSize.Y, ExpandedDrawHeight));
+
+	UWidgetComponent* Widget = MakeWidgetOn(Character, InfoWidgetClass, DrawSize,
 		AnchorZ, FVector2D(0.5f - PlateShift, 1.f));
 	if (!Widget)
 	{
@@ -688,23 +687,6 @@ UWidgetComponent* UBGSeatInfoDisplayComponent::EnsureWidgetFor(ABGCharacter* Cha
 	const float Opacity = GetTargetPlateOpacity(SeatIndex);
 	PlateOpacityBySeat.Add(SeatIndex, Opacity);
 	ApplyPlateOpacity(Widget, Opacity);
-
-	//	상세는 이름표 위에 얹는다. 평소에는 숨어 있다가 커서를 올렸을 때만 켜진다.
-	if (DetailWidgetClass && DetailDrawSize.Y > 0.f)
-	{
-		//	이름표 높이와 틈만큼 Pivot 을 더 밀어 올린다. 크기가 바뀌어도 간격이 따라온다.
-		const float LiftRatio = (WidgetDrawSize.Y + DetailGap) / DetailDrawSize.Y;
-
-		//	가로도 같은 원리다. Pivot.X 를 줄이면 위젯이 오른쪽으로 간다.
-		const float ShiftRatio = DetailDrawSize.X > 0.f ? DetailScreenOffsetX / DetailDrawSize.X : 0.f;
-
-		if (UWidgetComponent* Detail = MakeWidgetOn(Character, DetailWidgetClass, DetailDrawSize,
-				AnchorZ, FVector2D(0.5f - ShiftRatio, 1.f + LiftRatio)))
-		{
-			Detail->SetVisibility(false);
-			DetailsBySeat.Add(SeatIndex, Detail);
-		}
-	}
 
 	return Widget;
 }
@@ -817,12 +799,6 @@ void UBGSeatInfoDisplayComponent::SyncWidgets()
 			It.Value()->DestroyComponent();
 		}
 
-		if (UWidgetComponent* Detail = DetailsBySeat.FindRef(GoneSeat))
-		{
-			Detail->DestroyComponent();
-		}
-		DetailsBySeat.Remove(GoneSeat);
-
 		if (VisibleDetailSeat == GoneSeat)
 		{
 			VisibleDetailSeat = INDEX_NONE;
@@ -865,19 +841,10 @@ void UBGSeatInfoDisplayComponent::RefreshWidgets()
 			continue;
 		}
 
+		//	상세 줄도 같은 위젯 안에 있어 한 번에 갱신된다.
 		if (UBGSeatInfoWidget* Info = Cast<UBGSeatInfoWidget>((*Found)->GetUserWidgetObject()))
 		{
 			Info->SetSeatInfo(View);
-		}
-
-		//	상세도 같은 값으로 맞춘다. 안 그러면 커서를 올려 둔 채로 체력이 깎였을 때
-		//	이름표만 바뀌고 상세는 옛 값을 보여준다.
-		if (UWidgetComponent* DetailComp = DetailsBySeat.FindRef(View.SeatIndex))
-		{
-			if (UBGSeatDetailWidget* Detail = Cast<UBGSeatDetailWidget>(DetailComp->GetUserWidgetObject()))
-			{
-				Detail->SetSeatInfo(View);
-			}
 		}
 	}
 }
@@ -894,11 +861,16 @@ void UBGSeatInfoDisplayComponent::ShowDetailFor(int32 SeatIndex)
 		return;
 	}
 
-	if (UWidgetComponent* Detail = DetailsBySeat.FindRef(SeatIndex))
+	UWidgetComponent* Widget = WidgetsBySeat.FindRef(SeatIndex);
+	UBGSeatInfoWidget* Info = Widget ? Cast<UBGSeatInfoWidget>(Widget->GetUserWidgetObject()) : nullptr;
+	if (!Info)
 	{
-		Detail->SetVisibility(true);
-		VisibleDetailSeat = SeatIndex;
+		return;
 	}
+
+	//	아래 끝(Pivot.Y=1)은 그대로라 패널이 위로 자란다.
+	Info->SetDetailExpanded(true);
+	VisibleDetailSeat = SeatIndex;
 }
 
 void UBGSeatInfoDisplayComponent::HideDetail()
@@ -908,9 +880,12 @@ void UBGSeatInfoDisplayComponent::HideDetail()
 		return;
 	}
 
-	if (UWidgetComponent* Detail = DetailsBySeat.FindRef(VisibleDetailSeat))
+	if (UWidgetComponent* Widget = WidgetsBySeat.FindRef(VisibleDetailSeat))
 	{
-		Detail->SetVisibility(false);
+		if (UBGSeatInfoWidget* Info = Cast<UBGSeatInfoWidget>(Widget->GetUserWidgetObject()))
+		{
+			Info->SetDetailExpanded(false);
+		}
 	}
 	VisibleDetailSeat = INDEX_NONE;
 }
@@ -995,12 +970,6 @@ void UBGSeatInfoDisplayComponent::DestroyAllWidgets()
 		if (Pair.Value) { Pair.Value->DestroyComponent(); }
 	}
 	WidgetsBySeat.Reset();
-
-	for (const TPair<int32, TObjectPtr<UWidgetComponent>>& Pair : DetailsBySeat)
-	{
-		if (Pair.Value) { Pair.Value->DestroyComponent(); }
-	}
-	DetailsBySeat.Reset();
 	SeatByCharacter.Reset();
 
 	VisibleDetailSeat = INDEX_NONE;

@@ -10,7 +10,6 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "UI/Widget/BGSeatDetailWidget.h"
 #include "UI/Widget/BGSeatInfoWidget.h"
 #include "UI/Presentation/BGPresentationTypes.h"   // FBGPresentationRequest — UFUNCTION 인자라 완전한 타입이 필요하다
 #include "Core/BGGameState.h"
@@ -57,29 +56,20 @@ protected:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
 		FActorComponentTickFunction* ThisTickFunction) override;
 
-	/** 머리 위에 얹을 이름표. 지정하지 않으면 아무것도 뜨지 않는다. */
+	/**
+	 * 머리 위에 얹을 이름표. 지정하지 않으면 아무것도 뜨지 않는다.
+	 * 커서를 올리면 같은 위젯이 상세 줄까지 펼쳐진다(UBGSeatInfoWidget::SetDetailExpanded).
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
 	TSubclassOf<UBGSeatInfoWidget> InfoWidgetClass;
 
-	/** 커서를 올렸을 때 그 캐릭터 위에 열리는 상세 패널. */
-	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
-	TSubclassOf<UBGSeatDetailWidget> DetailWidgetClass;
-
-	// 상세가 그려질 픽셀 크기. 네 줄(직업·장비·손패·역할)이 들어갈 만큼만 잡는다.
-	// 한 줄 46px(아이콘 32 + 위아래 여백 7) + 줄 간격 2 → 4줄 192. 모자라면 아래가 잘린다.
-	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
-	FVector2D DetailDrawSize = FVector2D(180.f, 200.f);
-
 	/**
-	 * 상세와 이름표 사이 틈(픽셀). 음수면 그만큼 내려와 이름표와 겹친다.
-	 * 월드 거리가 아니라 화면 픽셀이라 거리와 무관하게 일정하다.
+	 * 이름표를 그릴 영역의 높이(픽셀). 이름·체력에 직업·역할·손패·장비 네 줄까지 펼친 크기가 들어가야 한다.
+	 * 펼치는 애니메이션 도중에 영역을 바꾸지 않도록 처음부터 이 높이로 잡는다 — 빈 곳은 투명하다.
+	 * 폭은 WidgetDrawSize.X 그대로다. 모자라면 위쪽이 잘린다 — 패널은 아래 끝에 붙어 위로 자란다.
 	 */
-	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
-	float DetailGap = -100.f;
-
-	/** 상세를 가로로 밀 픽셀. 양수면 오른쪽. DetailGap 과 같은 원리로 거리와 무관하다. */
-	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
-	float DetailScreenOffsetX = 100.f;
+	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo", meta = (ClampMin = "0"))
+	float ExpandedDrawHeight = 260.f;
 
 	/** 캡슐 꼭대기에서 이만큼 더 올린다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
@@ -89,7 +79,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
 	FVector2D WidgetDrawSize = FVector2D(260.f, 56.f);
 
-	/** 이름표를 가로로 밀 픽셀. 음수면 왼쪽. DetailScreenOffsetX 와 같은 원리다. */
+	/** 이름표를 가로로 밀 픽셀. 음수면 왼쪽. 화면 픽셀이라 거리와 무관하게 일정하다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|SeatInfo")
 	float PlateScreenOffsetX = -80.f;
 
@@ -234,7 +224,7 @@ private:
 	/** 모든 이름표에 최신 FBGSeatView 를 밀어넣고, 열려 있는 상세 패널도 갱신한다. */
 	void RefreshWidgets();
 
-	/** 상세 패널을 연다. 대상이 화면 어느 쪽에 있는지에 따라 좌/우로 붙인다. */
+	/** 그 좌석의 이름표를 상세까지 펼친다. 펼친 것은 한 번에 하나뿐이다. */
 	void ShowDetailFor(int32 SeatIndex);
 
 	void HideDetail();
@@ -242,10 +232,10 @@ private:
 	/** 커서 아래 캐릭터를 찾아 HoveredSeat 를 갱신한다. 바뀌면 통지한다. */
 	void UpdateHover();
 
-	/** 좌석 하나에 이름표와 상세를 붙인다. 이미 있으면 그것을 돌려준다. */
+	/** 좌석 하나에 이름표를 붙인다. 이미 있으면 그것을 돌려준다. */
 	UWidgetComponent* EnsureWidgetFor(ABGCharacter* Character, int32 SeatIndex);
 
-	/** 캐릭터에 붙는 위젯 컴포넌트 하나를 만든다. 이름표와 상세가 같은 설정을 쓴다. */
+	/** 캐릭터에 붙는 위젯 컴포넌트 하나를 만든다. */
 	UWidgetComponent* MakeWidgetOn(ABGCharacter* Character, TSubclassOf<class UUserWidget> WidgetClass,
 		const FVector2D& DrawSize, float HeightZ, const FVector2D& Pivot);
 
@@ -258,11 +248,7 @@ private:
 	UPROPERTY()
 	TMap<int32, TObjectPtr<UWidgetComponent>> WidgetsBySeat;
 
-	//	좌석마다 하나씩. 평소에는 전부 숨어 있고 커서가 올라간 하나만 켜진다.
-	UPROPERTY()
-	TMap<int32, TObjectPtr<UWidgetComponent>> DetailsBySeat;
-
-	//	지금 열려 있는 상세의 좌석. 없으면 INDEX_NONE.
+	//	지금 상세까지 펼쳐 둔 좌석. 없으면 INDEX_NONE.
 	int32 VisibleDetailSeat = INDEX_NONE;
 
 	//	폰 → 좌석. 이탈로 컨트롤러가 떨어지면 폰에서 PlayerState 를 못 읽으므로,

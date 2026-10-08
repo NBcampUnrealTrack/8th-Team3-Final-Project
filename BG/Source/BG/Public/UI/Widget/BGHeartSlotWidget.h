@@ -1,4 +1,4 @@
-// 하트 한 칸. 이름표(UBGSeatInfoWidget)와 턴 패널(UBGTurnPanelWidget)이 여섯 개씩 배치해 쓴다.
+// 하트 한 칸. 턴 패널(UBGTurnPanelWidget)이 여섯 개를 배치해 쓴다.
 //
 // 코드는 "이 칸이 찼는가 / 방금 꺼졌는가" 만 알린다. 꺼지는 모양은 WBP 의 Anim_Lose 가 정한다 —
 // 연출을 바꾸려면 이 위젯의 WBP 하나만 고치면 이름표와 턴 패널에 함께 반영된다.
