@@ -373,7 +373,8 @@ void UBGTurnPanelWidget::SetLocalSeatInfo(const FBGSeatView& InView)
 		Text_Health->SetVisibility(bShowStats ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 		if (bShowStats)
 		{
-			Text_Health->SetText(FText::Format(NSLOCTEXT("BG", "LocalHealth", "체력 {0} / {1}"),
+			//	무슨 숫자인지는 옆의 하트 아이콘이 말해 준다 — 손패 줄과 같은 표기다.
+			Text_Health->SetText(FText::Format(NSLOCTEXT("BG", "LocalHealth", "{0} / {1}"),
 				LocalSeatView.Health, LocalSeatView.MaxHealth));
 		}
 	}

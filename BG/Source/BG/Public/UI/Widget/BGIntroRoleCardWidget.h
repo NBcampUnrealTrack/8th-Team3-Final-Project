@@ -6,7 +6,6 @@
 #include "BGIntroRoleCardWidget.generated.h"
 
 class UBorder;
-class UTexture2D;
 class UDataTable;
 class UTextBlock;
 class UWidgetAnimation;
@@ -18,10 +17,8 @@ class BG_API UBGIntroRoleCardWidget : public UUserWidget
 
 public:
 	/**
-	 * 값만 먼저 읽어 카드 그림을 **미리 받아 둔다.** 화면에는 아직 띄우지 않는다.
-	 *
-	 * ⚠️ 이 준비가 없으면 그림이 카드가 뜨는 순간에야 도착해 한 박자 늦게 채워진다.
-	 *    도입 연출은 한 단계 앞(야영지 진입)에서 이것을 불러 둔다.
+	 * 값만 먼저 읽어 **미리 채워 둔다.** 화면에는 아직 띄우지 않는다.
+	 * 도입 연출은 한 단계 앞(야영지 진입)에서 이것을 불러 둔다.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "BG|Intro")
 	void PrepareCard();
@@ -45,11 +42,6 @@ protected:
 	/** 값이 채워졌다. 직업별 초상화처럼 텍스트 말고 더 할 것이 있으면 여기서 한다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|Intro")
 	void OnRoleInfoChanged(const FBGSeatView& InView);
-
-	//	⚠️ 선택이 아니라 필수다. 카드 그림이 이 위젯의 본체라, 이름이 어긋나면 글자만 뜨고
-	//	   그림만 조용히 빠진다 — WBP 컴파일 에러로 바로 드러나게 한다.
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UBorder> Border_Root;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Job;
@@ -114,10 +106,7 @@ private:
 	/** 지금 읽을 수 있는 값으로 카드를 채운다. 직업과 역할이 모두 채워졌으면 true. */
 	bool RefreshFromGame();
 
-	/**
-	 * 직업 능력 → 비밀 역할 순으로 칸을 띄운다. 한꺼번에 보여주면 읽을 순서가 없다.
-	 * ⚠️ 카드 그림이 도착한 뒤부터 센다 — 빈 카드 위에서 글자만 먼저 떠오르면 어색하다.
-	 */
+	/** 직업 능력 → 비밀 역할 순으로 칸을 띄운다. 한꺼번에 보여주면 읽을 순서가 없다. */
 	void UpdateReveal(float DeltaTime);
 
 	//	카드가 화면에 떠 있는가 / 내려가는 중인가. 떠 있는 동안만 위 연출이 돈다.
@@ -125,20 +114,8 @@ private:
 	bool bHiding = false;
 	float RevealElapsed = 0.f;
 
-	/** 카드 그림을 비동기로 받아 둔다. 이미 같은 그림을 요청했으면 아무것도 하지 않는다. */
-	void RequestCardArt();
-
-	/** 받아 둔 그림을 배경에 입힌다. 아직 안 왔으면 배경을 비워 둔다. */
-	void ApplyCardArt();
-
 	UPROPERTY()
 	FBGSeatView View;
-
-	//	요청해 둔 그림. 로드가 끝나면 여기에서 꺼내 쓴다.
-	TSharedPtr<struct FStreamableHandle> CardArtHandle;
-
-	//	마지막으로 요청한 그림. 같은 것을 다시 요청하지 않게 한다.
-	FSoftObjectPath RequestedCardArt;
 
 	//	마지막으로 화면에 반영한 값. 폴링이 도는 동안 같은 값을 반복해 칠하지 않게 한다.
 	FGameplayTag AppliedJobTag;
