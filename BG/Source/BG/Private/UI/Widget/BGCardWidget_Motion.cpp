@@ -11,6 +11,9 @@
 
 #include "UI/Widget/BGCardWidget.h"
 #include "UI/Widget/BGCardWidgetMotionMath.h"
+#include "UI/Widget/BGHandWidget.h"
+#include "Audio/BGAudioSubsystem.h"
+#include "BGGameplayTags.h"
 
 #include "Components/CanvasPanelSlot.h"
 #include "Curves/CurveFloat.h"
@@ -67,6 +70,15 @@ void UBGCardWidget::SetMotionPosition(const FVector2D& InPosition)
 	ApplyMotionTransform();
 }
 
+void UBGCardWidget::NotifyDealStarted()
+{
+	// 카드가 실제 출발한 시점을 손패에 알려 배분 연출 단위로 사운드를 제어한다.
+	if (UBGHandWidget* Hand = OwningHand.Get())
+	{
+		Hand->NotifyCardDealStarted();
+	}
+}
+
 void UBGCardWidget::BeginDeal(const FVector2D& FromPosition, float Delay, const FBGCardDealContext& Context)
 {
 	CurrentPosition = FromPosition;
@@ -92,6 +104,7 @@ void UBGCardWidget::BeginDeal(const FVector2D& FromPosition, float Delay, const 
 		MotionState = (DealFlightDuration > 0.f)
 			? EBGCardMotionState::Dealing
 			: EBGCardMotionState::Moving;
+		NotifyDealStarted();
 		OnDealt(Deal.Context);
 		return;
 	}
@@ -191,6 +204,21 @@ void UBGCardWidget::FinishDwell()
 	EnterExitPhase(Center.PendingExitPosition);
 }
 
+void UBGCardWidget::PlayConfirmAudioIfReady()
+{
+	// 서버 사용 확정과 중앙 도착을 모두 마친 카드에만 확인 효과음을 한 번 재생한다.
+	if (!bPlayExit || Center.bHolding || Center.bConfirmAudioPlayed
+		|| MotionState != EBGCardMotionState::Dwelling)
+	{
+		return;
+	}
+	Center.bConfirmAudioPlayed = true;
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->Play(BG::Audio::UI::Card::Confirm.GetTag());
+	}
+}
+
 FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 {
 	//	부르는 쪽은 판정만 알고 카드 데이터는 모른다. 빈 칸은 여기서 메운다 —
@@ -223,6 +251,7 @@ FBGCardPlayContext UBGCardWidget::ReleaseHold(const FBGCardPlayContext& Context)
 	Center.DwellRemaining = DwellDuration * (GS ? GS->GetPresentationTimeScale() : 1.f);
 	//	판정 없는 해제(버리기·장비)는 서버가 기다려 주지 않는다 — 공개 구간도 없다.
 	Center.RevealRemaining = (GS && !Filled.bResolvedWithoutRoll) ? GS->GetCardRevealSeconds() : 0.f;
+	PlayConfirmAudioIfReady();
 
 	//	중앙에 서서 공개 시간이 끝나면 터뜨린다(TickDwelling). 날아가는 중이면 도착한 뒤다 —
 	//	날아가는 동안 재생하면 애니메이션이 중앙에 서기도 전에 끝나 버린다.
@@ -407,6 +436,7 @@ bool UBGCardWidget::TickPending(float DeltaTime)
 	MotionState = (DealFlightDuration > 0.f)
 		? EBGCardMotionState::Dealing
 		: EBGCardMotionState::Moving;
+	NotifyDealStarted();
 	OnDealt(Deal.Context);
 
 	return true;
@@ -507,6 +537,7 @@ void UBGCardWidget::TickPresenting(float DeltaTime)
 	if (Alpha >= 1.f)
 	{
 		MotionState = EBGCardMotionState::Dwelling;
+		PlayConfirmAudioIfReady();
 		OnPlayPresented();
 
 		//	날아오는 사이에 도착해 있던 신호를 여기서 소비한다. 대기 시계가 도는 상태라

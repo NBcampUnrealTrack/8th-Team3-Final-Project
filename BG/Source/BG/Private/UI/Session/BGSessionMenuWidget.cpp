@@ -232,6 +232,12 @@ void UBGSessionMenuWidget::NativeConstruct()
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
 		Audio->BindDefaultButtonsInWidget(this);
+		for (UButton* Button : {HostButton.Get(), JoinCodeButton.Get(), ReadyButton.Get(), StartGameButton.Get()})
+		{
+			Audio->BindButtonSoundGroup(Button, EBGUIButtonSoundGroup::Confirm);
+		}
+		Audio->BindButtonSoundGroup(RefreshButton, EBGUIButtonSoundGroup::Navigation);
+		Audio->BindButtonSoundGroup(LeaveButton, EBGUIButtonSoundGroup::Exit);
 	}
 
 	// 어느 경로로 띄우든 버튼을 누를 수 있도록 입력 모드를 직접 잡는다.
@@ -581,6 +587,10 @@ void UBGSessionMenuWidget::HandleSessionListReady(const TArray<FBGSessionSearchR
 
 		UButton* Row = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
 		Row->OnClicked.AddDynamic(Handler, &UBGSessionRowHandler::HandleClicked);
+		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+		{
+			Audio->BindButtonSoundGroup(Row, EBGUIButtonSoundGroup::Selection);
+		}
 
 		//	코드로 만든 줄이라 WBP 에서 칠할 수 없다 — 새로고침 버튼의 스타일을 빌려 패널 톤에 맞춘다.
 		if (RefreshButton)

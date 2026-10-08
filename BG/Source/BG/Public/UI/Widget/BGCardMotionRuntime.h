@@ -78,6 +78,7 @@ struct FBGCardCenterRuntime
 
 	/** true 면 DwellRemaining 이 줄지 않는다 — ReleaseHold 가 올 때까지 무한 대기. */
 	bool bHolding = false;
+	bool bConfirmAudioPlayed = false;
 
 	/**
 	 * 중앙에 도착하면 터뜨릴 판정 연출. 날아가는 중에 ReleaseHold 가 오면 여기 담긴다.
@@ -100,6 +101,7 @@ struct FBGCardCenterRuntime
 		PendingExitPosition = ExitTo;
 		Elapsed             = 0.f;
 		bHolding            = true;
+		bConfirmAudioPlayed = false;
 		ClearPendingSignals();
 	}
 

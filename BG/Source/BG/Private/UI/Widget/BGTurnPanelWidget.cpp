@@ -50,6 +50,7 @@ void UBGTurnPanelWidget::NativeConstruct()
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
 		Audio->BindDefaultButtonsInWidget(this);
+		Audio->BindButtonSoundGroup(Button_EndTurn, EBGUIButtonSoundGroup::Confirm);
 	}
 
 	if (Button_EndTurn)

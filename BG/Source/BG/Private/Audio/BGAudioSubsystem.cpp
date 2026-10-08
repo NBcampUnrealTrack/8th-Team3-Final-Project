@@ -345,6 +345,12 @@ float UBGAudioSubsystem::ResolveFadeOut(const FBGSystemAudioRow* Row, float Over
 
 void UBGAudioSubsystem::StopByTag(FGameplayTag AudioTag, float FadeOutOverride)
 {
+	// 음악으로 분류된 태그도 같은 종료 경로에서 페이드아웃한다.
+	if (CurrentMusicTag == AudioTag)
+	{
+		StopMusic(FadeOutOverride);
+		return;
+	}
 	TObjectPtr<UAudioComponent>* Found = ActiveSounds.Find(AudioTag);
 	if (!Found)
 	{
@@ -468,6 +474,39 @@ void UBGAudioSubsystem::BindDefaultButtonSounds(UButton* Button)
 	Button->OnReleased.AddUniqueDynamic(this, &UBGAudioSubsystem::HandleButtonPressEnd);
 }
 
+void UBGAudioSubsystem::BindButtonSoundGroup(UButton* Button, EBGUIButtonSoundGroup Group)
+{
+	if (!Button)
+	{
+		return;
+	}
+
+	BindDefaultButtonSounds(Button);
+	Button->OnPressed.RemoveDynamic(this, &UBGAudioSubsystem::HandleButtonPressBegin);
+	Button->OnPressed.RemoveDynamic(this, &UBGAudioSubsystem::HandleConfirmButtonPress);
+	Button->OnPressed.RemoveDynamic(this, &UBGAudioSubsystem::HandleNavigationButtonPress);
+	Button->OnPressed.RemoveDynamic(this, &UBGAudioSubsystem::HandleSelectionButtonPress);
+	Button->OnPressed.RemoveDynamic(this, &UBGAudioSubsystem::HandleExitButtonPress);
+	switch (Group)
+	{
+	case EBGUIButtonSoundGroup::Confirm:
+		Button->OnPressed.AddUniqueDynamic(this, &UBGAudioSubsystem::HandleConfirmButtonPress);
+		break;
+	case EBGUIButtonSoundGroup::Navigation:
+		Button->OnPressed.AddUniqueDynamic(this, &UBGAudioSubsystem::HandleNavigationButtonPress);
+		break;
+	case EBGUIButtonSoundGroup::Selection:
+		Button->OnPressed.AddUniqueDynamic(this, &UBGAudioSubsystem::HandleSelectionButtonPress);
+		break;
+	case EBGUIButtonSoundGroup::Exit:
+		Button->OnPressed.AddUniqueDynamic(this, &UBGAudioSubsystem::HandleExitButtonPress);
+		break;
+	default:
+		Button->OnPressed.AddUniqueDynamic(this, &UBGAudioSubsystem::HandleButtonPressBegin);
+		break;
+	}
+}
+
 void UBGAudioSubsystem::BindDefaultButtonsInWidget(UUserWidget* RootWidget)
 {
 	if (!RootWidget || !RootWidget->WidgetTree)
@@ -498,6 +537,26 @@ void UBGAudioSubsystem::HandleButtonPressBegin()
 	Play(BG::Audio::UI::Button::PressBegin.GetTag());
 }
 
+void UBGAudioSubsystem::HandleConfirmButtonPress()
+{
+	Play(BG::Audio::UI::Button::Confirm.GetTag());
+}
+
+void UBGAudioSubsystem::HandleNavigationButtonPress()
+{
+	Play(BG::Audio::UI::Button::Navigation.GetTag());
+}
+
+void UBGAudioSubsystem::HandleSelectionButtonPress()
+{
+	Play(BG::Audio::UI::Button::Selection.GetTag());
+}
+
+void UBGAudioSubsystem::HandleExitButtonPress()
+{
+	Play(BG::Audio::UI::Button::Exit.GetTag());
+}
+
 void UBGAudioSubsystem::HandleButtonPressEnd()
 {
 	Play(BG::Audio::UI::Button::PressEnd.GetTag());
@@ -505,6 +564,7 @@ void UBGAudioSubsystem::HandleButtonPressEnd()
 
 void UBGAudioSubsystem::HandleCurrentMusicFinished()
 {
+	// Loop 행의 같은 에셋을 다시 재생하고, 음원 선택은 연결된 Cue가 담당한다.
 	if (!IsValid(CurrentMusic))
 	{
 		return;

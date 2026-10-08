@@ -22,6 +22,10 @@ void UBGChatingWidget::NativeConstruct()
 		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 		{
 			Audio->BindDefaultButtonsInWidget(this);
+			for (UButton* Button : {ChatToggleButton.Get(), FilterAllButton.Get(), FilterPlayerButton.Get(), FilterSystemButton.Get()})
+			{
+				Audio->BindButtonSoundGroup(Button, EBGUIButtonSoundGroup::Navigation);
+			}
 		}
 
 		//	HUD 안에 배치되면 PlayerController 가 CreateWidget 으로 이 인스턴스를 잡을 기회가

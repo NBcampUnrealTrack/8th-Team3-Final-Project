@@ -83,6 +83,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Hand")
 	void ClearHand();
 
+	/** 카드의 실제 출발 통지이며 배분 연출당 한 번만 효과음을 재생한다. */
+	void NotifyCardDealStarted();
+
 	/** 낙관적 제거용. 서버 확인 후 SetHand 로 덮어쓰는 것이 정석이다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Hand")
 	bool RemoveCardByInstanceId(int32 InstanceId);
@@ -734,6 +737,7 @@ private:
 
 	//	지난 프레임에 배분 중이던 카드가 있었는가. 끝나는 순간을 잡아 Z 순서를 되돌린다.
 	bool bWasDealing = false;
+	bool bDealAudioPlayed = false;
 
 	//	지난 프레임에 마우스가 올라가 있던 카드. 바뀔 때만 Z 순서를 다시 잡는다.
 	int32 LastHoveredInstanceId = INDEX_NONE;

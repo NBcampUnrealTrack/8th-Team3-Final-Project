@@ -1065,6 +1065,13 @@ void ABGPlayerController::HandleMatchEndStageChanged(EBGMatchEndStage Stage)
 		break;
 
 	case EBGMatchEndStage::Victory:
+		if (!bEncounterClear)
+		{
+			if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+			{
+				Audio->StopMusic(0.5f);
+			}
+		}
 		//	HUD 는 아직 둔다 — 시퀀스로 컷될 때 걷힌다.
 		if (!bEncounterClear)
 		{
@@ -1115,6 +1122,12 @@ void ABGPlayerController::ShowVictoryWidget()
 	if (VictoryWidgetInstance)
 	{
 		VictoryWidgetInstance->AddToViewport(1000);
+		// 승패 UI 효과음은 시네마틱 테마와 분리해 조우 승리에서도 재생한다.
+		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+		{
+			Audio->Play(DidIWin() ? BG::Audio::UI::MatchResult::Victory.GetTag()
+				: BG::Audio::UI::MatchResult::Defeat.GetTag());
+		}
 	}
 
 	//	보기만 하는 구간이다. 결과 화면이 뜨면 다시 연다.
@@ -1235,11 +1248,39 @@ void ABGPlayerController::PlayEndingSequence()
 	if (EndingSequencePlayer)
 	{
 		EndingSequencePlayer->Play();
+		if (EndingSequencePlayer->IsPlaying())
+		{
+			PlayEndResultAudio();
+		}
+	}
+}
+
+void ABGPlayerController::PlayEndResultAudio()
+{
+	// 결과 시퀀스가 실제 시작된 뒤 내 승패 테마를 한 번만 재생한다.
+	if (bEndResultAudioPlayed || !HasLocalViewer())
+	{
+		return;
+	}
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->StopMusic(0.5f);
+		bEndResultAudioPlayed = Audio->Play(
+			DidIWin() ? BG::Audio::System::Victory.GetTag() : BG::Audio::System::Defeat.GetTag()) != nullptr;
 	}
 }
 
 void ABGPlayerController::ResetEndingPresentation()
 {
+	if (bEndResultAudioPlayed)
+	{
+		if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+		{
+			Audio->StopByTag(BG::Audio::System::Victory.GetTag(), 0.5f);
+			Audio->StopByTag(BG::Audio::System::Defeat.GetTag(), 0.5f);
+		}
+	}
+	bEndResultAudioPlayed = false;
 	StopEndingSequence();
 	HideVictoryWidget();
 
