@@ -345,6 +345,12 @@ float UBGAudioSubsystem::ResolveFadeOut(const FBGSystemAudioRow* Row, float Over
 
 void UBGAudioSubsystem::StopByTag(FGameplayTag AudioTag, float FadeOutOverride)
 {
+	// 음악으로 분류된 태그도 같은 종료 경로에서 페이드아웃한다.
+	if (CurrentMusicTag == AudioTag)
+	{
+		StopMusic(FadeOutOverride);
+		return;
+	}
 	TObjectPtr<UAudioComponent>* Found = ActiveSounds.Find(AudioTag);
 	if (!Found)
 	{
