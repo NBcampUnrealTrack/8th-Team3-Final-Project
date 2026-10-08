@@ -73,13 +73,15 @@ namespace
 	//	살아 있는 값이 있으면 그쪽을, 없으면 표의 문구를 쓴다.
 	FText PreferLive(const FText& Live, const FText& Fallback) { return Live.IsEmpty() ? Fallback : Live; }
 
-	//	값 아래에 설명을 빈 줄 하나 띄워 붙인다. 한쪽이 비면 나머지만 남는다.
-	FText JoinWithBlankLine(const FText& Top, const FText& Bottom)
+	//	이름은 12자까지만 보여준다. 넘치면 패널 밖으로 밀려나 양쪽이 잘린다.
+	FText ClampDisplayName(const FText& Name)
 	{
-		if (Top.IsEmpty())    { return Bottom; }
-		if (Bottom.IsEmpty()) { return Top; }
+		constexpr int32 MaxNameChars = 12;
 
-		return FText::Format(NSLOCTEXT("BG", "InfoStack", "{0}\n\n{1}"), Top, Bottom);
+		const FString& Source = Name.ToString();
+		return Source.Len() > MaxNameChars
+			? FText::FromString(Source.Left(MaxNameChars) + TEXT("…"))
+			: Name;
 	}
 }
 
@@ -114,13 +116,16 @@ const FBGInfoTooltipRow* UBGTurnPanelWidget::FindInfoRow(FName RowName) const
 
 FText UBGTurnPanelWidget::MakeEquipmentLines() const
 {
-	//	장비 한 장이 "이름 / 빈 줄 / 설명" 한 덩이가 되고, 덩이 사이도 빈 줄로 띄운다.
+	//	장비 한 장이 "이름 / 설명" 한 덩이가 되고, 덩이 사이만 빈 줄로 띄운다.
+	//	이름과 설명 사이까지 빈 줄을 두면 한 장비가 둘로 갈라져 보인다.
 	//	장비가 없으면 빈 텍스트다 — 호출부가 표의 문구로 넘어간다.
 	TArray<FText> Blocks;
 	Blocks.Reserve(LocalSeatView.Equipment.Num());
 	for (const FBGEquipmentView& Item : LocalSeatView.Equipment)
 	{
-		Blocks.Add(JoinWithBlankLine(Item.Name, Item.Description));
+		Blocks.Add(Item.Description.IsEmpty()
+			? Item.Name
+			: FText::Format(NSLOCTEXT("BG", "InfoEquipBlock", "{0}\n{1}"), Item.Name, Item.Description));
 	}
 
 	return FText::Join(FText::FromString(TEXT("\n\n")), Blocks);
@@ -362,7 +367,7 @@ void UBGTurnPanelWidget::SetLocalSeatInfo(const FBGSeatView& InView)
 	LocalSeatView = InView;
 
 	//	이름과 직업은 판이 시작되기 전에도 보여 준다. 자리에 앉은 것만으로 정해지는 값이다.
-	if (Text_Name) { Text_Name->SetText(LocalSeatView.PlayerName); }
+	if (Text_Name) { Text_Name->SetText(ClampDisplayName(LocalSeatView.PlayerName)); }
 	if (Text_Job)  { Text_Job->SetText(LocalSeatView.JobName); }
 
 	//	판 시작 전에는 값이 없다. 0/0 을 그대로 보여주면 죽은 것처럼 읽힌다.
@@ -422,7 +427,7 @@ void UBGTurnPanelWidget::RefreshIcons()
 {
 	//	태그를 못 찾으면(배정 전이거나 역할이 숨겨져 있으면) WBP 가 깔아 둔 범용 아이콘으로
 	//	되돌린다. 접으면 아이콘 자리가 통째로 빠져 그 줄만 쪼그라들고, 아이콘이 있는 장비·손패
-	//	줄과 높이가 어긋난다. (UBGSeatDetailWidget::RefreshIcons 와 같은 규칙이다.)
+	//	줄과 높이가 어긋난다. (UBGSeatInfoWidget::RefreshIcons 와 같은 규칙이다.)
 	struct FIconSlot
 	{
 		UImage* Image;
