@@ -23,6 +23,7 @@ class ABGCampfire;
 class UBGMatchStartComponent;
 class UBGSeatComponent;
 class UGameplayEffect;
+class UDataTable;
 
 // 판의 진행 모드. PvP/PvE 는 규칙이 같고 빈자리를 누가 채우느냐만 다르므로
 // 게임모드 클래스를 나누지 않고 이 값으로 가른다. (메인메뉴는 ABGMainMenuGameMode 담당)
@@ -216,10 +217,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
 	TSubclassOf<UGameplayEffect> BossStatBoostGE;
 
+	// AI 좌석에 붙일 이름 표(FBGAINameRow). 행마다 쓸 역할(Role)이 있고, 역할이 정해진 뒤
+	// 그 역할의 행들을 표에 적힌 순서대로 하나씩 붙인다(겹치지 않는다).
+	// 그 역할의 이름이 없거나 모자라면 "AI 1" 처럼 번호 이름이 그대로 남는다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE",
+		meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGAINameRow"))
+	TObjectPtr<UDataTable> AINameTable;
+
 private:
 	// 인원 목록을 받아 CollectPlayers 를 두 번 돌지 않는다.
 	// AssignRolesPvE 가 역할을 먼저 적용한 뒤 불러야 한다 - PS->GetCachedRole() 을 읽는다.
 	void AssignJobsPvE(const TArray<APlayerController*>& Players);
+
+	// 역할이 정해진 AI 에게 이름 표(AINameTable)에서 그 역할의 이름을 붙인다.
+	void AssignAINames(const TArray<APlayerController*>& Players);
 
 	// PvE 적 전용 직업 화이트리스트 - 조우가 진행될수록 누적된다.
 	TArray<FGameplayTag> BuildAllowedEnemyJobPool(int32 EncounterIndex) const;

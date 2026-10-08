@@ -14,6 +14,8 @@
 #include "AI/BGAIPlayerController.h"
 #include "Lobby/BGReadyComponent.h"
 #include "Core/BGGameInstance.h"
+#include "Core/BGAINameRow.h"
+#include "Engine/DataTable.h"
 
 namespace
 {
@@ -447,6 +449,7 @@ int32 ABGGameMode::SpawnAIPlayers(int32 Count)
 			break;
 		}
 
+		//	번호 이름이 기본이다. 이름 표가 있으면 역할이 정해진 뒤 AssignAINames 가 덮어쓴다.
 		PS->SetPlayerName(FString::Printf(TEXT("AI %d"), Spawned + 1));
 		PS->SetIsABot(true);
 
@@ -607,7 +610,55 @@ void ABGGameMode::AssignRolesPvE()
 			*PC->GetName(), *RoleTag.ToString());
 	}
 
+	//	이름은 역할이 정해진 뒤에야 붙일 수 있다 - 역할별 이름 표에서 뽑는다.
+	AssignAINames(Players);
+
 	AssignJobsPvE(Players);
+}
+
+void ABGGameMode::AssignAINames(const TArray<APlayerController*>& Players)
+{
+	if (!HasAuthority() || !IsValid(AINameTable))
+	{
+		return;
+	}
+
+	//	역할별 이름 후보를 모은다. 이름이나 역할이 비어 있는 행은 건너뛴다.
+	TMap<FGameplayTag, TArray<FString>> NamesByRole;
+	AINameTable->ForeachRow<FBGAINameRow>(TEXT("AssignAINames"),
+		[&NamesByRole](const FName& /*Key*/, const FBGAINameRow& Row)
+		{
+			if (Row.Role.IsValid() && !Row.DisplayName.IsEmpty())
+			{
+				NamesByRole.FindOrAdd(Row.Role).Add(Row.DisplayName.ToString());
+			}
+		});
+
+	//	섞지 않는다. 역할마다 표에 적힌 순서대로 앞에서부터 하나씩 쓴다(같은 판에서 이름이 겹치지 않는다).
+	TMap<FGameplayTag, int32> NextIndexByRole;
+	for (const APlayerController* PC : Players)
+	{
+		if (!IsValid(PC) || !PC->IsA<ABGAIPlayerController>())
+		{
+			continue;
+		}
+
+		ABGPlayerState* PS = PC->GetPlayerState<ABGPlayerState>();
+		if (!IsValid(PS))
+		{
+			continue;
+		}
+
+		//	이 역할의 이름이 없거나 다 썼으면 SpawnAIPlayers 가 붙인 번호 이름이 그대로 남는다.
+		const FGameplayTag BotRole = PS->GetCachedRole();
+		const TArray<FString>* Names = NamesByRole.Find(BotRole);
+		int32& NextIndex = NextIndexByRole.FindOrAdd(BotRole);
+		if (Names && Names->IsValidIndex(NextIndex))
+		{
+			PS->SetPlayerName((*Names)[NextIndex]);
+			++NextIndex;
+		}
+	}
 }
 
 void ABGGameMode::AssignJobsFromPool(const TArray<APlayerController*>& Players,
