@@ -529,7 +529,8 @@ void UBGCardWidget::TickPresenting(float DeltaTime)
 	const float Eased = FMath::InterpEaseOut(0.f, 1.f, Alpha, 2.f);
 
 	CurrentPosition = FMath::Lerp(Center.StartPosition, Center.TargetPosition, Eased);
-	CurrentScale    = FMath::Lerp(Center.StartScale, PresentScale, Eased);
+	//	호버한 카드만큼 키운다 — 중앙에서는 호버가 꺼져(IsLeavingHand) 겹쳐 곱해지지 않는다.
+	CurrentScale    = FMath::Lerp(Center.StartScale, PresentScale * HoverScale, Eased);
 	//	부채꼴로 기울어 있던 각도를 편다. 중앙에서는 똑바로 서야 읽기 좋다.
 	CurrentAngle    = FMath::Lerp(Center.StartAngle, 0.f, Eased);
 
