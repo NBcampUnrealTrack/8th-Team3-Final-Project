@@ -37,6 +37,7 @@ namespace BG
 
 			namespace Card
 			{
+				UE_DEFINE_GAMEPLAY_TAG(Draw, "Audio.UI.Card.Draw")
 				UE_DEFINE_GAMEPLAY_TAG(HoverBegin, "Audio.UI.Card.Hover.Begin")
 				UE_DEFINE_GAMEPLAY_TAG(HoverEnd,   "Audio.UI.Card.Hover.End")
 				UE_DEFINE_GAMEPLAY_TAG(DragBegin,  "Audio.UI.Card.Drag.Begin")

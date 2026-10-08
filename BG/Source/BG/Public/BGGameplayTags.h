@@ -50,6 +50,7 @@ namespace BG
 
 			namespace Card
 			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Draw)
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverBegin)
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverEnd)
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(DragBegin)
