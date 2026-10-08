@@ -9,20 +9,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "UI/BGUIStyleSubsystem.h"
-
-namespace
-{
-	//	이름은 12자까지만 보여준다. 이름표 폭이 이름을 따라 끝없이 늘어나지 않게 한다.
-	FText ClampDisplayName(const FText& Name)
-	{
-		constexpr int32 MaxNameChars = 12;
-
-		const FString& Source = Name.ToString();
-		return Source.Len() > MaxNameChars
-			? FText::FromString(Source.Left(MaxNameChars) + TEXT("…"))
-			: Name;
-	}
-}
+#include "UI/View/BGSeatViewLibrary.h"
 
 void UBGSeatInfoWidget::SetSeatInfo(const FBGSeatView& InView)
 {
@@ -243,7 +230,7 @@ void UBGSeatInfoWidget::BuildFallbackLayout()
 FText UBGSeatInfoWidget::GetNameText() const
 {
 	//	자르는 것은 이름뿐이다 — 사망·이탈 표시까지 잘리면 안 된다.
-	const FText Name = ClampDisplayName(View.PlayerName);
+	const FText Name = UBGSeatViewLibrary::ClampDisplayName(View.PlayerName);
 
 	if (!View.bIsAlive)
 	{
