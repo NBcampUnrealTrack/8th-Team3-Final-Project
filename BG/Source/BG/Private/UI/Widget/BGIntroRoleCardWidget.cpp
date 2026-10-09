@@ -1,11 +1,8 @@
 #include "UI/Widget/BGIntroRoleCardWidget.h"
 
 #include "Animation/WidgetAnimation.h"
-#include "Engine/AssetManager.h"
-#include "Engine/StreamableManager.h"
 #include "Components/TextBlock.h"
 #include "Components/Border.h"
-#include "Engine/Texture2D.h"
 #include "Engine/DataTable.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
@@ -142,46 +139,6 @@ void UBGIntroRoleCardWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-//	카드 그림은 직업 표(DT_BGCharacterRow)가 준다 — 위젯이 직업→텍스처 표를 따로 들지 않는다.
-//
-//	⚠️ 동기 로드(LoadSynchronous)를 쓰지 않는다. 그림이 아직 메모리에 없으면 로드가 끝날 때까지
-//	   게임 스레드가 멈추는데, 하필 그 시점이 화면이 막 밝아지는 순간이라 끊김이 가장 잘 보인다.
-void UBGIntroRoleCardWidget::RequestCardArt()
-{
-	const FSoftObjectPath Path = View.IntroCardTexture.ToSoftObjectPath();
-	if (Path == RequestedCardArt)
-	{
-		return;   //	같은 그림을 이미 요청했다. 폴링이 여러 번 돌아도 요청은 한 번뿐이다.
-	}
-
-	RequestedCardArt = Path;
-	CardArtHandle.Reset();
-
-	if (Path.IsNull())
-	{
-		ApplyCardArt();   //	이 직업은 그림이 없다 — 배경을 비운다.
-		return;
-	}
-
-	CardArtHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
-		Path, FStreamableDelegate::CreateWeakLambda(this, [this]() { ApplyCardArt(); }));
-}
-
-void UBGIntroRoleCardWidget::ApplyCardArt()
-{
-	if (!Border_Root)
-	{
-		return;
-	}
-
-	UTexture2D* CardTexture = View.IntroCardTexture.Get();
-
-	Border_Root->SetBrushFromTexture(CardTexture);
-
-	//	아직 안 왔거나 그림이 없는 직업이면 배경을 비운다. 안 그러면 흰 사각형이 남는다.
-	Border_Root->SetBrushColor(CardTexture ? FLinearColor::White : FLinearColor::Transparent);
-}
-
 bool UBGIntroRoleCardWidget::RefreshFromGame()
 {
 	const APlayerController* PC = GetOwningPlayer();
@@ -206,10 +163,6 @@ bool UBGIntroRoleCardWidget::RefreshFromGame()
 	{
 		return false;   //	좌석이 아직 안 왔다. 다음 주기에 다시 본다.
 	}
-
-	//	그림 요청은 값이 바뀌었는지와 무관하게 먼저 본다 — 로드가 끝나 반영만 남은 경우가 있다.
-	RequestCardArt();
-	ApplyCardArt();
 
 	//	⚠️ 값이 다 올 때까지 폴링이 도는 자리다. 같은 값이면 여기서 멈춘다 —
 	//	   안 그러면 0.2초마다 글자를 다시 칠하고 OnRoleInfoChanged 도 계속 쏜다.
@@ -261,12 +214,6 @@ bool UBGIntroRoleCardWidget::RefreshFromGame()
 void UBGIntroRoleCardWidget::UpdateReveal(float DeltaTime)
 {
 	if (!bCardShown || bHiding || bWaitingForValues)
-	{
-		return;
-	}
-
-	//	그림이 아직 오는 중이면 기다린다 — 빈 카드 위에서 글자만 떠오르면 어색하다.
-	if (CardArtHandle.IsValid() && !CardArtHandle->HasLoadCompleted())
 	{
 		return;
 	}

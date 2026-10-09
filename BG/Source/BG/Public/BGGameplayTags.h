@@ -24,6 +24,12 @@ namespace BG
 	{
 		namespace UI
 		{
+			namespace MatchResult
+			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Victory)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Defeat)
+			}
+
 			namespace Chat
 			{
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Typing)
@@ -36,10 +42,16 @@ namespace BG
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverEnd)
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(PressBegin)
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(PressEnd)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Confirm)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Navigation)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Selection)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Exit)
 			}
 
 			namespace Card
 			{
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Draw)
+				UE_DECLARE_GAMEPLAY_TAG_EXTERN(Confirm)
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverBegin)
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(HoverEnd)
 				UE_DECLARE_GAMEPLAY_TAG_EXTERN(DragBegin)
@@ -90,6 +102,7 @@ namespace BG
 		{
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(MainMenu)
 			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Gameplay)
+			UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ending)
 		}
 
 		// Audio.Ping.* — 핑 종류별 알림음. DT_BGSystemAudio 의 Row 이름과 같다.

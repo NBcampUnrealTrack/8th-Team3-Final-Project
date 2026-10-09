@@ -189,6 +189,15 @@ void UBGSystemMenuWidget::NativeConstruct()
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
 		Audio->BindDefaultButtonsInWidget(this);
+		for (UButton* Button : {SettingsButton.Get(), CloseButton.Get(), HelpButton.Get(), HelpCloseButton.Get(),
+			Tab_Jobs.Get(), Tab_Roles.Get(), Tab_Equips.Get()})
+		{
+			Audio->BindButtonSoundGroup(Button, EBGUIButtonSoundGroup::Navigation);
+		}
+		for (UButton* Button : {ResetButton.Get(), MainMenuButton.Get()})
+		{
+			Audio->BindButtonSoundGroup(Button, EBGUIButtonSoundGroup::Exit);
+		}
 	}
 
 	if (SettingsButton) { SettingsButton->OnClicked.AddUniqueDynamic(this, &UBGSystemMenuWidget::HandleSettingsClicked); }

@@ -14,6 +14,10 @@ void UBGRewardSelectWidget::NativeConstruct()
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
 		Audio->BindDefaultButtonsInWidget(this);
+		for (UButton* Button : {CardButton0.Get(), CardButton1.Get(), CardButton2.Get()})
+		{
+			Audio->BindButtonSoundGroup(Button, EBGUIButtonSoundGroup::Selection);
+		}
 	}
 
 	if (CardButton0)

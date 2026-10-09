@@ -31,7 +31,7 @@ class UTexture2D;
  * 좌하단 본인 정보도 이 패널이 맡는다. 머리 위 이름표는 남만 띄우기 때문이다:
  *   Text_Name      (TextBlock, 선택 — 내 이름)
  *   Text_Job       (TextBlock, 선택 — 캐릭터 이름)
- *   Text_Health    (TextBlock, 선택 — "체력 5 / 5")
+ *   Text_Health    (TextBlock, 선택 — "5 / 5". 체력 / 최대 체력)
  *   Heart_1..6     (WBP_BGHeartSlot, 선택 — 체력을 하트로. Text_Health 대신 쓰는 표시다)
  *   Text_Role      (TextBlock, 선택 — 내 역할. 본인 것이라 숨기지 않는다)
  *   Img_JobIcon    (Image,     선택 — 직업 아이콘. JobIcons 에서 태그로 고른다)

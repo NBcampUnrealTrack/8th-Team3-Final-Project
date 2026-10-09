@@ -14,6 +14,8 @@
 #include "UI/Widget/BGHandWidget.h"
 #include "UI/Widget/BGCardWidget.h"
 #include "UI/Widget/BGHandWidgetInternal.h"
+#include "Audio/BGAudioSubsystem.h"
+#include "BGGameplayTags.h"
 
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
@@ -76,12 +78,18 @@ void UBGHandWidget::SetHand(const TArray<FBGCardView>& InCards)
 	//	같은 종류 카드가 여러 장이어도 정확히 짝지어진다.
 	TMap<int32, UBGCardWidget*> Existing;
 	Existing.Reserve(CardWidgets.Num());
+	bool bDealInProgress = false;
 	for (UBGCardWidget* CardWidget : CardWidgets)
 	{
 		if (CardWidget)
 		{
 			Existing.Add(CardWidget->GetInstanceId(), CardWidget);
+			bDealInProgress |= CardWidget->IsDealInProgress();
 		}
+	}
+	if (!bDealInProgress)
+	{
+		bDealAudioPlayed = false;
 	}
 
 	TArray<TObjectPtr<UBGCardWidget>> NewOrder;
@@ -178,6 +186,20 @@ void UBGHandWidget::SetHand(const TArray<FBGCardView>& InCards)
 	//	패널 크기를 아직 모르는 첫 프레임이면 보간 없이 배치한다 —
 	//	폴백 폭으로 잡았다가 실제 폭으로 고칠 때 카드가 눈에 띄게 튄다.
 	RelayoutCards(/*bSnap=*/!bHasValidPanelSize);
+}
+
+void UBGHandWidget::NotifyCardDealStarted()
+{
+	// 첫 카드 출발에만 효과음을 재생하고 배분 중 추가된 카드도 같은 연출로 취급한다.
+	if (bDealAudioPlayed)
+	{
+		return;
+	}
+	bDealAudioPlayed = true;
+	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
+	{
+		Audio->Play(BG::Audio::UI::Card::Draw.GetTag());
+	}
 }
 
 void UBGHandWidget::FinalizeDealBatch(const TArray<UBGCardWidget*>& Batch)
@@ -307,6 +329,7 @@ void UBGHandWidget::ClearHand()
 		Box_Cards->ClearChildren();
 	}
 	CardWidgets.Reset();
+	bDealAudioPlayed = false;
 
 	//	퇴장 중이던 카드도 같이 사라진다 — ClearChildren 이 이미 떼어냈다.
 	OutgoingWidgets.Reset();
@@ -444,6 +467,10 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	}
 
 	bWasDealing = bAnyDealing;
+	if (!bAnyDealing)
+	{
+		bDealAudioPlayed = false;
+	}
 	LastHoveredInstanceId = HoveredInstanceId;
 	LastRevealedCount = RevealedCount;
 
