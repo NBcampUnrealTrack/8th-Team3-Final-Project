@@ -75,7 +75,7 @@ namespace
 	FText PreferLive(const FText& Live, const FText& Fallback) { return Live.IsEmpty() ? Fallback : Live; }
 
 	//	이름은 12자까지만 보여준다. 넘치면 패널 밖으로 밀려나 양쪽이 잘린다.
-	FText ClampDisplayName(const FText& Name)
+	FText ClampTurnPanelName(const FText& Name)
 	{
 		constexpr int32 MaxNameChars = 12;
 
@@ -368,7 +368,7 @@ void UBGTurnPanelWidget::SetLocalSeatInfo(const FBGSeatView& InView)
 	LocalSeatView = InView;
 
 	//	이름과 직업은 판이 시작되기 전에도 보여 준다. 자리에 앉은 것만으로 정해지는 값이다.
-	if (Text_Name) { Text_Name->SetText(ClampDisplayName(LocalSeatView.PlayerName)); }
+	if (Text_Name) { Text_Name->SetText(ClampTurnPanelName(LocalSeatView.PlayerName)); }
 	if (Text_Job)  { Text_Job->SetText(LocalSeatView.JobName); }
 
 	//	판 시작 전에는 값이 없다. 0/0 을 그대로 보여주면 죽은 것처럼 읽힌다.
