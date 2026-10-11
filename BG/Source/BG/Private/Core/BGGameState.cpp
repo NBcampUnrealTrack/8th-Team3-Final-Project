@@ -913,6 +913,10 @@ void ABGGameState::Multicast_CardResolved_Implementation(const FBGCardResolution
 void ABGGameState::Multicast_PlayEquipmentProc_Implementation(const FBGEquipmentProcEvent& Event)
 {
 	if (GetNetMode() == NM_DedicatedServer || !Event.Target || Event.FXRowKey.IsNone()) return;
+	
+	OnEquipmentProcUI.Broadcast();
+	
+	
 	const UBGDataSubsystem* Data = GetGameInstance()
 		? GetGameInstance()->GetSubsystem<UBGDataSubsystem>() : nullptr;
 	const FBGStatusFXRow* Row = Data ? Data->GetStatusFXRow(Event.FXRowKey) : nullptr;

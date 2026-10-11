@@ -118,6 +118,9 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCameraShotChanged, const FBGCameraShot&
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGChatMessageReceived, const FString& /*SenderName*/, const FString& /*Message*/)
 DECLARE_MULTICAST_DELEGATE(FOnBGStatusVisualsReleased)
 
+/** 장비 UI **/
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGEquipmentProcUI);
+
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase
 {
@@ -138,6 +141,9 @@ public:
 	/** 결과 연출 단계에서 장비 발동 단발 FX를 모든 화면에 재생한다. */
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_PlayEquipmentProc(const FBGEquipmentProcEvent& Event);
+	
+	UPROPERTY(BlueprintAssignable, Category = "BG|Equip")
+	FOnBGEquipmentProcUI OnEquipmentProcUI;
 
 	/** 위 멀티캐스트가 도착하면 발사된다. UI(PlayerController)가 구독한다. */
 	FOnBGCardResolved OnCardResolved;
