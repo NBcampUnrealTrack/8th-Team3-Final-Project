@@ -2697,9 +2697,35 @@ void ABGPlayerController::ServerSendChatMessage_Implementation(const FString& Me
 	ABGPlayerState* PS = GetPlayerState<ABGPlayerState>();
 	const FString SenderName = PS ? PS->GetPlayerName() : TEXT("?Who?");
 	
+	ABGGameState* GS = GetBGGameState();
+	if (!GS)
+	{
+		return;
+	}
+
+	//	판 도중 죽은 사람은 관전자다 — 관전자끼리만 본다. 산 사람의 채팅은 전원(관전자 포함)이 본다.
+	if (PS && PS->IsDead() && GS->IsMatchRunning())
+	{
+		for (APlayerState* Other : GS->PlayerArray)
+		{
+			const ABGPlayerState* OtherPS = Cast<ABGPlayerState>(Other);
+			ABGPlayerController* OtherPC = OtherPS ? Cast<ABGPlayerController>(OtherPS->GetOwningController()) : nullptr;
+			if (OtherPC && OtherPS->IsDead())
+			{
+				OtherPC->ClientReceiveSpectatorChat(SenderName, Message);
+			}
+		}
+		return;
+	}
+
+	GS->Multicast_ChatMessage(SenderName, Message);
+}
+
+void ABGPlayerController::ClientReceiveSpectatorChat_Implementation(const FString& SenderName, const FString& Message)
+{
 	if (ABGGameState* GS = GetBGGameState())
 	{
-		GS->Multicast_ChatMessage(SenderName, Message);
+		GS->OnChatMessageReceived.Broadcast(SenderName, Message, /*bSpectator=*/ true);
 	}
 }
 

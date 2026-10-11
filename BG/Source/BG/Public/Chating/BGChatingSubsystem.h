@@ -46,7 +46,7 @@ private:
 	void HandleGameStateSet(AGameStateBase* GS);
 	
 	UFUNCTION()
-	void HandleChatFromGameState(const FString& SenderName, const FString& Message);
+	void HandleChatFromGameState(const FString& SenderName, const FString& Message, bool bSpectator);
 	
 	/** 트래블로 새 월드가 로드됐다. 거기 GameState 를 다시 잡는다. */
 	void HandlePostLoadMap(UWorld* LoadedWorld);
