@@ -118,8 +118,9 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCameraShotChanged, const FBGCameraShot&
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGChatMessageReceived, const FString& /*SenderName*/, const FString& /*Message*/)
 DECLARE_MULTICAST_DELEGATE(FOnBGStatusVisualsReleased)
 
-/** 장비 UI **/
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnBGEquipmentProcUI);
+/** 장비 UI. 막은 사람 화면에만 띄우도록 발동 대상의 PlayerState 를 넘긴다(못 찾으면 null). **/
+class ABGPlayerState;
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGEquipmentProcUI, ABGPlayerState*, TargetPlayerState);
 
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase

@@ -914,7 +914,9 @@ void ABGGameState::Multicast_PlayEquipmentProc_Implementation(const FBGEquipment
 {
 	if (GetNetMode() == NM_DedicatedServer || !Event.Target || Event.FXRowKey.IsNone()) return;
 	
-	OnEquipmentProcUI.Broadcast();
+	const APawn* TargetPawn = Cast<APawn>(Event.Target.Get());
+	ABGPlayerState* TargetPS = TargetPawn ? TargetPawn->GetPlayerState<ABGPlayerState>() : nullptr;
+	OnEquipmentProcUI.Broadcast(TargetPS);
 	
 	
 	const UBGDataSubsystem* Data = GetGameInstance()
