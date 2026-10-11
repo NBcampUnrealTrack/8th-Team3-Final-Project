@@ -914,7 +914,9 @@ void ABGGameState::Multicast_PlayEquipmentProc_Implementation(const FBGEquipment
 {
 	if (GetNetMode() == NM_DedicatedServer || !Event.Target || Event.FXRowKey.IsNone()) return;
 	
-	OnEquipmentProcUI.Broadcast();
+	const APawn* TargetPawn = Cast<APawn>(Event.Target.Get());
+	ABGPlayerState* TargetPS = TargetPawn ? TargetPawn->GetPlayerState<ABGPlayerState>() : nullptr;
+	OnEquipmentProcUI.Broadcast(TargetPS);
 	
 	
 	const UBGDataSubsystem* Data = GetGameInstance()
@@ -971,7 +973,7 @@ void ABGGameState::HandleEquipmentProcSystemFinished(UNiagaraComponent* Finished
 
 void ABGGameState::Multicast_ChatMessage_Implementation(const FString& SenderName, const FString& Message)
 {
-	OnChatMessageReceived.Broadcast(SenderName, Message);
+	OnChatMessageReceived.Broadcast(SenderName, Message, /*bSpectator=*/ false);
 }
 
 void ABGGameState::Multicast_Ping_Implementation(const FBGPingEvent& Event)

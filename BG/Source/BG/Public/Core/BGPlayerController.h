@@ -291,6 +291,10 @@ public:
 	UFUNCTION(Server, Reliable, WithValidation)
 	void ServerSendChatMessage(const FString& Message);
 
+	/** 관전자 채팅 1건. 서버가 사망자 컨트롤러에만 보낸다 — 산 사람에게는 오지 않는다. */
+	UFUNCTION(Client, Reliable)
+	void ClientReceiveSpectatorChat(const FString& SenderName, const FString& Message);
+
 	// ─────────────── 핑 ───────────────────── //
 	//	검증과 전파는 UBGPingComponent 가 맡는다. 여기는 RPC 경계만 제공한다.
 	UFUNCTION(Server, Reliable, WithValidation)

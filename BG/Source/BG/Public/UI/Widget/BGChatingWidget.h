@@ -88,6 +88,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
 	FLinearColor SystemTextColor = FLinearColor(1.f, 0.85f, 0.4f, 0.9f);
 
+	/** 관전자 채팅. 일반 채팅보다 연하게 해서 죽은 사람의 말임을 드러낸다. */
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
+	FLinearColor SpectatorTextColor = FLinearColor(0.7f, 0.72f, 0.78f, 0.5f);
+
 	/** 필터 탭 배경. 선택된 탭만 Active 를 쓴다. */
 	UPROPERTY(EditDefaultsOnly, Category = "BG|Chat")
 	TObjectPtr<UTexture2D> FilterTabActive;

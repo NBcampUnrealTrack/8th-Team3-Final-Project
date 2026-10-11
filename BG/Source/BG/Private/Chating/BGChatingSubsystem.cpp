@@ -54,6 +54,12 @@ void UBGChatingSubsystem::Deinitialize()
 
 void UBGChatingSubsystem::HandlePostLoadMap(UWorld* LoadedWorld)
 {
+	//	PostLoadMap 은 프로세스 전역 통지다. PIE 처럼 한 프로세스에 게임 인스턴스가 여럿이면
+	//	남의 월드까지 오므로, 내 월드만 잡는다 — 아니면 전원이 마지막에 로드된 GameState 에 붙는다.
+	if (!LoadedWorld || LoadedWorld->GetGameInstance() != GetGameInstance())
+	{
+		return;
+	}
 	BindToWorld(LoadedWorld);
 }
 
@@ -95,12 +101,13 @@ void UBGChatingSubsystem::HandleGameStateSet(AGameStateBase* GS)
 	UE_LOG(LogTemp, Warning, TEXT("[Chat] GameState 바인딩 성공: %s"), *GetNameSafe(BGGS));
 }
 
-void UBGChatingSubsystem::HandleChatFromGameState(const FString& SenderName, const FString& Message)
+void UBGChatingSubsystem::HandleChatFromGameState(const FString& SenderName, const FString& Message, bool bSpectator)
 {
 	FBGChatEntry Entry;
 	Entry.SenderName = SenderName;
 	Entry.Message = Message;
 	Entry.Timestamp = FDateTime::Now();
+	Entry.bSpectator = bSpectator;
 
 	History.Add(Entry);
 	if (UGameInstance* GI = GetGameInstance())
