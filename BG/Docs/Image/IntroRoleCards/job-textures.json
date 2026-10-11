@@ -1,14 +1,14 @@
 {
-  "Character.Job.Knight": "/Game/UI/IntroRoleCards/T_IntroCard_Knight.T_IntroCard_Knight",
-  "Character.Job.Mercenary": "/Game/UI/IntroRoleCards/T_IntroCard_Mercenary.T_IntroCard_Mercenary",
-  "Character.Job.Hunter": "/Game/UI/IntroRoleCards/T_IntroCard_Hunter.T_IntroCard_Hunter",
-  "Character.Job.Scout": "/Game/UI/IntroRoleCards/T_IntroCard_Scout.T_IntroCard_Scout",
-  "Character.Job.Priest": "/Game/UI/IntroRoleCards/T_IntroCard_Priest.T_IntroCard_Priest",
-  "Character.Job.Healer": "/Game/UI/IntroRoleCards/T_IntroCard_Healer.T_IntroCard_Healer",
-  "Character.Job.Mage": "/Game/UI/IntroRoleCards/T_IntroCard_Mage.T_IntroCard_Mage",
-  "Character.Job.Diviner": "/Game/UI/IntroRoleCards/T_IntroCard_Diviner.T_IntroCard_Diviner",
-  "Character.Job.Monk": "/Game/UI/IntroRoleCards/T_IntroCard_Monk.T_IntroCard_Monk",
-  "Character.Job.Brawler": "/Game/UI/IntroRoleCards/T_IntroCard_Brawler.T_IntroCard_Brawler",
-  "Character.Job.Thief": "/Game/UI/IntroRoleCards/T_IntroCard_Thief.T_IntroCard_Thief",
-  "Character.Job.Assassin": "/Game/UI/IntroRoleCards/T_IntroCard_Assassin.T_IntroCard_Assassin"
+  "Character.Job.Knight": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Knight.T_IntroCard_Knight",
+  "Character.Job.Mercenary": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Mercenary.T_IntroCard_Mercenary",
+  "Character.Job.Hunter": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Hunter.T_IntroCard_Hunter",
+  "Character.Job.Scout": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Scout.T_IntroCard_Scout",
+  "Character.Job.Priest": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Priest.T_IntroCard_Priest",
+  "Character.Job.Healer": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Healer.T_IntroCard_Healer",
+  "Character.Job.Mage": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Mage.T_IntroCard_Mage",
+  "Character.Job.Diviner": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Diviner.T_IntroCard_Diviner",
+  "Character.Job.Monk": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Monk.T_IntroCard_Monk",
+  "Character.Job.Brawler": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Brawler.T_IntroCard_Brawler",
+  "Character.Job.Thief": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Thief.T_IntroCard_Thief",
+  "Character.Job.Assassin": "/Game/UI/Texture/IntroRoleCards/T_IntroCard_Assassin.T_IntroCard_Assassin"
 }

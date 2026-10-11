@@ -21,6 +21,10 @@ struct FBGChatEntry
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Chat")
 	bool bSystem = false;
 
+	/** 관전자(사망자)끼리의 채팅이다. 연한 색으로 그린다. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Chat")
+	bool bSpectator = false;
+
 	/** 핑으로 생긴 줄이다. 아이콘·색을 붙일 때 이 값을 본다. */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Chat")
 	bool bPing = false;

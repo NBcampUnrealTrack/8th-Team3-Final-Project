@@ -114,9 +114,13 @@ DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGCardEquipped,
 /** 연출 카메라 샷이 바뀌었다. 서버·클라 양쪽에서 불린다. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBGCameraShotChanged, const FBGCameraShot& /*Shot*/);
 
-/** 채팅 메시지 '1'건 도착시 UI로 중계 */
-DECLARE_MULTICAST_DELEGATE_TwoParams(FOnBGChatMessageReceived, const FString& /*SenderName*/, const FString& /*Message*/)
+/** 채팅 메시지 '1'건 도착시 UI로 중계. bSpectator 는 관전자(사망자)끼리만 오가는 채팅이다. */
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnBGChatMessageReceived, const FString& /*SenderName*/, const FString& /*Message*/, bool /*bSpectator*/)
 DECLARE_MULTICAST_DELEGATE(FOnBGStatusVisualsReleased)
+
+/** 장비 UI. 막은 사람 화면에만 띄우도록 발동 대상의 PlayerState 를 넘긴다(못 찾으면 null). **/
+class ABGPlayerState;
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnBGEquipmentProcUI, ABGPlayerState*, TargetPlayerState);
 
 UCLASS()
 class BG_API ABGGameState : public AGameStateBase
@@ -138,6 +142,9 @@ public:
 	/** 결과 연출 단계에서 장비 발동 단발 FX를 모든 화면에 재생한다. */
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_PlayEquipmentProc(const FBGEquipmentProcEvent& Event);
+	
+	UPROPERTY(BlueprintAssignable, Category = "BG|Equip")
+	FOnBGEquipmentProcUI OnEquipmentProcUI;
 
 	/** 위 멀티캐스트가 도착하면 발사된다. UI(PlayerController)가 구독한다. */
 	FOnBGCardResolved OnCardResolved;

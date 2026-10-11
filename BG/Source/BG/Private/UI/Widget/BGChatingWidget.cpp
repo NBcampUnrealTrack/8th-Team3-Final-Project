@@ -152,7 +152,8 @@ void UBGChatingWidget::AddEntryToLog(const FBGChatEntry& Entry)
 	UBGUIStyleSubsystem::ApplyDefaultTypeface(this, Font);
 	Line->SetFont(Font);
 
-	Line->SetColorAndOpacity(FSlateColor(Entry.bSystem ? SystemTextColor : LogTextColor));
+	Line->SetColorAndOpacity(FSlateColor(Entry.bSystem ? SystemTextColor
+		: Entry.bSpectator ? SpectatorTextColor : LogTextColor));
 	Line->SetAutoWrapText(true);
 	//	기본 정책은 띄어쓰기에서만 끊는다 — 공백 없는 긴 채팅이 통째로 삐져나간다.
 	Line->SetWrappingPolicy(ETextWrappingPolicy::AllowPerCharacterWrapping);
