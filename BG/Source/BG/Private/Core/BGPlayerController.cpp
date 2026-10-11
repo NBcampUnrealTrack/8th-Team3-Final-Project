@@ -75,10 +75,10 @@ ABGPlayerController::ABGPlayerController()
 	PresentationDirector = CreateDefaultSubobject<UBGPresentationDirector>(TEXT("PresentationDirector"));
 
 	//	다른 WBP 를 쓰려면 BP_BGPlayerController 에서 이 값만 바꾸면 된다.
-	static ConstructorHelpers::FClassFinder<UUserWidget> VictoryBP(TEXT("/Game/UI/Ending/WBP_Victory"));
+	static ConstructorHelpers::FClassFinder<UUserWidget> VictoryBP(TEXT("/Game/UI/Widget/Result/WBP_Victory"));
 	if (VictoryBP.Succeeded()) { VictoryWidgetClass = VictoryBP.Class; }
 
-	static ConstructorHelpers::FClassFinder<UUserWidget> DefeatBP(TEXT("/Game/UI/Ending/WBP_Defeat"));
+	static ConstructorHelpers::FClassFinder<UUserWidget> DefeatBP(TEXT("/Game/UI/Widget/Result/WBP_Defeat"));
 	if (DefeatBP.Succeeded()) { DefeatWidgetClass = DefeatBP.Class; }
 }
 

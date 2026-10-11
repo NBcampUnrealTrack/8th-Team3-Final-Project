@@ -29,7 +29,7 @@ UBGSeatInfoDisplayComponent::UBGSeatInfoDisplayComponent()
 	InfoWidgetClass = UBGSeatInfoWidget::StaticClass();
 
 	static ConstructorHelpers::FClassFinder<UBGSeatInfoWidget>
-		InfoBP(TEXT("/Game/UI/WBP_BGSeatPlate"));
+		InfoBP(TEXT("/Game/UI/Widget/Game/WBP_BGSeatPlate"));
 	if (InfoBP.Succeeded()) { InfoWidgetClass = InfoBP.Class; }
 }
 
