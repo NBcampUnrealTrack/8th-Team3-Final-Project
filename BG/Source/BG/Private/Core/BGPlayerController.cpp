@@ -459,13 +459,13 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 				}
 			}
 
-			const FString Head = TargetName.IsEmpty()
-			   ? FString::Printf(TEXT("%s → %s"), *SeatName, *CardName)
-			   : FString::Printf(TEXT("%s → %s → %s"), *SeatName, *CardName, *TargetName);
+			const FString Line = TargetName.IsEmpty()
+				 ? FString::Printf(TEXT("%s : %s"), *SeatName, *CardName)
+				 : FString::Printf(TEXT("%s → %s : %s"), *SeatName, *TargetName, *CardName);
 
 			Chat->AddSystemMessage(Resolution.bForced
-			   ? FString::Printf(TEXT("%s (%s, 강제)"), *Head, *TierText)
-			   : FString::Printf(TEXT("%s (%s)"), *Head, *TierText));
+			   ? FString::Printf(TEXT("%s (%s, 강제)"), *Line, *TierText)
+			   : FString::Printf(TEXT("%s (%s)"), *Line, *TierText));
 		}
 	}
 
