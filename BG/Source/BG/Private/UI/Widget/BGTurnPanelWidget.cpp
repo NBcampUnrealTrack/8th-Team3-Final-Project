@@ -428,6 +428,7 @@ void UBGTurnPanelWidget::RefreshIcons()
 	const FIconSlot Slots[] = {
 		{ Img_JobIcon,  JobIcons,  LocalSeatView.JobTag,  JobIconDefault  },
 		{ Img_RoleIcon, RoleIcons, LocalSeatView.RoleTag, RoleIconDefault },
+		{ Img_Portrait, JobPortraits, LocalSeatView.JobTag, PortraitDefault },
 	};
 
 	for (const FIconSlot& IconSlot : Slots)
