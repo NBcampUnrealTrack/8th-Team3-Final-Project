@@ -36,6 +36,7 @@ class UTexture2D;
  *   Text_Role      (TextBlock, 선택 — 내 역할. 본인 것이라 숨기지 않는다)
  *   Img_JobIcon    (Image,     선택 — 직업 아이콘. JobIcons 에서 태그로 고른다)
  *   Img_RoleIcon   (Image,     선택 — 역할 아이콘. RoleIcons 에서 태그로 고른다)
+ *   Img_Portrait   (Image,     선택 — 직업 초상화. JobPortraits 에서 태그로 고른다)
  *   Text_Equipment (TextBlock, 선택 — 장비 목록)
  *   손패 장수는 Text_HandLimit 이 이미 보여주므로 따로 두지 않는다.
  *
@@ -161,6 +162,10 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UImage> Img_RoleIcon;
 
+	/** 직업 초상화. 아이콘과 같은 규칙으로 직업 태그를 따라 갈아끼운다. */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_Portrait;
+
 	/**
 	 * 직업 태그(Character.Job.*) → 아이콘. WBP 에서 채운다.
 	 * 태그가 없거나 표에 없는 직업이면 WBP 가 깔아 둔 범용 아이콘으로 되돌아간다.
@@ -172,12 +177,19 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "BG|Turn|Icon")
 	TMap<FGameplayTag, TObjectPtr<UTexture2D>> RoleIcons;
 
+	/** 직업 태그(Character.Job.*) → 초상화. JobIcons 와 같은 규칙이다. */
+	UPROPERTY(EditAnywhere, Category = "BG|Turn|Icon")
+	TMap<FGameplayTag, TObjectPtr<UTexture2D>> JobPortraits;
+
 	//	WBP 가 깔아 둔 범용 아이콘. 태그를 못 찾았을 때 되돌릴 곳이라 처음 한 번 기억해 둔다.
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> JobIconDefault;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> RoleIconDefault;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTexture2D> PortraitDefault;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Text_Equipment;
