@@ -4,7 +4,7 @@
 
 static TAutoConsoleVariable<int32> CVarBGDebug(
 	TEXT("BG.Debug"),
-	1,
+	0,
 	TEXT("BANG! 화면 디버그 메시지 표시 (0=끄기, 1=켜기)."),
 	ECVF_Default);
 

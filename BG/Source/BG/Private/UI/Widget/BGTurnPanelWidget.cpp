@@ -272,18 +272,7 @@ void UBGTurnPanelWidget::RefreshRopeText()
 	if (Text_Rope)
 	{
 		Text_Rope->SetText(FText::FromString(Label));
-		return;
 	}
-
-	//	WBP 에 Text_Rope 가 아직 없다 — 화면에 직접 찍어 흐름만이라도 확인할 수 있게 한다.
-	//	정식 위젯을 붙이면 위에서 반환되어 이 경로는 자연히 죽는다.
-#if !UE_BUILD_SHIPPING
-	if (GEngine)
-	{
-		//	표시 시간은 틱 간격보다 넉넉해야 한다 — 0 이면 그리기 전에 만료돼 아무것도 안 보인다.
-		GEngine->AddOnScreenDebugMessage(/*Key=*/ 0xB60DE, /*Time=*/ 1.f, FColor::Yellow, Label);
-	}
-#endif
 }
 
 void UBGTurnPanelWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
