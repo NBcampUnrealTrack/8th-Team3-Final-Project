@@ -2,6 +2,7 @@
 
 #include "Components/Border.h"
 #include "Components/TextBlock.h"
+#include "Core/BGGameState.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -61,8 +62,16 @@ void UBGResolutionWidget::StartAutoHideTimer()
 	if (DisplaySeconds > 0.f)
 	{
 		World->GetTimerManager().SetTimer(
-			HideTimerHandle, this, &UBGResolutionWidget::HideResolution, DisplaySeconds, /*bLoop=*/false);
+			HideTimerHandle, this, &UBGResolutionWidget::HideResolution,
+			DisplaySeconds * GetUserSpeedScale(), /*bLoop=*/false);
 	}
+}
+
+float UBGResolutionWidget::GetUserSpeedScale() const
+{
+	const UWorld* World = GetWorld();
+	const ABGGameState* GS = World ? World->GetGameState<ABGGameState>() : nullptr;
+	return IsValid(GS) ? GS->GetUserPresentationSpeedScale() : 1.f;
 }
 
 void UBGResolutionWidget::ClearAutoHideTimer()

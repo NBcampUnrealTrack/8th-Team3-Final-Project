@@ -118,8 +118,17 @@ void UBGHandWidget::SetHand(const TArray<FBGCardView>& InCards)
 			}
 		}
 	}
+	TSet<int32> SeenIds;
 	for (const FBGCardView& Card : InCards)
 	{
+		//	같은 InstanceId 가 한 목록에 두 번 오면 두 번째는 새 위젯이 되어 같은 카드가 둘 보인다.
+		if (SeenIds.Contains(Card.InstanceId))
+		{
+			UE_LOG(LogBGUI, Warning, TEXT("%s: 손패에 InstanceId %d 가 중복되어 있습니다."), *GetName(), Card.InstanceId);
+			continue;
+		}
+		SeenIds.Add(Card.InstanceId);
+
 		if (UBGCardWidget** Found = Existing.Find(Card.InstanceId))
 		{
 			//	이미 있는 카드 — 데이터만 갈아끼운다. 위젯도, 진행 중인 연출도 그대로 산다.
@@ -521,6 +530,20 @@ void UBGHandWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 			{
 				TimedOutIds.Add(CardWidget->GetInstanceId());
 			}
+		}
+	}
+
+	//	추적에서 빠졌는데 캔버스에 남은 카드 위젯을 걷어낸다 — 아무도 지워 주지 않아
+	//	화면에 영원히 남는 유령 카드(같은 카드가 두 장 보이는 증상)의 최후 방어선이다.
+	//	⚠️ 지우기 전에 로그부터 남긴다. 여기 걸렸다는 건 위쪽 어딘가가 수명을 놓쳤다는 뜻이다.
+	for (int32 ChildIndex = Canvas->GetChildrenCount() - 1; ChildIndex >= 0; --ChildIndex)
+	{
+		UBGCardWidget* Child = Cast<UBGCardWidget>(Canvas->GetChildAt(ChildIndex));
+		if (Child && !CardWidgets.Contains(Child) && !OutgoingWidgets.Contains(Child))
+		{
+			UE_LOG(LogBGUI, Warning, TEXT("%s: 추적되지 않는 카드 위젯 #%d 를 제거합니다."),
+				*GetName(), Child->GetInstanceId());
+			Child->RemoveFromParent();
 		}
 	}
 

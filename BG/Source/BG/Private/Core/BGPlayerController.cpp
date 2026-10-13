@@ -448,13 +448,29 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 					SeatName = SeatPS->GetPlayerName();
 				}
 			}
-
+			
 			const FString TierText = UBGResolutionWidget::GetTierText(Tier).ToString();
 
+			//	대상 좌석 이름. 대상이 없는 카드(맥주 등)면 비워 둔다.
+			FString TargetName;
+			if (Resolution.TargetSeatIndex != INDEX_NONE)
+			{
+				if (const ABGGameState* GS = GetBGGameState())
+				{
+					if (const ABGPlayerState* TargetPS = GS->GetPlayerStateBySeat(Resolution.TargetSeatIndex))
+					{
+						TargetName = TargetPS->GetPlayerName();
+					}
+				}
+			}
+
+			const FString Line = TargetName.IsEmpty()
+				 ? FString::Printf(TEXT("%s : %s"), *SeatName, *CardName)
+				 : FString::Printf(TEXT("%s → %s : %s"), *SeatName, *TargetName, *CardName);
+
 			Chat->AddSystemMessage(Resolution.bForced
-				? FString::Printf(TEXT("%s → %s (%s, 강제)"), *SeatName, *CardName, *TierText)
-				: FString::Printf(TEXT("%s → %s (%s)"),
-					*SeatName, *CardName, *TierText));
+			   ? FString::Printf(TEXT("%s (%s, 강제)"), *Line, *TierText)
+			   : FString::Printf(TEXT("%s (%s)"), *Line, *TierText));
 		}
 	}
 
@@ -1628,7 +1644,7 @@ void ABGPlayerController::RefreshTurnPanel()
 	else if (View.bIsMyTurn)
 	{
 		View.StatusText = (View.CardsUsed >= View.CardUseLimit)
-			? NSLOCTEXT("BG", "TurnMineNoUses", "카드 사용 한도를 다 썼습니다 — 턴을 종료하세요")
+			? NSLOCTEXT("BG", "TurnMineNoUses", "한도를 다 썼습니다")
 			: NSLOCTEXT("BG", "TurnMine", "내 차례입니다");
 	}
 	else if (View.bMatchRunning)

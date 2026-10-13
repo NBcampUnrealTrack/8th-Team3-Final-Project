@@ -125,10 +125,13 @@ void UBGRollGaugeWidget::HideResolution()
 	{
 		Phase = EBGRollGaugePhase::Outro;
 
-		PlayAnimation(Anim_ResultIn, 0.f, 1, EUMGSequencePlayMode::Reverse, OutroPlaybackSpeed);
+		//	2배속이면 접는 속도도 같은 비율로 올린다. 서버 판정 UI 시간이 그만큼 줄어 있다.
+		const float OutroSpeed = OutroPlaybackSpeed / FMath::Max(GetUserSpeedScale(), KINDA_SMALL_NUMBER);
+
+		PlayAnimation(Anim_ResultIn, 0.f, 1, EUMGSequencePlayMode::Reverse, OutroSpeed);
 
 		const float OutroSeconds =
-			(Anim_ResultIn->GetEndTime() - Anim_ResultIn->GetStartTime()) / FMath::Max(OutroPlaybackSpeed, KINDA_SMALL_NUMBER);
+			(Anim_ResultIn->GetEndTime() - Anim_ResultIn->GetStartTime()) / FMath::Max(OutroSpeed, KINDA_SMALL_NUMBER);
 
 		if (UWorld* World = GetWorld())
 		{
@@ -213,7 +216,7 @@ void UBGRollGaugeWidget::TickRolling(float DeltaTime)
 
 		Phase         = EBGRollGaugePhase::Landing;
 		PhaseElapsed  = 0.f;
-		PhaseDuration = LandingPauseSeconds;
+		PhaseDuration = LandingPauseSeconds * GetUserSpeedScale();
 
 		OnRollLanded(ResolutionView);
 		OnRollLandedEvent.Broadcast(ResolutionView);
@@ -308,13 +311,15 @@ float UBGRollGaugeWidget::PlayPhaseAnimation(UWidgetAnimation* Animation, float 
 {
 	if (!Animation)
 	{
-		return FallbackSeconds;   // WBP 가 이 단계 연출을 두지 않았다. 시간만 흘려보낸다.
+		return FallbackSeconds * GetUserSpeedScale();   // WBP 가 이 단계 연출을 두지 않았다. 시간만 흘려보낸다.
 	}
 
-	PlayAnimation(Animation);
+	//	2배속이면 애니메이션도 같은 비율로 빨리 돌린다. 길이만 줄이고 재생 속도를 두면 연출이 잘린다.
+	const float SpeedScale = FMath::Max(GetUserSpeedScale(), KINDA_SMALL_NUMBER);
+	PlayAnimation(Animation, 0.f, 1, EUMGSequencePlayMode::Forward, 1.f / SpeedScale);
 	OutLast = Animation;
 
-	return Animation->GetEndTime() - Animation->GetStartTime();
+	return (Animation->GetEndTime() - Animation->GetStartTime()) * SpeedScale;
 }
 
 void UBGRollGaugeWidget::ScheduleStep(FTimerHandle& Timer, void (UBGRollGaugeWidget::*Callback)(), float Seconds)
