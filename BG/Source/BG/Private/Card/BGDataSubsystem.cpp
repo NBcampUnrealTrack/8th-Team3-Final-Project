@@ -160,10 +160,13 @@ UBGDataSubsystem::UBGDataSubsystem()
 		CharacterTable = DT_Character.Object;
 	}
 
-	static ConstructorHelpers::FObjectFinder<UDataTable> DT_CardProb(*CardProbabilityTablePath);
+	//	[비활성] 구형 가중치 분배(DrawWeightedCard)용 DT 라 현재 프로젝트에는 에셋이 없다 (GDD §13.2).
+	//	없어도 정상이므로 Optional 로 찾는다 — FObjectFinder 는 없으면 패키징마다 빨간 Error 를 찍는다.
+	//	복구: DT_BGCardProbability 를 만들면 그대로 잡힌다.
+	static ConstructorHelpers::FObjectFinderOptional<UDataTable> DT_CardProb(*CardProbabilityTablePath);
 	if (DT_CardProb.Succeeded())
 	{
-		CardProbabilityTable = DT_CardProb.Object;
+		CardProbabilityTable = DT_CardProb.Get();
 	}
 }
 

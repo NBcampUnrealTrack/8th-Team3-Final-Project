@@ -20,6 +20,9 @@ class BG_API UBGSeatViewLibrary : public UBlueprintFunctionLibrary
 	GENERATED_BODY()
 
 public:
+	/** 이름표·턴 패널이 쓰는 표시 이름. 12자를 넘으면 잘라 "…" 를 붙인다(폭이 이름을 따라 늘어나지 않게). */
+	static FText ClampDisplayName(const FText& Name);
+
 	/**
 	 * 모든 좌석의 공개 정보를 좌석 번호 순으로 만든다.
 	 * Viewer 기준으로 bIsLocalPlayer / Distance 가 채워진다.

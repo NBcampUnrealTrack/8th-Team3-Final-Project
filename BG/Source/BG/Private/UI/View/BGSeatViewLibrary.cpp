@@ -276,3 +276,13 @@ TArray<int32> UBGSeatViewLibrary::GetSelectableSeats(const APlayerController* Vi
 
 	return Seats;
 }
+
+FText UBGSeatViewLibrary::ClampDisplayName(const FText& Name)
+{
+	constexpr int32 MaxNameChars = 12;
+
+	const FString& Source = Name.ToString();
+	return Source.Len() > MaxNameChars
+		? FText::FromString(Source.Left(MaxNameChars) + TEXT("…"))
+		: Name;
+}
