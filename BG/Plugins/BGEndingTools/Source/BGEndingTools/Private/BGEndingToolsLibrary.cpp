@@ -49,7 +49,7 @@ FString UBGEndingToolsLibrary::BakeCastle(const TArray<AStaticMeshActor*>& Sourc
     FDataflowTransformSelection Selection; Selection.Initialize(GC->Transform.Num(),true);
     FUniformFractureSettings Settings{};
     Settings.Transform=FTransform::Identity;
-    Settings.MinVoronoiSites=14;Settings.MaxVoronoiSites=18;
+    Settings.MinVoronoiSites=4;Settings.MaxVoronoiSites=6;
     Settings.InternalMaterialID=-1;Settings.RandomSeed=290926;
     Settings.ChanceToFracture=1.f;Settings.GroupFracture=false;Settings.SplitIslands=true;
     Settings.Grout=1.f;Settings.NoiseSettings.Amplitude=0.f;Settings.NoiseSettings.PointSpacing=100.f;
