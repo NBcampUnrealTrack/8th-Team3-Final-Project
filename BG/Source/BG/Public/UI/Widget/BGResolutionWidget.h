@@ -155,8 +155,15 @@ protected:
 	/** 화면에 올리고 등장 통지(BP 훅 → 바깥)를 보낸다. 값은 미리 채워 둘 것. */
 	void BeginShowing();
 
-	/** DisplaySeconds 뒤 자동 숨김을 (다시) 건다. */
+	/** DisplaySeconds 뒤 자동 숨김을 (다시) 건다. 2배속이면 DisplaySeconds 도 같은 비율로 줄인다. */
 	void StartAutoHideTimer();
+
+	/**
+	 * 사용자 연출 배속 배율. 2배속이면 PresentationDoubleSpeedScale, 아니면 1. GameState 가 없으면 1.
+	 * 서버 판정 UI 대기(GetResolutionPresentationSeconds)가 배속만큼 줄어드는데 이 위젯의 고정 길이
+	 * (착지 정지 · 칸 · 결과창 · 표시 유지)가 그대로면 서버가 먼저 월드 연출을 터뜨린다.
+	 */
+	float GetUserSpeedScale() const;
 
 	/**
 	 * 걸려 있던 자동 숨김을 취소한다.
