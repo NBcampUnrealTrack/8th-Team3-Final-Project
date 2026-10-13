@@ -443,13 +443,29 @@ void ABGPlayerController::HandleCardResolved(const FBGCardResolution& Resolution
 					SeatName = SeatPS->GetPlayerName();
 				}
 			}
-
+			
 			const FString TierText = UBGResolutionWidget::GetTierText(Tier).ToString();
 
+			//	대상 좌석 이름. 대상이 없는 카드(맥주 등)면 비워 둔다.
+			FString TargetName;
+			if (Resolution.TargetSeatIndex != INDEX_NONE)
+			{
+				if (const ABGGameState* GS = GetBGGameState())
+				{
+					if (const ABGPlayerState* TargetPS = GS->GetPlayerStateBySeat(Resolution.TargetSeatIndex))
+					{
+						TargetName = TargetPS->GetPlayerName();
+					}
+				}
+			}
+
+			const FString Line = TargetName.IsEmpty()
+				 ? FString::Printf(TEXT("%s : %s"), *SeatName, *CardName)
+				 : FString::Printf(TEXT("%s → %s : %s"), *SeatName, *TargetName, *CardName);
+
 			Chat->AddSystemMessage(Resolution.bForced
-				? FString::Printf(TEXT("%s → %s (%s, 강제)"), *SeatName, *CardName, *TierText)
-				: FString::Printf(TEXT("%s → %s (%s)"),
-					*SeatName, *CardName, *TierText));
+			   ? FString::Printf(TEXT("%s (%s, 강제)"), *Line, *TierText)
+			   : FString::Printf(TEXT("%s (%s)"), *Line, *TierText));
 		}
 	}
 

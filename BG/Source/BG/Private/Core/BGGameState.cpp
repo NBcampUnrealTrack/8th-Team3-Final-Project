@@ -178,6 +178,15 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 	{
 		return;
 	}
+	
+	FBGCardResolution Sent = Resolution;
+	if (Target)
+	{
+		if (const ABGPlayerState* TargetPS = Target->GetPlayerState<ABGPlayerState>())
+		{
+			Sent.TargetSeatIndex = TargetPS->GetSeatIndex();
+		}
+	}
 
 	// 판정 UI 통지와 월드 연출 예약을 한 입구에서 시작한다. PlayerController 중간에서
 	// 먼저 Multicast하면 GA 발동 실패에도 결과 UI만 재생되며 두 시간축의 시작점도 갈라진다.
@@ -207,7 +216,7 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 				*Resolution.CardId.ToString(), PendingPresentationObservers.Num(), Resolution.PresentationId);
 			PendingPresentationCaster = Caster;
 			PendingPresentationTarget = Target;
-			PendingPresentationResolution = Resolution;
+			PendingPresentationResolution = Sent;
 			BroadcastTurnState();
 
 			if (Rope)
@@ -217,7 +226,7 @@ void ABGGameState::PlayResolvedCardPresentation(ABGCharacter* Caster, ABGCharact
 
 			// 호스트도 UI 콜백 시점에 이미 대기 상태를 보도록 서버 상태를 먼저 연다.
 			// 클라이언트는 이 통지를 받아 주사위/판정 UI 애니메이션을 시작한다.
-			Multicast_CardResolved(Resolution);
+			Multicast_CardResolved(Sent);
 
 			GetWorldTimerManager().SetTimer(ResolutionPresentationTimer, this,
 				&ABGGameState::FinishResolutionPresentation,

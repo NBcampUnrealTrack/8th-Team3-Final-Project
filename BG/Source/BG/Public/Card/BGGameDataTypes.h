@@ -154,7 +154,11 @@ struct FBGCardResolution
 	/** 카드를 쓴 좌석. */
 	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
 	int32 SeatIndex = INDEX_NONE;
-
+	
+	/** 대상 좌석. 대상이 없는 카드(맥주)면 INDEX_NONE. */
+	UPROPERTY(BlueprintReadOnly, Category = "BG|Resolution")
+	int32 TargetSeatIndex = INDEX_NONE;
+	
 	/**
 	 * 판정에 실제로 쓰인 비율(보정 반영 후).
 	 *
