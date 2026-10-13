@@ -199,6 +199,17 @@ public:
 	bool IsPrimaryCameraActive() const;
 
 	/**
+	 * PrimaryCamera 의 Yaw 를 "원래 자세(스폰 시 상대 회전)" 기준 오프셋으로 설정한다.
+	 *
+	 * 조준 가장자리 팬(BGWorldTargetingComponent)과 평상시 시점(BGCameraLookComponent)이
+	 * 둘 다 이 함수 하나를 거친다. 각자 GetRelativeRotation 으로 따로 기준을 잡으면,
+	 * 한쪽이 오프셋을 걸어 둔 순간의 값을 다른 쪽이 "원래 자세" 로 잘못 캡처해
+	 * 영구히 밀리는 문제가 생긴다 — 기준은 최초 호출 시 한 번만 읽어 공유한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Camera")
+	void SetPrimaryCameraYawOffset(float YawOffsetDeg);
+
+	/**
 	 * 서버 전용. 캐릭터 **몸**을 이 방향으로 돌린다 (좌석 배치에서 캠프파이어를 보게 할 때).
 	 *
 	 * ⚠️ 서버에서 SetActorRotation 만 하면 **자기 캐릭터를 조종하는 클라에는 반영되지 않는다.**
@@ -360,6 +371,10 @@ protected:
 	/** 연출 샷 마커. 기본 비활성이며, 연출 중에도 활성화하지 않는다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Camera")
 	TObjectPtr<UCameraComponent> SecondaryCamera;
+
+	//	SetPrimaryCameraYawOffset 의 기준 자세. 최초 호출 시 한 번만 채워진다.
+	FRotator PrimaryCameraBaseRotation = FRotator::ZeroRotator;
+	bool bPrimaryCameraBaseCaptured = false;
 
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 

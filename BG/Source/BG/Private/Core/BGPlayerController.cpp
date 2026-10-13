@@ -45,6 +45,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "UI/Target/BGSeatInfoDisplayComponent.h"
 #include "UI/Target/BGWorldTargetingComponent.h"
+#include "UI/Target/BGCameraLookComponent.h"
 #include "UI/Target/BGTargetHighlight.h"
 #include "Components/InputComponent.h"
 #include "UObject/ConstructorHelpers.h"
@@ -70,6 +71,10 @@ ABGPlayerController::ABGPlayerController()
 	//	둘 다 보는 사람 화면에만 있는 것이라 복제하지 않는다. 서버에서는 스스로 틱을 끈다.
 	SeatInfoDisplay = CreateDefaultSubobject<UBGSeatInfoDisplayComponent>(TEXT("SeatInfoDisplay"));
 	WorldTargeting  = CreateDefaultSubobject<UBGWorldTargetingComponent>(TEXT("WorldTargeting"));
+
+	//	평상시 시점. AI 컨트롤러도 이 생성자를 거치지만, bShowMouseCursor=false/HasLocalViewer()=false 라
+	//	틱에서 스스로 걸러진다(UBGCameraLookComponent::TickComponent 참고) — 따로 가를 필요 없다.
+	CameraLook = CreateDefaultSubobject<UBGCameraLookComponent>(TEXT("CameraLook"));
 
 	//	연출 큐도 화면 쪽이라 같이 복제하지 않는다.
 	PresentationDirector = CreateDefaultSubobject<UBGPresentationDirector>(TEXT("PresentationDirector"));

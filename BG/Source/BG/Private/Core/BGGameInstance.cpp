@@ -703,6 +703,7 @@ void UBGGameInstance::AdvancePvEEncounter()
 void UBGGameInstance::ResetPvERun()
 {
 	PvEEncounterIndex = 1;
+	PersistedDeputyNames.Reset();   // 다음 런은 부관 이름도 새로 고정한다.
 	UE_LOG(LogBGNet, Log, TEXT("[PvE] 런 종료. 진행도 초기화"));
 }
 

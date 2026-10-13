@@ -28,6 +28,16 @@ namespace
 			Tags.Swap(i, j);
 		}
 	}
+
+	// 같은 알고리즘을 AI 이름 풀(역할별 후보)에도 쓴다.
+	void ShuffleNames(TArray<FString>& Names)
+	{
+		for (int32 i = Names.Num() - 1; i > 0; --i)
+		{
+			const int32 j = FMath::RandRange(0, i);
+			Names.Swap(i, j);
+		}
+	}
 }
 
 ABGGameMode::ABGGameMode()
@@ -634,7 +644,20 @@ void ABGGameMode::AssignAINames(const TArray<APlayerController*>& Players)
 			}
 		});
 
-	//	섞지 않는다. 역할마다 표에 적힌 순서대로 앞에서부터 하나씩 쓴다(같은 판에서 이름이 겹치지 않는다).
+	//	역할별로 후보를 섞은 뒤 앞에서부터 하나씩 쓴다 - 판마다 무작위 순서이면서도
+	//	같은 판에서는 같은 이름이 두 번 나오지 않는다(소비 후 재사용 안 함).
+	for (TPair<FGameplayTag, TArray<FString>>& Pair : NamesByRole)
+	{
+		ShuffleNames(Pair.Value);
+	}
+
+	//	부관(Role.Deputy)만 런 전체에서 이름을 고정한다 - 조우가 바뀔 때마다 ServerTravel 로
+	//	PlayerState 가 통째로 새로 생기지만, GameInstance 는 살아있어 거기 적어둔 이름을
+	//	그대로 재사용할 수 있다. 무법자 등 나머지 역할은 위에서 섞은 대로 조우마다 새로 뽑는다.
+	UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
+	const FGameplayTag DeputyRole = BG::Role::Deputy.GetTag();
+	int32 DeputyOrdinal = 0;   // 한 판에 부관이 둘일 수 있다(7인 풀) - 뽑힌 순서로 각자 이름을 고정한다.
+
 	TMap<FGameplayTag, int32> NextIndexByRole;
 	for (const APlayerController* PC : Players)
 	{
@@ -649,8 +672,32 @@ void ABGGameMode::AssignAINames(const TArray<APlayerController*>& Players)
 			continue;
 		}
 
-		//	이 역할의 이름이 없거나 다 썼으면 SpawnAIPlayers 가 붙인 번호 이름이 그대로 남는다.
 		const FGameplayTag BotRole = PS->GetCachedRole();
+
+		//	이 부관 순번의 이름이 이미 고정돼 있으면 표를 다시 뽑지 않고 그대로 재사용한다.
+		if (BotRole == DeputyRole && GI)
+		{
+			const int32 ThisDeputy = DeputyOrdinal++;
+			const FString Persisted = GI->GetPersistedDeputyName(ThisDeputy);
+			if (!Persisted.IsEmpty())
+			{
+				PS->SetPlayerName(Persisted);
+				continue;
+			}
+
+			//	처음 등장한 부관 - 표에서 하나 뽑아 이번 런 동안 쓸 이름으로 고정해둔다.
+			const TArray<FString>* Names = NamesByRole.Find(BotRole);
+			int32& NextIndex = NextIndexByRole.FindOrAdd(BotRole);
+			if (Names && Names->IsValidIndex(NextIndex))
+			{
+				const FString& NewName = (*Names)[NextIndex++];
+				PS->SetPlayerName(NewName);
+				GI->SetPersistedDeputyName(ThisDeputy, NewName);
+			}
+			continue;
+		}
+
+		//	이 역할의 이름이 없거나 다 썼으면 SpawnAIPlayers 가 붙인 번호 이름이 그대로 남는다.
 		const TArray<FString>* Names = NamesByRole.Find(BotRole);
 		int32& NextIndex = NextIndexByRole.FindOrAdd(BotRole);
 		if (Names && Names->IsValidIndex(NextIndex))

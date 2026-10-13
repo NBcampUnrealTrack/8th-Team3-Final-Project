@@ -148,12 +148,9 @@ private:
 	bool bTargeting = false;
 
 	//	정면 기준 좌우 회전량. 조준이 끝나면 0 으로 돌아간다.
+	//	기준 자세(원래 각도)는 ABGCharacter::SetPrimaryCameraYawOffset 쪽에서 한 번만 잡아 공유한다 —
+	//	여기서 따로 잡으면 UBGCameraLookComponent 와 서로 "원래 자세" 를 잘못 캡처할 수 있다.
 	float PanYaw = 0.f;
-
-	//	팬을 얹기 전의 카메라 자세와, 그 값을 어느 카메라에서 잡았는지.
-	//	폰이 바뀌면 카메라도 바뀌므로 그때 다시 잡아야 한다.
-	FRotator BaseCameraRotation = FRotator::ZeroRotator;
-	TWeakObjectPtr<class UCameraComponent> BaseRotationOwner;
 
 	//	클릭을 통과시키기 전의 가시성. 되돌릴 때 이 값을 그대로 쓴다.
 	UPROPERTY()

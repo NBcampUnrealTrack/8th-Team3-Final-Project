@@ -87,6 +87,24 @@ public:
 	// 새 런의 첫 조우를 시작할 때 부른다. 지난 런의 기록을 비운다.
 	void ClearPvERunRecords() { PvERunRecords.Reset(); }
 
+	// 부관(Role.Deputy) 고정 이름. Index 는 "그 판에서 부관으로 뽑힌 순번"(한 판에
+	// 부관이 둘일 수 있다 - 7인 풀). 아직 고정된 적 없으면 빈 문자열.
+	// ABGGameMode::AssignAINames 가 조우마다 이 값을 먼저 확인해 재사용한다.
+	FString GetPersistedDeputyName(int32 Index) const
+	{
+		return PersistedDeputyNames.IsValidIndex(Index) ? PersistedDeputyNames[Index] : FString();
+	}
+
+	// 그 순번의 부관 이름을 이번 런 동안 고정한다. ResetPvERun 전까지(조우가 바뀌어도) 유지된다.
+	void SetPersistedDeputyName(int32 Index, const FString& Name)
+	{
+		while (PersistedDeputyNames.Num() <= Index)
+		{
+			PersistedDeputyNames.AddDefaulted();
+		}
+		PersistedDeputyNames[Index] = Name;
+	}
+
 	// 직전 조우를 이겨서(런이 안 끝나고) 이어서 왔는가. true면 새 월드에서 로비를
 	// 거치지 않고 시작 버튼 없이 바로 StartMatch() 한다. 한 번 읽으면 스스로 false로 되돌린다.
 	UFUNCTION(BlueprintPure, Category = "BG|PvE")
@@ -173,6 +191,10 @@ private:
 
 	// 끝난 조우별 기록. AddPvEEncounterRecord/ClearPvERunRecords 참고.
 	TArray<FBGPvEEncounterRecord> PvERunRecords;
+
+	// GetPersistedDeputyName/SetPersistedDeputyName 참고. ResetPvERun 이 아니면 비우지 않는다 -
+	// 조우 사이(ServerTravel)에는 반드시 살아있어야 한다.
+	TArray<FString> PersistedDeputyNames;
 
 	// ShouldAutoStartNextPvEMatch/SetAutoStartNextPvEMatch 참고.
 	bool bAutoStartNextPvEMatch = false;

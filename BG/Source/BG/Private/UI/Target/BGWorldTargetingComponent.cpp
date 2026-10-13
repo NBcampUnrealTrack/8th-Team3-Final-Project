@@ -1,6 +1,5 @@
 #include "UI/Target/BGWorldTargetingComponent.h"
 
-#include "Camera/CameraComponent.h"
 #include "Card/BGDataSubsystem.h"
 #include "Components/InputComponent.h"
 #include "Components/Widget.h"
@@ -505,23 +504,13 @@ void UBGWorldTargetingComponent::UpdateRecenter(float DeltaTime)
 
 void UBGWorldTargetingComponent::ApplyPanYaw()
 {
-	const ABGPlayerController* PC = GetOwningController();
-	const ABGCharacter* Character = PC ? Cast<ABGCharacter>(PC->GetPawn()) : nullptr;
-	UCameraComponent* Camera = Character ? Character->GetPrimaryCamera() : nullptr;
-	if (!Camera)
+	ABGPlayerController* PC = GetOwningController();
+	ABGCharacter* Character = PC ? Cast<ABGCharacter>(PC->GetPawn()) : nullptr;
+	if (!Character)
 	{
 		return;
 	}
 
-	//	기준 자세는 카메라마다 한 번만 잡는다. 매번 현재 값을 기준으로 삼으면 회전이
-	//	누적되어 정면으로 못 돌아오고, 폰이 바뀌었는데(복귀·재스폰) 옛 값을 쓰면 어긋난다.
-	if (BaseRotationOwner.Get() != Camera)
-	{
-		BaseCameraRotation = Camera->GetRelativeRotation();
-		BaseRotationOwner  = Camera;
-	}
-
-	FRotator Rotation = BaseCameraRotation;
-	Rotation.Yaw += PanYaw;
-	Camera->SetRelativeRotation(Rotation);
+	//	기준 자세 캡처는 ABGCharacter 쪽에 있다 — UBGCameraLookComponent 와 공유한다.
+	Character->SetPrimaryCameraYawOffset(PanYaw);
 }

@@ -218,8 +218,10 @@ protected:
 	TSubclassOf<UGameplayEffect> BossStatBoostGE;
 
 	// AI 좌석에 붙일 이름 표(FBGAINameRow). 행마다 쓸 역할(Role)이 있고, 역할이 정해진 뒤
-	// 그 역할의 행들을 표에 적힌 순서대로 하나씩 붙인다(겹치지 않는다).
-	// 그 역할의 이름이 없거나 모자라면 "AI 1" 처럼 번호 이름이 그대로 남는다.
+	// 그 역할의 행들을 무작위 순서로 하나씩 붙인다(겹치지 않는다 - 같은 조우에서 재사용 안 함).
+	// 단, Role.Deputy 는 조우가 바뀌어도 런이 끝날 때까지 처음 뽑힌 이름을 그대로 쓴다
+	// (GameInstance::PersistedDeputyNames). 그 역할의 이름이 없거나 모자라면
+	// "AI 1" 처럼 번호 이름이 그대로 남는다.
 	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE",
 		meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGAINameRow"))
 	TObjectPtr<UDataTable> AINameTable;

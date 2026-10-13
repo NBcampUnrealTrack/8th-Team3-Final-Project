@@ -713,6 +713,10 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "BG|Target")
 	TObjectPtr<class UBGWorldTargetingComponent> WorldTargeting;
 
+	//	평상시 시점 — 마우스 위치로 카메라를 돌린다(드래그 아님). 조준 중엔 위 컴포넌트에 양보한다.
+	UPROPERTY(VisibleAnywhere, Category = "BG|Camera")
+	TObjectPtr<class UBGCameraLookComponent> CameraLook;
+
 	//	카드 연출의 순서를 정하는 곳. 연출 상태의 주인이라 판 내내 살아 있어야 한다 —
 	//	카드 위젯이 대신 들면 카드가 죽을 때 연출도 함께 끊긴다.
 	UPROPERTY(VisibleAnywhere, Category = "BG|Presentation")

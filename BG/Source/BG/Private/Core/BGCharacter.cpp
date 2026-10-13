@@ -72,9 +72,11 @@ ABGCharacter::ABGCharacter()
 	//	이 게임에서 몸의 방향은 "어느 좌석에 앉았는가" 로 정해진다 — 시선과는 별개다.
 	bUseControllerRotationYaw = false;
 
-	//	대신 시점은 컨트롤 회전을 따르게 한다. 위에서 몸을 고정했으므로 이걸 켜지 않으면
-	//	카메라가 캡슐에 묶여 마우스로 둘러볼 수 없게 된다.
-	PrimaryCamera->bUsePawnControlRotation = true;
+	//	⚠️ 평상시 시점은 더 이상 컨트롤 회전(마우스 드래그)을 따르지 않는다 — 꺼 둔다.
+	//	화면 위치 기반 시점(UBGCameraLookComponent)과 조준 가장자리 팬(BGWorldTargetingComponent)이
+	//	둘 다 이 카메라의 상대 회전을 SetPrimaryCameraYawOffset 으로 직접 설정한다.
+	//	이게 켜져 있으면 그 값 위에 컨트롤 회전이 매 프레임 또 얹혀 화면이 떨린다.
+	PrimaryCamera->bUsePawnControlRotation = false;
 }
 
 void ABGCharacter::SetBodyFacing(FRotator NewRotation)
@@ -126,6 +128,26 @@ void ABGCharacter::SetActiveCamera(bool bUsePrimary)
 bool ABGCharacter::IsPrimaryCameraActive() const
 {
 	return PrimaryCamera && PrimaryCamera->IsActive();
+}
+
+void ABGCharacter::SetPrimaryCameraYawOffset(float YawOffsetDeg)
+{
+	if (!PrimaryCamera)
+	{
+		return;
+	}
+
+	//	기준은 최초 호출 시(아직 아무도 손대지 않은 원래 자세) 한 번만 읽는다 — 이후 호출들은
+	//	전부 이 값 위에 얹는다. SetPrimaryCameraYawOffset 헤더 주석 참고.
+	if (!bPrimaryCameraBaseCaptured)
+	{
+		PrimaryCameraBaseRotation = PrimaryCamera->GetRelativeRotation();
+		bPrimaryCameraBaseCaptured = true;
+	}
+
+	FRotator Rotation = PrimaryCameraBaseRotation;
+	Rotation.Yaw += YawOffsetDeg;
+	PrimaryCamera->SetRelativeRotation(Rotation);
 }
 
 UAbilitySystemComponent* ABGCharacter::GetAbilitySystemComponent() const
