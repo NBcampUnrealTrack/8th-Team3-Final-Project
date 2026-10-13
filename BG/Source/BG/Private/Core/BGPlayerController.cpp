@@ -1639,7 +1639,7 @@ void ABGPlayerController::RefreshTurnPanel()
 	else if (View.bIsMyTurn)
 	{
 		View.StatusText = (View.CardsUsed >= View.CardUseLimit)
-			? NSLOCTEXT("BG", "TurnMineNoUses", "카드 사용 한도를 다 썼습니다 — 턴을 종료하세요")
+			? NSLOCTEXT("BG", "TurnMineNoUses", "한도를 다 썼습니다")
 			: NSLOCTEXT("BG", "TurnMine", "내 차례입니다");
 	}
 	else if (View.bMatchRunning)
