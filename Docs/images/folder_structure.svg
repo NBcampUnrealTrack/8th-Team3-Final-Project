@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="490" viewBox="0 0 680 490" font-family="'Malgun Gothic','Apple SD Gothic Neo','Noto Sans KR',sans-serif">
+<title>EmberRoad 소스 폴더 구조</title>
+<rect width="680" height="490" fill="#ffffff"/>
+<g fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1"><rect x="240" y="20" width="200" height="44" rx="6"/><rect x="110" y="100" width="160" height="44" rx="6"/><rect x="410" y="100" width="160" height="44" rx="6"/></g>
+<g text-anchor="middle" fill="#444441"><text x="340" y="38" font-size="14" font-weight="600">Source/BG/</text><text x="340" y="55" font-size="12">게임 모듈</text>
+<text x="190" y="118" font-size="14" font-weight="600">Public/</text><text x="190" y="135" font-size="12">헤더 (.h)</text>
+<text x="490" y="118" font-size="14" font-weight="600">Private/</text><text x="490" y="135" font-size="12">구현 (.cpp)</text>
+<text x="340" y="126" font-size="12">↔ 같은 구조</text></g>
+<path d="M340 64V82M190 82H490M190 82V100M490 82V100M190 144V166H490V144M340 166V184" fill="none" stroke="#888780" stroke-width="1"/>
+<g stroke-width="1">
+<g fill="#EEEDFE" stroke="#534AB7"><rect x="25" y="196" width="190" height="52" rx="6"/><rect x="245" y="196" width="190" height="52" rx="6"/><rect x="465" y="196" width="190" height="52" rx="6"/><rect x="25" y="258" width="190" height="52" rx="6"/><rect x="245" y="258" width="190" height="52" rx="6"/></g>
+<g fill="#E1F5EE" stroke="#0F6E56"><rect x="465" y="258" width="190" height="52" rx="6"/><rect x="25" y="320" width="190" height="52" rx="6"/><rect x="245" y="320" width="190" height="52" rx="6"/></g>
+<g fill="#FAECE7" stroke="#993C1D"><rect x="465" y="320" width="190" height="52" rx="6"/><rect x="25" y="382" width="190" height="52" rx="6"/><rect x="245" y="382" width="190" height="52" rx="6"/></g>
+<g fill="#F1EFE8" stroke="#5F5E5A"><rect x="465" y="382" width="190" height="52" rx="6"/></g></g>
+<g text-anchor="middle" font-size="14" font-weight="600">
+<g fill="#3C3489"><text x="120" y="216">Core/</text><text x="340" y="216">Card/</text><text x="560" y="216">GAS/</text><text x="120" y="278">AI/</text><text x="340" y="278">Lobby/</text></g>
+<g fill="#085041"><text x="560" y="278">UI/</text><text x="120" y="340">FX/</text><text x="340" y="340">Audio/</text></g>
+<g fill="#712B13"><text x="560" y="340">Session/</text><text x="120" y="402">Chating/</text><text x="340" y="402">Ping/</text></g>
+<g fill="#444441"><text x="560" y="402">Debug/</text></g></g>
+<g text-anchor="middle" font-size="12">
+<g fill="#534AB7"><text x="120" y="236">GameMode · State · PC</text><text x="340" y="236">카드 데이터 · 덱 · 판정</text><text x="560" y="236">Ability · Effect</text><text x="120" y="298">봇 컨트롤러 · 두뇌</text><text x="340" y="298">좌석 · 준비 · 밧줄</text></g>
+<g fill="#0F6E56"><text x="560" y="298">Widget · View · Menu 외</text><text x="120" y="360">상태 · 카드 연출 데이터</text><text x="340" y="360">사운드 · 환경음</text></g>
+<g fill="#993C1D"><text x="560" y="360">Steam 세션 흐름</text><text x="120" y="422">채팅 서브시스템</text><text x="340" y="422">핑 5종 · 마커</text></g>
+<g fill="#5F5E5A"><text x="560" y="422">로그 카테고리</text></g></g>
+<g font-size="12" fill="#444441">
+<rect x="25" y="458" width="12" height="12" fill="#EEEDFE" stroke="#534AB7"/><text x="43" y="468">게임 규칙</text>
+<rect x="135" y="458" width="12" height="12" fill="#E1F5EE" stroke="#0F6E56"/><text x="153" y="468">연출 · 표시</text>
+<rect x="255" y="458" width="12" height="12" fill="#FAECE7" stroke="#993C1D"/><text x="273" y="468">네트워크 · 소통</text>
+<rect x="395" y="458" width="12" height="12" fill="#F1EFE8" stroke="#5F5E5A"/><text x="413" y="468">기타</text></g>
+</svg>
