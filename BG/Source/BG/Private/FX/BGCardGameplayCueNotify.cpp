@@ -12,6 +12,7 @@
 #include "Debug/BGCardLog.h"
 #include "FX/BGCardNiagaraTypes.h"
 #include "FX/BGPresentationDataAsset.h"
+#include "FX/BGFXResourceLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -310,7 +311,7 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 		return;
 	}
 
-	UNiagaraSystem* System = Effect->LoadSynchronous();
+	UNiagaraSystem* System = BGFX::LoadSystemReady(*Effect);
 	USceneComponent* AttachTo = Parameters.TargetAttachComponent.Get();
 	if (!AttachTo)
 	{

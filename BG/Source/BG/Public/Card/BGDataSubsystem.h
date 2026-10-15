@@ -88,6 +88,12 @@ public:
 	float GetGlobalFXSpawnZOffset() const { return GlobalFXSpawnZOffset; }
 
 protected:
+    /** Keep the match FX alive across map travel; soft references alone do not retain loaded assets. */
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<class UNiagaraSystem>> PreloadedPresentationFX;
+
+    void PreloadPresentationFX();
+
 	// DT 경로. 에디터에서 이 경로에 DT_BGCharacterRow(FBGCharacterRow) 를 만들어 둔다.
 	static const FString CharacterTablePath;
 

@@ -223,6 +223,7 @@ void UBGDataSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	}
 
 	CardTable = Settings->CardTable.LoadSynchronous();
+	PreloadPresentationFX();
 	check(CardTable != nullptr);	//	BuildDeck: CardTable 이 없습니다 (프로젝트 설정 확인).
 
 	//	check() 는 Shipping 에서 컴파일 제외되므로, 설정 누락 시 여기서 크래시하지 않고 덱 없이 계속한다.

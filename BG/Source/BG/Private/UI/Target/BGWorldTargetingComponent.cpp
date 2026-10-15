@@ -12,6 +12,7 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "FX/BGFXResourceLibrary.h"
 #include "TimerManager.h"
 #include "UI/Target/BGGameplayHudOwner.h"
 #include "UI/Target/BGSeatInfoDisplayComponent.h"
@@ -303,11 +304,11 @@ UNiagaraSystem* UBGWorldTargetingComponent::ResolveTargetSelectionSystem() const
 		Presentation->GetTargetSelectionEffect(ActiveRequest.PresentationStyle);
 	if (!Styled.IsNull())
 	{
-		return Styled.LoadSynchronous();
+		return BGFX::LoadSystemReady(Styled);
 	}
 
 	// 개별 계열이 아직 배정되지 않았어도 대상선 자체는 보이게 Basic으로 폴백한다.
-	return Presentation->BasicTargetSelectionEffect.LoadSynchronous();
+	return BGFX::LoadSystemReady(Presentation->BasicTargetSelectionEffect);
 }
 
 //대상 선택 이펙트 업데이트 함수, 위치와 보임 여부 업데이트

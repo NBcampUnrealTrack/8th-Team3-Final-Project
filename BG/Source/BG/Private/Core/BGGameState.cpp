@@ -31,6 +31,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "FX/BGFXResourceLibrary.h"
 #include "Components/SceneComponent.h"
 #include "GameFramework/Character.h"
 #include "UI/Presentation/BGPresentationDirector.h"
@@ -936,7 +937,7 @@ void ABGGameState::Multicast_PlayEquipmentProc_Implementation(const FBGEquipment
 		UE_LOG(LogBGCard, Warning, TEXT("[EquipmentProc] FX 행 또는 Effect 없음: %s"), *Event.FXRowKey.ToString());
 		return;
 	}
-	UNiagaraSystem* System = Row->Effect.LoadSynchronous();
+	UNiagaraSystem* System = BGFX::LoadSystemReady(Row->Effect);
 	AActor* Target = Event.Target.Get();
 	USceneComponent* AttachTo = nullptr;
 	if (ACharacter* Character = Cast<ACharacter>(Target)) AttachTo = Character->GetMesh();

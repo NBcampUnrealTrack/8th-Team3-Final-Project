@@ -31,7 +31,8 @@ public class BG : ModuleRules
 			"ApplicationCore",
 			"LevelSequence",         // 엔딩 연출 — 승리 진영별 성 시퀀스를 각 클라가 재생한다
 			"MovieScene",            // ULevelSequencePlayer 재생 설정
-			"CommonUI"               // UCommonTextStyle — 코드로 만드는 텍스트의 기본 서체
+			"CommonUI",              // UCommonTextStyle — 코드로 만드는 텍스트의 기본 서체
+			"RenderCore", "RHI"
 		});
 
 		//	⚠️ PublicIncludePaths.Add(ModuleDirectory) 를 다시 넣지 말 것.

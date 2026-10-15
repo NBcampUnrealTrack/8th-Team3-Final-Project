@@ -12,6 +12,7 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "FX/BGFXResourceLibrary.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
 
@@ -228,9 +229,7 @@ UNiagaraComponent* UBGStatusFXComponent::SpawnFXFor(FName Key)
 		return nullptr;
 	}
 
-	//	동기 로드다. 장착·상태 부여 순간에만 일어나고 이펙트 하나는 가벼우므로 감수한다.
-	//	여기가 눈에 띄게 튀면 판 시작 때 미리 로드하는 쪽으로 옮길 것.
-	UNiagaraSystem* System = Row->Effect.LoadSynchronous();
+	UNiagaraSystem* System = BGFX::LoadSystemReady(Row->Effect);
 	if (!System)
 	{
 		UE_LOG(LogBGCard, Warning,
