@@ -351,6 +351,18 @@ public:
 	UFUNCTION(Exec)
 	void BG_DumpChances();
 
+	/**
+	 * 간단한 카드 EV(기댓값) 계산기 — 카드 1장 사용당 기대 효과를 등급별 확률로 미리 계산해 찍는다.
+	 *
+	 * OutcomeWeights 로 정규화한 등급별 확률 × OutcomeEffects 의 Amount 를 합산한 것뿐이다.
+	 * 턴 구조·사용한도·카드 간 상호작용(함정·준비 등)은 보지 않는다 — "이 카드가 혼자 쓰였을 때
+	 * 평균적으로 얼마나 세진가" 만 본다. 새 카드를 추가하거나 비율/수치를 바꿀 때 뱅(기준선)과
+	 * 비교해 이상치를 거르는 1차 필터로 쓴다. CardIdFilter 가 비어 있으면 전체를 찍고,
+	 * 채우면 Row 이름에 그 문자열이 포함된 카드만 찍는다(예: "Bang").
+	 */
+	UFUNCTION(Exec)
+	void BG_DumpCardEV(const FString& CardIdFilter);
+
 	// 손패 위젯을 현재 PlayerState 의 손패로 다시 그린다. 수동 갱신이 필요할 때 호출.
 	UFUNCTION(BlueprintCallable, Category = "BG|UI")
 	void RefreshHandWidget();

@@ -460,6 +460,166 @@ void ABGPlayerController::BG_DumpChances()
 }
 
 // ======================================================================================
+//  카드 EV(기댓값) 계산기 — 밸런스 1차 필터.
+//
+//  BG_DumpChances 는 "지금 손에 든 카드의 확률" 을 보여준다. 이 명령은 그와 달리
+//  DT_BGCard 전체를 돌며 "카드 1장을 썼을 때 평균적으로 얼마가 나오는가" 를 등급별
+//  확률(OutcomeWeights) × 등급별 효과 수치(OutcomeEffects.Amount) 로 미리 계산한다.
+//  손패·ASC·판 상태가 전혀 필요 없으므로 폰을 스폰하지 않은 상태에서도, 어느 창에서도 돌아간다.
+//
+//  ⚠️ 이게 보는 것은 "카드 한 장의 평균 세기" 뿐이다. 사용한도, 턴 순서, 함정/준비 같은
+//  카드 간 상호작용, 대상 선택 가능 여부는 전혀 반영하지 않는다 — 완전한 밸런스 검증이
+//  아니라 "새 카드가 기존 카드들과 같은 체급인가" 를 빠르게 눈으로 거르는 용도다.
+// ======================================================================================
+
+void ABGPlayerController::BG_DumpCardEV(const FString& CardIdFilter)
+{
+#if !UE_BUILD_SHIPPING
+	const UGameInstance* GI = GetGameInstance();
+	const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
+	if (!Data)
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[Exec] BGDataSubsystem 없음"));
+		return;
+	}
+
+	TArray<FName> AllRows;
+	Data->GetAllCardRowNames(AllRows);
+
+	UE_LOG(LogBGCard, Log, TEXT("===== BG_DumpCardEV ====="));
+	UE_LOG(LogBGCard, Log,
+		TEXT("카드 1장 사용당 기댓값 — OutcomeWeights 정규화 확률 × OutcomeEffects.Amount 의 합. "
+		     "사용한도·턴 구조·카드 간 상호작용은 반영하지 않는다."));
+
+	// 뱅을 기준선으로 쓴다 (Card-Data-Spec.md 의 OutcomeWeights 표가 뱅을 "기준선" 이라 명시).
+	const FName BangRowName = BG::Card::Id::Bang.GetTag().GetTagName();
+	float BangDamageEV = 0.f;
+	bool bHasBangBaseline = false;
+
+	int32 NumSkippedEquip = 0;
+	int32 NumSkippedNoEffect = 0;
+	int32 NumSkippedZeroWeight = 0;
+
+	for (const FName& RowName : AllRows)
+	{
+		const FString RowString = RowName.ToString();
+		if (!CardIdFilter.IsEmpty() && !RowString.Contains(CardIdFilter))
+		{
+			continue;
+		}
+
+		const FBGCardRow* Row = Data->GetCardRow(RowName);
+		if (!Row)
+		{
+			continue;
+		}
+
+		// 장비(파란 카드)는 판정이 없다 — EquipEffect 는 GE 라 EV 로 환산할 수치가 아니다.
+		const bool bIsEquip = Row->TypeTag == BG::Card::Type::Blue.GetTag();
+		if (bIsEquip)
+		{
+			++NumSkippedEquip;
+			continue;
+		}
+
+		if (Row->OutcomeEffects.IsEmpty())
+		{
+			++NumSkippedNoEffect;
+			continue;
+		}
+
+		const FBGOutcomeWeights& W = Row->OutcomeWeights;
+		const int32 Sum = W.Sum();
+		if (Sum <= 0)
+		{
+			++NumSkippedZeroWeight;
+			continue;
+		}
+
+		const EBGDiceOutcome Grades[4] = {
+			EBGDiceOutcome::CriticalFailure, EBGDiceOutcome::Failure,
+			EBGDiceOutcome::Success, EBGDiceOutcome::CriticalSuccess };
+		const float GradeProb[4] = {
+			static_cast<float>(W.CriticalFailure) / Sum,
+			static_cast<float>(W.Failure)         / Sum,
+			static_cast<float>(W.Success)         / Sum,
+			static_cast<float>(W.CriticalSuccess) / Sum };
+
+		// Op 별 기댓값. ApplyStatus 는 수치가 아니라 "걸릴 확률" 이 의미이므로 따로 모은다.
+		TMap<EBGCardEffectOp, float> EVByOp;
+		FString StatusLine;
+
+		for (int32 GradeIdx = 0; GradeIdx < 4; ++GradeIdx)
+		{
+			const float P = GradeProb[GradeIdx];
+			if (P <= 0.f)
+			{
+				continue;
+			}
+
+			for (const FBGCardEffect& Effect : Row->OutcomeEffects.ForOutcome(Grades[GradeIdx]))
+			{
+				if (Effect.Op == EBGCardEffectOp::ApplyStatus)
+				{
+					StatusLine += FString::Printf(TEXT(" %s(%s)%.0f%%"),
+						*Effect.StatusTag.ToString(),
+						Effect.bToTarget ? TEXT("상대") : TEXT("자신"),
+						P * 100.f);
+					continue;
+				}
+
+				EVByOp.FindOrAdd(Effect.Op) += P * Effect.Amount;
+			}
+		}
+
+		auto EVOf = [&EVByOp](EBGCardEffectOp Op) -> float
+		{
+			const float* Found = EVByOp.Find(Op);
+			return Found ? *Found : 0.f;
+		};
+
+		const float EVDamage      = EVOf(EBGCardEffectOp::DamageTarget);
+		const float EVHeal        = EVOf(EBGCardEffectOp::HealSelf);
+		const float EVDraw        = EVOf(EBGCardEffectOp::DrawSelf);
+		const float EVDiscard     = EVOf(EBGCardEffectOp::DiscardTargetRandom);
+		const float EVSteal       = EVOf(EBGCardEffectOp::StealTargetRandom);
+		const float EVRestore     = EVOf(EBGCardEffectOp::RestoreCardUse);
+		const float EVEquipDiscard = EVOf(EBGCardEffectOp::DiscardTargetEquipRandom);
+		const float EVEquipSteal   = EVOf(EBGCardEffectOp::StealTargetEquipRandom);
+		const float SuccessOrBetter = (GradeProb[2] + GradeProb[3]) * 100.f;
+
+		if (RowName == BangRowName)
+		{
+			BangDamageEV = EVDamage;
+			bHasBangBaseline = true;
+		}
+
+		UE_LOG(LogBGCard, Log,
+			TEXT("  %-28s 성공이상%5.1f%%  피해%5.2f 자힐%5.2f 뽑기%5.2f 상대버림%5.2f 상대훔침%5.2f 한도회복%5.2f%s%s%s"),
+			*RowString, SuccessOrBetter,
+			EVDamage, EVHeal, EVDraw, EVDiscard, EVSteal, EVRestore,
+			(EVEquipDiscard > 0.f) ? *FString::Printf(TEXT(" 장비버림%.2f"), EVEquipDiscard) : TEXT(""),
+			(EVEquipSteal   > 0.f) ? *FString::Printf(TEXT(" 장비훔침%.2f"), EVEquipSteal)   : TEXT(""),
+			*StatusLine);
+	}
+
+	if (bHasBangBaseline && BangDamageEV > 0.f)
+	{
+		UE_LOG(LogBGCard, Log,
+			TEXT("기준선(뱅) 기대 피해 %.2f — 새 공격 카드의 피해 EV 를 이 값과 먼저 비교할 것"),
+			BangDamageEV);
+	}
+
+	if (NumSkippedEquip > 0 || NumSkippedNoEffect > 0 || NumSkippedZeroWeight > 0)
+	{
+		UE_LOG(LogBGCard, Log,
+			TEXT("표시 제외 — 장비(판정 없음) %d 종 / 효과 없음 %d 종 / 비율 합계 0 %d 종"),
+			NumSkippedEquip, NumSkippedNoEffect, NumSkippedZeroWeight);
+	}
+#endif // !UE_BUILD_SHIPPING
+}
+
+// ======================================================================================
 //  턴 — 조회는 창마다 자기 기준이므로 PlayerController 에 둔다.
 // ======================================================================================
 
