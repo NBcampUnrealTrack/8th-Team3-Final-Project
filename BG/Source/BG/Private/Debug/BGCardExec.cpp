@@ -786,3 +786,17 @@ void ABGGameMode::BG_ForceWin(const FString& Side)
 	GS->DebugForceWin(Winner);
 #endif
 }
+
+void ABGGameMode::BG_TutorialHold(int32 bHold)
+{
+#if !UE_BUILD_SHIPPING
+	ABGGameState* GS = GetGameState<ABGGameState>();
+	if (!GS)
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[Exec] ABGGameState 없음"));
+		return;
+	}
+
+	GS->SetTutorialHold(bHold != 0);
+#endif
+}

@@ -415,6 +415,18 @@ public:
 	/** 서버 전용 테스트용. 생존자와 무관하게 Winner 진영 승리로 판을 끝낸다(콘솔 BG_ForceWin). */
 	void DebugForceWin(FGameplayTag Winner);
 
+	/**
+	 * 서버 전용. 튜토리얼 설명 팝업이 떠 있는 동안 새 행동을 막는다(카드 사용·버리기·턴 종료).
+	 * 이미 재생 중인 연출은 끊지 않는다 - 팝업은 연출이 끝난 뒤에 띄울 것.
+	 * AI 는 CanSeatPlayCards 를 계속 보고 있어서 따로 건드리지 않아도 풀리면 이어서 낸다.
+	 * 튜토리얼 판이 아니면 무시한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Tutorial")
+	void SetTutorialHold(bool bHold);
+
+	UFUNCTION(BlueprintPure, Category = "BG|Tutorial")
+	bool IsTutorialHold() const { return bTutorialHold; }
+
 	/** 승리 진영(Role.*). 아직 미정이면 무효 태그. */
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	FGameplayTag GetWinningRole() const { return WinningRoleTag; }
@@ -1160,7 +1172,11 @@ protected:
 	// 복제하지 않으면 클라에서 항상 false 라 자기 차례에도 카드가 나가지 않는다.
 	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
 	bool bMatchRunning = false;
-	
+
+	//	튜토리얼 정지. 클라도 CanSeatPlayCards 를 부르므로(손패 bPlayable) 복제한다.
+	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
+	bool bTutorialHold = false;
+
 	//	주의: 덱 셔플 전용 스트림이다. 주사위 판정은 UBGDiceComponent 가 별도 스트림을 쓴다
 	// (한 스트림을 공유하면 판정 횟수가 셔플 결과를 밀어 재현이 깨진다). Player 진영 덱을 섞는다.
 	UPROPERTY()

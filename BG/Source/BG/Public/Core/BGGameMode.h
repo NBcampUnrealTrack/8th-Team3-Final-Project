@@ -165,6 +165,10 @@ public:
 	UFUNCTION(Exec)
 	void BG_ForceWin(const FString& Side);
 
+	// 튜토리얼 정지를 켜고 끈다(1=정지, 0=해제). 튜토리얼 판에서만 동작한다.
+	UFUNCTION(Exec)
+	void BG_TutorialHold(int32 bHold);
+
 
 	/** 레벨의 캠프파이어(좌석 "위치" 의 기준점). 없는 레벨이면 nullptr. */
 	UFUNCTION(BlueprintPure, Category = "BG|Seating")

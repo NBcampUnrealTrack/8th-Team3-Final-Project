@@ -62,6 +62,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, bPvEEncounterClear);
 	DOREPLIFETIME(ABGGameState, PvERunRecords);
 	DOREPLIFETIME(ABGGameState, bMatchRunning);
+	DOREPLIFETIME(ABGGameState, bTutorialHold);
 	DOREPLIFETIME(ABGGameState, MatchEndStage);
 	DOREPLIFETIME(ABGGameState, PendingRewardCandidates);
 	DOREPLIFETIME(ABGGameState, CameraShot);
@@ -1926,6 +1927,7 @@ bool ABGGameState::CanSeatPlayCards(int32 Seat) const
 		&& !bResolutionPresentationActive
 		&& !bCardWorldPresentationActive
 		&& !IsCinematicPlaying()   // 판정 UI 및 월드 연출 중에는 전원 조작 불가
+		&& !bTutorialHold          // 튜토리얼 설명 팝업이 떠 있는 동안
 		&& Seat != INDEX_NONE
 		&& Seat == CurrentSeat
 		&& PhaseTag == BG::Phase::Play.GetTag();
@@ -1937,9 +1939,31 @@ bool ABGGameState::CanSeatDiscard(int32 Seat) const
 		&& !bResolutionPresentationActive
 		&& !bCardWorldPresentationActive
 		&& !IsCinematicPlaying()   // 연출 중에는 전원 조작 불가
+		&& !bTutorialHold          // 튜토리얼 설명 팝업이 떠 있는 동안
 		&& Seat != INDEX_NONE
 		&& Seat == CurrentSeat
 		&& PhaseTag == BG::Phase::Discard.GetTag();
+}
+
+void ABGGameState::SetTutorialHold(bool bHold)
+{
+	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
+	if (!HasAuthority() || !IsValid(GM) || !GM->IsTutorial())
+	{
+		UE_LOG(LogBGCard, Warning, TEXT("[Tutorial] 정지 무시 - 서버의 튜토리얼 판이 아니다."));
+		return;
+	}
+
+	if (bTutorialHold == bHold)
+	{
+		return;
+	}
+
+	bTutorialHold = bHold;
+	UE_LOG(LogBGCard, Log, TEXT("[Tutorial] 정지 %s"), bHold ? TEXT("켬") : TEXT("끔"));
+
+	//	서버(리슨 호스트 포함)는 OnRep 을 받지 못한다. 손패 bPlayable 이 즉시 갱신되도록 직접 알린다.
+	BroadcastTurnState();
 }
 
 void ABGGameState::RequestEndTurn(int32 RequestingSeat)
@@ -1954,6 +1978,12 @@ void ABGGameState::RequestEndTurn(int32 RequestingSeat)
 	if (bResolutionPresentationActive || bCardWorldPresentationActive || IsCinematicPlaying())
 	{
 		UE_LOG(LogBGCard, Log, TEXT("[Turn] EndTurn 보류 — 연출 재생 중"));
+		return;
+	}
+
+	if (bTutorialHold)
+	{
+		UE_LOG(LogBGCard, Log, TEXT("[Turn] EndTurn 보류 - 튜토리얼 정지 중"));
 		return;
 	}
 

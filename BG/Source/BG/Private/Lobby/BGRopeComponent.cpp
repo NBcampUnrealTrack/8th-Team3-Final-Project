@@ -2,6 +2,7 @@
 
 #include "Audio/BGAudioSubsystem.h"
 #include "BGGameplayTags.h"
+#include "Core/BGGameMode.h"
 #include "Core/BGGameState.h"
 #include "Core/BGPlayerState.h"
 #include "Debug/BGCardLog.h"
@@ -105,6 +106,13 @@ void UBGRopeComponent::BeginRope(int32 Seat)
 	StopRope();
 
 	if (Seat == INDEX_NONE || !GS->IsMatchRunning())
+	{
+		return;
+	}
+
+	//	튜토리얼은 시간 제한이 없다. 설명을 읽는 동안 턴이 넘어가면 안 된다.
+	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
+	if (IsValid(GM) && GM->IsTutorial())
 	{
 		return;
 	}
