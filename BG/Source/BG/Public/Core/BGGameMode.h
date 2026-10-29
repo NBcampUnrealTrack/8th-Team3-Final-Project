@@ -22,6 +22,7 @@ class ABGAIPlayerController;
 class ABGCampfire;
 class UBGMatchStartComponent;
 class UBGSeatComponent;
+class UBGTutorialComponent;
 class UGameplayEffect;
 class UDataTable;
 
@@ -71,6 +72,9 @@ public:
 	// 비교하는 분기가 많아 열거형을 늘리지 않았다. 진행도·런 기록·보상은 이 값으로 막는다.
 	UFUNCTION(BlueprintPure, Category = "BG|Tutorial")
 	bool IsTutorial() const { return bTutorial; }
+
+	// 튜토리얼 진행기. 튜토리얼 판이 아니어도 붙어 있지만 아무 일도 하지 않는다.
+	UBGTutorialComponent* GetTutorial() const;
 
 	// 서버 게임모드를 찾아 모드를 읽는다. 게임모드가 없는 클라에서는 PvP 로 본다.
 	static EBGPlayMode GetPlayMode(const UObject* WorldContext);
@@ -267,6 +271,10 @@ private:
 	// 좌석 배정 전담. 입장 시 빈 자리, 판 시작 시 랜덤 재배정.
 	UPROPERTY(VisibleAnywhere, Category = "BG")
 	TObjectPtr<UBGSeatComponent> Seats;
+
+	// 튜토리얼 단계 진행. 튜토리얼 판(IsTutorial)에서만 동작한다.
+	UPROPERTY(VisibleAnywhere, Category = "BG")
+	TObjectPtr<UBGTutorialComponent> Tutorial;
 
 	/**
 	 * 레벨의 캠프파이어. 처음 찾을 때 캐시한다.

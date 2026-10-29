@@ -14,6 +14,7 @@
 #include "BGGameInstance.generated.h"
 
 class UNetDriver;
+class UDataTable;
 
 UCLASS(Config = Game)
 class BG_API UBGGameInstance : public UGameInstance
@@ -70,6 +71,11 @@ public:
 	// 튜토리얼 판의 결과는 PvE 진행도·런 기록·보상에 남지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "BG|Tutorial")
 	bool StartTutorial();
+
+	// 튜토리얼 단계 표(FBGTutorialStepRow). 서버의 진행기와 클라이언트의 팝업이 같은 표를 읽도록
+	// 여기 한 곳에서 지정한다. 비어 있으면 튜토리얼 판에서 팝업이 하나도 뜨지 않는다.
+	UFUNCTION(BlueprintPure, Category = "BG|Tutorial")
+	const UDataTable* GetTutorialStepTable() const;
 
 	// PvE 런 진행도(이긴 조우 수). GameInstance 는 판이 끝나고 ServerTravel 로 맵을
 	// 새로 불러와도 살아있는 유일한 곳이라 여기 둔다.
@@ -237,6 +243,10 @@ private:
 		bool bValid = false;
 	};
 	FPendingJoinRequest PendingJoinRequest;
+
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Tutorial",
+		meta = (RequiredAssetDataTags = "RowStructure=/Script/BG.BGTutorialStepRow"))
+	TObjectPtr<UDataTable> TutorialStepTable;
 
 	// StartPvE / StartTutorial 공통부. 세션 없이 게임 맵으로 이동한다. Options 는 ?PlayMode=PvE 뒤에 덧붙는다.
 	bool TravelToSoloMatch(const FString& ExtraOptions);

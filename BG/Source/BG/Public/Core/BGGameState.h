@@ -427,6 +427,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG|Tutorial")
 	bool IsTutorialHold() const { return bTutorialHold; }
 
+	/**
+	 * 서버 전용. 지금 띄울 튜토리얼 단계(DT_BGTutorialSteps 의 Row 이름). NAME_None 이면 팝업을 접는다.
+	 * 복제되어 클라이언트의 UBGTutorialPopupWidget 이 읽는다. 바꾸는 쪽은 UBGTutorialComponent 하나다.
+	 */
+	void SetActiveTutorialStep(FName StepId);
+
+	UFUNCTION(BlueprintPure, Category = "BG|Tutorial")
+	FName GetActiveTutorialStep() const { return ActiveTutorialStep; }
+
+	/** 카드 연출(판정 UI, 월드 연출, 시네마틱)이나 사망 처리가 진행 중인가. 튜토리얼 팝업은 이 동안 띄우지 않는다. */
+	bool IsPresentationBusy() const;
+
 	/** 승리 진영(Role.*). 아직 미정이면 무효 태그. */
 	UFUNCTION(BlueprintPure, Category = "BG|Match")
 	FGameplayTag GetWinningRole() const { return WinningRoleTag; }
@@ -1176,6 +1188,10 @@ protected:
 	//	튜토리얼 정지. 클라도 CanSeatPlayCards 를 부르므로(손패 bPlayable) 복제한다.
 	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
 	bool bTutorialHold = false;
+
+	//	지금 띄울 튜토리얼 단계. 팝업 위젯이 OnTurnStateChanged 로 이 값을 읽는다.
+	UPROPERTY(ReplicatedUsing = OnRep_TurnState)
+	FName ActiveTutorialStep;
 
 	//	주의: 덱 셔플 전용 스트림이다. 주사위 판정은 UBGDiceComponent 가 별도 스트림을 쓴다
 	// (한 스트림을 공유하면 판정 횟수가 셔플 결과를 밀어 재현이 깨진다). Player 진영 덱을 섞는다.

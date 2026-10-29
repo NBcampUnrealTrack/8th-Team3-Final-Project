@@ -23,6 +23,7 @@
 #include "Core/BGGameMode.h"                // GetPlayMode
 #include "Core/BGPlayerState.h"
 #include "Lobby/BGMatchStartComponent.h"    // RequestStartPvEMatch
+#include "Tutorial/BGTutorialComponent.h"   // RequestTutorialNext
 #include "UI/View/BGSeatViewLibrary.h"
 #include "GameFramework/GameStateBase.h"      // PlayerArray
 #include "UI/Presentation/BGPresentationDirector.h"
@@ -2644,6 +2645,20 @@ void ABGPlayerController::ServerRequestStartPvEMatch_Implementation()
 	if (UBGMatchStartComponent* Match = UBGMatchStartComponent::Find(GetWorld()))
 	{
 		Match->StartMatch();
+	}
+}
+
+void ABGPlayerController::RequestTutorialNext()
+{
+	ServerRequestTutorialNext();
+}
+
+void ABGPlayerController::ServerRequestTutorialNext_Implementation()
+{
+	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
+	if (UBGTutorialComponent* Tutorial = IsValid(GM) ? GM->GetTutorial() : nullptr; IsValid(Tutorial))
+	{
+		Tutorial->HandleNextPressed();
 	}
 }
 

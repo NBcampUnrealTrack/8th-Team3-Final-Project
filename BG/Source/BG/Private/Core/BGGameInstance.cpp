@@ -683,6 +683,11 @@ bool UBGGameInstance::StartTutorial()
 	return TravelToSoloMatch(TEXT("?Tutorial"));
 }
 
+const UDataTable* UBGGameInstance::GetTutorialStepTable() const
+{
+	return TutorialStepTable;
+}
+
 int32 UBGGameInstance::GetPvEEncounterIndex() const
 {
 	//	튜토리얼은 항상 첫 조우 규모(1대1, 약한 적, 보상 없음)로 돈다.

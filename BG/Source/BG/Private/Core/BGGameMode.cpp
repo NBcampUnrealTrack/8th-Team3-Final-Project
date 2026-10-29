@@ -3,6 +3,7 @@
 #include "Core/BGCampfire.h"
 #include "Lobby/BGMatchStartComponent.h"
 #include "Lobby/BGSeatComponent.h"
+#include "Tutorial/BGTutorialComponent.h"
 #include "Card/BGDataSubsystem.h"
 #include "Core/BGPlayerState.h"
 #include "Debug/BGNetLog.h"
@@ -51,6 +52,14 @@ ABGGameMode::ABGGameMode()
 
 	// 좌석 배정도 마찬가지 — 게임모드는 훅만 넘긴다.
 	Seats = CreateDefaultSubobject<UBGSeatComponent>(TEXT("Seats"));
+
+	// 튜토리얼 단계 진행. 튜토리얼 판이 아니면 BeginPlay 에서 스스로 물러난다.
+	Tutorial = CreateDefaultSubobject<UBGTutorialComponent>(TEXT("Tutorial"));
+}
+
+UBGTutorialComponent* ABGGameMode::GetTutorial() const
+{
+	return Tutorial;
 }
 
 EBGPlayMode ABGGameMode::GetPlayMode(const UObject* WorldContext)

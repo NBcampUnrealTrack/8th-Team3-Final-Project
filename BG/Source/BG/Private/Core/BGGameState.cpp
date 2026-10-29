@@ -63,6 +63,7 @@ void ABGGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 	DOREPLIFETIME(ABGGameState, PvERunRecords);
 	DOREPLIFETIME(ABGGameState, bMatchRunning);
 	DOREPLIFETIME(ABGGameState, bTutorialHold);
+	DOREPLIFETIME(ABGGameState, ActiveTutorialStep);
 	DOREPLIFETIME(ABGGameState, MatchEndStage);
 	DOREPLIFETIME(ABGGameState, PendingRewardCandidates);
 	DOREPLIFETIME(ABGGameState, CameraShot);
@@ -1964,6 +1965,24 @@ void ABGGameState::SetTutorialHold(bool bHold)
 
 	//	서버(리슨 호스트 포함)는 OnRep 을 받지 못한다. 손패 bPlayable 이 즉시 갱신되도록 직접 알린다.
 	BroadcastTurnState();
+}
+
+void ABGGameState::SetActiveTutorialStep(FName StepId)
+{
+	if (!HasAuthority() || ActiveTutorialStep == StepId)
+	{
+		return;
+	}
+
+	ActiveTutorialStep = StepId;
+
+	//	정지와 같은 이유로 서버가 직접 알린다(OnRep 은 서버에서 불리지 않는다).
+	BroadcastTurnState();
+}
+
+bool ABGGameState::IsPresentationBusy() const
+{
+	return bResolutionPresentationActive || bCardWorldPresentationActive || IsCinematicPlaying() || HasPendingDeaths();
 }
 
 void ABGGameState::RequestEndTurn(int32 RequestingSeat)

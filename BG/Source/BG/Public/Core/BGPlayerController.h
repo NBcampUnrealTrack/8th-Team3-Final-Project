@@ -168,6 +168,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|PvE")
 	void RequestStartPvEMatch();
 
+	// 튜토리얼 팝업의 다음 버튼이 부른다. 서버가 지금 단계가 읽기형일 때만 받아 준다.
+	UFUNCTION(BlueprintCallable, Category = "BG|Tutorial")
+	void RequestTutorialNext();
+
 	/** 연출 2배속 토글 위젯이 부른다. 서버가 PvE 일 때만 받아 준다. */
 	UFUNCTION(BlueprintCallable, Category = "BG|Cinematic")
 	void RequestSetPresentationDoubleSpeed(bool bEnable);
@@ -653,6 +657,9 @@ protected:
 
 	UFUNCTION(Server, Reliable)
 	void ServerRequestStartPvEMatch();
+
+	UFUNCTION(Server, Reliable)
+	void ServerRequestTutorialNext();
 
 	UFUNCTION(Server, Reliable)
 	void ServerRequestSetPresentationDoubleSpeed(bool bEnable);
