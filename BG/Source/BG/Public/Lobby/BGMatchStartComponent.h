@@ -58,6 +58,10 @@ protected:
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "BG|PvE")
 	int32 PvEMinStartPlayers = 1;
 
+	// 튜토리얼: 총 좌석 수(사람 + 봇). 5 면 보안관(사람) + 부관 · 무법자 2 · 배신자 전원이 한 판에 나온다.
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "BG|Tutorial")
+	int32 TutorialTargetSeats = 5;
+
 private:
 	ABGGameMode* GetGameMode() const;
 

@@ -97,7 +97,7 @@ public:
 	void AssignRolesPvE();
 
 	// 봇 몫 역할 풀. 4좌석 이상은 BuildRolePool 을 재사용하고 배신자를 무법자로 치환한다.
-	// 사람은 항상 보안관이라 여기 없다.
+	// 튜토리얼은 치환하지 않아 배신자가 그대로 나온다. 사람은 항상 보안관이라 여기 없다.
 	TArray<FGameplayTag> BuildBotRolePoolPvE(int32 NumBots) const;
 
 	/**
@@ -193,7 +193,12 @@ public:
 	// 보스 조우 번호(1-base). 이 조우를 이기면 런이 끝난다(HandlePvERunWin 참고).
 	UPROPERTY(EditDefaultsOnly, Category = "BG|PvE")
 	int32 BossEncounterIndex = 5;
-	
+
+	// 튜토리얼에서 무법자 직업 풀을 정할 때 쓰는 조우 번호(1-base). 조우1 풀은 2종뿐이라
+	// 무법자가 둘이면 보안관 쪽이 먼저 뽑은 직업과 겹쳐 배정이 실패할 수 있다.
+	UPROPERTY(EditDefaultsOnly, Category = "BG|Tutorial", meta = (ClampMin = "1"))
+	int32 TutorialEnemyJobEncounter = 3;
+
 protected:
 	// 모드는 여기서 확정한다 — 첫 로그인보다 먼저라 좌석·역할 배정이 모드를 볼 수 있다.
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;

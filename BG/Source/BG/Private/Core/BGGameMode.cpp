@@ -290,12 +290,15 @@ TArray<FGameplayTag> ABGGameMode::BuildBotRolePoolPvE(int32 NumBots) const
 	//	보안관은 사람 몫이라 뺀다. 남은 개수가 정확히 봇 수가 된다.
 	Pool.RemoveSingle(Sheriff.GetTag());
 
-	//	배신자는 PvE 에서 쓰지 않는다 - 무법자로 바꾼다.
-	for (FGameplayTag& Tag : Pool)
+	//	배신자는 PvE 에서 쓰지 않는다 - 무법자로 바꾼다. 튜토리얼은 역할군을 전부 보여 주려고 남긴다.
+	if (!IsTutorial())
 	{
-		if (Tag == Renegade.GetTag())
+		for (FGameplayTag& Tag : Pool)
 		{
-			Tag = Outlaw.GetTag();
+			if (Tag == Renegade.GetTag())
+			{
+				Tag = Outlaw.GetTag();
+			}
 		}
 	}
 
@@ -784,6 +787,12 @@ void ABGGameMode::AssignJobsPvE(const TArray<APlayerController*>& Players)
 	if (const UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance()))
 	{
 		EncounterIndex = GI->GetPvEEncounterIndex();
+	}
+
+	//	튜토리얼의 무법자는 둘이다. 조우1 풀(2종)로는 보안관 쪽이 뽑은 직업과 겹쳐 모자랄 수 있다.
+	if (IsTutorial())
+	{
+		EncounterIndex = TutorialEnemyJobEncounter;
 	}
 
 	TArray<FGameplayTag> OutlawPool = BuildAllowedEnemyJobPool(EncounterIndex);

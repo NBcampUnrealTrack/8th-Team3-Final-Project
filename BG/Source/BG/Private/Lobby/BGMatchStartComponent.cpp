@@ -197,6 +197,12 @@ bool UBGMatchStartComponent::StartMatch()
 			TargetSeats = ComputeTargetSeatsForEncounter(GI->GetPvEEncounterIndex());
 		}
 
+		//	튜토리얼은 조우 진행도와 상관없이 모든 역할군이 나오는 구성으로 연다.
+		if (GM->IsTutorial())
+		{
+			TargetSeats = TutorialTargetSeats;
+		}
+
 		const int32 Needed = FMath::Max(0, TargetSeats - Players.Num());
 		const int32 Added  = GM->SpawnAIPlayers(Needed);
 
