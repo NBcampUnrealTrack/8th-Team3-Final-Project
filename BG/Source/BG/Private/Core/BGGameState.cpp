@@ -1444,8 +1444,9 @@ void ABGGameState::StartMatch()
 	//	조우 플레이 시간의 기준. 조우마다 맵이 새로 로드되므로 판 시작 시각을 여기서 잡는다.
 	MatchStartServerTime = GetServerWorldTimeSeconds();
 
-	//	PvE 첫 조우는 새 런의 시작이다. 지난 런의 기록을 비운다.
-	if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
+	//	PvE 첫 조우는 새 런의 시작이다. 지난 런의 기록을 비운다. 튜토리얼은 런이 아니라 건드리지 않는다.
+	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
+	if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE && !(GM && GM->IsTutorial()))
 	{
 		UBGGameInstance* GI = Cast<UBGGameInstance>(GetGameInstance());
 		if (ensureMsgf(GI, TEXT("[PvE] GameInstance 가 UBGGameInstance 가 아닙니다.")) && GI->GetPvEEncounterIndex() == 1)
@@ -1456,7 +1457,6 @@ void ABGGameState::StartMatch()
 
 	//	도입 연출은 PvP 전용이다 — 방을 만들고 전원이 준비한 뒤 방장이 여는 그 판의 서두다.
 	//	PvE 는 조우를 연달아 도는 구조라 매 조우마다 12초를 붙이면 진행이 끊긴다.
-	const ABGGameMode* GM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
 	if (GM && GM->IsPvE() && !bPlayIntroInPvE)
 	{
 		DealInitialHands();
@@ -2513,7 +2513,9 @@ void ABGGameState::EndMatch(FGameplayTag Winner)
 	WinningRoleTag = Winner;
 
 	//	PvE 는 사람이 항상 Sheriff다. Sheriff 승리만 "이겼다"로 본다.
-	if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
+	//	튜토리얼은 진행도·런 기록을 남기지 않는다. 결과 연출과 복귀는 아래 공통 경로를 그대로 탄다.
+	const ABGGameMode* EndGM = GetWorld() ? GetWorld()->GetAuthGameMode<ABGGameMode>() : nullptr;
+	if (ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE && !(EndGM && EndGM->IsTutorial()))
 	{
 		if (Winner == BG::Role::Sheriff.GetTag())
 		{
@@ -2745,6 +2747,14 @@ void ABGGameState::ReturnToLobby()
 	if (GI)
 	{
 		GI->SetAllowJoinInProgress(true);
+
+		//	튜토리얼은 다음 조우도 로비도 없다. 끝나면 메인메뉴로 돌아간다.
+		const ABGGameMode* TutorialGM = World->GetAuthGameMode<ABGGameMode>();
+		if (TutorialGM && TutorialGM->IsTutorial())
+		{
+			GI->ReturnToMainMenu();
+			return;
+		}
 
 		//	다른 맵으로 갈 수 있으면 거기서 끝이다(PvP·PvE·PvE 조우 승리 공통).
 		if (GI->TravelToNextGameMap(ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE))

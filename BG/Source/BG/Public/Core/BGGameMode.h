@@ -67,6 +67,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BG")
 	bool IsPvE() const { return PlayMode == EBGPlayMode::PvE; }
 
+	// 튜토리얼 판인가. 모드는 PvE 그대로이고(IsPvE 도 true) 위에 얹힌 플래그다 - PlayMode 값을 직접
+	// 비교하는 분기가 많아 열거형을 늘리지 않았다. 진행도·런 기록·보상은 이 값으로 막는다.
+	UFUNCTION(BlueprintPure, Category = "BG|Tutorial")
+	bool IsTutorial() const { return bTutorial; }
+
 	// 서버 게임모드를 찾아 모드를 읽는다. 게임모드가 없는 클라에서는 PvP 로 본다.
 	static EBGPlayMode GetPlayMode(const UObject* WorldContext);
 
@@ -245,6 +250,9 @@ private:
 	EBGPlayMode ResolvePlayMode(const FString& MapName, const FString& Options) const;
 
 	EBGPlayMode PlayMode = EBGPlayMode::PvP;
+
+	// URL 옵션 ?Tutorial 이 있고 PvE 일 때만 true. InitGame 에서 한 번 정해진다.
+	bool bTutorial = false;
 
 	UPROPERTY(Config)
 	TArray<FBGMapPlayMode> MapPlayModes;

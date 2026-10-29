@@ -15,7 +15,7 @@ void UBGMainMenuWidget::NativeConstruct()
 	if (UBGAudioSubsystem* Audio = UBGAudioSubsystem::Get(this))
 	{
 		Audio->BindDefaultButtonsInWidget(this);
-		for (UButton* Button : {Btn_PvE.Get(), Btn_PvP.Get(), Btn_Host.Get(), Btn_Join.Get(),
+		for (UButton* Button : {Btn_PvE.Get(), Btn_Tutorial.Get(), Btn_PvP.Get(), Btn_Host.Get(), Btn_Join.Get(),
 			Btn_Settings.Get(), Btn_Back.Get(), Btn_Quit.Get()})
 		{
 			Audio->BindButtonSoundGroup(Button, EBGUIButtonSoundGroup::Confirm);
@@ -23,6 +23,7 @@ void UBGMainMenuWidget::NativeConstruct()
 	}
 
 	if (Btn_PvE)      { Btn_PvE->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandlePvE); }
+	if (Btn_Tutorial) { Btn_Tutorial->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandleTutorial); }
 	if (Btn_PvP)      { Btn_PvP->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandlePvP); }
 	if (Btn_Host)     { Btn_Host->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandleHost); }
 	if (Btn_Join)     { Btn_Join->OnClicked.AddDynamic(this, &UBGMainMenuWidget::HandleJoin); }
@@ -52,6 +53,15 @@ void UBGMainMenuWidget::HandlePvE()
 	{
 		UE_LOG(LogBGNet, Log, TEXT("[MainMenu] PvE 시작."));
 		GI->StartPvE();
+	}
+}
+
+void UBGMainMenuWidget::HandleTutorial()
+{
+	if (UBGGameInstance* GI = GetBGGameInstance())
+	{
+		UE_LOG(LogBGNet, Log, TEXT("[MainMenu] 튜토리얼 시작."));
+		GI->StartTutorial();
 	}
 }
 

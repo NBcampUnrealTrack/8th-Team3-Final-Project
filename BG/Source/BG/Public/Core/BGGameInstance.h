@@ -66,10 +66,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|PvE")
 	bool StartPvE();
 
+	// 튜토리얼을 시작한다. PvE 와 같은 단독 플레이이고 URL 에 ?Tutorial 만 더 붙는다.
+	// 튜토리얼 판의 결과는 PvE 진행도·런 기록·보상에 남지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "BG|Tutorial")
+	bool StartTutorial();
+
 	// PvE 런 진행도(이긴 조우 수). GameInstance 는 판이 끝나고 ServerTravel 로 맵을
 	// 새로 불러와도 살아있는 유일한 곳이라 여기 둔다.
+	// 튜토리얼 판에서는 항상 1(조우1)을 돌려준다 - 중단한 PvE 런의 진행도는 지우지 않고 그대로 보존된다.
 	UFUNCTION(BlueprintPure, Category = "BG|PvE")
-	int32 GetPvEEncounterIndex() const { return PvEEncounterIndex; }
+	int32 GetPvEEncounterIndex() const;
 
 	// ABGGameState 가 이겼을 때만 호출한다. 진행도를 1 올린다.
 	void AdvancePvEEncounter();
@@ -231,6 +237,9 @@ private:
 		bool bValid = false;
 	};
 	FPendingJoinRequest PendingJoinRequest;
+
+	// StartPvE / StartTutorial 공통부. 세션 없이 게임 맵으로 이동한다. Options 는 ?PlayMode=PvE 뒤에 덧붙는다.
+	bool TravelToSoloMatch(const FString& ExtraOptions);
 
 	// 실제 CreateSession 실행부 — 기존 세션이 없는 상태에서만 호출된다.
 	void StartHostSession(int32 MaxPlayers, bool bLAN, const FString& RoomName);

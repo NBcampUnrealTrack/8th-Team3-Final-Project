@@ -88,10 +88,12 @@ EBGPlayMode ABGGameMode::ResolvePlayMode(const FString& MapName, const FString& 
 void ABGGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
 {
 	PlayMode = ResolvePlayMode(MapName, Options);
+	bTutorial = PlayMode == EBGPlayMode::PvE && UGameplayStatics::HasOption(Options, TEXT("Tutorial"));
 	Super::InitGame(MapName, Options, ErrorMessage);
 
-	UE_LOG(LogBGNet, Log, TEXT("[GameMode] 맵 %s — 모드 %s"),
-		*MapName, *StaticEnum<EBGPlayMode>()->GetNameStringByValue(static_cast<int64>(PlayMode)));
+	UE_LOG(LogBGNet, Log, TEXT("[GameMode] 맵 %s — 모드 %s%s"),
+		*MapName, *StaticEnum<EBGPlayMode>()->GetNameStringByValue(static_cast<int64>(PlayMode)),
+		bTutorial ? TEXT(" (튜토리얼)") : TEXT(""));
 }
 
 void ABGGameMode::PreLogin(const FString& Options, const FString& Address,

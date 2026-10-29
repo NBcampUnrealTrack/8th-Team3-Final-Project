@@ -234,7 +234,9 @@ void UBGMatchResultWidget::OnResultReady_Implementation(const TArray<FBGMatchRes
     else if (Winner == BG::Role::Renegade.GetTag()) { Title=NSLOCTEXT("BGEnding","Renegade","배신자 단독 승리"); Reason=NSLOCTEXT("BGEnding","RenegadeReason","배신자가 마지막까지 살아남았습니다."); }
     const UWorld* World = GetWorld();
     const ABGGameState* GS = World ? World->GetGameState<ABGGameState>() : nullptr;
-    if (GS && ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE)
+    //	튜토리얼은 런 기록이 없다 - 조우 기록표 대신 일반 결과 표를 쓴다.
+    const ABGGameMode* GM = World ? World->GetAuthGameMode<ABGGameMode>() : nullptr;
+    if (GS && ABGGameMode::GetPlayMode(this) == EBGPlayMode::PvE && !(GM && GM->IsTutorial()))
     {
         ShowPvERunRecords(*GS, InRows);
         return;

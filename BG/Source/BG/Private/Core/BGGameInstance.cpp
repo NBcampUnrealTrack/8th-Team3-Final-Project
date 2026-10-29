@@ -671,6 +671,33 @@ void UBGGameInstance::SetAllowJoinInProgress(bool bAllow)
 
 bool UBGGameInstance::StartPvE()
 {
+	return TravelToSoloMatch(FString());
+}
+
+bool UBGGameInstance::StartTutorial()
+{
+	//	지난 조우 승리로 남은 자동 시작 플래그를 비운다. 켜진 채로 들어오면 튜토리얼이
+	//	로비 시작 버튼 없이 곧바로 시작해 버린다.
+	bAutoStartNextPvEMatch = false;
+
+	return TravelToSoloMatch(TEXT("?Tutorial"));
+}
+
+int32 UBGGameInstance::GetPvEEncounterIndex() const
+{
+	//	튜토리얼은 항상 첫 조우 규모(1대1, 약한 적, 보상 없음)로 돈다.
+	//	이 값을 읽는 쪽(좌석 수·적 직업·덱·보상)이 전부 이 한 곳을 지나므로 따로 막을 필요가 없다.
+	const UWorld* World = GetWorld();
+	const ABGGameMode* GM = IsValid(World) ? World->GetAuthGameMode<ABGGameMode>() : nullptr;
+	if (IsValid(GM) && GM->IsTutorial())
+	{
+		return 1;
+	}
+	return PvEEncounterIndex;
+}
+
+bool UBGGameInstance::TravelToSoloMatch(const FString& ExtraOptions)
+{
 	UWorld* World = GetWorld();
 	if (!IsValid(World))
 	{
@@ -688,9 +715,9 @@ bool UBGGameInstance::StartPvE()
 
 	//	세션을 만들지 않는다 - 단독 플레이라 광고할 방이 없다.
 	//	?listen 도 붙이지 않는다. 넷드라이버를 열면 난입 경로가 생긴다.
-	UE_LOG(LogBGNet, Log, TEXT("StartPvE: PvE 로 게임 맵 이동 (%s)"), *TargetMap);
+	UE_LOG(LogBGNet, Log, TEXT("StartPvE: PvE 로 게임 맵 이동 (%s%s)"), *TargetMap, *ExtraOptions);
 
-	World->ServerTravel(TargetMap + TEXT("?PlayMode=PvE"), /*bAbsolute*/ true);
+	World->ServerTravel(TargetMap + TEXT("?PlayMode=PvE") + ExtraOptions, /*bAbsolute*/ true);
 	return true;
 }
 

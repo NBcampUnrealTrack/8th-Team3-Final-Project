@@ -25,6 +25,9 @@ protected:
 	TObjectPtr<UButton> Btn_PvE;
 
 	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> Btn_Tutorial;
+
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> Btn_PvP;
 
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -57,6 +60,9 @@ protected:
 private:
 	UFUNCTION()
 	void HandlePvE();
+
+	UFUNCTION()
+	void HandleTutorial();
 
 	UFUNCTION()
 	void HandlePvP();
