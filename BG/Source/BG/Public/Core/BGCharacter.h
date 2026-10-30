@@ -350,6 +350,14 @@ protected:
 	//	현재 GameState/PlayerState 로부터 상태 하나를 유도한다. 부수 효과 없음.
 	EBGCharacterAnimState ComputeAnimState(const class ABGGameState* GS) const;
 
+	/**
+	 * RevealMeshComponent 를 캡슐에 그냥 붙이면 메시 피벗이 캡슐 "중심" 에 꽂혀 캡슐 반높이만큼
+	 * 공중에 뜬다. 아래로 바닥을 트레이스해 실제 바닥 위치를 찾고, 새로 꽂은 메시의 바운드
+	 * 바닥(최소 Z)이 그 바닥에 닿도록 RevealMeshComponent 의 상대 위치를 올려(Z 만) 보정한다.
+	 * RefreshRoleRevealVisual 이 메시를 꽂은 직후에만 부른다.
+	 */
+	void AlignRevealMeshToFloor();
+
 	//	중복 구독 방지 겸 해제 대상. 약참조라 GameState 가 사라져도 안전하다.
 	TWeakObjectPtr<class ABGGameState> BoundCinematicGameState;
 

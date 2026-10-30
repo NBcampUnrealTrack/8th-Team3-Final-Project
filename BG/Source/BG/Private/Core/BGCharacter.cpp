@@ -406,6 +406,7 @@ void ABGCharacter::RefreshRoleRevealVisual()
 	}
 
 	RevealMeshComponent->SetStaticMesh(RevealMesh);
+	AlignRevealMeshToFloor();
 	RevealMeshComponent->SetVisibility(true);
 	GetMesh()->SetVisibility(false, true);   // true = 붙어 있던 무기 등 자식까지 함께 숨긴다.
 
@@ -415,6 +416,40 @@ void ABGCharacter::RefreshRoleRevealVisual()
 	{
 		UE_LOG(LogBGCard, Log, TEXT("[Anim] %s — 안전망이 정체 공개 스왑 처리 (몽타주 노티파이 미확인)"), *GetName());
 	}
+}
+
+void ABGCharacter::AlignRevealMeshToFloor()
+{
+	UStaticMesh* RevealMesh = RevealMeshComponent ? RevealMeshComponent->GetStaticMesh() : nullptr;
+	if (!RevealMesh || !GetCapsuleComponent())
+	{
+		return;
+	}
+
+	//	캡슐 바닥을 1차 기준으로 삼고, 그보다 조금 더 아래까지 실제 바닥을 쏴 본다 —
+	//	지형이 완전히 평평하지 않을 수 있다(계단·경사). 못 맞히면 캡슐 바닥을 그대로 쓴다.
+	const float CapsuleHalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector TraceStart = GetActorLocation();
+	const FVector TraceEnd   = TraceStart - FVector(0.f, 0.f, CapsuleHalfHeight + 300.f);
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BGRoleRevealFloor), /*bTraceComplex=*/false);
+	Params.AddIgnoredActor(this);
+
+	FHitResult Hit;
+	const bool bHitFloor = GetWorld() && GetWorld()->LineTraceSingleByChannel(
+		Hit, TraceStart, TraceEnd, ECC_Visibility, Params);
+
+	const float FloorZ = bHitFloor ? Hit.ImpactPoint.Z : (TraceStart.Z - CapsuleHalfHeight);
+
+	//	메시 로컬 바운드(에셋 고유 공간, 컴포넌트 트랜스폼과 무관)의 바닥(최소 Z)을 구한다.
+	//	RevealMeshComponent 는 회전·스케일을 따로 주지 않으므로(캡슐에 그대로 부착) 로컬 Z 가
+	//	곧 월드 Z 오프셋이다.
+	const float MeshBottomLocalZ = RevealMesh->GetBoundingBox().Min.Z;
+
+	//	캡슐(=액터 루트)에 부착돼 있으므로 상대 위치 Z 만 바꾸면 월드 바닥에 닿는다.
+	FVector RelativeLoc = RevealMeshComponent->GetRelativeLocation();
+	RelativeLoc.Z = (FloorZ - MeshBottomLocalZ) - GetActorLocation().Z;
+	RevealMeshComponent->SetRelativeLocation(RelativeLoc);
 }
 
 void ABGCharacter::NotifyCardFXAnimCue()
