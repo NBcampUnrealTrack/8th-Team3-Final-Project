@@ -43,9 +43,6 @@ private:
 	/** 마우스 화면 위치 → 목표 Yaw(도). 뷰포트/커서를 못 읽으면 0(정면). */
 	static float ComputeTargetYaw(const ABGPlayerController& PC, float MaxYaw);
 
-	/** PC 가 들고 있는 게임플레이 HUD 위젯 중 지금 호버 중인 것이 있는가(= 마우스가 UI 위). */
-	static bool IsMouseOverGameplayHud(const ABGPlayerController& PC);
-
-	//	따라가는 중인 현재 오프셋. 목표가 0(정면 · UI 위 · 조준 중)이면 여기로 되돌아간다.
+	//	따라가는 중인 현재 오프셋. 목표가 0(정면 · 조준 중)이면 여기로 되돌아간다.
 	float CurrentYawDeg = 0.f;
 };

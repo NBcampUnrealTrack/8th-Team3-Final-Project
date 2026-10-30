@@ -1,6 +1,5 @@
 #include "UI/Target/BGCameraLookComponent.h"
 
-#include "Blueprint/UserWidget.h"
 #include "Core/BGCharacter.h"
 #include "Core/BGPlayerController.h"
 #include "UI/Target/BGWorldTargetingComponent.h"
@@ -8,21 +7,6 @@
 UBGCameraLookComponent::UBGCameraLookComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
-}
-
-bool UBGCameraLookComponent::IsMouseOverGameplayHud(const ABGPlayerController& PC)
-{
-	TArray<UWidget*> HudWidgets;
-	PC.CollectGameplayHudWidgets(HudWidgets);
-
-	for (const UWidget* Widget : HudWidgets)
-	{
-		if (IsValid(Widget) && Widget->IsHovered())
-		{
-			return true;
-		}
-	}
-	return false;
 }
 
 float UBGCameraLookComponent::ComputeTargetYaw(const ABGPlayerController& PC, float MaxYaw)
@@ -71,9 +55,9 @@ void UBGCameraLookComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		return;   // 좌석에 아직 앉기 전(로비 등) — 돌릴 카메라가 없다.
 	}
 
-	//	마우스가 UI 위면 "게임 플레이 화면" 이 아니다 — 가운데로 돌려보낸다.
-	const bool bInGameplayArea = PC->bShowMouseCursor && !IsMouseOverGameplayHud(*PC);
-	const float TargetYaw = bInGameplayArea ? ComputeTargetYaw(*PC, MaxYawDeg) : 0.f;
+	//	마우스가 UI 위에 있어도 화면상 위치는 그대로 카메라 Yaw 로 쓴다 — UI 호버로 가운데로
+	//	돌려보내지 않는다. 커서 자체가 없을 때(정면)만 0 으로 돌아간다.
+	const float TargetYaw = PC->bShowMouseCursor ? ComputeTargetYaw(*PC, MaxYawDeg) : 0.f;
 
 	CurrentYawDeg = FMath::FInterpConstantTo(CurrentYawDeg, TargetYaw, DeltaTime, FollowSpeedDeg);
 	Character->SetPrimaryCameraYawOffset(CurrentYawDeg);

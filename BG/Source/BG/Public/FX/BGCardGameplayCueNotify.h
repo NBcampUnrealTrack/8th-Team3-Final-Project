@@ -43,6 +43,15 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "BG|GameplayCue", meta = (DisplayName = "Stop Card Animation And Sound"))
 	void K2_StopCardAnimationAndSound(AActor* Target, const FGameplayCueParameters& Parameters);
 
+public:
+	/**
+	 * `UBGAnimNotify_CardFX` 가 몽타주 재생 중 부른다. 지연 없이 지금 스폰한다 —
+	 * 몽타주의 이 프레임이 곧 타이밍이다. `WatchCardAnimation` 이 이 몽타주에 그
+	 * 노티파이가 있다고 판단했을 때만 애초에 딜레이 스폰이 걸리지 않으므로,
+	 * 이 호출과 딜레이 스폰이 같은 카드에서 중복 발동할 일은 없다.
+	 */
+	void SpawnCardNiagaraFromAnimNotify();
+
 private:
 	void SpawnCardNiagara(AActor* MyTarget, const FGameplayCueParameters& Parameters,
 		bool bAllowSpawnDelay = true);
@@ -81,6 +90,17 @@ private:
 
 	/** 몽타주가 끝날 때까지 쥐고 있는 표. */
 	FBGPresentationTrackHold MontageHold;
+
+	// ── 애님 노티파이 FX ──────────────────────────────────────────
+	//	WatchCardAnimation 이 몽타주를 잡을 때마다 이 몽타주 안에 UBGAnimNotify_CardFX 가
+	//	있는지 스캔해 둔다. 있으면 딜레이 스폰을 걸지 않고 노티파이 콜백을 기다린다.
+
+	/** 지금 지켜보는 몽타주에 BG 카드 FX 노티파이가 있으면 true. */
+	bool bMontageHasFXNotify = false;
+
+	/** SpawnCardNiagaraFromAnimNotify 가 지연 없이 다시 부를 때 쓸 최근 인자. */
+	TWeakObjectPtr<AActor> CachedSpawnTarget;
+	FGameplayCueParameters CachedSpawnParameters;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> SpawnedEffect;

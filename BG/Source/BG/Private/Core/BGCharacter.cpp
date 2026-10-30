@@ -25,6 +25,7 @@
 #include "Animation/AnimInstance.h"
 #include "Net/UnrealNetwork.h"
 #include "FX/BGStatusFXComponent.h"
+#include "FX/BGCardGameplayCueNotify.h"
 #include "Card/BGDataSettings.h"
 
 ABGCharacter::ABGCharacter()
@@ -413,6 +414,27 @@ void ABGCharacter::RefreshRoleRevealVisual()
 	if (AnimState == EBGCharacterAnimState::Dead)
 	{
 		UE_LOG(LogBGCard, Log, TEXT("[Anim] %s — 안전망이 정체 공개 스왑 처리 (몽타주 노티파이 미확인)"), *GetName());
+	}
+}
+
+void ABGCharacter::NotifyCardFXAnimCue()
+{
+	if (ABGCardGameplayCueNotify* Cue = ActiveCardFXCue.Get())
+	{
+		Cue->SpawnCardNiagaraFromAnimNotify();
+	}
+}
+
+void ABGCharacter::SetActiveCardFXCue(ABGCardGameplayCueNotify* Cue)
+{
+	ActiveCardFXCue = Cue;
+}
+
+void ABGCharacter::ClearActiveCardFXCue(const ABGCardGameplayCueNotify* Cue)
+{
+	if (ActiveCardFXCue.Get() == Cue)
+	{
+		ActiveCardFXCue.Reset();
 	}
 }
 
