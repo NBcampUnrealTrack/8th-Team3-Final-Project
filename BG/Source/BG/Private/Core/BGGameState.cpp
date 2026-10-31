@@ -1459,7 +1459,8 @@ void ABGGameState::StartMatch()
 
 	//	도입 연출은 PvP 전용이다 — 방을 만들고 전원이 준비한 뒤 방장이 여는 그 판의 서두다.
 	//	PvE 는 조우를 연달아 도는 구조라 매 조우마다 12초를 붙이면 진행이 끊긴다.
-	if (GM && GM->IsPvE() && !bPlayIntroInPvE)
+	//	튜토리얼은 조우가 아니라 한 번뿐이고, 역할군 소개를 이 연출이 받쳐 주므로 PvE 여도 연다.
+	if (GM && GM->IsPvE() && !bPlayIntroInPvE && !GM->IsTutorial())
 	{
 		DealInitialHands();
 		BeginFirstTurn();
