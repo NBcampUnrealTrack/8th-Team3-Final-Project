@@ -29,6 +29,8 @@
 | R-7 | **[오탐]** | — | ~~`HealBonus` 가 회복량 0 인 카드에도 붙는다~~ | 상위 호출부에 가드가 있다 |
 | R-8 | **[해결]** | 🟢 | `DT_BGCard.json` 에 `Card.Trait.Attack` 이 없다 | 재임포트 시 조용한 파괴 |
 | R-9 | **[해결]** | 🟡 | `ApplyJobVisual` 이 메쉬와 ABP 를 한 덩어리로 판단한다 | 직업 ABP 가 무시된다 |
+| R-10 | **[미해결]** | 🟢 | 비활성 GA 7종에 `[비활성]` 표시가 없다 | 매핑 실수가 조용히 무효로 샌다 |
+| R-11 | **[미해결]** | 🟡 | 공용 ABP(`Tempelate_ABP`)가 테스트용 임시 애니메이션에 의존한다 | 전 직업 기본 동작이 placeholder |
 
 **공통점**: 8건 중 6건이 **에러도 경고도 남기지 않았다.** R-1 은 호스트에서 재현되지 않고,
 R-4·R-8 은 코드가 아니라 데이터가 비어 있는 것이라 C++ 어디를 봐도 원인이 보이지 않는다.
@@ -352,6 +354,75 @@ grep -c "bMeshChanged\|bAnimChanged" Source/BG/Private/Core/BGCharacter.cpp   # 
 
 ---
 
+# R-10 🟢 비활성 GA 7종에 `[비활성]` 표시가 없다 **[미해결 — 2026-10-30 발견]**
+
+`/code-review` 가 아니라 "문서·코드·에셋 전반 점검" 요청으로 나온 건이다. 성격이 R-4·R-8·R-9 와
+같은 **데이터/표시 공백**이라 여기서 함께 추적한다.
+
+**위치** `Source/BG/Public/GAS/Ability/Legacy/` — `GA_AreaBang.h`, `GA_DrawN.h`, `GA_Duel.h`,
+`GA_GeneralStore.h`, `GA_Missed.h`, `GA_Saloon.h`, `GA_StealOrDiscard.h` (9종 중 7종)
+
+CLAUDE.md 의 폐기 정책은 비활성 GA 마다 헤더에 `[비활성]` 표시와 사유·복구 방법을 남기라고
+적어 두었다. 실제로는 `GA_Bang.h`·`GA_Heal.h` 두 개에만 표시가 있고 나머지 7개는 본문이
+TODO 스텁인 채로 표시가 없다. `Code-Audit-And-Migration-Plan.md` §2.7 이 2026-07-31 에
+"5분 작업" 으로 지정했으나 3개월 넘게 방치됐다.
+
+표시가 없으면 **이 GA 가 비활성이라는 사실이 코드를 열어보기 전까지 안 보인다.**
+`AbilityByCardId` 에 실수로 매핑하면 카드만 소비되고 아무 일도 일어나지 않는데, 표시만 있었어도
+매핑하는 시점에 바로 알 수 있었을 문제다.
+
+**고치는 법** — 7개 헤더 맨 위에 `GA_Bang.h`/`GA_Heal.h` 와 같은 형식으로 `[비활성]` 표시·사유
+(TODO 스텁)·복구 방법(정식 경로는 `UGA_BGCardEffects` + `DT_BGCard` 의 `OutcomeEffects`)을 남긴다.
+
+**재확인**
+```bash
+grep -l "\[비활성\]" Source/BG/Public/GAS/Ability/Legacy/*.h | wc -l
+# 9 가 나와야 정상(9종 전부 표시). 2026-10-30 기준 2.
+```
+
+---
+
+# R-11 🟡 공용 ABP(`Tempelate_ABP`)가 테스트용 임시 애니메이션에 의존한다 **[미해결 — 2026-10-30 발견]**
+
+unreal-mcp 로 에디터를 직접 열어 확인했다 — 코드/텍스트 검색만으로는 끝까지 확정할 수 없던 건이다.
+
+**위치** `Content/Characters/Animations/Tempelate_ABP.uasset` — 직업별 ABP 11종(`ABP_Scout_F`,
+`ABP_Arcana`, `ABP_Assassin`, `ABP_Fighter`, `ABP_Healer`, `ABP_Mercenary`, `ABP_Monk`, `ABP_Priest`,
+`ABP_Thief`, `ABP_Hunter`, `ABP_Mage`) 전부가 이 부모를 상속한다. `Content/Core/ABP_Player` 는
+`TestNoCommit` 의 구식 테스트 스켈레톤 기반이라 프로덕션 경로와 무관 — 헷갈리지 말 것.
+
+`Tempelate_ABP` 의 의존성을 조회한 결과 `Idle`·`Cast_Montage`·`HitReact_Front_Montage`·`Death_A`
+네 개 전부가 `/Game/TestNoCommit/Animations/` 아래 애셋이었다. `TestNoCommit` 은 이름부터
+커밋 금지 placeholder 폴더다.
+
+직업별 ABP 11종이 전부 이 부모 상태머신 하나를 상속하는 구조라, **이 한 지점만 교체하면 전
+직업이 동시에 고쳐지지만, 지금은 반대로 이 한 지점 때문에 전 직업이 동시에 placeholder 로
+움직인다.** 캐릭터의 가장 기본 동작(대기·캐스트·피격·사망)이 전부 테스트 클립이라는 뜻이다.
+
+`Content/Characters/Animations/Scout_F/Death_Bwd_Montage1.uasset`(프로덕션 사망 몽타주, `/Script/BG`
+의존)이 git 에 미커밋(`M`) 상태로 남아있고 `Tempelate_ABP` 가 이미 이걸 참조하기 시작한 흔적이
+있다 — **사망만큼은 교체 작업이 진행 중**인 것으로 보인다(추정). Idle/Cast/HitReact 쪽은 아직
+손대지 않은 것으로 보인다.
+
+사망 연출 쪽을 더 들어가면 — 지난 세션에서 코드로 끝까지 추적한 "사망 → 시네마틱 카메라 →
+정체공개" 파이프라인(`ABGGameState::SetCinematicStage` 등)은 C++ 레벨에서 정확하다. 다만
+`UBGAnimNotify_RoleReveal` 이 `Death_Bwd_Montage1` 안에 실제 노티파이로 배치돼 있는지는 이번
+unreal-mcp 조회로도 100% 확정하지 못했다(몽타주 노티파이 트랙은 이 툴셋 리플렉션 범위 밖) —
+에디터에서 몽타주를 직접 열어 확인 필요.
+
+**고치는 법** — `Tempelate_ABP` 의 Idle/Cast/HitReact/Death 참조를 프로덕션 애셋으로 교체(사망은
+진행 중이니 나머지 3개가 남음). 교체가 끝나면 직업별 ABP 11종은 자동으로 따라간다. 사망 쪽은
+교체가 끝나는 대로 `Death_Bwd_Montage1` 에 `UBGAnimNotify_RoleReveal` 배치 여부를 에디터에서
+직접 확인할 것.
+
+**재확인**
+```bash
+grep -c "TestNoCommit" "Content/Characters/Animations/Tempelate_ABP.uasset"
+# 0 이 나와야 해결. 2026-10-30 기준 1.
+```
+
+---
+
 # 재확인 스크립트
 
 한 번에 전부 본다. 프로젝트 루트(`BG/`)에서 실행한다.
@@ -365,6 +436,8 @@ echo -n "R-4 (9면 정상) "; python -c "import re;d=open('Content/Data/DT_BGCha
 echo -n "R-5 (1이상이면 해결) "; sed -n '/void ABGCharacter::NotifyDamaged/,/^}/p' Source/BG/Private/Core/BGCharacter.cpp | grep -c "bDead"
 echo -n "R-8 (1이상이면 해결) "; grep -c "Card.Trait.Attack" Docs/Data/DT_BGCard.json
 echo -n "R-9 (1이상이면 해결) "; grep -c "bMeshChanged\|bAnimChanged" Source/BG/Private/Core/BGCharacter.cpp
+echo -n "R-10 (9면 해결) "; grep -l "\[비활성\]" Source/BG/Public/GAS/Ability/Legacy/*.h | wc -l
+echo -n "R-11 (0이면 해결) "; grep -c "TestNoCommit" Content/Characters/Animations/Tempelate_ABP.uasset
 ```
 
 **수정 후 실제 출력 (2026-08-19)** — 이 값과 다르면 회귀한 것이다.
@@ -389,6 +462,9 @@ R-3  1032: HasCardUsesLeft(게이트)   1102: bEphemeralCard   ← 게이트가 
 ```
 
 R-6 은 설계 결정이라, R-7 은 오탐이라 기계적으로 확인하지 않는다.
+
+**R-10·R-11 은 아직 미해결이라 위 "수정 후" 스냅샷(2026-08-19)에 포함되지 않는다.**
+2026-10-30 기준 실제 값: `R-10 = 2`, `R-11 = 1`.
 
 ---
 
@@ -445,3 +521,4 @@ R-7 이 오탐으로 잡힌 것도 같은 이유였다 — 파일 전체에서 `
 | 2026-08-19 | 최초 작성. `/code-review high` 결과 8건을 등록(R-1 ~ R-8). 전수 재현 확인 과정에서 **R-4 는 이미 해결**(에디터에서 DT 수정), **R-7 은 오탐**(가드가 호출부에 있음)으로 판명. |
 | 2026-08-19 | **R-1·R-2·R-3·R-5·R-8 수정.** `Build.bat BGEditor` 통과, 재확인 스크립트 전항목 통과. R-6 은 사용자 판단으로 **플레이 테스트 후 결정**으로 보류. 커밋·플레이 검증은 아직. |
 | 2026-08-21 | **R-9 등록·수정.** ABP 구조 설계 중 발견 — `AnimClass` 가 메쉬에 묶여 있어 동작하지 않았다. 같은 날 **스켈레톤 단일화** 결정(아트 기획서 §아트 구현 특이사항 유지)으로 `AnimClass` 가 직업 개성의 주입구가 되면서 드러났다. 빌드 통과. |
+| 2026-10-30 | **R-10·R-11 등록(미해결).** 문서·코드·에셋 전체 점검(unreal-mcp 로 에디터 직접 조회 포함) 중 발견. 같은 점검에서 CLAUDE.md 의 "`AbilityByCardId` 11건 중 2건 공백" 서술이 더 이상 사실이 아님(13건 전부 매핑됨)을 확인해 해당 문서를 수정했다. |

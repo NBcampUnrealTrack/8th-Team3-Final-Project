@@ -13,6 +13,7 @@
 #include "FX/BGCardNiagaraTypes.h"
 #include "FX/BGPresentationDataAsset.h"
 #include "FX/BGFXResourceLibrary.h"
+#include "FX/BGAnimNotify_CardFX.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -89,6 +90,10 @@ bool ABGCardGameplayCueNotify::OnActive_Implementation(AActor* MyTarget,
 
 	if (GetNetMode() != NM_DedicatedServer)
 	{
+		// SpawnCardNiagaraFromAnimNotify 가 지연 없이 다시 부를 때 쓸 최근 인자를 남겨 둔다.
+		CachedSpawnTarget = MyTarget;
+		CachedSpawnParameters = Parameters;
+
 		// Anim Montage 시작 위치. 구체 자산/분기는 GameplayCue Blueprint에서 구현한다.
 		K2_PlayCardAnimation(MyTarget, Parameters);
 
@@ -115,6 +120,8 @@ bool ABGCardGameplayCueNotify::WhileActive_Implementation(AActor* MyTarget,
 	const FGameplayCueParameters& Parameters)
 {
 	Super::WhileActive_Implementation(MyTarget, Parameters);
+	CachedSpawnTarget = MyTarget;
+	CachedSpawnParameters = Parameters;
 	SpawnCardNiagara(MyTarget, Parameters);
 	return true;
 }
@@ -166,7 +173,7 @@ void ABGCardGameplayCueNotify::WatchCardAnimation(AActor* MyTarget)
 	//	   남으면 그 몽타주가 끝날 때 이번 연출이 풀린다.
 	StopWatchingCardAnimation();
 
-	const ABGCharacter* TargetCharacter = Cast<ABGCharacter>(MyTarget);
+	ABGCharacter* TargetCharacter = Cast<ABGCharacter>(MyTarget);
 	const USkeletalMeshComponent* Mesh = TargetCharacter ? TargetCharacter->GetMesh() : nullptr;
 	UAnimInstance* AnimInstance = Mesh ? Mesh->GetAnimInstance() : nullptr;
 	UAnimMontage* Montage = AnimInstance ? AnimInstance->GetCurrentActiveMontage() : nullptr;
@@ -182,8 +189,20 @@ void ABGCardGameplayCueNotify::WatchCardAnimation(AActor* MyTarget)
 	//	연출이 아직 시작 전이어도 된다 — 디렉터가 다음 연출로 물려받는다.
 	MontageHold.Begin(UBGPresentationDirector::Get(this), EBGPresentationTrack::Montage);
 
-	UE_LOG(LogBGCard, Verbose, TEXT("[CardCue] 몽타주 종료 대기 — %s / %s"),
-		*Montage->GetName(), *MyTarget->GetName());
+	//	이 몽타주에 BG 카드 FX 노티파이가 심어져 있으면 그쪽이 직접 타이밍을 맞춘다 —
+	//	SpawnCardNiagara 의 딜레이 스폰(기본 경로)을 걸지 않는다.
+	bMontageHasFXNotify = Montage->Notifies.ContainsByPredicate([](const FAnimNotifyEvent& Event)
+	{
+		return Event.Notify && Event.Notify->IsA<UBGAnimNotify_CardFX>();
+	});
+
+	if (TargetCharacter)
+	{
+		TargetCharacter->SetActiveCardFXCue(this);
+	}
+
+	UE_LOG(LogBGCard, Verbose, TEXT("[CardCue] 몽타주 종료 대기 — %s / %s / FX노티파이=%s"),
+		*Montage->GetName(), *MyTarget->GetName(), bMontageHasFXNotify ? TEXT("있음") : TEXT("없음(딜레이 스폰)"));
 }
 
 void ABGCardGameplayCueNotify::HandleCardMontageEnded(UAnimMontage* Montage, bool bInterrupted)
@@ -203,12 +222,27 @@ void ABGCardGameplayCueNotify::StopWatchingCardAnimation()
 	if (UAnimInstance* AnimInstance = WatchedAnimInstance.Get())
 	{
 		AnimInstance->OnMontageEnded.RemoveDynamic(this, &ABGCardGameplayCueNotify::HandleCardMontageEnded);
+
+		if (ABGCharacter* TargetCharacter = Cast<ABGCharacter>(AnimInstance->GetOwningActor()))
+		{
+			TargetCharacter->ClearActiveCardFXCue(this);
+		}
 	}
 
 	MontageHold.End(UBGPresentationDirector::Get(this));
 
 	WatchedAnimInstance.Reset();
 	WatchedMontage.Reset();
+	bMontageHasFXNotify = false;
+}
+
+//	UBGAnimNotify_CardFX 가 몽타주 재생 중 호출한다. 지연 없이 지금 스폰한다.
+void ABGCardGameplayCueNotify::SpawnCardNiagaraFromAnimNotify()
+{
+	if (AActor* Target = CachedSpawnTarget.Get())
+	{
+		SpawnCardNiagara(Target, CachedSpawnParameters, /*bAllowSpawnDelay=*/false);
+	}
 }
 
 //나이아가라 VFX 스폰
@@ -256,6 +290,13 @@ void ABGCardGameplayCueNotify::SpawnCardNiagara(AActor* MyTarget,
 		: bPrimary
 		? Row->PrimarySpawnDelaySeconds
 		: Row->SecondarySpawnDelaySeconds) * GetUserSpeedScale();
+
+	if (bAllowSpawnDelay && bMontageHasFXNotify)
+	{
+		//	몽타주에 BG 카드 FX 노티파이가 있다 — 그 프레임이 올 때까지 기다린다.
+		//	여기서 타이머를 걸면 노티파이와 중복 스폰된다.
+		return;
+	}
 
 	if (bAllowSpawnDelay && SpawnDelaySeconds > 0.f && GetWorld())
 	{

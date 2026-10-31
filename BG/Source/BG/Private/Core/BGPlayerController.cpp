@@ -1909,18 +1909,27 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 	UE_LOG(LogTemp, Log, TEXT("[BG] ServerRequestPlayCard 수신 — PC=%s Instance=%d TargetSeat=%d"),
 		*GetName(), InstanceId, TargetSeat);
 
-	//	1회성 카드(암살자)인가. **아래 사용 한도 게이트보다 먼저 알아야 한다** —
+	//	1회성 카드(암살자)·장비(파란) 카드인가. **아래 사용 한도 게이트보다 먼저 알아야 한다** —
 	//	한도를 소모하지 않는 카드가 "한도 소진" 으로 거부되면 능력이 사실상 동작하지 않는다
 	//	(기본 한도가 2 라 대성공은 대개 마지막 카드에서 나온다).
-	//	카드 종류·DT Row 조회는 한참 아래에서 하지만, "한도를 쓰는가" 는 손패 인스턴스만 보면 안다.
+	//	장비도 마찬가지다 — 설치가 한도를 쓰지 않는다면(GDD §5.3 확정) 다른 카드로 한도를
+	//	다 쓴 뒤에도 장비는 여전히 낼 수 있어야 한다.
 	bool bEphemeralCard = false;
+	bool bEquipCard = false;
 	if (const ABGPlayerState* MyPS = GetPlayerState<ABGPlayerState>())
 	{
+		const UGameInstance* GI = GetGameInstance();
+		const UBGDataSubsystem* Data = GI ? GI->GetSubsystem<UBGDataSubsystem>() : nullptr;
+
 		for (const FBGCardInstance& Card : MyPS->GetHand())
 		{
 			if (Card.InstanceId == InstanceId)
 			{
 				bEphemeralCard = Card.bEphemeral;
+				if (const FBGCardRow* Row = Data ? Data->GetCardRow(Card.CardId) : nullptr)
+				{
+					bEquipCard = Row->TypeTag == BG::Card::Type::Blue.GetTag();
+				}
 				break;
 			}
 		}
@@ -1952,7 +1961,8 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 
 		//	턴당 카드 사용 한도 (GDD §5.2). 버리기는 이 경로를 타지 않으므로 영향받지 않는다.
 		//	1회성 카드는 한도를 쓰지 않으므로 한도가 찼어도 낼 수 있다 — 그게 능력의 핵심이다.
-		if (GBGIgnoreTurnOrder == 0 && GS && !bEphemeralCard && !GS->HasCardUsesLeft(MySeat))
+		//	장비(파란) 카드도 한도를 쓰지 않는다(GDD §5.3 확정) — 아래에서도 소비하지 않는다.
+		if (GBGIgnoreTurnOrder == 0 && GS && !bEphemeralCard && !bEquipCard && !GS->HasCardUsesLeft(MySeat))
 		{
 			const ABGPlayerState* MyPS = GetPlayerState<ABGPlayerState>();
 			BGDebug::Screen(
@@ -2156,10 +2166,9 @@ void ABGPlayerController::HandlePlayCard(int32 InstanceId, int32 TargetSeat)
 			return RejectPlayCard(InstanceId, EBGCardPlayRejectReason::InternalError);
 		}
 
-		//	장비 설치도 카드 사용 횟수를 소비한다.
-		//	GDD §5.3 이 미결정으로 둔 항목 — "소비한다" 로 우선 확정했다.
-		//	바꾸려면 이 한 줄만 지우면 된다.
-		EquipPS->IncrementCardsUsedThisTurn();
+		//	장비 설치는 카드 사용 횟수를 소비하지 않는다(GDD §5.3 확정).
+		//	위 사용 한도 게이트도 bEquipCard 로 장비를 함께 면제하므로, 다른 카드로 한도를
+		//	다 쓴 뒤에도 장비는 계속 설치할 수 있다.
 
 		BGDebug::Screen(
 			FString::Printf(TEXT("장착  %s → %s"),

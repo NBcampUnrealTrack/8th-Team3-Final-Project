@@ -30,6 +30,7 @@ class UGameplayAbility;
 class UGameplayEffect;
 class UBGStatusFXComponent;
 class UStaticMeshComponent;
+class ABGCardGameplayCueNotify;
 
 /**
  * ABP 가 읽는 이 캐릭터의 연출 상태 (아트 기획서 "전투 연출").
@@ -310,6 +311,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BG|Anim")
 	void RefreshRoleRevealVisual();
 
+	/**
+	 * 공격/카드 몽타주에 심어 둔 `UBGAnimNotify_CardFX` 가 그 프레임에서 부른다.
+	 * 지금 이 캐릭터의 몽타주를 지켜보는 카드 연출 Cue(`ABGCardGameplayCueNotify`)가 있으면
+	 * 그쪽에 "지연 없이 지금 스폰" 을 넘긴다. 지켜보는 Cue 가 없으면(이미 끝났거나 카드와
+	 * 무관한 몽타주) 조용히 아무 일도 하지 않는다.
+	 *
+	 * ⚠️ 이 노티파이가 몽타주에 없어도 문제없다 — Cue 쪽이 DT 의
+	 *    PrimarySpawnDelaySeconds/SecondarySpawnDelaySeconds 딜레이로 대신 스폰한다
+	 *    (`ABGCardGameplayCueNotify::WatchCardAnimation` 이 매번 몽타주를 스캔해 결정한다).
+	 *    즉 노티파이는 "있으면 우선 적용되는 더 정확한 타이밍" 일 뿐 필수가 아니다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BG|Anim")
+	void NotifyCardFXAnimCue();
+
+	/** ABGCardGameplayCueNotify 가 이 캐릭터의 몽타주를 지켜보기 시작할 때 자신을 등록한다. */
+	void SetActiveCardFXCue(ABGCardGameplayCueNotify* Cue);
+
+	/** 지켜보기를 멈출 때 해제한다. Cue 가 지금 등록된 것과 같을 때만 지운다 —
+	    이미 다른 Cue 로 넘어갔으면 건드리지 않는다. */
+	void ClearActiveCardFXCue(const ABGCardGameplayCueNotify* Cue);
+
 protected:
 	/** 소유 클라에서 몸 방향을 맞춘다. 서버의 SetBodyFacing 이 호출한다. */
 	UFUNCTION(Client, Reliable)
@@ -327,6 +349,14 @@ protected:
 
 	//	현재 GameState/PlayerState 로부터 상태 하나를 유도한다. 부수 효과 없음.
 	EBGCharacterAnimState ComputeAnimState(const class ABGGameState* GS) const;
+
+	/**
+	 * RevealMeshComponent 를 캡슐에 그냥 붙이면 메시 피벗이 캡슐 "중심" 에 꽂혀 캡슐 반높이만큼
+	 * 공중에 뜬다. 아래로 바닥을 트레이스해 실제 바닥 위치를 찾고, 새로 꽂은 메시의 바운드
+	 * 바닥(최소 Z)이 그 바닥에 닿도록 RevealMeshComponent 의 상대 위치를 올려(Z 만) 보정한다.
+	 * RefreshRoleRevealVisual 이 메시를 꽂은 직후에만 부른다.
+	 */
+	void AlignRevealMeshToFloor();
 
 	//	중복 구독 방지 겸 해제 대상. 약참조라 GameState 가 사라져도 안전하다.
 	TWeakObjectPtr<class ABGGameState> BoundCinematicGameState;
@@ -356,6 +386,9 @@ protected:
 	/** 정체 공개 연출에서 본체 대신 보이는 시체 메시. 평소엔 숨겨져 있고 메시도 비어 있다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "BG|Anim")
 	TObjectPtr<UStaticMeshComponent> RevealMeshComponent;
+
+	/** 지금 이 캐릭터의 몽타주를 지켜보며 카드 FX 타이밍을 맞추고 있는 Cue. 로컬 전용 — 복제하지 않는다. */
+	TWeakObjectPtr<ABGCardGameplayCueNotify> ActiveCardFXCue;
 
 	/**
 	 * 직업의 무기/장비 메시들(FBGCharacterRow::WeaponAttachments). 항목 수만큼 런타임에
