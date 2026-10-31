@@ -20,7 +20,13 @@ enum class EBGTutorialTrigger : uint8
 	MatchStart     UMETA(DisplayName = "판 시작 후 첫 턴"),
 	MyTurnStart    UMETA(DisplayName = "내 턴 시작"),
 	EnemyTurnStart UMETA(DisplayName = "적 턴 시작"),
-	AfterMyCard    UMETA(DisplayName = "내가 카드를 낸 직후")
+	AfterMyCard    UMETA(DisplayName = "내가 카드를 낸 직후"),
+
+	// 도입 연출 단계에 맞춘 시작 조건. 읽기형(NextButton)이면 팝업이 떠 있는 동안 그 단계의 타이머가 선다.
+	// 그 단계가 이미 지났으면 이 행은 건너뛴다(BG_SkipIntro 로 넘겼을 때 뒤 단계가 막히지 않게).
+	IntroRoleReveal UMETA(DisplayName = "도입: 내 역할 확인"),
+	IntroHeroReveal UMETA(DisplayName = "도입: 용사 공개"),
+	IntroFirstTurn  UMETA(DisplayName = "도입: 첫 턴 안내")
 };
 
 UENUM(BlueprintType)

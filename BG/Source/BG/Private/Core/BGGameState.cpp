@@ -1558,6 +1558,13 @@ void ABGGameState::SetIntroStage(EBGIntroStage NewStage)
 	{
 		GetWorldTimerManager().SetTimer(IntroStageTimer, this,
 			&ABGGameState::AdvanceIntroStage, Seconds, false);
+
+		//	튜토리얼 팝업이 이 단계의 시작 통지(HandleIntroStage)에서 이미 정지를 걸었다.
+		//	위에서 타이머를 새로 만들었으니 다시 세워 둔다.
+		if (bTutorialHold)
+		{
+			GetWorldTimerManager().PauseTimer(IntroStageTimer);
+		}
 	}
 	else
 	{
@@ -1963,6 +1970,21 @@ void ABGGameState::SetTutorialHold(bool bHold)
 
 	bTutorialHold = bHold;
 	UE_LOG(LogBGCard, Log, TEXT("[Tutorial] 정지 %s"), bHold ? TEXT("켬") : TEXT("끔"));
+
+	//	도입 연출의 단계 타이머는 서버 시간으로 흐른다. 팝업을 읽는 동안 다음 단계로 넘어가지 않게 세워 두고,
+	//	팝업이 닫히면 남은 시간부터 다시 흐르게 한다.
+	if (IsIntroPlaying())
+	{
+		FTimerManager& TimerManager = GetWorldTimerManager();
+		if (bHold && TimerManager.IsTimerActive(IntroStageTimer))
+		{
+			TimerManager.PauseTimer(IntroStageTimer);
+		}
+		else if (!bHold && TimerManager.IsTimerPaused(IntroStageTimer))
+		{
+			TimerManager.UnPauseTimer(IntroStageTimer);
+		}
+	}
 
 	//	서버(리슨 호스트 포함)는 OnRep 을 받지 못한다. 손패 bPlayable 이 즉시 갱신되도록 직접 알린다.
 	BroadcastTurnState();

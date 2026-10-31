@@ -4,14 +4,16 @@
 // 읽기형(NextButton) 단계는 활성화하는 순간 GameState 의 튜토리얼 정지를 켜고, 다음 버튼이 오면 푼다.
 // 행동형(CardPlayed / TurnEnded) 단계는 정지 없이 안내만 띄우고 그 행동이 일어나면 끝낸다.
 //
-// 카드 연출(판정 UI, 월드 연출, 시네마틱) 중에는 다음 단계를 활성화하지 않는다.
+// 카드 연출(판정 UI, 월드 연출, 시네마틱)과 도입 연출 중에는 다음 단계를 활성화하지 않는다.
 // 연출이 끝날 때마다 턴 상태 통지가 나가므로 그 통지에서 다시 확인한다.
+// 예외로 시작 조건이 도입 연출 단계(Intro*)인 행은 그 단계가 도는 동안 뜬다.
 // 튜토리얼 판이 아니면 아무것도 하지 않는다.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Core/BGIntroStage.h"
 #include "BGTutorialComponent.generated.h"
 
 class ABGGameState;
@@ -38,9 +40,15 @@ private:
 	UFUNCTION()
 	void HandleTurnStateChanged();
 
+	// GameState::OnIntroStageChanged 구독 콜백. 도입 연출 단계가 넘어갈 때마다 온다.
+	void HandleIntroStageChanged(EBGIntroStage Stage);
+
 	// 지금 할 일이 있는지 보고 처리한다. 처리 중에 다시 불리면 끝난 뒤 한 번 더 돈다.
 	void Evaluate();
 	void EvaluateOnce();
+
+	// 시작 조건이 도입 연출 단계(IntroRoleReveal 등)인가.
+	bool IsIntroTrigger(const FBGTutorialStepRow& Row) const;
 
 	bool IsTriggerMet(const FBGTutorialStepRow& Row) const;
 	bool IsCompleteMet(const FBGTutorialStepRow& Row) const;

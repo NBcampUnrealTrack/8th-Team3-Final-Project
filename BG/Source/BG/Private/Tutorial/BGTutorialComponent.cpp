@@ -56,6 +56,7 @@ void UBGTutorialComponent::BeginPlay()
 	if (ABGGameState* GS = GetBGGameState())
 	{
 		GS->OnTurnStateChanged.AddDynamic(this, &UBGTutorialComponent::HandleTurnStateChanged);
+		GS->OnIntroStageChanged.AddUObject(this, &UBGTutorialComponent::HandleIntroStageChanged);
 	}
 	else
 	{
@@ -70,12 +71,18 @@ void UBGTutorialComponent::EndPlay(const EEndPlayReason::Type Reason)
 	if (ABGGameState* GS = GetBGGameState())
 	{
 		GS->OnTurnStateChanged.RemoveDynamic(this, &UBGTutorialComponent::HandleTurnStateChanged);
+		GS->OnIntroStageChanged.RemoveAll(this);
 	}
 
 	Super::EndPlay(Reason);
 }
 
 void UBGTutorialComponent::HandleTurnStateChanged()
+{
+	Evaluate();
+}
+
+void UBGTutorialComponent::HandleIntroStageChanged(EBGIntroStage /*Stage*/)
 {
 	Evaluate();
 }
@@ -134,12 +141,6 @@ void UBGTutorialComponent::EvaluateOnce()
 		return;   //	단계를 다 마쳤다.
 	}
 
-	//	연출이 끝나기를 기다린다. 연출 중에 팝업을 끼우면 화면이 겹친다.
-	if (GS->IsPresentationBusy() || GS->IsIntroPlaying())
-	{
-		return;
-	}
-
 	const FBGTutorialStepRow* Next = Table->FindRow<FBGTutorialStepRow>(StepIds[NextIndex], TEXT("TutorialComponent"));
 	if (!Next)
 	{
@@ -148,10 +149,35 @@ void UBGTutorialComponent::EvaluateOnce()
 		return;
 	}
 
+	if (IsIntroTrigger(*Next))
+	{
+		//	도입 연출이 이미 끝났다(건너뛰었다). 이 행을 붙들고 있으면 뒤 단계가 영영 막힌다.
+		//	첫 턴 좌석이 정해지기 전에는 연출이 아직 시작 전일 수 있어 건너뛰지 않는다.
+		if (!GS->IsIntroPlaying() && GS->GetCurrentSeat() != INDEX_NONE)
+		{
+			++NextIndex;
+			bReevaluate = true;
+			return;
+		}
+	}
+	else if (GS->IsPresentationBusy() || GS->IsIntroPlaying() || GS->GetCurrentSeat() == INDEX_NONE)
+	{
+		//	연출이 끝나기를 기다린다. 연출 중에 팝업을 끼우면 화면이 겹친다.
+		//	첫 턴 좌석이 없으면 판은 열렸어도 도입 연출이 아직 시작 전이다 - 그때 뜨면 연출을 가로막는다.
+		return;
+	}
+
 	if (IsTriggerMet(*Next))
 	{
 		ActivateStep(NextIndex, *Next);
 	}
+}
+
+bool UBGTutorialComponent::IsIntroTrigger(const FBGTutorialStepRow& Row) const
+{
+	return Row.Trigger == EBGTutorialTrigger::IntroRoleReveal
+		|| Row.Trigger == EBGTutorialTrigger::IntroHeroReveal
+		|| Row.Trigger == EBGTutorialTrigger::IntroFirstTurn;
 }
 
 bool UBGTutorialComponent::IsTriggerMet(const FBGTutorialStepRow& Row) const
@@ -188,6 +214,18 @@ bool UBGTutorialComponent::IsTriggerMet(const FBGTutorialStepRow& Row) const
 		{
 			const ABGPlayerState* PS = GS->GetPlayerStateBySeat(HumanSeat);
 			return IsValid(PS) && CurrentSeat == HumanSeat && PS->GetCardsUsedThisTurn() > 0;
+		}
+	case EBGTutorialTrigger::IntroRoleReveal:
+		{
+			return GS->GetIntroStage() == EBGIntroStage::RoleReveal;
+		}
+	case EBGTutorialTrigger::IntroHeroReveal:
+		{
+			return GS->GetIntroStage() == EBGIntroStage::HeroReveal;
+		}
+	case EBGTutorialTrigger::IntroFirstTurn:
+		{
+			return GS->GetIntroStage() == EBGIntroStage::FirstTurn;
 		}
 	}
 
